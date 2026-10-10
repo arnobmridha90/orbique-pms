@@ -1284,7 +1284,10 @@
        'demo'   = belongs to the demo; a fresh workspace starts with it empty
        'config' = defaults that a fresh workspace keeps (checklists, item list, settings)
      Never replace a registered array (D.x = [...]) after boot — mutate it (push / splice / length = 0).
-     Backends ("adapters"): local (this browser, over the built-in demo) and server (Supabase, see auth.js).
+     Backends ("adapters"): local (this browser, over the built-in demo) and server (Supabase, see app/server/auth.js).
+     adapter = {name, replace (true: the backend holds the whole workspace), load() -> {rows:[{coll,id,data,deleted}], blobs:[{key,data}], readOnly},
+                write({rows, blobs}) -> {rejected:[{coll,id}|{key}], readOnly}  (reject the promise only for network/server errors),
+                subscribe(cb(rows, blobs)) -> unsubscribe}
      =================================================================== */
   var REG = {}; /* key -> {type:'records'|'blob', kind:'demo'|'config', cap} */
   function canon(v) { /* stable JSON: sorted keys, so the server's key order never looks like a change */
@@ -1382,8 +1385,12 @@
     if (!batch.rows.length && !batch.blobs.length) return Promise.resolve();
     if (S.readOnly) { setStatus('readonly'); return Promise.resolve(); }
     setStatus('saving');
-    S._writing = Promise.resolve().then(function () { return S.adapter.write(batch); }).then(function () {
-      S._writing = null; setStatus(S.adapter.name === 'local' ? 'local' : 'saved');
+    /* adapter.write resolves {rejected: [{coll, id} | {key}], readOnly} — rows the server refused (no permission) are not retried */
+    S._writing = Promise.resolve().then(function () { return S.adapter.write(batch); }).then(function (res) {
+      S._writing = null;
+      if (res && res.readOnly) { S.readOnly = true; setStatus('readonly'); U.toast('This workspace is view only right now, so changes are not saved.'); return; }
+      if (res && res.rejected && res.rejected.length) U.toast('Some changes were not saved because your access does not allow them (' + res.rejected.map(function (r) { return r.coll || r.key; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ') + ').', 'bad');
+      setStatus(S.adapter.name === 'local' ? 'local' : 'saved');
       if (S.pending) { S.pending = false; return S.flush(); }
     }, function (e) {
       S._writing = null; console.error('save failed', e);

@@ -1,0 +1,4 @@
+{
+  "note": "SHA-256 of the email addresses allowed to create the first Orbique platform owner account (bootstrap). Lower-case the email before hashing.",
+  "emailSha256": ["4db4378cf19559a894282eda8058b12ba1c955eaf63001c3570e5278f485b806"]
+}

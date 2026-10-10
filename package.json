@@ -1,0 +1,18 @@
+{
+  "name": "orbique-pms",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Orbique property management platform: operators run their short-term rental units; guests get an app per booking.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node scripts/migrate.mjs && node scripts/build.mjs",
+    "build:local": "node scripts/build.mjs --local",
+    "migrate": "node scripts/migrate.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.58.0",
+    "jspdf": "^2.5.1",
+    "pg": "^8.13.0"
+  }
+}
