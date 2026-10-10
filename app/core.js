@@ -25,6 +25,13 @@
     var r = ''; try { var a = new Uint8Array(4); crypto.getRandomValues(a); r = Array.prototype.map.call(a, function (x) { return (x % 36).toString(36); }).join(''); } catch (e) { r = Math.random().toString(36).slice(2, 6); }
     return (prefix ? prefix + '-' : '') + (Date.now().toString(36) + r).toUpperCase();
   };
+  /* an unguessable token (128 random bits, URL-safe) for links that work without signing in, such as the guest app */
+  O.newToken = function (prefix) {
+    var a = new Uint8Array(16);
+    try { crypto.getRandomValues(a); } catch (e) { for (var i = 0; i < 16; i++) a[i] = Math.floor(Math.random() * 256); }
+    var b = ''; for (var j = 0; j < a.length; j++) b += String.fromCharCode(a[j]);
+    return (prefix || '') + btoa(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
   O.html = function (str) { var t = document.createElement('template'); t.innerHTML = String(str).trim(); return t.content.firstElementChild; };
   O.store = {
     get: function (k, dflt) { try { var v = localStorage.getItem('orbique4:' + k); return v == null ? dflt : JSON.parse(v); } catch (e) { return dflt; } },
@@ -453,11 +460,16 @@
     if (flat) return '<span class="delta flat">' + (0).toFixed(opts.dp == null ? 1 : opts.dp) + '%' + (opts.suffix ? ' ' + O.esc(opts.suffix) : '') + '</span>';
     return '<span class="delta ' + (flat ? 'flat' : good ? 'good' : 'bad') + '">' + (c > 0 ? '▲ ' : c < 0 ? '▼ ' : '') + O.fmt.changeText(c, opts.dp).replace(/^[+−]/, '') + (opts.suffix ? ' ' + O.esc(opts.suffix) : '') + '</span>';
   };
-  U.empty = function (msg, icon) { return '<div class="empty"><div class="e-icon">' + (icon || '∅') + '</div>' + O.esc(msg) + '</div>'; };
+  /* U.empty(message, icon, actionHTML) — actionHTML is an optional button the page wires up */
+  U.empty = function (msg, icon, action) { return '<div class="empty"><div class="e-icon">' + (icon || '∅') + '</div>' + O.esc(msg) + (action ? '<div>' + action + '</div>' : '') + '</div>'; };
+  /* guest contact details for people without bookings.contacts: +60 ••• ••10, s•••@mail.com */
+  O.maskPhone = function (ph) { ph = String(ph || ''); if (!ph) return ''; var digits = ph.replace(/\D/g, ''); return (ph.charAt(0) === '+' ? '+' + digits.slice(0, 2) + ' ' : '') + '••• ••' + digits.slice(-2); };
+  O.maskEmail = function (em) { em = String(em || ''); var i = em.indexOf('@'); return i < 1 ? (em ? '•••' : '') : em.charAt(0) + '•••' + em.slice(i); };
+  O.contact = function (b) { var g = (b && b.guest) || {}, ok = O.can('bookings.contacts'); return { phone: ok ? g.phone || '' : O.maskPhone(g.phone), email: ok ? g.email || '' : O.maskEmail(g.email), masked: !ok }; };
   /* U.locked('Financials') → "Only account owners can see the financials". opts.reason 'permission' = blocked by Staff Access, not ownership */
   U.locked = function (what, opts) {
     opts = opts || {};
-    var w = String(what || 'this'); if (!/^[A-Z]{2}/.test(w)) w = w.charAt(0).toLowerCase() + w.slice(1);
+    var w = String(what || 'this'); if (!/[A-Z]/.test(w.slice(1))) w = w.charAt(0).toLowerCase() + w.slice(1);
     if (!/^(the|this|these|your|all) /i.test(w) && w !== 'this') w = 'the ' + w;
     var v = O.viewer();
     var head = opts.reason === 'permission' ? 'Your access does not include ' + w : 'Only account owners can see ' + w;
@@ -475,13 +487,19 @@
   U.seg = function (options, value, attr) { /* options: [[value,label],...] -> segmented control HTML; handle clicks with data attribute */
     return '<div class="seg" role="tablist">' + options.map(function (o) { return '<button type="button" ' + (attr || 'data-v') + '="' + O.esc(o[0]) + '" class="' + (String(o[0]) === String(value) ? 'on' : '') + '">' + O.esc(o[1]) + '</button>'; }).join('') + '</div>';
   };
+  /* properties still in use (archived ones keep their history but leave pickers and new work) */
+  O.activeProperties = function () { return D.properties.filter(function (p) { return !p.archived; }); };
+  /* "Bayfront Loft 3B · Gurney Drive, Penang" — the label pages use for a property */
+  O.propLabel = function (p) { if (typeof p === 'string') p = D.propById[p]; if (!p) return 'Removed property'; var loc = p.area || p.location || p.city || ''; return p.name + (loc ? ' · ' + loc : ''); };
   U.propOptions = function (selected, opts) {
     opts = opts || {};
-    return (opts.all ? '<option value="">' + O.esc(opts.all) + '</option>' : '') + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (p.id === selected ? ' selected' : '') + '>' + O.esc(p.name) + '</option>'; }).join('');
+    return (opts.all ? '<option value="">' + O.esc(opts.all) + '</option>' : '') + D.properties.filter(function (p) { return !p.archived || p.id === selected || opts.archived; }).map(function (p) { return '<option value="' + p.id + '"' + (p.id === selected ? ' selected' : '') + '>' + O.esc(p.name) + '</option>'; }).join('');
   };
+  /* people still on the team (removed people keep their history but leave pickers) */
+  O.activeStaff = function () { return D.staff.filter(function (s) { var m = (D.staffMeta || {})[s.id]; return s.status !== 'left' && !(m && m.removed); }); };
   U.staffOptions = function (selected, opts) {
     opts = opts || {};
-    return (opts.none ? '<option value="">' + O.esc(opts.none) + '</option>' : '') + D.staff.map(function (s) { return '<option value="' + s.id + '"' + (s.id === selected ? ' selected' : '') + '>' + O.esc(s.name) + ' · ' + O.esc(s.roleLabel) + '</option>'; }).join('');
+    return (opts.none ? '<option value="">' + O.esc(opts.none) + '</option>' : '') + D.staff.filter(function (s) { var m = (D.staffMeta || {})[s.id]; return s.id === selected || opts.all || !(s.status === 'left' || (m && m.removed)); }).map(function (s) { return '<option value="' + s.id + '"' + (s.id === selected ? ' selected' : '') + '>' + O.esc(s.name) + ' · ' + O.esc(s.roleLabel) + '</option>'; }).join('');
   };
   var PROP_COLORS = ['#3B82F6', '#14B8A6', '#F59E0B', '#8B5CF6', '#EC4899', '#10B981', '#F97316', '#6366F1', '#84CC16', '#06B6D4', '#EF4444', '#A855F7'];
   U.propColor = function (pid) { var i = D.properties.map(function (p) { return p.id; }).indexOf(pid); return PROP_COLORS[(i < 0 ? 0 : i) % PROP_COLORS.length]; };
@@ -492,9 +510,19 @@
     var t = O.html('<div class="toast ' + (kind || 'ok') + '"></div>'); t.appendChild(document.createTextNode(msg));
     host.appendChild(t); setTimeout(function () { t.remove(); }, kind === 'bad' ? 5200 : 3400);
   };
+  /* copy text to the clipboard with a toast; falls back to a selectable box when the browser blocks it */
+  U.copy = function (text, what) {
+    function fallback() {
+      U.modal({ title: 'Copy ' + (what || 'this'), body: '<textarea class="input" rows="4" readonly style="width:100%">' + O.esc(text) + '</textarea><div class="hint">Select the text and copy it.</div>', actions: [{ label: 'Done', kind: 'primary' }], onOpen: function (el) { var t = O.$('textarea', el); t.focus(); t.select(); } });
+    }
+    try {
+      if (navigator.clipboard && window.isSecureContext !== false) return navigator.clipboard.writeText(String(text)).then(function () { U.toast((what ? what.charAt(0).toUpperCase() + what.slice(1) : 'Text') + ' copied'); return true; }, function () { fallback(); return false; });
+    } catch (e) {}
+    fallback(); return Promise.resolve(false);
+  };
   /* modal: returns {el, close} — actions: [{label, kind, onClick(close, el) -> false keeps it open}] */
   U.modal = function (o) {
-    var back = O.html('<div class="modal-back"><div class="modal ' + (o.size || '') + '" role="dialog" aria-modal="true"><div class="modal-head"><div><h3></h3>' + (o.sub ? '<div class="sub"></div>' : '') + '</div><button class="modal-x" aria-label="Close">×</button></div><div class="modal-body"></div>' + (o.actions && o.actions.length ? '<div class="modal-foot"></div>' : '') + '</div></div>');
+    var back = O.html('<div class="modal-back"><div class="modal ' + (o.size || '') + (o.cls ? ' ' + o.cls : '') + '" role="dialog" aria-modal="true"><div class="modal-head"><div><h3></h3>' + (o.sub ? '<div class="sub"></div>' : '') + '</div><button class="modal-x" aria-label="Close">×</button></div><div class="modal-body"></div>' + (o.actions && o.actions.length ? '<div class="modal-foot"></div>' : '') + '</div></div>');
     O.$('h3', back).textContent = o.title || '';
     if (o.sub) O.$('.sub', back).textContent = o.sub;
     var body = O.$('.modal-body', back);
@@ -588,7 +616,7 @@
     var pop = O.$('.dr-pop', el), btn = O.$('.dr-btn', el);
     function paint() {
       var p = st.preset && PRESETS[st.preset];
-      O.$('.dr-preset', el).textContent = p ? p[0] + ' ·' : '';
+      O.$('.dr-preset', el).textContent = p ? p[0] : ''; el.classList.toggle('has-preset', !!p);
       O.$('.dr-lbl', el).textContent = U.rangeLabel(st.from, st.to);
       O.$('.dr-presets', el).innerHTML = keys.map(function (k) { return '<button type="button" data-k="' + k + '" class="' + (k === st.preset ? 'on' : '') + '">' + PRESETS[k][0] + '</button>'; }).join('') + '<button type="button" data-k="custom" class="' + (!st.preset ? 'on' : '') + '">Custom…</button>';
       O.$('.dr-from', el).value = st.from; O.$('.dr-to', el).value = st.to;
@@ -827,9 +855,13 @@
         doc.setFillColor(rgb[0], rgb[1], rgb[2]); doc.rect(0, 0, 210, 30, 'F');
         if (png) { doc.setFillColor(255, 255, 255); doc.roundedRect(12, 6, 18, 18, 3, 3, 'F'); doc.addImage(png, 'PNG', 13, 7, 16, 16); }
         doc.setTextColor(irgb[0], irgb[1], irgb[2]); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(ws.legal || ws.name, png ? 34 : 12, 14);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.text((ws.address || '') + (ws.email ? '  ·  ' + ws.email : ''), png ? 34 : 12, 20);
+        /* the address line shares row 20 with the subtitle: keep it to the space left, or move it below */
+        var lx = png ? 34 : 12, addr = (ws.address || '') + (ws.email ? '  ·  ' + ws.email : '');
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+        var subW = subtitle ? doc.getTextWidth(String(subtitle)) : 0, room = 198 - lx - subW - 6;
+        if (addr) { if (room >= 50) doc.text(doc.splitTextToSize(addr, room)[0], lx, 20); else doc.text(doc.splitTextToSize(addr, 198 - lx)[0], lx, 26); }
         doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(String(title).toUpperCase(), 198, 14, { align: 'right' });
-        if (subtitle) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.text(subtitle, 198, 20, { align: 'right' }); }
+        if (subtitle) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.text(String(subtitle), 198, 20, { align: 'right' }); }
         doc.setTextColor(20, 24, 31);
         return { doc: doc, y: 40 };
       });
@@ -891,8 +923,8 @@
   D.bookings.forEach(function (b) { b.doorCode = String(1000 + (D.hash(b.id + 'door') % 9000)); b.guestToken = 'g' + D.hash(b.id + 'guest').toString(36); });
   /* fields every new booking needs (call before pushing a booking you create): door code and guest-app link token */
   O.bookingDefaults = function (b) {
-    if (!b.doorCode) b.doorCode = String(1000 + Math.floor(Math.random() * 9000));
-    if (!b.guestToken) b.guestToken = O.uid('g').replace('-', '').toLowerCase();
+    if (!b.doorCode) { var r = new Uint16Array(1); try { crypto.getRandomValues(r); } catch (e) { r[0] = Math.floor(Math.random() * 65536); } b.doorCode = String(1000 + r[0] % 9000); }
+    if (!b.guestToken) b.guestToken = O.newToken('g');
     return b;
   };
   /* task checklists: templates live in D.checklists; a task has checklistId (or customChecklist) and checks = [done item ids] */
@@ -913,12 +945,14 @@
   ];
   D.sentLog = []; /* every invoice / receipt / code we send, newest first */
   O.prop = function (id) { return D.propById[id]; };
-  O.tasksFor = function (pid, day) { return D.tasks.filter(function (t) { return t.propertyId === pid && t.due.slice(0, 10) === day; }); };
+  O.tasksFor = function (pid, day) { return D.tasks.filter(function (t) { return t.propertyId === pid && String(t.due || '').slice(0, 10) === day; }); };
   /* arrival readiness for a booking: [{key,label,state:'ok'|'wait'|'todo'|'bad'}] */
   O.readiness = function (b) {
-    var clean = D.tasks.filter(function (t) { return t.propertyId === b.propertyId && t.type === 'Turnover' && t.due.slice(0, 10) === b.checkIn; })[0];
+    var due = function (t) { return String(t.due || '').slice(0, 10); };
+    var clean = D.tasks.filter(function (t) { return t.propertyId === b.propertyId && t.type === 'Turnover' && due(t) === b.checkIn; })[0];
     var out = [];
-    var insp = !clean && D.tasks.filter(function (t) { return t.propertyId === b.propertyId && t.type === 'Inspection' && t.due.slice(0, 10) === b.checkIn && b.checkIn >= D.TODAY; })[0];
+    /* the check-in readiness task counts once the clean is done (or when there is no clean that day) */
+    var insp = (!clean || clean.status === 'done') && D.tasks.filter(function (t) { return t.propertyId === b.propertyId && (t.type === 'Inspection' || t.checklistId === 'CL-checkin') && due(t) === b.checkIn && b.checkIn >= D.TODAY; })[0];
     var pg = function (t) { var c = O.checklist.progress(t); return c.total ? ' ' + c.done + '/' + c.total : ''; };
     if (insp) out.push({ key: 'clean', label: insp.status === 'done' ? 'Inspected' : insp.status === 'in_progress' ? 'Inspecting' + pg(insp) : 'Inspection not started', state: insp.status === 'done' ? 'ok' : insp.status === 'in_progress' ? 'wait' : 'todo' });
     else if (clean) out.push({ key: 'clean', label: clean.status === 'done' ? 'Cleaned' : clean.status === 'in_progress' ? 'Cleaning' + pg(clean) : 'Clean not started', state: clean.status === 'done' ? 'ok' : clean.status === 'in_progress' ? 'wait' : 'todo' });
@@ -944,9 +978,11 @@
   /* change a door code from anywhere: O.lock.change({propertyId, bookingId}) */
   O.lock.change = function (o) {
     o = o || {};
-    if (O.can && !O.can('changeDoorCodes')) { U.toast(O.viewer().name + '\'s access does not include changing door codes. An account owner can allow it in Staff Access.', 'bad'); return; }
+    if (O.can && !O.can('guestapp.doorCodes')) { U.toast(O.viewer().name + '\'s access does not include changing door codes. An account owner can allow it in Staff Access.', 'bad'); return; }
     var b = o.bookingId ? D.booking(o.bookingId) : null;
-    var pid = o.propertyId || (b && b.propertyId) || D.properties[0].id;
+    var firstProp = O.activeProperties()[0];
+    if (!b && !firstProp) { U.toast('Add a property first, then you can set its door codes.', 'bad'); return; }
+    var pid = o.propertyId || (b && b.propertyId) || firstProp.id;
     var body = O.html('<div class="stack">' +
       '<div class="field"><label for="lk-pid">Property</label><select class="select" name="pid" id="lk-pid">' + U.propOptions(pid) + '</select></div>' +
       '<div class="note lk-info"></div>' +
@@ -1005,34 +1041,34 @@
   /* ---------------- invoices & receipts ---------------- */
   O.invoice = {};
   O.invoice.lines = function (b) {
-    var p = D.propById[b.propertyId], rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
+    var p = D.propById[b.propertyId] || { name: 'Stay', area: '' }, rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
     if (b.tourismTax) rows.push(['Tourism tax (foreign guests, RM 10 per night)', b.nights + ' × RM 10', b.tourismTax]);
     return rows;
   };
   O.invoice.canReceipt = function (b) { return !!b.paidAt; };
   /* HTML document preview — kind: 'invoice' | 'receipt' */
   O.invoice.html = function (b, kind) {
-    var ws = O.ws(), p = D.propById[b.propertyId], isR = kind === 'receipt';
+    var ws = O.ws(), p = D.propById[b.propertyId] || { name: 'the property', area: '' }, isR = kind === 'receipt', ct = O.contact(b);
     var no = isR ? b.receiptNo : b.invoiceNo, date = isR ? b.paidAt : b.invoiceDate;
     return '<div class="doc"><div class="doc-head"><div class="doc-logo">' + O.theme.logoHTML(ws, O.theme.get('--brand')) + '<span>' + O.esc(ws.legal || ws.name) + '</span></div><div class="doc-kind">' + (isR ? 'Payment receipt' : 'Invoice') + '</div></div>' +
-      '<div class="doc-body"><div class="doc-meta"><div><div class="dm-k">Billed to</div><b>' + O.esc(b.guest.name) + '</b><br>' + O.esc(b.guest.email) + '<br>' + O.esc(b.guest.phone) + '<br>' + O.esc(b.guest.countryName) + '</div>' +
+      '<div class="doc-body"><div class="doc-meta"><div><div class="dm-k">Billed to</div><b>' + O.esc(b.guest.name) + '</b><br>' + O.esc(ct.email) + '<br>' + O.esc(ct.phone) + '<br>' + O.esc(b.guest.countryName || '') + '</div>' +
       '<div class="right"><div class="dm-k">' + (isR ? 'Receipt no.' : 'Invoice no.') + '</div><b>' + O.esc(no || 'Not issued yet') + '</b><div class="dm-k" style="margin-top:6px">Date</div>' + (date ? d.fmtY(date) : '–') + '<div class="dm-k" style="margin-top:6px">Booking</div>' + O.esc(b.id) + ' · ' + O.esc(U.platName(b.channel)) + '</div></div>' +
       '<table><thead><tr><th>Description</th><th></th><th class="num">Amount</th></tr></thead><tbody>' +
       O.invoice.lines(b).map(function (r) { return '<tr><td>' + O.esc(r[0]) + '</td><td class="muted">' + O.esc(r[1]) + '</td><td class="num">' + O.fmt.money(r[2], { dp: 2 }) + '</td></tr>'; }).join('') +
       '<tr class="doc-total"><td>' + (isR ? 'Amount received' : 'Total due') + '</td><td></td><td class="num">' + O.fmt.money(b.total, { dp: 2 }) + '</td></tr></tbody></table>' +
       (isR ? '<div class="row-flex" style="margin-top:14px;justify-content:space-between"><div class="small">Paid ' + d.fmtY(b.paidAt) + ' · ' + O.esc(b.payMethod) + '</div><span class="doc-paid">PAID</span></div>'
         : '<div class="small" style="margin-top:12px">' + (b.paidAt ? 'Paid in full on ' + d.fmtY(b.paidAt) + ' (' + O.esc(b.payMethod) + ').' : b.channel === 'direct' ? 'Please pay by ' + d.fmtY(d.add(b.checkIn, -7)) + ' by FPX, card or DuitNow QR using the payment link.' : 'Collected by ' + O.esc(U.platName(b.channel)) + '.') + '</div>') +
-      '</div><div class="doc-foot">' + O.esc(ws.legal || ws.name) + ' · ' + O.esc(ws.regNo || '') + ' · ' + O.esc(ws.address) + ' · ' + O.esc(ws.phone) + '<br>Stay at ' + O.esc(p.name) + ', ' + O.esc(p.area) + '. Check-in ' + O.fmt.time(b.checkInTime) + ', check-out ' + O.fmt.time(b.checkOutTime) + '.</div></div>';
+      '</div><div class="doc-foot">' + O.esc(ws.legal || ws.name) + ' · ' + O.esc(ws.regNo || '') + ' · ' + O.esc(ws.address) + ' · ' + O.esc(ws.phone) + '<br>Stay at ' + O.esc(p.name) + (p.area ? ', ' + O.esc(p.area) : '') + '. Check-in ' + O.fmt.time(b.checkInTime) + ', check-out ' + O.fmt.time(b.checkOutTime) + '.</div></div>';
   };
   O.invoice.pdf = function (b, kind) {
     var isR = kind === 'receipt', no = isR ? b.receiptNo : b.invoiceNo;
     if (isR && !b.paidAt) { U.toast('No payment recorded yet, so there is no receipt', 'bad'); return Promise.resolve(false); }
     return O.pdf.start(isR ? 'Payment receipt' : 'Invoice', no + ' · ' + d.fmtY(isR ? b.paidAt : b.invoiceDate)).then(function (r) {
-      var doc = r.doc, y = r.y, p = D.propById[b.propertyId];
+      var doc = r.doc, y = r.y, p = D.propById[b.propertyId] || { name: 'the property', area: '' }, ct = O.contact(b);
       y = O.pdf.text(doc, y, 'Billed to', { muted: true, size: 8 });
       y = O.pdf.text(doc, y, b.guest.name, { bold: true, size: 11 });
-      y = O.pdf.text(doc, y, b.guest.email + '  ·  ' + b.guest.phone + '  ·  ' + b.guest.countryName, { size: 9 });
-      y = O.pdf.text(doc, y + 2, 'Booking ' + b.id + ' via ' + U.platName(b.channel) + ' · ' + p.name + ', ' + p.area, { muted: true, size: 8.5 });
+      y = O.pdf.text(doc, y, [ct.email, ct.phone, b.guest.countryName].filter(Boolean).join('  ·  '), { size: 9 });
+      y = O.pdf.text(doc, y + 2, 'Booking ' + b.id + ' via ' + U.platName(b.channel) + ' · ' + p.name + (p.area ? ', ' + p.area : ''), { muted: true, size: 8.5 });
       y = O.pdf.table(doc, y + 4, [{ label: 'Description', w: 110 }, { label: 'Qty', w: 40 }, { label: 'Amount (RM)', w: 36, align: 'right' }],
         O.invoice.lines(b).map(function (l) { return [l[0], l[1], l[2].toFixed(2)]; }).concat([[isR ? 'Amount received' : 'Total due', '', b.total.toFixed(2)]]), { boldLast: true });
       if (isR) y = O.pdf.text(doc, y + 2, 'PAID on ' + d.fmtY(b.paidAt) + ' by ' + b.payMethod + '.', { bold: true, size: 10 });
@@ -1100,26 +1136,36 @@
 
   /* ---------------- booking drawer (used by every page) ---------------- */
   O.booking = {};
+  /* buttons any page can add to the booking drawer: {label, icon, kind, show(b) -> bool, run(b, close)} (Bookings adds Edit, Copy guest link, Cancel) */
+  O.booking.actions = [];
   O.booking.open = function (id) {
     var b = typeof id === 'string' ? D.booking(id) : id; if (!b) return;
-    var p = D.propById[b.propertyId];
+    var p = D.propById[b.propertyId] || { id: b.propertyId, name: 'Removed property', short: 'Removed' };
     function render() {
       var conv = D.conversations.filter(function (c) { return c.bookingId === b.id; })[0];
+      var canMoney = O.can('bookings.value'), canCodes = O.can('guestapp.doorCodes'), canEdit = O.can('bookings.edit'), canContacts = O.can('bookings.contacts');
+      var canInv = O.can('invoices'), canSend = O.can('invoices.send'), canPay = O.can('invoices.payments');
+      var contact = canContacts ? ' · ' + O.esc(b.guest.phone || '') + ' · ' + O.esc(b.guest.email || '') : ' · <span title="Your access does not include guest contact details">contact details hidden</span>';
+      var extra = O.booking.actions.filter(function (x) { try { return !x.show || x.show(b); } catch (e) { return false; } });
       return '<div class="stack">' +
         '<div class="row-flex wrap">' + U.status(b.status) + U.plat(b.channel) + (b.sameDay ? '<span class="pill accent">⚡ Same-day booking</span>' : '') + '<span class="muted small">Booked ' + O.fmt.dateTime(b.createdAt) + '</span></div>' +
-        '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(p.name) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
-        (b.status !== 'cancelled' && b.checkOut > D.TODAY ? '<div><div class="section-title" style="margin-top:0">Arrival readiness</div>' + O.readinessHTML(b) + '<div class="row-flex wrap" style="margin-top:8px">' + (!b.idVerified ? '<button class="btn btn-ghost btn-sm" data-act="verify">Mark ID verified</button>' : '') + '<button class="btn btn-ghost btn-sm" data-act="lock">' + O.icon('key') + 'Change door code</button><span class="small muted">Guest code <span class="kbd">' + O.esc(b.doorCode) + '</span></span></div></div>' : '') +
-        '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName) + ' · ' + O.esc(b.guest.phone) + ' · ' + O.esc(b.guest.email) + '</div></div>' + (conv ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
-        '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly) + '</dt><dd>' + O.fmt.money(b.accommodation) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total) + '</dd>' +
-        (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout) + '</dd>' : '') + '</dl></div>' +
-        (b.status !== 'cancelled' ? '<div><div class="section-title" style="margin-top:0">Invoice &amp; receipt</div>' +
-          '<div class="list-row"><div class="lr-main"><div class="lr-title">Invoice ' + O.esc(b.invoiceNo) + '</div><div class="lr-sub">Created automatically ' + d.fmtY(b.invoiceDate) + '</div></div>' + O.invoice.statusHTML(b, 'invoice') + '<button class="btn btn-ghost btn-xs" data-act="inv">View</button></div>' +
-          '<div class="list-row"><div class="lr-main"><div class="lr-title">Receipt ' + O.esc(b.receiptNo || '') + '</div><div class="lr-sub">' + (b.paidAt ? 'Created automatically when paid, ' + d.fmtY(b.paidAt) : 'Created automatically when payment arrives') + '</div></div>' + O.invoice.statusHTML(b, 'receipt') + '<button class="btn btn-ghost btn-xs" data-act="rcp">' + (b.paidAt ? 'View' : 'Record payment') + '</button></div>' +
-          '<button class="btn btn-primary btn-sm" data-act="sendboth" style="margin-top:8px">' + O.icon('send') + 'Send invoice' + (b.paidAt ? ' and receipt' : '') + ' to guest</button></div>' : '') +
+        (extra.length ? '<div class="row-flex wrap">' + extra.map(function (x, i) { return '<button class="btn btn-' + (x.kind || 'ghost') + ' btn-sm" data-extra="' + i + '">' + (x.icon ? O.icon(x.icon) : '') + O.esc(x.label) + '</button>'; }).join('') + '</div>' : '') +
+        '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(O.propLabel(p)) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
+        (b.status !== 'cancelled' && b.checkOut > D.TODAY ? '<div><div class="section-title" style="margin-top:0">Arrival readiness</div>' + O.readinessHTML(b) + '<div class="row-flex wrap" style="margin-top:8px">' + (!b.idVerified && canEdit ? '<button class="btn btn-ghost btn-sm" data-act="verify">Mark ID verified</button>' : '') + (canCodes ? '<button class="btn btn-ghost btn-sm" data-act="lock">' + O.icon('key') + 'Change door code</button><span class="small muted">Guest code <span class="kbd">' + O.esc(b.doorCode || '') + '</span></span>' : '') + '</div></div>' : '') +
+        '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (conv && O.can('inbox') ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
+        (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly) + '</dt><dd>' + O.fmt.money(b.accommodation) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total) + '</dd>' +
+        (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout) + '</dd>' : '') + '</dl></div>' : '') +
+        (b.status !== 'cancelled' && canInv && canMoney ? '<div><div class="section-title" style="margin-top:0">Invoice &amp; receipt</div>' +
+          '<div class="list-row"><div class="lr-main"><div class="lr-title">Invoice ' + O.esc(b.invoiceNo || '') + '</div><div class="lr-sub">Created automatically ' + d.fmtY(b.invoiceDate || b.checkIn) + '</div></div>' + O.invoice.statusHTML(b, 'invoice') + '<button class="btn btn-ghost btn-xs" data-act="inv">View</button></div>' +
+          '<div class="list-row"><div class="lr-main"><div class="lr-title">Receipt ' + O.esc(b.receiptNo || '') + '</div><div class="lr-sub">' + (b.paidAt ? 'Created automatically when paid, ' + d.fmtY(b.paidAt) : 'Created automatically when payment arrives') + '</div></div>' + O.invoice.statusHTML(b, 'receipt') + (b.paidAt || canPay ? '<button class="btn btn-ghost btn-xs" data-act="rcp">' + (b.paidAt ? 'View' : 'Record payment') + '</button>' : '') + '</div>' +
+          (canSend ? '<button class="btn btn-primary btn-sm" data-act="sendboth" style="margin-top:8px">' + O.icon('send') + 'Send invoice' + (b.paidAt ? ' and receipt' : '') + ' to guest</button>' : '') + '</div>' : '') +
         '</div>';
     }
     var dr = U.drawer({ titleHTML: O.esc(b.guest.name), subHTML: O.esc(b.id) + ' · ' + O.esc(p.name), body: render() });
     function wire() {
+      O.$$('[data-extra]', dr.el).forEach(function (x) {
+        x.onclick = function () { var list = O.booking.actions.filter(function (y) { try { return !y.show || y.show(b); } catch (e) { return false; } }), act = list[+x.dataset.extra]; if (act) act.run(b, dr.close); };
+      });
       O.$$('[data-act]', dr.el).forEach(function (x) {
         x.onclick = function () {
           var a = x.dataset.act;
@@ -1163,7 +1209,7 @@
     ['website', 'Website builder', [['edit', 'Edit the website', 'Template, text and photos', 'do'], ['publish', 'Publish changes', '', 'do']]],
     ['guestapp', 'Guest app', [['edit', 'Edit the guest app', 'Guide, house rules, videos and services', 'do'], ['doorCodes', 'See and change door codes', 'Guest codes and master codes on smart locks', 'do'], ['requests', 'Handle guest requests', 'SIM cards, car rental, extra cleaning, damage reports', 'do']]],
     ['properties', 'Properties', [['create', 'Add properties', '', 'do'], ['edit', 'Edit property details', 'Name, address, rooms and owner', 'do'], ['access', 'See lock codes and Wi-Fi passwords', '', 'see'], ['archive', 'Archive properties', '', 'do']]],
-    ['inventory', 'Inventory', [['in', 'Record stock in', 'Purchases and deliveries', 'do'], ['out', 'Record stock used', 'What was used, by whom, for which unit', 'do'], ['adjust', 'Correct stock counts', 'Stock takes and write-offs', 'do'], ['items', 'Add and edit items', 'The item list and reorder levels', 'do']]],
+    ['inventory', 'Inventory', [['in', 'Record stock in', 'Purchases and deliveries', 'do'], ['out', 'Record stock used', 'What was used, by whom, for which unit', 'do'], ['adjust', 'Correct stock counts', 'Stock takes and write-offs', 'do'], ['items', 'Add and edit items', 'The item list and reorder levels', 'do'], ['money', 'See stock costs', 'Purchase prices, stock value and spend', 'see']]],
     ['pricing', 'Pricing', [['change', 'Change prices', 'Apply suggested prices and edit nightly rates', 'do'], ['rules', 'Edit pricing rules', 'Minimums, weekend and event uplifts', 'do']]],
     ['automations', 'Automations', [['toggle', 'Turn automations on or off', '', 'do'], ['edit', 'Edit messages and rules', '', 'do']]],
     ['owner', 'Owner portal', [['statements', 'Send owner statements', '', 'do'], ['payouts', 'Approve owner payouts', '', 'do', true]]],
@@ -1183,15 +1229,15 @@
   function all(keys) { var o = {}; keys.split(' ').forEach(function (k) { o[k] = true; }); return o; }
   O.DEFAULT_ROLE_PERMS = {
     ops: roleDefaults({ dashboard: 'edit', statistics: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', invoices: 'edit', expenses: 'edit', reports: 'view', website: 'edit', guestapp: 'edit', properties: 'edit', inventory: 'edit', pricing: 'edit', automations: 'edit', owner: 'view', staff: 'view', brand: 'view' },
-      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value bookings.export calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies tasks.create tasks.assign tasks.others tasks.delete tasks.checklists invoices.send invoices.payments expenses.record expenses.viewAll reports.money reports.export website.edit website.publish guestapp.edit guestapp.doorCodes guestapp.requests properties.create properties.edit properties.access inventory.in inventory.out inventory.adjust inventory.items pricing.change pricing.rules automations.toggle automations.edit owner.statements staff.invite')),
-    housekeeping: roleDefaults({ dashboard: 'view', bookings: 'view', calendar: 'view', inbox: 'edit', tasks: 'edit', expenses: 'edit', guestapp: 'view', properties: 'view', inventory: 'edit' },
+      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value bookings.export calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies tasks.create tasks.assign tasks.others tasks.delete tasks.checklists invoices.send invoices.payments expenses.record expenses.viewAll reports.money reports.export website.edit website.publish guestapp.edit guestapp.doorCodes guestapp.requests properties.create properties.edit properties.access inventory.in inventory.out inventory.adjust inventory.items inventory.money pricing.change pricing.rules automations.toggle automations.edit owner.statements staff.invite')),
+    housekeeping: roleDefaults({ dashboard: 'view', bookings: 'view', calendar: 'view', inbox: 'edit', tasks: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud inbox.send inbox.notes tasks.create expenses.record guestapp.requests properties.access inventory.out')),
     frontdesk: roleDefaults({ dashboard: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', pricing: 'view', automations: 'view', invoices: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'view' },
       all('dashboard.readAloud bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies tasks.create tasks.assign tasks.others invoices.send invoices.payments expenses.record guestapp.edit guestapp.doorCodes guestapp.requests properties.access')),
     maintenance: roleDefaults({ dashboard: 'view', calendar: 'view', inbox: 'view', tasks: 'edit', expenses: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud tasks.create expenses.record properties.access inventory.out')),
     accountant: roleDefaults({ dashboard: 'view', statistics: 'view', bookings: 'view', invoices: 'edit', expenses: 'edit', reports: 'view', owner: 'view', inventory: 'view' },
-      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.contacts bookings.value bookings.export invoices.send invoices.payments invoices.settings expenses.record expenses.viewAll reports.money reports.export owner.statements'))
+      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.contacts bookings.value bookings.export invoices.send invoices.payments invoices.settings expenses.record expenses.viewAll reports.money reports.export owner.statements inventory.money'))
   };
   D.rolePerms = D.rolePerms || JSON.parse(JSON.stringify(O.DEFAULT_ROLE_PERMS));
   function SM(id) { return (D.staffMeta || {})[id]; }
@@ -1311,7 +1357,7 @@
   ['invItems', 'checklists'].forEach(function (k) { S.records(k, 'config'); });
   ['lockLog', 'sentLog', 'auditLog', 'priceLog'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo', cap: 500 }; });
   ['priceOverrides', 'priceOverrideMeta', 'pricingRules', 'ownerPayouts', 'staffMeta'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo' }; });
-  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
+  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
 
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
   function capBlob(key, v) { var r = REG[key]; return r && r.cap && Array.isArray(v) && v.length > r.cap ? v.slice(0, r.cap) : v; }
@@ -1398,6 +1444,7 @@
       /* put the batch back so the next attempt sends it again */
       batch.rows.forEach(function (r) { var m = S.last.records[r.coll] = S.last.records[r.coll] || {}; if (r.deleted) m[r.id] = '__retry__'; else delete m[r.id]; });
       batch.blobs.forEach(function (b) { delete S.last.blobs[b.key]; });
+      if (e && e.code === 'quota' && !S._quotaWarned) { S._quotaWarned = true; U.toast('This browser has run out of space for saved changes (photos take the most room). Remove some photos, or use the online version of Orbique.', 'bad'); }
       setStatus('error', e && e.message); S._timer = setTimeout(S.flush, 8000);
     });
     return S._writing;
@@ -1525,21 +1572,24 @@
     speak: function (text, o) {
       o = o || {}; if (!O.voice.available()) { if (o.onend) o.onend(false); return false; }
       O.voice.stop();
-      var parts = String(text).match(/[^.!?]+[.!?]*/g) || [text], i = 0;
+      /* text: one string (split into sentences) or an array of sentences (kept as given, so "4.5" is not split) */
+      var parts = Array.isArray(text) ? text.filter(function (x) { return String(x).trim(); }) : (String(text).match(/(?:\d\.\d|[^.!?])+[.!?]*/g) || [text]), i = 0, started = false;
       O.voice._on = true;
       function next() {
         if (!O.voice._on || i >= parts.length) { O.voice._on = false; if (o.onend) o.onend(true); return; }
         var u = new SpeechSynthesisUtterance(parts[i].trim()), v = O.voice.pick();
         if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
         u.rate = o.rate || 1.02; u.pitch = o.pitch || 0.95;
-        var idx = i; u.onstart = function () { if (o.onpart) o.onpart(idx, parts.length); };
+        var idx = i; u.onstart = function () { if (!started) { started = true; if (o.onstart) o.onstart(); } if (o.onpart) o.onpart(idx, parts.length); };
         u.onend = function () { i++; next(); }; u.onerror = function () { i++; next(); };
         speechSynthesis.speak(u);
       }
       next(); return true;
     },
     stop: function () { O.voice._on = false; try { speechSynthesis.cancel(); } catch (e) {} },
-    speaking: function () { return !!O.voice._on; }
+    speaking: function () { return !!O.voice._on; },
+    /* true once the device has at least one voice (some phones load them a moment after the page) */
+    hasVoices: function () { try { return O.voice.available() && speechSynthesis.getVoices().length > 0; } catch (e) { return false; } }
   };
   if (O.voice.available()) { try { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = function () {}; } catch (e) {} }
 
@@ -1580,6 +1630,7 @@
     window.scrollTo(0, 0);
     closeSide(); paintTabs();
   };
+  var held = false, deferred = false;
   O.render = function (fresh) {
     if (!O._started) return;
     var id = current.id || O.state.page, def = O.pages[id];
@@ -1600,13 +1651,16 @@
       actionsEl: actions,
       on: function (evt, fn) { cleanup.push(O.on(evt, fn)); },
       onLeave: function (fn) { cleanup.push(fn); }, /* runs before the next render: stop timers, recorders, observers, speech */
-      rerender: function () { O.render(false); }
+      rerender: function () { O.render(false); },
+      /* hold(true): changes from elsewhere do not redraw this page until hold(false) (e.g. while reading aloud) */
+      hold: function (on) { held = !!on; if (!held && deferred) { deferred = false; O.render(false); } }
     };
+    held = false; deferred = false;
     try { def.render(root, ctx); }
     catch (e) { console.error(e); root.innerHTML = U.empty('Something went wrong showing this section: ' + e.message, '⚠'); }
   };
   ['theme', 'viewer', 'lang', 'workspace', 'data'].forEach(function (evt) {
-    O.on(evt, function () { if (!O._started) return; if (evt !== 'data') paintShell(); if (evt === 'data') { paintBadges(); paintTabs(); } var def = O.pages[O.state.page]; if (evt === 'data' && def && def.noDataRerender) return; O.render(false); });
+    O.on(evt, function () { if (!O._started) return; if (evt !== 'data') paintShell(); if (evt === 'data') { paintBadges(); paintTabs(); } var def = O.pages[O.state.page]; if (evt === 'data' && def && def.noDataRerender) return; if (held && (evt === 'data' || evt === 'lang' || evt === 'theme')) { deferred = true; return; } O.render(false); });
   });
   O.on('sync', paintSync);
 
@@ -1658,6 +1712,7 @@
   O.notifiers = O.notifiers || [];
   O.paintShell = function () { paintShell(); };
   function paintShell() {
+    var lb = O.$('#lock-btn'); if (lb) lb.hidden = !O.can('guestapp.doorCodes');
     var ws = O.ws(), v = O.viewer() || { name: 'Guest', roleLabel: 'Viewer', role: 'none' };
     O.$('#ws-logo').outerHTML = O.theme.logoHTML(ws, O.theme.get('--side-bg')).replace('class="ws-logo', 'id="ws-logo" class="ws-logo');
     O.$('#ws-name').textContent = ws.name;
@@ -1753,6 +1808,7 @@
         else { var sv = O.store.get('viewer', null); if (sv && D.staffById(sv)) O.state.viewer = sv; }
         if (!D.staffById(O.state.viewer) && D.staff[0]) O.state.viewer = D.staff[0].id;
         if (D.workspaceBrand && D.workspaceBrand.brand && D.workspaceBrand.brand.primary) { var w = O.ws(); w.brand = D.workspaceBrand.brand; if (D.workspaceBrand.logo) { w.logo = D.workspaceBrand.logo; w.logoName = D.workspaceBrand.logoName; } O.theme.apply(w.brand); }
+        if (D.workspaceBrand) ['name', 'legal', 'regNo', 'phone', 'email', 'domain', 'address'].forEach(function (k) { if (D.workspaceBrand[k]) O.ws()[k] = D.workspaceBrand[k]; });
         O.rollStatuses();
         O._started = true;
         O.automation.run('boot');
@@ -1783,7 +1839,9 @@
   /* brand colours + logo are saved for the whole workspace (D.workspaceBrand) and on this device */
   O.saveBrand = function (brand) {
     var w = O.ws(); w.brand = brand; O.store.set('brand:' + O.state.workspace, brand); O.theme.apply(brand);
-    D.workspaceBrand = { brand: brand, logo: w.logo && String(w.logo).length < 180000 ? w.logo : null, logoName: w.logoName || null };
+    /* keep the business details (name, legal name, registration, contact, address) that live in the same blob */
+    var wb = D.workspaceBrand && typeof D.workspaceBrand === 'object' && !Array.isArray(D.workspaceBrand) ? D.workspaceBrand : (D.workspaceBrand = {});
+    wb.brand = brand; wb.logo = w.logo && String(w.logo).length < 180000 ? w.logo : null; wb.logoName = w.logoName || null;
     O.emit('data');
   };
   /* test data: back to the demo, with "today" moved to the real today (local) — server mode is handled by auth.js */

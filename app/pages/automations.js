@@ -1,10 +1,13 @@
-/* Automations — the guest message journey (7 steps) and the rules that run by themselves.
-   New this round: invoice on confirmation, receipt on payment, same-day booking alert + urgent turnover,
-   house rules before the door code, damage report -> maintenance task with photos, expense claims -> owner approval. */
+/* Automations: the guest message journey (7 steps) and the rules that run by themselves
+   (invoice on confirmation, receipt on payment, same-day booking alert and urgent turnover, house rules before
+   the door code, damage report to maintenance task with photos, expense claims to owner approval...).
+   v4: permissions automations.toggle (switches) and automations.edit (edit steps and rules, new automations);
+   today is read at render time (no cached dates); D.automations is read fresh each time; new rules get O.uid ids;
+   the next owner-statement run is worked out from today; empty workspace handled. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
   var st = { sample: null, group: 'all' };
-  var FROM30 = d.add(D.TODAY, -29);
+  function from30() { return d.add(D.TODAY, -29); } /* read at render time: the clock moves */
 
   D.automations = D.automations || {
     journey: [
@@ -38,7 +41,8 @@
       { id: 'r-owner', group: 'money', on: true, icon: 'owner', when: 'It is the 1st of the month', then: 'Generate owner statements and send them for approval', detail: 'Payouts go out after an account owner approves each statement.', via: 'Email', notify: 's1' }
     ]
   };
-  var A = D.automations;
+  /* always the live object (the sync may load saved settings into it after this file runs) */
+  function AU() { var a = D.automations || (D.automations = {}); if (!Array.isArray(a.journey)) a.journey = []; if (!Array.isArray(a.rules)) a.rules = []; return a; }
   var GROUPS = [['guest', 'Guest experience'], ['money', 'Invoices, receipts and claims'], ['ops', 'Operations']];
   var TRIGGERS = ['A booking is confirmed', 'A booking is cancelled', 'Payment arrives for a booking', 'A guest checks in', 'A guest checks out', 'A guest sends a message', 'A review is posted', 'A task becomes overdue', 'An expense is recorded', 'Every day at 8:00 AM'];
   var ACTIONS = ['Send the guest a WhatsApp message', 'Send the guest an email', 'Create a task', 'Notify a team member', 'Send an invoice', 'Send a receipt', 'Change the door code', 'Add a note to the booking'];
@@ -84,6 +88,9 @@
 .pg-automations .sample{width:auto; min-width:220px; height:32px; padding-top:4px; padding-bottom:4px; font-size:12px;}
 .pg-automations .btn svg{width:14px; height:14px;}
 .pg-automations .switch[disabled]{opacity:0.5; cursor:not-allowed;}
+.pg-automations .au-start{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
+.pg-automations .au-start .grow{flex:1; min-width:220px;}
+.pg-automations .note svg{width:13px; height:13px; vertical-align:-2px;}
 .pg-automations .chain{list-style:none; margin:0; padding:0; display:flex; flex-direction:column;}
 .pg-automations .chain li{display:flex; gap:10px; align-items:flex-start; position:relative; padding-bottom:12px; font-size:12.5px;}
 .pg-automations .chain li:last-child{padding-bottom:0;}
@@ -94,6 +101,8 @@
 .pg-automations .chain .cs{font-size:11.5px; color:var(--muted); margin-top:1px;}
 .au-modal .vars{display:flex; gap:5px; flex-wrap:wrap;}
 .au-modal .vars button{font-size:11px; font-weight:700; border:1px solid var(--border); background:var(--surface-2); border-radius:6px; padding:3px 7px; color:var(--brand-text);}
+.au-modal .preview .v{background:var(--brand-soft); color:var(--brand-text); border-radius:4px; padding:0 3px; font-weight:700; font-size:11.5px;}
+.au-modal .preview .f{background:var(--accent-soft); color:var(--accent-text); border-radius:4px; padding:0 3px; font-weight:700;}
 .au-modal .preview{background:var(--surface-2); border:1px solid var(--border); border-radius:4px 12px 12px 12px; padding:9px 11px; font-size:12.5px; line-height:1.5;}
 .au-modal .chk{display:flex; gap:14px; flex-wrap:wrap; font-size:13px;}
 .au-modal .chk label{display:flex; gap:6px; align-items:center;}
@@ -106,8 +115,8 @@
 `);
 
   /* ---------- numbers from the shared data ---------- */
-  function live(b) { return b.status !== 'cancelled' && b.createdAt <= D.NOW; } /* data.js has two bookings stamped later today; ignore them until they happen */
-  function in30(iso) { return iso && iso.slice(0, 10) >= FROM30 && iso.slice(0, 10) <= D.TODAY; }
+  function live(b) { return b.status !== 'cancelled' && String(b.createdAt || '') <= D.NOW; } /* data.js has two bookings stamped later today; ignore them until they happen */
+  function in30(iso) { return !!iso && String(iso).slice(0, 10) >= from30() && String(iso).slice(0, 10) <= D.TODAY; }
   var created30 = function () { return D.bookings.filter(function (b) { return live(b) && in30(b.createdAt); }); };
   var arrivals30 = function () { return D.bookings.filter(function (b) { return live(b) && in30(b.checkIn); }); };
   var departures30 = function () { return D.bookings.filter(function (b) { return live(b) && in30(b.checkOut); }); };
@@ -127,7 +136,7 @@
   var PROBLEM = /\b(ac|aircon|air con|leak\w*|broken|no water|hot water|smell\w*|drain\w*|not working|stopped working)\b/i;
   function problemMessages30() {
     var out = [];
-    D.conversations.forEach(function (c) { var m = c.messages.filter(function (x) { return x.from === 'guest' && in30(x.time) && PROBLEM.test(x.text || ''); })[0]; if (m) out.push({ c: c, m: m }); });
+    D.conversations.forEach(function (c) { var m = (c.messages || []).filter(function (x) { return x.from === 'guest' && in30(x.time) && PROBLEM.test(x.text || ''); })[0]; if (m) out.push({ c: c, m: m }); });
     return out.sort(function (a, b) { return a.m.time < b.m.time ? 1 : -1; });
   }
   function receiptsQueued() { return D.bookings.filter(function (b) { return live(b) && b.paidAt === D.TODAY && !b.receiptSent; }); }
@@ -135,16 +144,16 @@
   var MONEY_KEY = { 'r-inv': 'autoInvoice', 'r-rcp': 'autoReceipt' };
   function syncMoney() {
     var S = D.invoiceSettings; if (!S) return;
-    A.rules.forEach(function (r) { var k = MONEY_KEY[r.id]; if (!k) return; r.on = S[k] !== 'off'; if (S[k] !== 'off') r.via = S[k] === 'auto' ? 'Auto' : S[k]; });
+    AU().rules.forEach(function (r) { var k = MONEY_KEY[r.id]; if (!k) return; r.on = S[k] !== 'off'; if (S[k] !== 'off') r.via = S[k] === 'auto' ? 'Auto' : S[k]; });
   }
   function pushMoney(r) { var S = D.invoiceSettings, k = MONEY_KEY[r.id]; if (!S || !k) return; S[k] = !r.on ? 'off' : r.via === 'Auto' || !r.via ? 'auto' : r.via; }
   function taskFor(b) { /* the prep task the same-day rule created or moved up for this arrival */
-    return D.tasks.filter(function (t) { return t.propertyId === b.propertyId && t.due.slice(0, 10) === b.checkIn && (t.type === 'Turnover' || t.type === 'Inspection'); })
+    return D.tasks.filter(function (t) { return t.propertyId === b.propertyId && String(t.due || '').slice(0, 10) === b.checkIn && (t.type === 'Turnover' || t.type === 'Inspection'); })
       .sort(function (a, c) { return (a.status === 'done') - (c.status === 'done') || (a.due < c.due ? -1 : 1); })[0] || null; }
   function ruleStats(r) {
     var b30, n, last = null;
     switch (r.id) {
-      case 'r-inv': b30 = D.bookings.filter(function (b) { return b.invoiceSent && in30(b.invoiceSent.at); }); n = b30.length; last = b30.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; })[0]; return { n: n, last: last ? 'Last: ' + last.invoiceNo + ' to ' + last.guest.name : null };
+      case 'r-inv': b30 = D.bookings.filter(function (b) { return b.invoiceSent && in30(b.invoiceSent.at); }); n = b30.length; last = b30.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; })[0]; return { n: n, last: last ? 'Last: ' + (last.invoiceNo || last.id) + ' to ' + last.guest.name : null };
       case 'r-rcp': b30 = D.bookings.filter(function (b) { return b.receiptSent && in30(b.receiptSent.at); }); var q = receiptsQueued(); return { n: b30.length, last: q.length ? fmt.plural(q.length, 'receipt') + ' going out at 6:00 PM today' : null };
       case 'r-claim': n = claims().filter(function (e) { return in30(e.date); }).length; return { n: n, last: pendingClaims().length ? pendingClaims().length + ' waiting for approval now' : 'No claims waiting', warn: pendingClaims().length > 0 };
       case 'r-same': b30 = D.bookings.filter(function (b) { return b.sameDay && in30(b.createdAt); }); var td = b30.filter(function (b) { return b.checkIn === D.TODAY; }); return { n: b30.length, last: td.length ? 'Today: ' + td.map(function (b) { return b.guest.name + ' ' + fmt.time(b.createdAt); }).join(', ') : null, warn: td.length > 0 };
@@ -155,20 +164,24 @@
       case 'r-review': n = D.reviews.filter(function (x) { return x.stars <= 3 && in30(x.date); }).length; return { n: n, last: null };
       case 'r-block': n = D.blocks.filter(function (x) { return in30(x.start) || x.start > D.TODAY; }).length; return { n: n, last: null };
       case 'r-stock': return { n: 0, last: null };
-      case 'r-owner': return { n: new Set(D.properties.map(function (p) { return p.owner; })).size, last: 'Next run 1 Nov', unit: 'statements' };
+      case 'r-owner': return { n: new Set(D.properties.map(function (p) { return p.owner; }).filter(Boolean)).size, last: 'Next run ' + d.fmt(d.addMonths(d.monthStart(D.TODAY), 1)), unit: 'statements' };
     }
     return { n: r.runs || 0, last: r.lastRun || null };
   }
-  function canEdit() { return O.can ? O.can('automations', 'edit') : O.isOwner() || (O.viewer() || {}).role === 'ops'; }
+  /* Staff access: automations.toggle turns steps and rules on or off; automations.edit edits them and adds new ones */
+  function canToggle() { return O.can('automations.toggle'); }
+  function canEdit() { return O.can('automations.edit'); }
+  var WHY_TOGGLE = 'Turning automations on or off needs the "Turn automations on or off" permission, which an account owner can give in Staff access.';
+  var WHY_EDIT = 'Editing automations needs the "Edit messages and rules" permission, which an account owner can give in Staff access.';
   function audit(text) { D.auditLog = D.auditLog || []; D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'automations', text: text }); }
 
   /* ---------- template preview ---------- */
   function samples() { return D.bookings.filter(function (b) { return live(b) && b.checkIn >= D.TODAY && b.checkIn <= d.add(D.TODAY, 7); }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : a.checkInTime < b.checkInTime ? -1 : 1; }).slice(0, 12); }
   function vars(b) {
-    var p = D.propById[b.propertyId];
+    var p = D.propById[b.propertyId] || {}, wifi = p.wifi || [];
     return {
       property: p.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
-      door_code: b.doorCode, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: p.wifi[0], wifi_password: p.wifi[1], parking: p.parking,
+      door_code: b.doorCode, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking,
       id_link: O.ws().domain + '/id/' + b.id.toLowerCase(), guest_app_link: O.ws().domain + '/stay/' + b.id.toLowerCase()
     };
   }
@@ -178,24 +191,25 @@
   }
 
   /* ---------- pieces ---------- */
-  function journeyHTML(edit) {
-    var sm = st.sample ? D.booking(st.sample) : null;
-    var opts = '<option value="">Show variables</option>' + samples().map(function (b) { return '<option value="' + b.id + '"' + (st.sample === b.id ? ' selected' : '') + '>Preview for ' + esc(b.guest.name) + ' · ' + esc(D.propById[b.propertyId].short) + ', ' + d.fmt(b.checkIn) + '</option>'; }).join('');
-    var on = A.journey.filter(function (s) { return s.on; }).length;
-    return '<div class="card"><div class="card-head"><div><h3>Guest message journey</h3><div class="sub">' + on + ' of 7 steps on · applies to all ' + D.properties.length + ' properties and every channel</div></div>' +
-      '<select class="select sample" data-sample aria-label="Preview messages with a booking">' + opts + '</select></div>' +
+  function shortOf(pid) { var p = D.propById[pid]; return p ? p.short || p.name : 'a unit'; }
+  function journeyHTML(tog, edit) {
+    var A = AU(), sm = st.sample ? D.booking(st.sample) : null;
+    var smp = samples();
+    var opts = '<option value="">Show variables</option>' + smp.map(function (b) { return '<option value="' + b.id + '"' + (st.sample === b.id ? ' selected' : '') + '>Preview for ' + esc(b.guest.name) + ' · ' + esc(shortOf(b.propertyId)) + ', ' + d.fmt(b.checkIn) + '</option>'; }).join('');
+    var on = A.journey.filter(function (s) { return s.on; }).length, np = D.properties.length;
+    return '<div class="card"><div class="card-head"><div><h3>Guest message journey</h3><div class="sub">' + on + ' of ' + A.journey.length + ' steps on · ' + (np ? 'applies to ' + (np === 1 ? 'your property' : 'all ' + np + ' properties') + ' and every channel' : 'applies to every property you add') + '</div></div>' +
+      (smp.length ? '<select class="select sample" data-sample aria-label="Preview messages with a booking">' + opts + '</select>' : '') + '</div>' +
       '<div class="jr">' + A.journey.map(function (s, i) {
         var n = journeyCount(s);
         return '<div class="js' + (s.on ? '' : ' off') + '"><span class="jn">' + (i + 1) + '</span><div style="min-width:0"><div class="jt"><b>' + esc(s.name) + '</b>' + s.channels.map(function (c) { return '<span class="ch">' + esc(c) + '</span>'; }).join('') + (s.on ? '' : U.pill('Paused', 'neutral')) + '</div>' +
           '<div class="jw">' + O.icon('clock') + esc(s.when) + '</div><div class="msg">' + fill(s.text, sm) + '</div></div>' +
-          '<div class="jr-side"><button type="button" class="switch' + (s.on ? ' on' : '') + '" role="switch" aria-checked="' + s.on + '" aria-label="' + esc(s.name) + ' on or off" data-jtog="' + s.id + '"' + (edit ? '' : ' disabled') + '></button><span class="n"><b>' + fmt.num(n) + '</b> sent, 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-jedit="' + s.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
+          '<div class="jr-side"><button type="button" class="switch' + (s.on ? ' on' : '') + '" role="switch" aria-checked="' + s.on + '" aria-label="' + esc(s.name) + ' on or off" data-jtog="' + s.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n"><b>' + fmt.num(n) + '</b> sent, 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-jedit="' + s.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
       }).join('') + '</div>' +
       '<div class="card-foot">Messages go out in the guest\'s language when we know it. Prototype: messages are not really sent.</div></div>';
   }
-  function ruleRow(r, edit) {
+  function ruleRow(r, tog, edit) {
     var s = ruleStats(r), who = r.notify ? D.staffById(r.notify) : null;
     var meta = [];
-    if (r.isNew) meta.push(U.pill('New', 'accent'));
     if (who) meta.push(U.pill('Notifies ' + who.name + (r.via ? ' on ' + r.via : ''), 'neutral'));
     if (r.scope && r.scope !== 'all') meta.push(U.pill(fmt.plural(r.scope.length, 'property', 'properties'), 'neutral'));
     if (MONEY_KEY[r.id]) meta.push(U.pill('Sends by ' + (!r.via || r.via === 'Auto' ? 'WhatsApp or email' : r.via), 'neutral'));
@@ -203,36 +217,38 @@
     if (s.last) meta.push(U.pill(s.last, s.warn ? 'warn' : 'info'));
     return '<div class="rl' + (r.on ? '' : ' off') + '"><span class="ri">' + O.icon(r.icon || 'automations') + '</span><div class="rw" style="min-width:0"><div class="w"><span class="k">When</span>' + esc(r.when) + '</div><div class="t"><span class="k">Then</span>' + esc(r.then) + '</div>' +
       '<div class="dt">' + esc(r.detail) + '</div>' + (meta.length ? '<div class="meta">' + meta.join('') + '</div>' : '') + '</div>' +
-      '<div class="jr-side"><button type="button" class="switch' + (r.on ? ' on' : '') + '" role="switch" aria-checked="' + r.on + '" aria-label="' + esc(r.then) + ' on or off" data-rtog="' + r.id + '"' + (edit ? '' : ' disabled') + '></button><span class="n"><b>' + fmt.num(s.n) + '</b> ' + (s.unit || 'runs') + ', 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-redit="' + r.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
+      '<div class="jr-side"><button type="button" class="switch' + (r.on ? ' on' : '') + '" role="switch" aria-checked="' + r.on + '" aria-label="' + esc(r.then) + ' on or off" data-rtog="' + r.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n"><b>' + fmt.num(s.n) + '</b> ' + (s.unit || 'runs') + ', 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-redit="' + r.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
   }
-  function rulesHTML(edit) {
-    return GROUPS.filter(function (g) { return st.group === 'all' || st.group === g[0] || (st.group === 'new' && A.rules.some(function (r) { return r.group === g[0] && r.isNew; })); }).map(function (g) {
-      var rs = A.rules.filter(function (r) { return r.group === g[0] && (st.group !== 'new' || r.isNew); });
+  function rulesHTML(tog, edit) {
+    var A = AU();
+    return GROUPS.filter(function (g) { return st.group === 'all' || st.group === g[0]; }).map(function (g) {
+      var rs = A.rules.filter(function (r) { return r.group === g[0]; });
       if (!rs.length) return '';
-      return '<div class="card"><div class="card-head"><div><h3>' + esc(g[1]) + '</h3><div class="sub">' + rs.filter(function (r) { return r.on; }).length + ' of ' + rs.length + ' on</div></div></div><div>' + rs.map(function (r) { return ruleRow(r, edit); }).join('') + '</div></div>';
+      return '<div class="card"><div class="card-head"><div><h3>' + esc(g[1]) + '</h3><div class="sub">' + rs.filter(function (r) { return r.on; }).length + ' of ' + rs.length + ' on</div></div></div><div>' + rs.map(function (r) { return ruleRow(r, tog, edit); }).join('') + '</div></div>';
     }).join('') + (A.rules.some(function (r) { return r.group === 'custom'; }) && (st.group === 'all' || st.group === 'custom') ?
-      '<div class="card"><div class="card-head"><div><h3>Your automations</h3><div class="sub">Rules you added</div></div></div><div>' + A.rules.filter(function (r) { return r.group === 'custom'; }).map(function (r) { return ruleRow(r, edit); }).join('') + '</div></div>' : '');
+      '<div class="card"><div class="card-head"><div><h3>Your automations</h3><div class="sub">Rules you added</div></div></div><div>' + A.rules.filter(function (r) { return r.group === 'custom'; }).map(function (r) { return ruleRow(r, tog, edit); }).join('') + '</div></div>' : '');
   }
   function feedHTML() {
-    var out = [], sameRule = A.rules.filter(function (r) { return r.id === 'r-same'; })[0], ops = sameRule && sameRule.notify ? D.staffById(sameRule.notify) : null;
+    var A = AU(), out = [], sameRule = A.rules.filter(function (r) { return r.id === 'r-same'; })[0], ops = sameRule && sameRule.notify ? D.staffById(sameRule.notify) : null;
     D.bookings.filter(function (b) { return live(b) && b.sameDay && b.checkIn === D.TODAY; }).forEach(function (b) {
-      var p = D.propById[b.propertyId], t = taskFor(b), who = t && t.assigneeId ? D.staffById(t.assigneeId) : null;
-      out.push({ at: b.createdAt, tone: 'var(--warn)', t: 'Same-day booking: ' + b.guest.name + ' at ' + p.short + ', arriving ' + fmt.time(b.checkInTime),
-        s: (ops ? 'Alerted ' + ops.name : 'Alert sent') + (t ? ' · ' + t.title.toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }) + ' ' + t.id + ' marked urgent for ' + (who ? who.name : 'nobody yet') + ', due ' + fmt.time(t.due) : ''), bk: b.id, task: t ? t.id : null });
+      var t = taskFor(b), who = t && t.assigneeId ? D.staffById(t.assigneeId) : null;
+      out.push({ at: b.createdAt, tone: 'var(--warn)', t: 'Same-day booking: ' + b.guest.name + ' at ' + shortOf(b.propertyId) + ', arriving ' + fmt.time(b.checkInTime),
+        s: (ops ? 'Alerted ' + ops.name : 'Alert sent') + (t ? ' · ' + t.title.toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }) + ' ' + t.id + ' marked urgent for ' + (who ? who.name : 'nobody yet') + (t.due ? ', due ' + fmt.time(t.due) : '') : ''), bk: b.id, task: t ? t.id : null });
     });
     D.bookings.filter(function (b) { return live(b) && b.invoiceSent && b.invoiceSent.at === D.TODAY; }).forEach(function (b) { out.push({ at: b.createdAt, tone: 'var(--ok)', t: 'Invoice ' + b.invoiceNo + ' sent to ' + b.guest.name, s: 'By ' + b.invoiceSent.via + ' · ' + fmt.money(b.total), bk: b.id }); });
-    D.bookings.filter(function (b) { return live(b) && b.createdAt.slice(0, 10) === D.TODAY && !b.invoiceSent; }).forEach(function (b) { out.push({ at: b.createdAt, tone: 'var(--bad)', t: 'Invoice ' + b.invoiceNo + ' for ' + b.guest.name + ' did not go out', s: 'Email to ' + b.guest.email + ' bounced · send it by WhatsApp from the booking', bk: b.id }); });
+    D.bookings.filter(function (b) { return live(b) && String(b.createdAt || '').slice(0, 10) === D.TODAY && !b.invoiceSent && b.invoiceNo; }).forEach(function (b) { out.push({ at: b.createdAt, tone: 'var(--bad)', t: 'Invoice ' + b.invoiceNo + ' for ' + b.guest.name + ' did not go out', s: 'Email to ' + b.guest.email + ' bounced · send it by WhatsApp from the booking', bk: b.id }); });
     var rq = receiptsQueued();
-    if (rq.length) out.push({ at: rq.map(function (b) { return b.createdAt.slice(0, 10) === D.TODAY ? b.createdAt : D.TODAY + 'T08:00'; }).sort().pop(), tone: 'var(--info)', t: fmt.plural(rq.length, 'receipt') + ' ready to go out at 6:00 PM', s: rq.map(function (b) { return b.guest.name; }).join(', ') + ' paid today', go: 'invoices' });
-    D.bookings.filter(function (b) { return live(b) && b.checkIn === D.TODAY && b.codeStatus === 'held'; }).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--warn)', t: 'Door code held for ' + b.guest.name, s: (b.idVerified ? 'House rules not accepted yet' : 'ID not verified and house rules not accepted') + ' · ' + D.propById[b.propertyId].short, bk: b.id }); });
-    D.bookings.filter(function (b) { return live(b) && b.checkIn === d.add(D.TODAY, 1) && b.codeStatus !== 'held'; }).slice(0, 2).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--ok)', t: 'Check-in day message scheduled for ' + b.guest.name, s: 'Goes out tomorrow at 9:00 AM · ' + D.propById[b.propertyId].short, bk: b.id }); });
-    pendingClaims().filter(function (e) { return d.diff(e.date, D.TODAY) <= 1; }).slice(0, 2).forEach(function (e) { var w = D.staffById(e.paidBy); out.push({ at: e.date + 'T' + (e.date === D.TODAY ? '08:30' : '18:00'), tone: 'var(--info)', t: 'Claim from ' + w.name + ': ' + fmt.money(e.amount) + ' ' + (e.type === 'Others' ? e.otherType || 'other' : e.type).toLowerCase(), s: 'Sent to ' + ((D.staffById('s1') || {}).name || 'the owner') + ' for approval', go: 'expenses' }); });
+    if (rq.length) out.push({ at: rq.map(function (b) { return String(b.createdAt || '').slice(0, 10) === D.TODAY ? b.createdAt : D.TODAY + 'T08:00'; }).sort().pop(), tone: 'var(--info)', t: fmt.plural(rq.length, 'receipt') + ' ready to go out at 6:00 PM', s: rq.map(function (b) { return b.guest.name; }).join(', ') + ' paid today', go: 'invoices' });
+    D.bookings.filter(function (b) { return live(b) && b.checkIn === D.TODAY && b.codeStatus === 'held'; }).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--warn)', t: 'Door code held for ' + b.guest.name, s: (b.idVerified ? 'House rules not accepted yet' : 'ID not verified and house rules not accepted') + ' · ' + shortOf(b.propertyId), bk: b.id }); });
+    D.bookings.filter(function (b) { return live(b) && b.checkIn === d.add(D.TODAY, 1) && b.codeStatus !== 'held'; }).slice(0, 2).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--ok)', t: 'Check-in day message scheduled for ' + b.guest.name, s: 'Goes out tomorrow at 9:00 AM · ' + shortOf(b.propertyId), bk: b.id }); });
+    pendingClaims().filter(function (e) { return d.diff(e.date, D.TODAY) <= 1; }).slice(0, 2).forEach(function (e) { var w = D.staffById(e.paidBy) || {}; out.push({ at: e.date + 'T' + (e.date === D.TODAY ? '08:30' : '18:00'), tone: 'var(--info)', t: 'Claim from ' + (w.name || 'a team member') + ': ' + fmt.money(e.amount) + ' ' + (e.type === 'Others' ? e.otherType || 'other' : e.type).toLowerCase(), s: 'Sent to ' + ((D.staffById('s1') || {}).name || 'the owner') + ' for approval', go: 'expenses' }); });
     D.bookings.filter(function (b) { return live(b) && b.checkOut === D.TODAY; }).forEach(function (b) {
-      var t = D.tasks.filter(function (x) { return x.type === 'Turnover' && x.propertyId === b.propertyId && x.due.slice(0, 10) === D.TODAY; })[0];
-      if (t) out.push({ at: D.TODAY + 'T07:30', tone: 'var(--ok)', t: 'Turnover created for ' + D.propById[t.propertyId].short + ' after ' + b.guest.name + ' checks out', s: 'Assigned to ' + (t.assigneeId ? D.staffById(t.assigneeId).name : 'nobody yet'), task: t.id });
+      var t = D.tasks.filter(function (x) { return x.type === 'Turnover' && x.propertyId === b.propertyId && String(x.due || '').slice(0, 10) === D.TODAY; })[0];
+      var as = t && t.assigneeId ? D.staffById(t.assigneeId) : null;
+      if (t) out.push({ at: D.TODAY + 'T07:30', tone: 'var(--ok)', t: 'Turnover created for ' + shortOf(t.propertyId) + ' after ' + b.guest.name + ' checks out', s: 'Assigned to ' + (as ? as.name : 'nobody yet'), task: t.id });
     });
-    damageReports30().filter(function (r) { return r.at.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (r) { out.push({ at: r.at, tone: 'var(--bad)', t: 'Damage reported' + (r.item ? ': ' + r.item : '') + (D.propById[r.propertyId] ? ' at ' + D.propById[r.propertyId].short : ''), s: (r.taskId ? 'Maintenance task ' + r.taskId + ' created with ' : 'Logged with ') + fmt.plural((r.photos || []).length || 1, 'photo'), task: r.taskId || null, go: r.taskId ? null : 'guestapp' }); });
-    out = out.filter(function (f) { return f.at.slice(0, 10) >= d.add(D.TODAY, -1); });
+    damageReports30().filter(function (r) { return String(r.at).slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (r) { out.push({ at: r.at, tone: 'var(--bad)', t: 'Damage reported' + (r.item ? ': ' + r.item : '') + (D.propById[r.propertyId] ? ' at ' + D.propById[r.propertyId].short : ''), s: (r.taskId ? 'Maintenance task ' + r.taskId + ' created with ' : 'Logged with ') + fmt.plural((r.photos || []).length || 1, 'photo'), task: r.taskId || null, go: r.taskId ? null : 'guestapp' }); });
+    out = out.filter(function (f) { return f.at && String(f.at).slice(0, 10) >= d.add(D.TODAY, -1); });
     out.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
     function when(at) { return at.slice(0, 10) === D.TODAY ? fmt.time(at) : 'Yesterday ' + fmt.time(at); }
     return '<div class="card feed"><div class="card-head"><div><h3>Ran today</h3><div class="sub">What the automations did since yesterday evening</div></div></div>' +
@@ -244,13 +260,15 @@
 
   /* ---------- modals ---------- */
   function editStep(id) {
-    var s = A.journey.filter(function (x) { return x.id === id; })[0], sm = (st.sample && D.booking(st.sample)) || samples()[0];
+    if (!canEdit()) { U.toast(WHY_EDIT, 'bad'); return; }
+    var s = AU().journey.filter(function (x) { return x.id === id; })[0], sm = (st.sample && D.booking(st.sample)) || samples()[0] || null;
+    if (!s) return;
     var VARS = ['guest_first', 'property', 'checkin_time', 'checkout_time', 'door_code', 'wifi_name', 'wifi_password', 'parking', 'id_link', 'guest_app_link'];
     var CH = ['WhatsApp', 'Email', 'SMS', 'Smart lock', 'Booking platform'];
     var body = '<div class="au-modal stack"><div class="field"><label for="au-when">When it goes out</label><input class="input" id="au-when" name="when" value="' + esc(s.when) + '"></div>' +
       '<div class="field"><span class="label">Send on</span><div class="chk">' + CH.map(function (c) { return '<label><input type="checkbox" name="ch" value="' + c + '"' + (s.channels.indexOf(c) >= 0 ? ' checked' : '') + '>' + c + '</label>'; }).join('') + '</div></div>' +
       '<div class="field"><label for="au-text">Message</label><textarea class="textarea" id="au-text" name="text" rows="4">' + esc(s.text) + '</textarea><div class="vars" aria-label="Insert a variable">' + VARS.map(function (v) { return '<button type="button" data-var="' + v + '">{' + v + '}</button>'; }).join('') + '</div></div>' +
-      '<div class="field"><span class="label">Preview for ' + esc(sm.guest.name) + ' at ' + esc(D.propById[sm.propertyId].short) + '</span><div class="preview" data-prev></div></div></div>';
+      '<div class="field"><span class="label">' + (sm ? 'Preview for ' + esc(sm.guest.name) + ' at ' + esc(shortOf(sm.propertyId)) : 'Preview (the highlighted words are filled in for each guest)') + '</span><div class="preview" data-prev></div></div></div>';
     U.modal({
       title: 'Edit step: ' + s.name, sub: 'Changes apply to messages not sent yet', body: body, size: 'wide',
       onOpen: function (el) {
@@ -270,11 +288,13 @@
     });
   }
   function scopeField(sc) {
-    var all = !sc || sc === 'all';
-    return '<div class="field full"><label for="au-scope">Properties</label><select class="select" id="au-scope" name="scope"><option value="all"' + (all ? ' selected' : '') + '>All ' + D.properties.length + ' properties</option>' + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (!all && sc.length === 1 && sc[0] === p.id ? ' selected' : '') + '>Only ' + esc(p.name) + '</option>'; }).join('') + '</select></div>';
+    var all = !sc || sc === 'all', np = D.properties.length;
+    return '<div class="field full"><label for="au-scope">Properties</label><select class="select" id="au-scope" name="scope"><option value="all"' + (all ? ' selected' : '') + '>' + (np > 1 ? 'All ' + np + ' properties' : 'Every property') + '</option>' + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (!all && sc.length === 1 && sc[0] === p.id ? ' selected' : '') + '>Only ' + esc(p.name) + '</option>'; }).join('') + '</select></div>';
   }
   function editRule(id) {
-    var r = A.rules.filter(function (x) { return x.id === id; })[0];
+    if (!canEdit()) { U.toast(WHY_EDIT, 'bad'); return; }
+    var A = AU(), r = A.rules.filter(function (x) { return x.id === id; })[0];
+    if (!r) return;
     var body = '<div class="au-modal stack"><div class="note brand"><b>When</b> ' + esc(r.when.toLowerCase()) + ' <b>then</b> ' + esc(r.then.toLowerCase()) + '.</div><div class="form-grid">' +
       (r.notify !== null || r.group === 'custom' ? '<div class="field"><label for="au-who">Who gets notified</label><select class="select" id="au-who" name="notify"' + (r.notifyLocked ? ' disabled' : '') + '>' + U.staffOptions(r.notify, { none: 'Nobody' }) + '</select>' + (r.notifyLocked ? '<span class="hint">Only account owners can approve claims.</span>' : '') + '</div>' : '') +
       (r.via ? '<div class="field"><label for="au-via">Send by</label><select class="select" id="au-via" name="via">' + (MONEY_KEY[r.id] ? ['Auto', 'WhatsApp', 'Email'] : ['WhatsApp', 'Email', 'App', 'SMS']).map(function (v) { return '<option value="' + v + '"' + (r.via === v ? ' selected' : '') + '>' + (v === 'Auto' ? 'WhatsApp for direct guests, email for platform guests' : v === 'App' ? 'In-app notification' : v) + '</option>'; }).join('') + '</select></div>' : '') +
@@ -294,7 +314,8 @@
     });
   }
   function newRule() {
-    var body = '<div class="au-modal stack"><div class="form-grid">' +
+    if (!canEdit()) { U.toast(WHY_EDIT, 'bad'); return; }
+    var A = AU(), body = '<div class="au-modal stack"><div class="form-grid">' +
       '<div class="field full"><label for="nr-when">When</label><select class="select" id="nr-when" name="when">' + TRIGGERS.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('') + '</select></div>' +
       '<div class="field full"><label for="nr-then">Then</label><select class="select" id="nr-then" name="then">' + ACTIONS.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('') + '</select></div>' +
       '<div class="field"><label for="nr-who">Who gets notified or assigned</label><select class="select" id="nr-who" name="notify">' + U.staffOptions('s2', { none: 'Nobody' }) + '</select></div>' +
@@ -305,7 +326,7 @@
       title: 'New automation', sub: 'Pick a trigger and what should happen', body: body, size: 'wide',
       actions: [{ label: 'Cancel', kind: 'ghost' }, { label: 'Create and turn on', kind: 'primary', onClick: function (close, el) {
         var g = function (n) { return O.$('[name=' + n + ']', el).value; };
-        var r = { id: 'r-c' + (A.rules.reduce(function (m, x) { var n = +String(x.id).replace(/\D/g, ''); return n > m ? n : m; }, 0) + 1), group: 'custom', on: true, icon: 'sparkle', when: g('when'), then: g('then'), detail: g('detail').trim() || 'Added by ' + O.viewer().name + ' on ' + d.fmtY(D.TODAY) + '.', via: g('via'), notify: g('notify') || null, scope: g('scope') === 'all' ? 'all' : [g('scope')], runs: 0, lastRun: 'Not run yet' };
+        var r = { id: O.uid('AR'), group: 'custom', on: true, icon: 'sparkle', when: g('when'), then: g('then'), detail: g('detail').trim() || 'Added by ' + ((O.viewer() || {}).name || 'the team') + ' on ' + d.fmtY(D.TODAY) + '.', via: g('via'), notify: g('notify') || null, scope: g('scope') === 'all' ? 'all' : [g('scope')], runs: 0, lastRun: 'Not run yet' };
         A.rules.push(r); st.group = 'all';
         audit('Created the automation "When ' + r.when.toLowerCase() + ', ' + r.then.toLowerCase() + '"');
         U.toast('Automation created and on'); O.emit('data', { type: 'automations' });
@@ -322,6 +343,8 @@
     'j4': 'Pause the door code step? Guests will not receive a door code automatically.'
   };
   function toggle(item, label, ctx) {
+    if (!item) return;
+    if (!canToggle()) { U.toast(WHY_TOGGLE, 'bad'); return; }
     function apply() { item.on = !item.on; pushMoney(item); audit((item.on ? 'Turned on ' : 'Turned off ') + '"' + label + '"'); U.toast(label + (item.on ? ' is on' : ' is paused'), item.on ? 'ok' : 'bad'); O.emit('data', { type: 'automations' }); }
     if (item.on && WARN_OFF[item.id]) U.confirm(WARN_OFF[item.id], 'Turn off', 'danger').then(function (ok) { if (ok) apply(); });
     else apply();
@@ -331,6 +354,7 @@
   O.page('automations', {
     desc: 'Messages, documents and tasks that run by themselves for every booking',
     render: function (root, ctx) {
+      var A = AU();
       syncMoney();
       if (O.can && !O.can('automations', 'view')) {
         ctx.setActions('');
@@ -342,7 +366,7 @@
           }).join('') + '</div></div>' : '') + '</div>';
         return;
       }
-      var edit = canEdit();
+      var edit = canEdit(), tog = canToggle();
       ctx.setActions(edit ? '<button type="button" class="btn btn-primary" data-act="new">' + O.icon('plus') + 'New automation</button>' : '');
       ctx.actionsEl.onclick = function (e) { if (e.target.closest('[data-act=new]')) newRule(); };
       var msgs = A.journey.filter(function (s) { return s.on; }).reduce(function (a, s) { return a + journeyCount(s); }, 0);
@@ -351,7 +375,6 @@
       var tasks = departures30().length + D.bookings.filter(function (b) { return live(b) && b.sameDay && in30(b.createdAt); }).length + damageReports30().length + problemMessages30().length;
       var onN = A.rules.filter(function (r) { return r.on; }).length + A.journey.filter(function (s) { return s.on; }).length, all = A.rules.length + A.journey.length;
       var hours = (msgs * 2 + (inv + rcp) * 4 + tasks * 3) / 60;
-      var newN = A.rules.filter(function (r) { return r.isNew; }).length;
       var held = D.bookings.filter(function (b) { return live(b) && b.checkIn >= D.TODAY && b.checkIn <= d.add(D.TODAY, 1) && b.codeStatus === 'held'; });
       var rulesOn = (A.rules.filter(function (r) { return r.id === 'r-rules'; })[0] || {}).on, codeOn = (A.journey.filter(function (x) { return x.id === 'j4'; })[0] || {}).on;
       var chain = [
@@ -361,18 +384,21 @@
         ['Code sent 24 hours before', codeOn ? 'By WhatsApp and set on the smart lock' : 'Paused: send codes by hand'],
         ['Code works from check-in time', 'Expires at check-out time']
       ];
-      root.innerHTML = '<div class="pg-automations stack">' +
+      if (st.group === 'new') st.group = 'all';
+      var canAdd = O.allowed('properties') && O.can('properties.create');
+      var startNote = !D.properties.length ? '<div class="card"><div class="card-body au-start"><div class="grow"><b>These automations start working once you add a property and take bookings.</b><div class="small muted" style="margin-top:2px">Check the messages below now so they are ready for your first guest.</div></div>' +
+        (canAdd ? '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add a property</button>' : '') + '</div></div>' : '';
+      var accessNote = tog && edit ? '' : '<div class="note">' + O.icon('lock') + ' ' + esc(!tog && !edit ? 'You can see the automations. An account owner can let you turn them on or off, or edit them, in Staff access.' : !tog ? 'You can edit messages and rules. ' + WHY_TOGGLE : 'You can turn automations on or off. ' + WHY_EDIT) + '</div>';
+      root.innerHTML = '<div class="pg-automations stack">' + startNote +
         U.kpis([
-          { label: 'Automations on', value: onN + ' / ' + all, sub: (all - onN) ? (all - onN) + ' paused' : 'Everything is running' },
-          { label: 'Guest messages, 30 days', value: fmt.num(msgs), sub: 'From the 7-step journey' },
-          { label: 'Invoices sent automatically', value: fmt.num(inv), sub: fmt.num(rcp) + ' receipts too, 30 days' },
-          { label: 'Tasks created, 30 days', value: fmt.num(tasks), sub: 'Turnovers, same-day, repairs' },
-          { label: 'Time saved, 30 days', value: '≈ ' + Math.round(hours) + ' h', sub: 'At 2–4 min per manual step' }
+          { label: 'Automations on', value: onN + ' of ' + all, sub: (all - onN) ? (all - onN) + ' paused' : 'Everything is running' },
+          { label: 'Sent for you, 30 days', value: fmt.num(msgs + inv + rcp), sub: fmt.plural(msgs, 'guest message') + ', ' + fmt.plural(inv + rcp, 'invoice or receipt', 'invoices and receipts') },
+          { label: 'Time saved, 30 days', value: '≈ ' + Math.round(hours) + ' h', sub: 'Including ' + fmt.plural(tasks, 'task') + ' created', title: 'At 2 to 4 minutes per step someone would otherwise do by hand' }
         ]) +
-        (!edit ? '<div class="note">You can see the automations. Changing them needs Edit access to Automations (Staff Access).</div>' : '') +
-        '<div class="grid g-2-1" style="align-items:start"><div class="stack">' + journeyHTML(edit) +
-        '<div class="row-flex wrap" style="justify-content:space-between"><div class="section-title" style="margin:6px 0 0">Rules</div>' + U.seg([['all', 'All rules'], ['new', 'New this round (' + newN + ')'], ['guest', 'Guests'], ['money', 'Money'], ['ops', 'Operations']], st.group, 'data-grp') + '</div>' +
-        rulesHTML(edit) + '</div>' +
+        accessNote +
+        '<div class="grid g-2-1" style="align-items:start"><div class="stack">' + journeyHTML(tog, edit) +
+        '<div class="row-flex wrap" style="justify-content:space-between"><div class="section-title" style="margin:6px 0 0">Rules</div>' + U.seg([['all', 'All rules'], ['guest', 'Guests'], ['money', 'Money'], ['ops', 'Operations']], st.group, 'data-grp') + '</div>' +
+        rulesHTML(tog, edit) + '</div>' +
         '<div class="stack">' + feedHTML() +
         '<div class="card"><div class="card-head"><div><h3>Door code safety chain</h3><div class="sub">What has to happen before a guest can open the door</div></div></div><div class="card-body stack">' +
         '<ol class="chain">' + chain.map(function (c, i) { return '<li><span class="cn">' + (i + 1) + '</span><div><b>' + esc(c[0]) + '</b><div class="cs">' + esc(c[1]) + '</div></div></li>'; }).join('') + '</ol>' +
@@ -384,8 +410,8 @@
       var pg = O.$('.pg-automations', root);
       pg.addEventListener('click', function (e) {
         var b;
-        if ((b = e.target.closest('[data-jtog]'))) { var s = A.journey.filter(function (x) { return x.id === b.dataset.jtog; })[0]; toggle(s, 'Journey step "' + s.name + '"', ctx); return; }
-        if ((b = e.target.closest('[data-rtog]'))) { var r = A.rules.filter(function (x) { return x.id === b.dataset.rtog; })[0]; toggle(r, r.then, ctx); return; }
+        if ((b = e.target.closest('[data-jtog]'))) { if (b.disabled) return; var s = A.journey.filter(function (x) { return x.id === b.dataset.jtog; })[0]; if (s) toggle(s, 'Journey step "' + s.name + '"', ctx); return; }
+        if ((b = e.target.closest('[data-rtog]'))) { if (b.disabled) return; var r = A.rules.filter(function (x) { return x.id === b.dataset.rtog; })[0]; if (r) toggle(r, r.then, ctx); return; }
         if ((b = e.target.closest('[data-jedit]'))) { editStep(b.dataset.jedit); return; }
         if ((b = e.target.closest('[data-redit]'))) { editRule(b.dataset.redit); return; }
         if ((b = e.target.closest('[data-grp]'))) { st.group = b.dataset.grp; ctx.rerender(); return; }

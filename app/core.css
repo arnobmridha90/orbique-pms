@@ -183,7 +183,7 @@ input,select,textarea{font-family:inherit; font-size:13px; color:var(--text);}
 .card-body.flush{padding:0;}
 .card-foot{padding:10px 16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted);}
 .grid{display:grid; gap:14px;}
-.g2{grid-template-columns:repeat(2,minmax(0,1fr));} .g3{grid-template-columns:repeat(3,minmax(0,1fr));} .g4{grid-template-columns:repeat(4,minmax(0,1fr));}
+.g1{grid-template-columns:minmax(0,1fr);} .g2{grid-template-columns:repeat(2,minmax(0,1fr));} .g3{grid-template-columns:repeat(3,minmax(0,1fr));} .g4{grid-template-columns:repeat(4,minmax(0,1fr));}
 .g-2-1{grid-template-columns:minmax(0,2fr) minmax(0,1fr);} .g-1-2{grid-template-columns:minmax(0,1fr) minmax(0,2fr);} .g-3-2{grid-template-columns:minmax(0,3fr) minmax(0,2fr);}
 .section-title{font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin:18px 0 8px;}
 
@@ -215,6 +215,7 @@ input,select,textarea{font-family:inherit; font-size:13px; color:var(--text);}
 .list-row .lr-sub{font-size:12px; color:var(--muted); margin-top:1px;}
 .empty{padding:28px 16px; text-align:center; color:var(--muted); font-size:13px;}
 .empty .e-icon{font-size:22px; margin-bottom:6px;}
+.empty .e-icon svg{width:26px; height:26px;} .empty .btn{margin-top:12px;}
 
 /* pills & badges */
 .pill{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px; white-space:nowrap; line-height:1.5;}
@@ -264,6 +265,11 @@ input,select,textarea{font-family:inherit; font-size:13px; color:var(--text);}
 .dr-btn:hover{border-color:var(--border-strong);}
 .dr-btn svg{width:15px; height:15px; color:var(--muted);}
 .dr-btn .dr-preset{font-weight:600; color:var(--muted);}
+.dr-btn .dr-preset:not(:empty)::after{content:' ·';}
+.dr-btn{max-width:100%;}
+.dr-btn .dr-lbl{overflow:hidden; text-overflow:ellipsis;}
+@media (max-width:760px){ .dr.has-preset .dr-lbl{display:none;} .dr.has-preset .dr-preset{color:inherit; font-weight:700;} .dr.has-preset .dr-preset::after{content:'';} }
+
 .dr-pop{display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:96; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); width:min(440px, calc(100vw - 32px)); overflow:hidden;}
 .dr.right .dr-pop{left:auto; right:0;}
 .dr-pop.open{display:grid; grid-template-columns:170px 1fr;}
@@ -383,6 +389,7 @@ input,select,textarea{font-family:inherit; font-size:13px; color:var(--text);}
   .dr-presets{border-right:none; border-bottom:1px solid var(--border); max-height:180px; display:grid; grid-template-columns:1fr 1fr;}
   .search{min-width:0; flex:1;}
   .tb-global .hide-sm{display:none;}
+  #lock-btn{display:none;}
 }
 
 /* ---------------- v4 shell: translucent scrollbars, sync pill, loader, phone tab bar, guest mode ---------------- */
@@ -400,9 +407,17 @@ input,select,textarea{font-family:inherit; font-size:13px; color:var(--text);}
 .spinner{width:34px; height:34px; border-radius:50%; border:3px solid var(--border); border-top-color:var(--brand-strong); animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .tabbar{display:none;}
+:root{--topbar-h:64px; --tabbar-h:0px;}
 .guest-root{min-height:100vh; background:var(--bg);}
 html.guest-mode body{background:var(--bg);}
+@media (max-width:960px){ :root{--topbar-h:56px;} }
 @media (max-width:760px){
+  :root{--tabbar-h:calc(61px + env(safe-area-inset-bottom));}
+  .topbar h1{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .btn, .input, .select{min-height:40px;}
+  .btn.btn-xs{min-height:32px;}
+  .topbar .sync-pill{font-size:0; padding:0; width:10px; height:10px; min-width:10px; border-radius:50%; flex:none; border:none; overflow:hidden;}
+  .topbar .sync-pill.s-local{background:var(--border-strong);}
   .tabbar{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); position:fixed; left:0; right:0; bottom:0; z-index:60; background:var(--surface); border-top:1px solid var(--border); padding:4px 4px calc(4px + env(safe-area-inset-bottom)); box-shadow:0 -4px 16px rgba(15,27,45,.06);}
   .tabbar .tab{position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:52px; border:none; background:none; color:var(--muted); font-family:inherit; font-size:10.5px; font-weight:600; line-height:1.2; padding:4px 2px; border-radius:10px; cursor:pointer;}
   .tabbar .tab svg{width:21px; height:21px;}

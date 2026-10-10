@@ -37,8 +37,10 @@ function page() {
     shell = shell.replace(/<script async src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/jspdf\/[^"]+"><\/script>/, '<script async src="/vendor/jspdf.umd.min.js"></script>');
   }
   shell = shell.replace('<!--SCRIPTS-->', () => scripts.join('\n') + '\n<script>O.boot();</script>');
-  if (head) shell = shell.replace('</title>', '</title>\n' + head);
-  return '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n</head>\n<body>\n' + shell + '\n</body>\n</html>\n';
+  /* the shell starts with <title>, <meta> and <link> tags: they belong in <head> (Chrome ignores a manifest link in <body>) */
+  const lead = shell.match(/^(?:\s*<(?:title>[^<]*<\/title|meta\b[^>]*|link\b[^>]*)>)*/)[0];
+  shell = shell.slice(lead.length);
+  return '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' + lead.trim() + (head ? '\n' + head : '') + '\n</head>\n<body>\n' + shell.replace(/^\s+/, '') + '\n</body>\n</html>\n';
 }
 
 function copy(from, to) { fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to); }

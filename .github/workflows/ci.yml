@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Syntax check (node --check)
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          tmp="$RUNNER_TEMP/syntax"; mkdir -p "$tmp"
+          # app/ files run in the browser as classic scripts; package.json says "type": "module", so check copies as .cjs
+          while IFS= read -r f; do
+            copy="$tmp/$(echo "$f" | tr '/' '_').cjs"
+            cp "$f" "$copy"
+            node --check "$copy" 2>"$tmp/err" || { echo "::error file=$f::$(grep -m1 -E 'Error' "$tmp/err")"; cat "$tmp/err"; fail=1; }
+          done < <(find app -type f -name '*.js' | sort)
+          # api/, scripts/ and the service worker
+          while IFS= read -r f; do
+            node --check "$f" 2>"$tmp/err" || { echo "::error file=$f::$(grep -m1 -E 'Error' "$tmp/err")"; cat "$tmp/err"; fail=1; }
+          done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' \) | sort; echo public/sw.js)
+          exit $fail
+
+      - name: Config files are valid JSON
+        run: |
+          node -e "for (const f of ['vercel.json', 'public/manifest.webmanifest', 'config/platform-owners.json', 'package.json']) JSON.parse(require('fs').readFileSync(f, 'utf8'))"
+
+      - name: API functions load
+        run: |
+          node --input-type=module -e "
+            for (const f of ['health', 'account']) {
+              const m = await import('./api/' + f + '.js');
+              if (typeof m.default !== 'function') throw new Error('api/' + f + '.js has no default export');
+            }
+            console.log('api functions load');"
+
+      - name: Local build (single file)
+        run: node scripts/build.mjs --local --out "$RUNNER_TEMP/orbique.html"
+
+      - name: Production build (no database configured)
+        run: env -u POSTGRES_URL_NON_POOLING -u POSTGRES_URL -u DATABASE_URL -u SUPABASE_URL -u NEXT_PUBLIC_SUPABASE_URL npm run build
+
+      - name: Check the production output
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in index.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png vendor/supabase.js vendor/jspdf.umd.min.js; do
+            test -s "dist/$f" || { echo "::error::dist/$f is missing"; exit 1; }
+          done
+          grep -q 'server/pwa.js' dist/index.html || { echo "::error::app/server/*.js missing from the production page"; exit 1; }
+
+      - name: No secret key in the build output
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path');
+            const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (e.name === 'vendor' ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]);
+            const bad = new Set();
+            for (const f of walk('dist')) {
+              if (!/[.](html|js|json|webmanifest)$/.test(f)) continue;
+              const s = fs.readFileSync(f, 'utf8');
+              if (/sb_secret_[A-Za-z0-9_-]{8,}/.test(s)) bad.add(f);
+              for (const m of s.matchAll(/eyJ[A-Za-z0-9_-]+[.](eyJ[A-Za-z0-9_-]+)[.][A-Za-z0-9_-]+/g)) {
+                try { if (JSON.parse(Buffer.from(m[1], 'base64url').toString()).role === 'service_role') bad.add(f); } catch (e) {}
+              }
+            }
+            if (bad.size) { console.error('::error::service-role key found in ' + [...bad].join(', ')); process.exit(1); }
+            console.log('no secret keys in dist/');"

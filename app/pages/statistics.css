@@ -1,0 +1,86 @@
+/* Statistics page (app/pages/statistics.js). Everything is scoped to .pg-statistics. */
+.pg-statistics{display:flex; flex-direction:column; gap:14px; min-width:0;}
+.pg-statistics .st-bar{display:flex; flex-wrap:wrap; align-items:center; gap:10px; min-width:0;}
+.pg-statistics .st-prop{width:auto; min-width:190px; max-width:280px; height:36px; font-weight:700;}
+.pg-statistics .st-cmp{flex:1 1 280px; min-width:0; font-size:12px; color:var(--muted); line-height:1.4;}
+.pg-statistics .st-rnote{color:var(--text-2);}
+
+/* tabs: underlined row on desktop, scrollable chips on phones */
+.pg-statistics .st-tabs{display:flex; gap:2px; border-bottom:1px solid var(--border); overflow-x:auto; scrollbar-width:none; min-width:0;}
+.pg-statistics .st-tabs::-webkit-scrollbar{display:none;}
+.pg-statistics .st-tabs button{background:none; border:none; padding:10px 14px; font-weight:700; font-size:13px; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; flex:0 0 auto; cursor:pointer;}
+.pg-statistics .st-tabs button:hover{color:var(--text);}
+.pg-statistics .st-tabs button.on{color:var(--brand-text); border-bottom-color:var(--brand-strong);}
+.pg-statistics .st-tabs button[disabled]{opacity:.5; cursor:not-allowed;}
+.pg-statistics .st-tabs button[disabled]:hover{color:var(--muted);}
+
+.pg-statistics .st-body{display:flex; flex-direction:column; gap:14px; min-width:0;}
+.pg-statistics .st-body > .kpis{margin-bottom:0;}
+.pg-statistics .kpi .k-val small{font-family:inherit; font-size:12px; font-weight:700; color:var(--muted);}
+.pg-statistics .g1{grid-template-columns:minmax(0,1fr);}
+.pg-statistics .card-head .hd{flex:1 1 220px; min-width:0;}
+.pg-statistics .card-head .legend{flex:0 1 auto;}
+.pg-statistics .st-chart{min-height:210px; min-width:0;}
+.pg-statistics .st-hb .hbar{grid-template-columns:minmax(90px,150px) minmax(40px,1fr) auto;}
+.pg-statistics .st-hb .hb-val .xs{font-weight:600;}
+.pg-statistics .st-sub-h{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:2px 0 4px;}
+.pg-statistics .st-sub-h ~ .st-sub-h{margin-top:14px;}
+.pg-statistics .st-list .list-row b{white-space:nowrap;}
+
+/* tables: numbers right-aligned, group rows, the first column stays put while the rest scrolls */
+.pg-statistics .st-table td.num{white-space:nowrap;}
+.pg-statistics .st-table td:first-child{white-space:nowrap;}
+.pg-statistics .st-table tr.grp td{background:var(--surface-2); color:var(--muted); font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:7px 12px;}
+.pg-statistics .st-table tbody tr:not(.grp):hover td{background:var(--surface-2);}
+.pg-statistics .st-table .delta{font-size:11.5px;}
+.pg-statistics .st-tcard .card-foot{line-height:1.45;}
+.pg-statistics .st-short{display:none;}
+
+/* empty states: one sentence and the main action */
+.pg-statistics .st-empty .empty{padding:34px 20px 10px; max-width:520px; margin:0 auto; line-height:1.5;}
+.pg-statistics .st-eic{width:26px; height:26px; color:var(--faint);}
+.pg-statistics .st-empty-act{display:flex; justify-content:center; padding:0 16px 30px;}
+
+@media (max-width:1279px){
+  .pg-statistics .st-body > .kpis{grid-auto-flow:row; grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+/* tablets and phones: tabs become chips (wrapping on tablets, one scrollable row on phones) */
+@media (max-width:1100px){
+  .pg-statistics .st-tabs{gap:6px; border-bottom:none; flex-wrap:wrap; overflow:visible;}
+  .pg-statistics .st-tabs button{display:inline-flex; align-items:center; min-height:40px; padding:0 14px; margin:0; border:1px solid var(--border); border-radius:20px; background:var(--surface); color:var(--text-2); font-size:13px;}
+  .pg-statistics .st-tabs button.on{background:var(--brand); color:var(--brand-ink); border-color:var(--brand);}
+  .pg-statistics .st-tabs button[disabled]:hover{color:var(--text-2);}
+}
+@media (max-width:760px){
+  .pg-statistics{gap:12px;}
+  .pg-statistics .st-bar{gap:8px;}
+  .pg-statistics .st-bar > .dr{flex:1 1 200px; min-width:0;}
+  .pg-statistics .st-bar .dr-btn{width:100%; height:40px; overflow:hidden;}
+  .pg-statistics .st-bar .dr-btn svg{flex-shrink:0;}
+  .pg-statistics .st-bar .dr-lbl{overflow:hidden; text-overflow:ellipsis; flex:1 1 auto; min-width:0; text-align:left;}
+  .pg-statistics .st-prop{flex:1 1 150px; min-width:0; max-width:none; height:40px;}
+  .pg-statistics .st-cmp{flex-basis:100%;}
+  .pg-statistics .st-tabs{flex-wrap:nowrap; overflow-x:auto; margin:0 -14px; padding:0 14px 2px; scroll-padding:0 14px;}
+  .pg-statistics .st-table td:first-child, .pg-statistics .st-table th:first-child{position:sticky; left:0; z-index:1; background:var(--surface); box-shadow:inset -1px 0 0 var(--border);}
+  .pg-statistics .st-table th:first-child{z-index:2; background:var(--surface-2);}
+  .pg-statistics .st-table tfoot td:first-child, .pg-statistics .st-table tr.grp td:first-child{background:var(--surface-2);}
+  .pg-statistics .st-table tr.grp td:first-child{box-shadow:none;}
+  .pg-statistics .st-table td:first-child{white-space:normal; min-width:116px; max-width:150px;}
+  .pg-statistics .st-long{display:none;}
+  .pg-statistics .st-short{display:inline;}
+  .pg-statistics .st-table td, .pg-statistics .st-table th{padding-left:10px; padding-right:10px;}
+}
+@media (max-width:560px){
+  .pg-statistics .st-body > .kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .pg-statistics .st-bar > .dr, .pg-statistics .st-prop{flex-basis:100%;}
+  .pg-statistics .st-hide-sm{display:none;}
+  .pg-statistics .st-hb .hbar{grid-template-columns:minmax(80px,110px) minmax(30px,1fr) auto; gap:8px;}
+  .pg-statistics .card-head .legend{gap:10px; font-size:11.5px;}
+}
+.pg-statistics .kpi .st-after{display:block; overflow:hidden; text-overflow:ellipsis; margin-top:1px;}
+.pg-statistics .st-stack{display:flex; gap:2px;}
+.pg-statistics .st-stack .hb-fill{border-radius:0; flex:0 0 auto;}
+.pg-statistics .st-stack .hb-fill:last-child{border-radius:0 3px 3px 0;}
+@media (max-width:760px){
+  .tb-actions [data-st-ex]{min-height:40px; padding:0 14px;}
+}

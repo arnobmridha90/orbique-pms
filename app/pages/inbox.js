@@ -1,4 +1,4 @@
-/* Orbique Command Center v3 — Guest inbox (WhatsApp-style)
+/* Orbique Command Center v4 — Guest inbox (WhatsApp-style)
    Arnob: "Better to have the guest names on the left side and messages on the right, just like WhatsApp.
    Need options of adding and editing quick replies. Need to be able to attach. Also should be able to record
    and send voice notes. I should also be able to tag certain quick texts to certain units."
@@ -9,7 +9,11 @@
      voice notes recorded with getUserMedia + MediaRecorder (live timer and level meter; falls back to an
      audio file when the microphone is unavailable), quick replies bar + "/" shortcut.
    - Quick replies manager: add, edit, delete, tag to units or all units, variables filled from the booking.
-   Phone: chat list first, tap opens the chat with a back button. Honours ctx.params.bookingId. */
+   Phone: chat list first, tap opens the chat with a back button. Honours ctx.params.bookingId.
+   v4: property filter (All properties or one) on the chat list, remembered on this device (O.store 'inbox:prop'); it combines
+   with the chips and the search. Permissions: inbox.send (reply to guests, new chats), inbox.notes (internal notes),
+   inbox.quickReplies (manage quick replies), inbox edit level (assign, pin, mark unread), bookings.contacts (guest phone,
+   masked otherwise), guestapp.doorCodes (door codes in quick replies and the lock button), invoices.send. Times use D.NOW. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
@@ -35,8 +39,7 @@
     if (!c.assigneeId) { var sm = c.messages.filter(function (m) { return m.from === 'staff' && m.staffId; }).pop(); c.assigneeId = sm ? sm.staffId : 's4'; }
   });
 
-  var LOAD = Date.now();
-  var st = { sel: null, view: 'list', filter: 'all', q: '', mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
+  var st = { sel: null, view: 'list', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
   var player = { key: null, audio: null, raf: 0, t0: 0, dur: 0 };
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var VARS = [['guest_first', 'Guest first name'], ['property', 'Property'], ['wifi_name', 'Wi-Fi name'], ['wifi_password', 'Wi-Fi password'], ['parking', 'Parking'], ['checkin_time', 'Check-in time'], ['checkout_time', 'Check-out time'], ['door_code', 'Door code']];
@@ -58,6 +61,16 @@
 .pg-inbox .ib-ic{width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:none;background:none;color:var(--text-2);text-decoration:none;flex-shrink:0;}
 .pg-inbox .ib-ic:hover{background:var(--surface-2);}
 .pg-inbox .ib-ic svg{width:19px;height:19px;}
+.pg-inbox .ib-tools{display:flex;gap:8px;margin:0 12px 8px;align-items:center;}
+.pg-inbox .ib-tools .ib-search{margin:0;flex:1;min-width:0;}
+.pg-inbox .ib-propsel{width:auto;max-width:46%;height:36px;padding-top:0;padding-bottom:0;font-size:12.5px;font-weight:700;}
+.pg-inbox .ib-propsel.on{border-color:var(--brand-strong);background-color:var(--brand-soft-2);color:var(--brand-text);}
+.pg-inbox .ib-empty{text-align:center;padding:0 16px 20px;}
+.pg-inbox .ib-ro{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:12px;padding:10px 12px;}
+.pg-inbox .ib-ro svg{width:15px;height:15px;}
+.pg-inbox .ib-stay .asg .who-plain{font-weight:700;color:var(--text-2);white-space:nowrap;}
+.pg-inbox .ib-who.static{cursor:default;} .pg-inbox .ib-who.static:hover{background:none;}
+.pg-inbox .ib-ic[disabled]{opacity:0.4;cursor:not-allowed;}
 .pg-inbox .ib-search{margin:0 12px 8px;display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:0 10px;height:36px;}
 .pg-inbox .ib-search svg{width:15px;height:15px;color:var(--faint);}
 .pg-inbox .ib-search input{border:none;background:none;outline:none;width:100%;font-size:13px;}
@@ -284,8 +297,18 @@
   .pg-inbox .ib-stay{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;} .pg-inbox .ib-stay .when{white-space:nowrap;} .pg-inbox .ib-stay .ready{flex-wrap:nowrap;} .pg-inbox .ib-stay .asg span{display:none;} .pg-inbox .qr-bar .lbl{display:none;} }
 @media (max-width:960px){ .pg-inbox{margin-bottom:-42px;} .pg-inbox .ib{height:calc(100vh - 84px);height:calc(100dvh - 84px);} }
 @media (max-width:760px){
-  .pg-inbox{margin:-14px -14px -56px;}
-  .pg-inbox .ib{display:block;height:calc(100vh - 57px);height:calc(100dvh - 57px);min-height:0;border:none;border-radius:0;box-shadow:none;}
+  /* fill the space between the top bar and the tab bar, so the composer is never behind the tab bar (JS refines the height) */
+  .pg-inbox{margin:-14px -14px calc(-84px - env(safe-area-inset-bottom));}
+  .pg-inbox .ib{display:block;height:calc(100vh - 59px - 61px);height:calc(100dvh - 59px - 61px - env(safe-area-inset-bottom));min-height:0;border:none;border-radius:0;box-shadow:none;}
+  .pg-inbox .ib-tools{flex-wrap:wrap;}
+  .pg-inbox .ib-tools .ib-search{flex:1 1 100%;height:40px;}
+  .pg-inbox .ib-propsel{flex:1 1 100%;max-width:none;height:40px;}
+  .pg-inbox .ib-filters .chip{min-height:40px;padding:6px 11px;}
+  .pg-inbox .ib-ic{width:40px;height:40px;}
+  .pg-inbox .qr{min-height:40px;}
+  .pg-inbox .cmp-top .seg button{min-height:40px;}
+  .pg-inbox .ib-stay .asg .select{height:40px;}
+  .pg-inbox .trans-t{min-height:40px;}
   .pg-inbox .ib-list, .pg-inbox .ib-chat{height:100%;}
   .pg-inbox .ib.show-chat .ib-list{display:none;}
   .pg-inbox .ib:not(.show-chat) .ib-chat{display:none;}
@@ -309,6 +332,7 @@
   .pg-inbox .img-btn, .pg-inbox .img-btn img{max-width:230px;}
   .pg-inbox .ib-compose{padding:6px 6px 8px;}
   .pg-inbox .cmp-hint{display:none;}
+  .pg-inbox .cmp-hint.only{display:flex;font-size:12px;}
   .pg-inbox .round{width:40px;height:40px;}
   .ib-qrm .units{grid-template-columns:repeat(2,minmax(0,1fr));}
   .ib-qrm .qrm-row{flex-direction:column;}
@@ -316,8 +340,30 @@
 `);
 
   /* ------------------------------------------------------------------ helpers */
-  function prop(id) { return D.propById[id]; }
+  function prop(id) { return D.propById[id] || { id: id, name: 'Removed property', short: 'Removed property', wifi: ['', ''], parking: '' }; }
   function bk(c) { return D.booking(c.bookingId); }
+  /* Staff Access */
+  function canSend() { return O.can('inbox.send'); }
+  function canNote() { return O.can('inbox.notes'); }
+  function canQR() { return O.can('inbox.quickReplies'); }
+  function canEdit() { return O.can('inbox', 'edit'); }
+  function canContacts() { return O.can('bookings.contacts'); }
+  function canCodes() { return O.can('guestapp.doorCodes'); }
+  var NO_SEND = 'Messaging guests is not part of your access';
+  /* +60 12-345 6789 -> +60 ••-••• ••89 (core has no masking helper yet, see docs/notes/v4-finance.md) */
+  function maskPhone(ph) {
+    ph = String(ph || ''); var n = ph.replace(/\D/g, '').length, seen = 0;
+    return ph.replace(/\d/g, function (ch) { seen++; return seen <= 2 || seen > n - 2 ? ch : '•'; });
+  }
+  /* door codes already sent in a chat stay hidden from people without door-code access */
+  function codeSafe(c, text) {
+    var raw = String(text || ''), b = bk(c);
+    if (!canCodes() && b && b.doorCode && String(b.doorCode).length >= 3) raw = raw.split(String(b.doorCode)).join('••••');
+    return raw;
+  }
+  function phoneOf(b) { return b && b.guest ? (canContacts() ? b.guest.phone || '' : maskPhone(b.guest.phone)) : ''; }
+  /* chats whose booking still exists (a deleted booking takes its chat out of the list instead of breaking it) */
+  function convs() { return D.conversations.filter(function (c) { var b = bk(c); return !!(b && b.guest); }); }
   function staff(id) { return D.staffById(id); }
   function firstName(n) { var p = String(n).split(' '); return p.length > 2 ? p.slice(0, 2).join(' ') : p[0]; }
   var SURNAME_FIRST = ['Tan', 'Lim', 'Zhang', 'Chen', 'Wang', 'Kim', 'Nguyen', 'Wong', 'Goh', 'Khoo', 'Koh', 'Ong', 'Lee'];
@@ -326,20 +372,16 @@
     var parts = name.split(' ');
     return SURNAME_FIRST.indexOf(parts[0]) >= 0 ? name : parts[0];
   }
-  function nowISO() {
-    var mins = 10 * 60 + 15 + Math.floor((Date.now() - LOAD) / 60000);
-    mins = Math.min(mins, 23 * 60 + 59);
-    return D.TODAY + 'T' + ('0' + Math.floor(mins / 60)).slice(-2) + ':' + ('0' + (mins % 60)).slice(-2);
-  }
+  function nowISO() { return D.NOW || (D.TODAY + 'T' + (D.NOW_TIME || '12:00')); } /* kept current by O.clock */
   function lastMsg(c) { return c.messages[c.messages.length - 1] || null; }
   function lastTime(c) { var m = lastMsg(c); return m ? m.time : (c.createdAt || D.NOW); }
   function sorted() {
-    return D.conversations.slice().sort(function (a, b) {
+    return convs().sort(function (a, b) {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       return lastTime(a) < lastTime(b) ? 1 : lastTime(a) > lastTime(b) ? -1 : 0;
     });
   }
-  function conv(id) { return D.conversations.filter(function (c) { return c.id === id; })[0] || null; }
+  function conv(id) { return convs().filter(function (c) { return c.id === id; })[0] || null; }
   function listTime(iso) {
     var day = iso.slice(0, 10), n = d.diff(day, D.TODAY);
     if (n === 0) return fmt.time(iso);
@@ -407,7 +449,8 @@
   function fill(text, b) {
     if (!b) return text;
     var p = prop(b.propertyId), held = !b.idVerified || b.codeStatus === 'held';
-    var map = { guest_first: guestFirst(b.guest.name), property: p.name, wifi_name: p.wifi[0], wifi_password: p.wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: held ? '[sent after the ID check]' : b.doorCode };
+    var wifi = p.wifi || ['', ''];
+    var map = { guest_first: guestFirst(b.guest.name), property: p.name, wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: !canCodes() ? '[door code left out]' : held ? '[sent after the ID check]' : b.doorCode };
     return text.replace(/\{([a-z_]+)\}/g, function (m0, k) { return map[k] != null ? map[k] : m0; });
   }
 
@@ -428,8 +471,9 @@
   }
 
   /* ------------------------------------------------------------------ list */
+  function inProp(c) { var b = bk(c); return !st.prop || (b && b.propertyId === st.prop); }
   function filterCounts() {
-    var all = D.conversations;
+    var all = convs().filter(inProp);
     return {
       all: all.length,
       unread: all.filter(function (c) { return c.unread > 0; }).length,
@@ -441,6 +485,7 @@
     var q = st.q.toLowerCase();
     return sorted().filter(function (c) {
       var b = bk(c);
+      if (!inProp(c)) return false;
       if (st.filter === 'unread' && !(c.unread > 0) && c.id !== st.sel) return false;
       if (st.filter === 'today' && !arrivingToday(b)) return false;
       if (st.filter === 'inhouse' && !inHouse(b)) return false;
@@ -463,7 +508,7 @@
     if (m.type === 'voice') body = O.icon('mic') + 'Voice message (' + durText(m.duration) + ')';
     else if (m.type === 'image') body = O.icon('image') + esc(m.caption || 'Photo');
     else if (m.type === 'file') body = O.icon('file') + esc(m.name || m.text);
-    else body = esc(m.text);
+    else body = esc(codeSafe(c, m.text));
     return ticks + (who ? '<span class="who">' + esc(who) + '</span>' : '') + body;
   }
   function rowHTML(c) {
@@ -481,38 +526,63 @@
       return '<button type="button" class="chip' + (st.filter === f[0] ? ' on' : '') + '" data-filter="' + f[0] + '" aria-pressed="' + (st.filter === f[0]) + '">' + f[1] + (f[2] != null ? ' <span class="n">' + f[2] + '</span>' : '') + '</button>';
     }).join('');
     return '<div class="ib-lhead"><h2>Chats</h2>' +
-      '<button type="button" class="ib-ic" data-act="newchat" title="New conversation" aria-label="New conversation">' + O.icon('plus') + '</button>' +
-      '<button type="button" class="ib-ic" data-act="manage" title="Quick replies" aria-label="Manage quick replies">' + O.icon('sparkle') + '</button></div>' +
-      '<label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search guests, units or messages" aria-label="Search conversations" value="' + esc(st.q) + '"></label>' +
+      (canSend() ? '<button type="button" class="ib-ic" data-act="newchat" title="New conversation" aria-label="New conversation">' + O.icon('plus') + '</button>' : '') +
+      (canQR() ? '<button type="button" class="ib-ic" data-act="manage" title="Quick replies" aria-label="Manage quick replies">' + O.icon('sparkle') + '</button>' : '') + '</div>' +
+      '<div class="ib-tools"><label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search chats" aria-label="Search guests, units or messages" value="' + esc(st.q) + '"></label>' +
+      propSelectHTML() + '</div>' +
       '<div class="ib-filters" role="group" aria-label="Filter chats">' + filters + '</div>' +
       '<div class="ib-rows">' + rowsHTML() + '</div>' +
-      '<div class="ib-lfoot">' + O.icon('whatsapp') + 'Replies reach guests on WhatsApp. Prototype: nothing is really sent.</div>';
+      '<div class="ib-lfoot">' + O.icon('whatsapp') + 'Replies reach guests on WhatsApp. Sending is not connected in this version.</div>';
+  }
+  /* All properties or one; units without chats are listed too, archived ones only when they still have chats */
+  function propSelectHTML() {
+    var n = {}; convs().forEach(function (c) { var b = bk(c); n[b.propertyId] = (n[b.propertyId] || 0) + 1; });
+    var opts = D.properties.filter(function (p) { return !p.archived || n[p.id] || p.id === st.prop; });
+    return '<label class="sr-only" for="ib-prop">Property</label><select id="ib-prop" class="select ib-propsel' + (st.prop ? ' on' : '') + '" data-f="prop" title="Show chats for one property">' +
+      '<option value="">All properties</option>' + opts.map(function (p) { return '<option value="' + p.id + '"' + (p.id === st.prop ? ' selected' : '') + '>' + esc(p.short) + (n[p.id] ? ' (' + n[p.id] + ')' : '') + '</option>'; }).join('') + '</select>';
   }
   function rowsHTML() {
     var list = visibleConvs();
-    if (!list.length) return U.empty(st.q ? 'No chats match "' + st.q + '"' : st.filter === 'unread' ? 'No unread chats. You are all caught up.' : st.filter === 'today' ? 'No chats with guests arriving today' : 'No chats with in-house guests', st.filter === 'unread' ? '✓' : '∅');
-    return list.map(rowHTML).join('');
+    if (list.length) return list.map(rowHTML).join('');
+    /* one sentence plus the main action */
+    var ps = st.prop ? prop(st.prop).short : '', any = convs().length > 0, here = convs().filter(inProp).length > 0, msg, btn = '';
+    if (!any) {
+      msg = 'No guest chats yet.';
+      if (!D.properties.length) { if (O.can('properties.create')) btn = '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add your first property</button>'; }
+      else if (!D.bookings.some(function (x) { return x.status !== 'cancelled' && x.checkOut >= D.TODAY; })) { if (O.can('bookings.create')) btn = '<button type="button" class="btn btn-primary" data-go="bookings">' + O.icon('plus') + 'Add a booking</button>'; }
+      else if (canSend()) btn = '<button type="button" class="btn btn-primary" data-act="newchat">' + O.icon('plus') + 'Start a chat</button>';
+    }
+    else if (st.prop && !here) { msg = 'No chats with guests at ' + ps + ' yet.'; btn = '<button type="button" class="btn btn-ghost" data-act="allprops">Show all properties</button>'; }
+    else {
+      msg = st.q ? 'No chats match "' + st.q + '"' : st.filter === 'unread' ? 'No unread chats' : st.filter === 'today' ? 'No chats with guests arriving today' : st.filter === 'inhouse' ? 'No chats with in-house guests' : 'No chats';
+      msg += (st.prop ? ' at ' + ps : '') + (st.filter === 'unread' && !st.q ? '. You are all caught up.' : '.');
+      btn = st.prop ? '<button type="button" class="btn btn-ghost" data-act="allprops">Show all properties</button>' : st.q ? '<button type="button" class="btn btn-ghost" data-act="clearq">Clear the search</button>' : st.filter !== 'all' ? '<button type="button" class="btn btn-ghost" data-filter="all">Show all chats</button>' : '';
+    }
+    return '<div class="ib-empty">' + U.empty(msg, st.filter === 'unread' && !st.q ? '✓' : '∅') + btn + '</div>';
   }
 
   /* ------------------------------------------------------------------ chat */
   function headHTML(c) {
-    var b = bk(c), p = prop(b.propertyId);
+    var b = bk(c), p = prop(b.propertyId), canBk = O.allowed('bookings');
+    var who = U.avatar(b.guest.name, 'lg') +
+      '<span class="ib-who-t"><span class="ib-who-n"><span class="ib-nm">' + esc(b.guest.name) + '</span>' + U.status(b.status) + '</span>' +
+      '<span class="ib-who-s">' + U.platIcon(b.channel) + '<span>' + esc(p.name) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest') + '</span></span></span>';
+    var tel = (b.guest.phone || '').replace(/[^+\d]/g, '');
+    var menu = (canBk ? '<button type="button" data-act="booking" class="sm-only">' + O.icon('bookings') + 'Open booking ' + esc(b.id) + '</button>' : '') +
+      (canEdit() ? '<button type="button" data-act="unread">' + O.icon('chat') + 'Mark as unread</button>' +
+        '<button type="button" data-act="pin">' + PIN_SVG + (c.pinned ? 'Unpin chat' : 'Pin chat to top') + '</button>' : '') +
+      (O.can('invoices.send') && b.invoiceNo ? '<button type="button" data-act="invoice">' + O.icon('invoices') + 'Send invoice ' + esc(b.invoiceNo) + '</button>' : '') +
+      (canQR() ? '<button type="button" data-act="manage">' + O.icon('sparkle') + 'Manage quick replies</button>' : '');
     return '<header class="ib-head">' +
       '<button type="button" class="ib-ic ib-back" data-act="back" aria-label="Back to chats">' + O.icon('left') + '</button>' +
-      '<button type="button" class="ib-who" data-act="booking" title="Open booking ' + esc(b.id) + '">' + U.avatar(b.guest.name, 'lg') +
-      '<span class="ib-who-t"><span class="ib-who-n"><span class="ib-nm">' + esc(b.guest.name) + '</span>' + U.status(b.status) + '</span>' +
-      '<span class="ib-who-s">' + U.platIcon(b.channel) + '<span>' + esc(p.name) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest') + '</span></span></span></button>' +
+      (canBk ? '<button type="button" class="ib-who" data-act="booking" title="Open booking ' + esc(b.id) + '">' + who + '</button>' : '<div class="ib-who static">' + who + '</div>') +
       '<div class="ib-hacts">' +
-      '<button type="button" class="ib-ic hide-sm" data-act="booking" title="Open booking" aria-label="Open booking">' + O.icon('bookings') + '</button>' +
-      '<button type="button" class="ib-ic" data-act="lock" title="Change door code" aria-label="Change door code">' + O.icon('key') + '</button>' +
-      '<a class="ib-ic" href="tel:' + esc(b.guest.phone.replace(/[^+\d]/g, '')) + '" title="Call ' + esc(b.guest.phone) + '" aria-label="Call ' + esc(b.guest.name) + '">' + O.icon('whatsapp') + '</a>' +
-      '<div class="ib-more"><button type="button" class="ib-ic" data-act="more" aria-haspopup="true" aria-label="More options">' + O.icon('more') + '</button><div class="ib-menu" role="menu">' +
-      '<button type="button" data-act="booking" class="sm-only">' + O.icon('bookings') + 'Open booking ' + esc(b.id) + '</button>' +
-      '<button type="button" data-act="unread">' + O.icon('chat') + 'Mark as unread</button>' +
-      '<button type="button" data-act="pin">' + PIN_SVG + (c.pinned ? 'Unpin chat' : 'Pin chat to top') + '</button>' +
-      '<button type="button" data-act="invoice">' + O.icon('invoices') + 'Send invoice ' + esc(b.invoiceNo || '') + '</button>' +
-      '<button type="button" data-act="manage">' + O.icon('sparkle') + 'Manage quick replies</button>' +
-      '</div></div></div></header>';
+      (canBk ? '<button type="button" class="ib-ic hide-sm" data-act="booking" title="Open booking" aria-label="Open booking">' + O.icon('bookings') + '</button>' : '') +
+      (canCodes() ? '<button type="button" class="ib-ic" data-act="lock" title="Change door code" aria-label="Change door code">' + O.icon('key') + '</button>' : '') +
+      (canContacts() && tel ? '<a class="ib-ic" href="tel:' + esc(tel) + '" title="Call ' + esc(b.guest.phone) + '" aria-label="Call ' + esc(b.guest.name) + '">' + O.icon('whatsapp') + '</a>'
+        : '<button type="button" class="ib-ic" disabled title="Your access does not include guest phone numbers" aria-label="Call ' + esc(b.guest.name) + ' (not available)">' + O.icon('whatsapp') + '</button>') +
+      (menu ? '<div class="ib-more"><button type="button" class="ib-ic" data-act="more" aria-haspopup="true" aria-label="More options">' + O.icon('more') + '</button><div class="ib-menu" role="menu">' + menu + '</div></div>' : '') +
+      '</div></header>';
   }
   /* arrival readiness chips; once the guest is in-house the turnover chip no longer applies */
   function readyHTML(b) {
@@ -523,7 +593,8 @@
     var b = bk(c), live = b.status !== 'cancelled' && b.checkOut > D.TODAY;
     return '<div class="ib-stay"><span class="when">' + O.icon('clock') + esc(stayPhrase(b)) + '</span>' +
       (live ? readyHTML(b) : '<span class="muted">' + esc(b.id) + ' · ' + esc(U.platName(b.channel)) + '</span>') +
-      '<label class="asg"><span>Handled by</span><select class="select" data-f="assign" aria-label="Assign conversation">' + D.staff.map(function (s) { return '<option value="' + s.id + '"' + (s.id === c.assigneeId ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></label></div>';
+      (canEdit() ? '<label class="asg"><span>Handled by</span><select class="select" data-f="assign" aria-label="Assign conversation">' + D.staff.map(function (s) { return '<option value="' + s.id + '"' + (s.id === c.assigneeId ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></label>'
+        : '<span class="asg"><span>Handled by</span><span class="who-plain">' + esc((staff(c.assigneeId) || { name: 'Nobody yet' }).name) + '</span></span>') + '</div>';
   }
   function bubbleInner(c, m, i) {
     var key = c.id + ':' + i;
@@ -546,14 +617,14 @@
         (m.from !== 'guest' ? '<span class="vav">' + U.avatar(who) + O.icon('mic') + '</span>' : '') + '</div>' +
         (m.transcript ? '<button type="button" class="trans-t" data-trans="' + key + '">' + (st['tr' + key] ? 'Hide transcript' : 'Show transcript') + '</button>' + (st['tr' + key] ? '<div class="trans">' + esc(m.transcript) + '</div>' : '') : '') };
     }
-    var txt = esc(m.text);
+    var txt = esc(codeSafe(c, m.text));
     if (m.from === 'note') txt = txt.replace(mentionRe(), '<b class="mention">@$1</b>');
     return { html: '<span class="txt">' + txt + '</span>' };
   }
   function threadHTML(c) {
     if (!c.messages.length) {
       var b0 = bk(c);
-      return '<div class="ib-hello"><b>Start the conversation with ' + esc(b0.guest.name) + '</b><br>Your first message goes to ' + esc(b0.guest.phone) + ' on WhatsApp. Use a quick reply below or type a message.</div>';
+      return '<div class="ib-hello"><b>Start the conversation with ' + esc(b0.guest.name) + '</b><br>' + (canSend() ? 'Your first message goes to ' + esc(phoneOf(b0)) + ' on WhatsApp. Use a quick reply below or type a message.' : 'No messages yet.') + '</div>';
     }
     var out = [], prevDay = null, prevKey = null, prevTime = null, b = bk(c), mark = st.unreadMark[c.id];
     var firstUnread = mark ? mark.i : -1;
@@ -575,7 +646,7 @@
       var meta = '<span class="meta">' + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
       var cls = 'bub' + (inner.media ? ' media' + (inner.cap ? ' hascap' : '') + (m.type === 'file' ? ' isfile' : '') : '') + (inner.voice ? ' vbub' : '');
       out.push('<div class="msg ' + side + (first ? ' first' : '') + '" data-i="' + i + '"><div class="' + cls + '">' + who + inner.html + (inner.voice ? meta.replace('class="meta"', 'class="meta"') : meta) + '</div>' +
-        (side === 'out' && i === c.messages.length - 1 ? '<div class="via">' + (status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent') + ' · WhatsApp to ' + esc(b.guest.phone) + '</div>' : '') + '</div>');
+        (side === 'out' && i === c.messages.length - 1 ? '<div class="via">' + (status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent') + ' · WhatsApp to ' + esc(phoneOf(b)) + '</div>' : '') + '</div>');
     });
     return out.join('');
   }
@@ -586,7 +657,7 @@
         var unit = q.propertyIds.length ? '<span class="unit" title="Tagged to ' + esc(q.propertyIds.map(function (x) { return prop(x).short; }).join(', ')) + '">' + O.icon('home') + esc(prop(b.propertyId).short) + (q.propertyIds.length > 1 ? ' +' + (q.propertyIds.length - 1) : '') + '</span>' : '';
         return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '">' + esc(q.title) + unit + '</button>';
       }).join('') +
-      '<button type="button" class="qr manage" data-act="manage">' + O.icon('edit') + 'Manage</button></div>';
+      (canQR() ? '<button type="button" class="qr manage" data-act="manage">' + O.icon('edit') + 'Manage</button>' : '') + '</div>';
   }
   function trayHTML(c) {
     var list = st.pending[c.id] || [];
@@ -596,7 +667,11 @@
         '<div class="tn" title="' + esc(a.name) + '">' + esc(a.name) + '</div><button type="button" class="rm" data-rm="' + i + '" aria-label="Remove ' + esc(a.name) + '">' + O.icon('x') + '</button></div>';
     }).join('') + '</div>';
   }
+  function modes() { var m = []; if (canSend()) m.push(['reply', 'Reply to guest']); if (canNote()) m.push(['note', 'Internal note']); return m; }
   function composerHTML(c) {
+    var ms = modes();
+    if (!ms.length) return '<div class="ib-compose"><div class="ib-ro">' + O.icon('lock') + '<span>You can read this chat. Replying to guests and writing notes are not part of your access.</span></div></div>';
+    if (!ms.some(function (x) { return x[0] === st.mode; })) st.mode = ms[0][0];
     var b = bk(c), note = st.mode === 'note', rec = st.rec && st.rec.convId === c.id;
     var draft = st.drafts[c.id] || '', hasStuff = draft.trim() || (st.pending[c.id] || []).length;
     return '<div class="ib-compose' + (note ? ' is-note' : '') + '">' +
@@ -605,10 +680,10 @@
       '<button type="button" data-pick="camera"><span class="ai">' + O.icon('camera') + '</span><span>Camera<small>Take a photo on a phone or tablet</small></span></button>' +
       '<button type="button" data-pick="doc"><span class="ai">' + O.icon('file') + '</span><span>Document<small>PDF, Word, Excel or any file</small></span></button>' +
       '<button type="button" data-pick="audio"><span class="ai">' + O.icon('mic') + '</span><span>Audio file<small>Send a recording as a voice note</small></span></button></div>' +
-      '<div class="qr-wrap">' + qrBarHTML(c) + '</div>' +
+      (canSend() ? '<div class="qr-wrap">' + qrBarHTML(c) + '</div>' : '') +
       '<div class="tray-wrap">' + trayHTML(c) + '</div>' +
-      '<div class="cmp-top">' + U.seg([['reply', 'Reply to guest'], ['note', 'Internal note']], st.mode, 'data-mode') +
-      '<span class="cmp-hint">' + (note ? O.icon('lock') + '<span>Only your team sees notes. Type @ and a name to mention someone.</span>' : O.icon('whatsapp') + '<span class="ellipsis">To ' + esc(b.guest.phone) + ' on WhatsApp</span>') + '<span class="k">Type / for quick replies</span></span></div>' +
+      '<div class="cmp-top">' + (ms.length > 1 ? U.seg(ms, st.mode, 'data-mode') : '') +
+      '<span class="cmp-hint' + (ms.length > 1 ? '' : ' only') + '">' + (note ? O.icon('lock') + '<span>' + (ms.length > 1 ? 'Only your team sees notes. Type @ and a name to mention someone.' : 'Your access allows internal notes only. The guest does not see them.') + '</span>' : O.icon('whatsapp') + '<span class="ellipsis">To ' + esc(phoneOf(b)) + ' on WhatsApp</span>') + (canSend() ? '<span class="k">Type / for quick replies</span>' : '') + '</span></div>' +
       '<div class="cmp-bar">' + (rec ? recHTML() :
         '<button type="button" class="round plain" data-act="attach" aria-label="Attach a photo, file or audio" aria-haspopup="true" title="Attach">' + O.icon('clip') + '</button>' +
         '<div class="cmp-box"><label class="sr-only" for="ib-input">' + (note ? 'Internal note' : 'Message') + '</label><textarea id="ib-input" rows="1" data-f="msg" title="Enter sends, Shift + Enter adds a new line" placeholder="' + (note ? 'Write an internal note' : 'Message ' + esc(guestFirst(b.guest.name))) + '">' + esc(draft) + '</textarea></div>' +
@@ -672,6 +747,7 @@
 
   /* ------------------------------------------------------------------ quick replies manager */
   function manageQuickReplies(currentPid, onChange) {
+    if (!canQR()) { U.toast('Editing quick replies is not part of your access', 'bad'); return; }
     var ui = { unit: '', editing: null, confirm: null, err: '' };
     var sample = (st.sel && conv(st.sel) && bk(conv(st.sel))) || D.bookings.filter(function (x) { return x.checkIn === D.TODAY; })[0];
     var body = O.html('<div class="ib-qrm"></div>');
@@ -734,7 +810,7 @@
         if (some && !ed.propertyIds.length) { ui.err = 'Choose at least one unit, or pick "All units".'; paint(); return; }
         var pids = some ? ed.propertyIds.slice() : [];
         if (ed.id) { var orig = D.quickReplies.filter(function (k) { return k.id === ed.id; })[0]; orig.title = ed.title.trim(); orig.text = ed.text.trim(); orig.propertyIds = pids; }
-        else { var max = D.quickReplies.reduce(function (m, k) { var n = +String(k.id).replace(/\D/g, ''); return n > m ? n : m; }, 0); D.quickReplies.push({ id: 'Q-' + (max + 1), title: ed.title.trim(), text: ed.text.trim(), propertyIds: pids }); }
+        else D.quickReplies.push({ id: O.uid('Q'), title: ed.title.trim(), text: ed.text.trim(), propertyIds: pids });
         U.toast('Quick reply "' + ed.title.trim() + '" saved for ' + (pids.length ? pids.map(function (p) { return prop(p).short; }).join(', ') : 'all units'));
         ui.editing = null; ui.err = ''; paint(); onChange();
       }
@@ -767,24 +843,37 @@
       if (st.rec) cancelRecording(true);
       stopPlayer();
       var pr = ctx.params || {};
+      if (st.prop === null) st.prop = O.store.get('inbox:prop', '') || '';
+      if (st.prop && !D.propById[st.prop]) { st.prop = ''; O.store.set('inbox:prop', ''); }
       if (ctx.fresh && pr.bookingId) {
-        var c0 = D.conversations.filter(function (c) { return c.bookingId === pr.bookingId; })[0];
-        if (!c0 && D.booking(pr.bookingId)) { c0 = { id: 'C-' + (D.conversations.reduce(function (m, c) { var n = +String(c.id).replace(/\D/g, ''); return n > m ? n : m; }, 0) + 1), bookingId: pr.bookingId, unread: 0, messages: [], createdAt: nowISO(), assigneeId: O.state.viewer }; D.conversations.push(c0); }
-        if (c0) { st.sel = c0.id; st.view = 'chat'; st.filter = 'all'; st.q = ''; }
+        var c0 = D.conversations.filter(function (c) { return c.bookingId === pr.bookingId; })[0], b0 = D.booking(pr.bookingId);
+        if (!c0 && b0 && canSend()) { c0 = { id: O.uid('C'), bookingId: pr.bookingId, unread: 0, messages: [], createdAt: nowISO(), assigneeId: O.state.viewer }; D.conversations.push(c0); }
+        if (c0 && conv(c0.id)) {
+          st.sel = c0.id; st.view = 'chat'; st.filter = 'all'; st.q = '';
+          if (st.prop && b0 && b0.propertyId !== st.prop) { st.prop = ''; O.store.set('inbox:prop', ''); } /* the chat asked for must be in the list */
+        } else if (b0 && !canSend()) U.toast('There is no chat with ' + b0.guest.name + ' yet, and messaging guests is not part of your access', 'bad');
         ctx.params = {};
       } else if (ctx.fresh) { st.view = 'list'; }
       pruneEmpty(st.sel);
-      if (!st.sel || !conv(st.sel)) { st.sel = isPhone() ? null : (sorted()[0] || {}).id || null; }
+      if (!st.sel || !conv(st.sel)) { st.sel = isPhone() ? null : (visibleConvs()[0] || {}).id || null; }
 
       root.innerHTML = '<div class="pg-inbox"><div class="ib' + (st.view === 'chat' && st.sel ? ' show-chat' : '') + '"><section class="ib-list" aria-label="Chats">' + listHTML() + '</section><section class="ib-chat" aria-label="Conversation"></section></div></div>';
       var page = O.$('.pg-inbox', root), ib = O.$('.ib', page), chat = O.$('.ib-chat', page), listEl = O.$('.ib-list', page);
+      /* phone: exactly the space between the top bar and the tab bar */
+      function fit() {
+        if (!document.body.contains(ib)) return;
+        if (!isPhone()) { ib.style.height = ''; return; }
+        var tb = O.$('.tabbar'), tbh = tb && getComputedStyle(tb).display !== 'none' ? tb.getBoundingClientRect().height : 0;
+        ib.style.height = Math.max(320, Math.round(window.innerHeight - (ib.getBoundingClientRect().top + window.scrollY) - tbh)) + 'px';
+      }
+      fit(); window.addEventListener('resize', fit); ctx.onLeave(function () { window.removeEventListener('resize', fit); });
 
       /* ---------- painting ---------- */
       function paintRows() { O.$('.ib-rows', listEl).innerHTML = rowsHTML(); }
       function paintFilters() { var fc = filterCounts(); O.$$('[data-filter]', listEl).forEach(function (b) { b.classList.toggle('on', b.dataset.filter === st.filter); b.setAttribute('aria-pressed', b.dataset.filter === st.filter); var n = O.$('.n', b); if (n) n.textContent = fc[b.dataset.filter]; }); }
       function paintChat(full) {
         var c = conv(st.sel);
-        if (!c) { chat.innerHTML = '<div class="ib-none"><span class="art">' + O.icon('chat') + '</span><h3>Choose a chat</h3><div>Pick a guest on the left to read and reply. Messages, photos, files and voice notes all live in one thread per stay.</div></div>'; return; }
+        if (!c) { chat.innerHTML = '<div class="ib-none"><span class="art">' + O.icon('chat') + '</span>' + (convs().length ? '<h3>Choose a chat</h3><div>Pick a guest on the left to read and reply. Messages, photos, files and voice notes all live in one thread per stay.</div>' : '<h3>Guest chats show up here</h3><div>When a guest books or messages you, their chat opens here with the stay details next to it.</div>') + '</div>'; return; }
         if (full || !O.$('.ib-thread', chat)) {
           chat.innerHTML = headHTML(c) + stayHTML(c) + '<div class="ib-thread" role="log" aria-live="polite" aria-label="Messages"></div>' + composerHTML(c);
           wireComposer();
@@ -853,6 +942,7 @@
       }
       function send() {
         var c = conv(st.sel); if (!c) return;
+        if (st.mode === 'note' ? !canNote() : !canSend()) { U.toast(st.mode === 'note' ? 'Writing internal notes is not part of your access' : NO_SEND, 'bad'); return; }
         var ta = O.$('#ib-input', chat), text = ta ? ta.value.trim() : '', files = st.pending[c.id] || [];
         if (!text && !files.length) return;
         var from = st.mode === 'note' ? 'note' : 'staff', base = { from: from, staffId: O.state.viewer };
@@ -867,7 +957,7 @@
         if (ta) { ta.value = ''; ta.placeholder = st.mode === 'note' ? 'Write an internal note' : 'Message ' + guestFirst(bk(c).guest.name); autosize(ta); }
         delete st.unreadMark[c.id];
         paintTray(); paintThread(true); paintRows();
-        if (from === 'staff' && !st.told) { st.told = true; U.toast('Sent to ' + bk(c).guest.name + ' on WhatsApp. Prototype: messages are not really delivered.'); }
+        if (from === 'staff' && !st.told) { st.told = true; U.toast('Sent to ' + bk(c).guest.name + ' on WhatsApp. Sending is not connected in this version.'); }
         if (from === 'note') U.toast('Internal note added. The guest cannot see it.');
         O.emit('data', { type: 'message', id: c.id });
       }
@@ -901,6 +991,7 @@
       }
       function startRecording() {
         var c = conv(st.sel); if (!c) return;
+        if (st.mode === 'note' ? !canNote() : !canSend()) { U.toast(NO_SEND, 'bad'); return; }
         var md = navigator.mediaDevices;
         if (!md || !md.getUserMedia || !window.MediaRecorder) { micProblem('This browser cannot record audio on this page' + (window.isSecureContext === false ? ' because the page is not served securely (https)' : '') + '.'); return; }
         var btn = O.$('[data-act=record]', chat); if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
@@ -992,7 +1083,7 @@
       function paintSlash() {
         var c = conv(st.sel), ta = O.$('#ib-input', chat), comp = O.$('.ib-compose', chat); if (!c || !ta || !comp) return;
         var old = O.$('.slash', comp); if (old) old.remove();
-        var m = /^\/(\S*)$/.exec(ta.value);
+        var m = canSend() ? /^\/(\S*)$/.exec(ta.value) : null; /* quick replies are guest messages */
         if (!m) { st.slash = null; return; }
         var list = slashMatches(c, m[1]); st.slash = list;
         if (st.qrSel >= list.length) st.qrSel = 0;
@@ -1007,20 +1098,27 @@
         ta.value = cur.trim() ? cur.replace(/\s*$/, '') + '\n' + text : text;
         st.drafts[c.id] = ta.value; st.slash = null; var sl = O.$('.slash', chat); if (sl) sl.remove();
         autosize(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); paintSendBtn();
-        if (/\{door_code\}/.test(q.text) && (!b.idVerified || b.codeStatus === 'held')) U.toast(b.guest.name + ' has not verified their ID yet, so the door code was left out', 'bad');
+        if (/\{door_code\}/.test(q.text) && !canCodes()) U.toast('Door codes are not part of your access, so the code was left out', 'bad');
+        else if (/\{door_code\}/.test(q.text) && (!b.idVerified || b.codeStatus === 'held')) U.toast(b.guest.name + ' has not verified their ID yet, so the door code was left out', 'bad');
       }
 
       /* ---------- new conversation ---------- */
       function newChat() {
+        if (!canSend()) { U.toast(NO_SEND, 'bad'); return; }
         var have = {}; D.conversations.forEach(function (c) { have[c.bookingId] = 1; });
-        var opts = D.bookings.filter(function (b) { return !have[b.id] && b.status !== 'cancelled' && b.status !== 'checked_out' && b.checkOut >= D.TODAY && b.checkIn <= d.add(D.TODAY, 21); }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : 0; });
-        if (!opts.length) { U.toast('Every current and upcoming guest already has a chat'); return; }
+        var opts = D.bookings.filter(function (b) { return !have[b.id] && b.guest && (!st.prop || b.propertyId === st.prop) && b.status !== 'cancelled' && b.status !== 'checked_out' && b.checkOut >= D.TODAY && b.checkIn <= d.add(D.TODAY, 21); }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : 0; });
+        if (!opts.length) {
+          var at = st.prop ? ' at ' + prop(st.prop).short : '';
+          var any = D.bookings.some(function (b) { return b.guest && (!st.prop || b.propertyId === st.prop) && b.status !== 'cancelled' && b.status !== 'checked_out' && b.checkOut >= D.TODAY && b.checkIn <= d.add(D.TODAY, 21); });
+          U.toast(any ? 'Every current and upcoming guest' + at + ' already has a chat' : 'No current or upcoming bookings' + at + ' to start a chat for');
+          return;
+        }
         U.modal({
           title: 'New conversation', sub: 'Message a guest who is staying now or arriving in the next three weeks',
           body: '<div class="stack"><div class="field"><label for="ib-nb">Guest and stay</label><select id="ib-nb" class="select">' + opts.map(function (b) { return '<option value="' + b.id + '">' + esc(b.guest.name) + ' · ' + esc(prop(b.propertyId).short) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + esc(stayPhrase(b)) + '</option>'; }).join('') + '</select></div><div class="note">The chat opens on WhatsApp with the guest\'s number from the booking.</div></div>',
           actions: [{ label: 'Cancel' }, { label: 'Start chat', kind: 'primary', onClick: function (close, el) {
-            var id = O.$('#ib-nb', el).value, max = D.conversations.reduce(function (m, c) { var n = +String(c.id).replace(/\D/g, ''); return n > m ? n : m; }, 0);
-            var c = { id: 'C-' + (max + 1), bookingId: id, unread: 0, messages: [], createdAt: nowISO(), assigneeId: O.state.viewer };
+            var id = O.$('#ib-nb', el).value;
+            var c = { id: O.uid('C'), bookingId: id, unread: 0, messages: [], createdAt: nowISO(), assigneeId: O.state.viewer };
             D.conversations.push(c); st.filter = 'all'; st.q = ''; var qi = O.$('[data-f=q]', listEl); if (qi) qi.value = '';
             select(c.id);
           } }]
@@ -1032,6 +1130,7 @@
         var x, c = conv(st.sel);
         var menu = O.$('.ib-menu.open', page); if (menu && !e.target.closest('.ib-more')) menu.classList.remove('open');
         var am = O.$('.att-menu.open', page); if (am && !e.target.closest('.att-menu') && !e.target.closest('[data-act=attach]')) am.classList.remove('open');
+        if ((x = e.target.closest('[data-go]'))) { O.go(x.dataset.go); return; }
         if ((x = e.target.closest('[data-conv]'))) { select(x.dataset.conv); return; }
         if ((x = e.target.closest('[data-filter]'))) { st.filter = x.dataset.filter; paintFilters(); paintRows(); return; }
         if ((x = e.target.closest('[data-qr]'))) { useQuickReply(x.dataset.qr); return; }
@@ -1051,16 +1150,19 @@
         if (!(x = e.target.closest('[data-act]'))) return;
         var act = x.dataset.act;
         if (act === 'newchat') newChat();
+        if (act === 'allprops') { setProp(''); return; }
+        if (act === 'clearq') { st.q = ''; var qx = O.$('[data-f=q]', listEl); if (qx) qx.value = ''; paintRows(); return; }
         if (act === 'manage') { var mm = O.$('.ib-menu.open', page); if (mm) mm.classList.remove('open'); manageQuickReplies(c ? bk(c).propertyId : null, function () { O.emit('data', { type: 'quickreplies' }); }); }
         if (!c) return;
         var b = bk(c);
         if (act === 'back') { st.view = 'list'; ib.classList.remove('show-chat'); delete st.unreadMark[c.id]; if (st.rec) cancelRecording(false, 'Recording discarded'); return; }
-        if (act === 'booking') { O.booking.open(b.id); return; }
-        if (act === 'lock') { O.lock.change({ bookingId: b.id, propertyId: b.propertyId }); return; }
+        if (act === 'booking') { if (O.allowed('bookings')) O.booking.open(b.id); return; }
+        if (act === 'lock') { if (canCodes()) O.lock.change({ bookingId: b.id, propertyId: b.propertyId }); return; }
         if (act === 'more') { O.$('.ib-menu', chat).classList.toggle('open'); return; }
+        if ((act === 'unread' || act === 'pin') && !canEdit()) { U.toast('Your access to the inbox is read only', 'bad'); return; }
         if (act === 'unread') { c.unread = Math.max(1, c.unread || 0); delete st.unreadMark[c.id]; if (st.rec) cancelRecording(true); st.sel = null; st.view = 'list'; ib.classList.remove('show-chat'); paintRows(); paintFilters(); paintChat(true); U.toast('Chat with ' + b.guest.name + ' marked as unread'); O.emit('data', { type: 'inbox-unread' }); return; }
         if (act === 'pin') { c.pinned = !c.pinned; paintRows(); paintChat(false); U.toast(c.pinned ? 'Chat pinned to the top' : 'Chat unpinned'); return; }
-        if (act === 'invoice') { O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); return; }
+        if (act === 'invoice') { if (O.can('invoices.send')) O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); else U.toast('Your access does not include sending invoices and receipts', 'bad'); return; }
         if (act === 'attach') { O.$('.att-menu', chat).classList.toggle('open'); return; }
         if (act === 'send') { send(); return; }
         if (act === 'record') { startRecording(); return; }
@@ -1085,13 +1187,27 @@
       });
       page.addEventListener('change', function (e) {
         var t = e.target;
-        if (t.dataset.f === 'assign') { var c = conv(st.sel); if (!c) return; c.assigneeId = t.value; var s = staff(t.value); U.toast('Chat with ' + bk(c).guest.name + ' assigned to ' + s.name + '. ' + firstName(s.name) + ' was notified.'); paintRows(); }
+        if (t.dataset.f === 'prop') { setProp(t.value); return; }
+        if (t.dataset.f === 'assign') { var c = conv(st.sel); if (!c || !canEdit()) return; c.assigneeId = t.value; var s = staff(t.value); U.toast('Chat with ' + bk(c).guest.name + ' assigned to ' + s.name + '. ' + firstName(s.name) + ' was notified.'); paintRows(); O.emit('data', { type: 'inbox-assign', id: c.id }); }
       });
+      /* property filter: remembered on this device; on a computer the open chat follows the filter */
+      function setProp(pid) {
+        st.prop = pid && D.propById[pid] ? pid : '';
+        O.store.set('inbox:prop', st.prop);
+        var sel = O.$('[data-f=prop]', listEl);
+        if (sel) { sel.outerHTML = propSelectHTML(); }
+        paintFilters(); paintRows();
+        var cur = conv(st.sel);
+        if (!isPhone() && (!cur || !inProp(cur))) {
+          var first = visibleConvs()[0];
+          if (first) select(first.id, false); else { st.sel = null; paintRows(); paintChat(true); }
+        }
+      }
       /* other pages and modals change data (door codes, ID checks, quick replies, new messages): refresh in place, keep the composer */
       ctx.on('data', function (p) {
         if (!document.body.contains(page)) return;
         paintFilters(); paintRows();
-        if (conv(st.sel)) paintChat(false);
+        if (conv(st.sel)) paintChat(false); else if (st.sel) { st.sel = null; paintChat(true); }
         if (p && p.type === 'quickreplies') { var w = O.$('.qr-wrap', chat), c = conv(st.sel); if (w && c) w.innerHTML = qrBarHTML(c); }
       });
 

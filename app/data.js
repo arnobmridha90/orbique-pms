@@ -128,7 +128,7 @@
     { date: '2026-12-19', end: '2026-12-31', name: 'Year-end school holidays', areas: ['Kuala Lumpur', 'Penang', 'George Town', 'Melaka', 'Cameron Highlands'], lift: 0.2 }
   ];
   function eventFor(pid, iso) {
-    var p = propById[pid];
+    var p = propById[pid]; if (!p || !p.area) return null;
     for (var i = 0; i < events.length; i++) {
       var e = events[i];
       if (iso >= e.date && iso <= e.end && e.areas.some(function (a) { return p.area.indexOf(a) >= 0; })) return e;
@@ -138,12 +138,12 @@
   /* the rate we actually charged / will charge for a night (yearsAgo = 0, 1, 2) */
   function rateFor(pid, iso, yearsAgo) {
     yearsAgo = yearsAgo || 0;
-    var p = propById[pid], r = rng(hash(pid + iso + 'y' + yearsAgo));
+    var p = propById[pid], r = rng(hash(String(pid) + iso + 'y' + yearsAgo));
     var growth = [1, 0.93, 0.86][yearsAgo] || 0.8;
     var f = seasonFactor(iso) * (O.d.isWeekend(iso) ? 1.18 : 1) * growth * (0.94 + r() * 0.12);
     var ev = yearsAgo === 0 ? eventFor(pid, iso) : null;
     if (ev) f *= 1 + ev.lift;
-    return round5(p.base * f);
+    return p && p.base > 0 ? round5(p.base * f) : 0;
   }
 
   /* ---------------- bookings ---------------- */
@@ -532,7 +532,7 @@
     invItems.forEach(function (it) { var q = Math.max(4, Math.round(it.reorder * 2.5)); stock[it.id] = q; open.lines.push({ itemId: it.id, qty: q }); });
     /* the units that use more than usual in the last 30 days (so the overuse warning has something to show) */
     var OVER = { 'hv2|IT-TP': 1.75, 'kls|IT-CF': 1.8, 'bgf|IT-WA': 1.6 };
-    var outs = bookings.filter(function (b) { return b.status !== 'cancelled' && b.checkOut >= INV_FROM && b.checkOut <= TODAY; })
+    var outs = bookings.filter(function (b) { return b.status !== 'cancelled' && b.checkOut >= INV_FROM && b.checkOut < TODAY; }) /* today's check-outs are restocked after 10:15, so not yet */
       .sort(function (a, b) { return a.checkOut < b.checkOut ? -1 : 1; });
     var day = INV_FROM, oi = 0;
     while (day <= TODAY) {
@@ -649,8 +649,15 @@
       }, 0);
     },
     availableNights: function (from, to, pid) {
-      var days = O.d.diff(from, to) + 1;
-      return (pid ? days : days * properties.length) - M.blockedNights(from, to, pid);
+      /* each unit counts from the day it was added until the day before it was archived */
+      var list = pid ? properties.filter(function (p) { return p.id === pid; }) : properties;
+      if (pid && !list.length) return O.d.diff(from, to) + 1 - M.blockedNights(from, to, pid);
+      var days = list.reduce(function (s, p) {
+        var a = p.createdAt && String(p.createdAt).slice(0, 10) > from ? String(p.createdAt).slice(0, 10) : from;
+        var z = p.archived && p.archivedAt && O.d.add(String(p.archivedAt).slice(0, 10), -1) < to ? O.d.add(String(p.archivedAt).slice(0, 10), -1) : to;
+        return s + (a > z ? 0 : O.d.diff(a, z) + 1);
+      }, 0);
+      return Math.max(0, days - M.blockedNights(from, to, pid));
     },
     occupancy: function (from, to, pid) { var a = M.availableNights(from, to, pid); return a ? M.nightsSold(from, to, pid ? { propertyId: pid } : null) / a : 0; },
     adr: function (from, to, f) { var n = M.nightsSold(from, to, f); return n ? M.revenue(from, to, f) / n : 0; },

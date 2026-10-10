@@ -1,8 +1,10 @@
-/* Orbique Command Center v3 — Invoices & receipts
+/* Orbique Command Center v4 — Invoices & receipts
    One invoice per booking (created when the booking is confirmed), one payment receipt (created when payment arrives).
    Both are generated from booking + guest details by O.invoice (core.js) and carry the workspace logo and colours.
-   This page: rule line, KPI strip, filters (invoice date range, status, platform, property, search), the document table
-   with view / PDF / send / record payment, bulk send with a channel per guest, CSV export, settings, preview and send log. */
+   v4: the statistics strip moved to Statistics. Only "Awaiting payment" stays at the top (every open invoice, any date,
+   with the overdue ones called out). Then filters (invoice date range, status, platform, property, search), the document
+   table with view / PDF / send / record payment, bulk send with a channel per guest, CSV export, settings, preview, send log.
+   Permissions: invoices.send (send buttons), invoices.payments (record payment), invoices.settings (settings card). */
 (function () {
   var O = window.O, D = O.data, M = O.metrics, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
@@ -12,7 +14,7 @@
     if (D._moneyReady) return; D._moneyReady = true;
     D.expenses.forEach(function (e) {
       if (e.method !== CLAIM || e.claimStatus) return;
-      var age = d.diff(e.date, D.TODAY);
+      var age = d.diff(e.date, D.STORY0 || D.TODAY); /* seed data, relative to the demo's own day (shifted later with D) */
       if (age <= 10) e.claimStatus = 'pending';
       else if (age <= 18) { e.claimStatus = 'approved'; e.approvedAt = d.add(e.date, 2); e.approvedBy = 's1'; }
       else { e.claimStatus = 'reimbursed'; e.approvedAt = d.add(e.date, 2); e.approvedBy = 's1'; e.reimbursedAt = d.add(e.date, 6); }
@@ -23,19 +25,35 @@
     };
   })();
 
-  var S = D.invoiceSettings;
+  var S = D.invoiceSettings; /* re-pointed at every render (the saved settings object) */
   var st = { preset: 'last30', from: null, to: null, status: 'all', plat: '', prop: '', q: '', sel: {}, limit: 25, preview: 'invoice' };
+  /* what this viewer may do (Staff Access) */
+  function canSend() { return O.can('invoices.send'); }
+  function canPay() { return O.can('invoices.payments'); }
+  function canSet() { return O.can('invoices.settings'); }
+  var NO_SEND = 'Your access does not include sending invoices and receipts';
+  var NO_PAY = 'Your access does not include recording payments';
   var STATUSES = [['all', 'All'], ['notsent', 'Invoice not sent'], ['sent', 'Invoice sent'], ['awaiting', 'Awaiting payment'], ['paid', 'Paid'], ['rcpnotsent', 'Receipt not sent']];
   var PRESETS = ['today', 'yesterday', 'last7', 'last30', 'mtd', 'thisMonth', 'lastMonth', 'last90', 'qtd', 'lastQuarter', 'ytd', 'since'];
   var PAY_METHODS = ['FPX online banking', 'Card (Visa)', 'DuitNow QR', 'Bank transfer', 'Cash'];
 
   O.css('invoices', [
     '.pg-invoices{display:flex;flex-direction:column;gap:14px;}',
-    '.pg-invoices .kpis{margin-bottom:0;}',
-    '.pg-invoices .inv-rule{display:flex;gap:10px;align-items:flex-start;}',
-    '.pg-invoices .inv-rule svg{width:18px;height:18px;flex-shrink:0;color:var(--brand-strong);margin-top:1px;}',
-    '.pg-invoices .inv-rule b{font-weight:800;}',
-    '.pg-invoices .inv-rule .proto{color:var(--muted);}',
+    /* awaiting payment: the one figure at the top */
+    '.pg-invoices .inv-await{display:flex;align-items:center;gap:12px 20px;flex-wrap:wrap;padding:14px 18px;box-shadow:inset 3px 0 0 var(--brand-strong),var(--shadow);}',
+    '.pg-invoices .inv-await .aw-main{display:flex;align-items:baseline;gap:2px 12px;flex-wrap:wrap;min-width:0;}',
+    '.pg-invoices .inv-await .aw-k{font-size:11px;font-weight:700;color:var(--muted);flex-basis:100%;}',
+    '.pg-invoices .inv-await .aw-od{padding-left:20px;border-left:1px solid var(--border);align-self:stretch;}',
+    '.pg-invoices .inv-await .aw-v{font-family:var(--font-head);font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;}',
+    '.pg-invoices .inv-await .aw-n{font-size:13px;color:var(--text-2);font-weight:600;}',
+    '.pg-invoices .inv-await .aw-od{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--text-2);}',
+    '.pg-invoices .inv-await .aw-acts{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}',
+    '.pg-invoices .inv-due{font-size:11.5px;color:var(--muted);margin-top:1px;white-space:nowrap;} .pg-invoices .inv-due.od{color:var(--bad);font-weight:700;}',
+    '.pg-invoices .inv-ro{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:12px;} .pg-invoices .inv-ro svg{width:14px;height:14px;flex-shrink:0;}',
+    '.pg-invoices .ib[disabled]{opacity:0.4;cursor:not-allowed;}',
+    '.pg-invoices .inv-empty{text-align:center;padding:0 16px 22px;}',
+    '.pg-invoices fieldset.inv-set{border:none;margin:0;padding:0;min-width:0;}',
+    '.pg-invoices fieldset.inv-set[disabled] .switch, .pg-invoices fieldset.inv-set[disabled] .seg, .pg-invoices fieldset.inv-set[disabled] .input{opacity:0.6;cursor:not-allowed;}',
     '.pg-invoices .toolbar{margin-bottom:0;}',
     '.pg-invoices .inv-filters{display:flex;flex-direction:column;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}',
     '.pg-invoices .inv-filters .select{width:auto;min-width:150px;height:36px;padding-top:0;padding-bottom:0;}',
@@ -44,14 +62,14 @@
     '.pg-invoices input[type=checkbox]{accent-color:var(--brand-strong);width:16px;height:16px;margin:0;vertical-align:middle;}',
     '.pg-invoices .inv-bulk{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 16px;background:var(--brand-soft);border-bottom:1px solid var(--border);font-size:13px;}',
     '.pg-invoices .inv-bulk b{font-weight:800;}',
-    '.pg-invoices .inv-table td{padding:9px 10px;} .pg-invoices .inv-table th{padding:9px 10px;}',
+    '.pg-invoices .inv-table td{padding:9px 7px;} .pg-invoices .inv-table th{padding:9px 7px;}',
     '.pg-invoices .inv-table th:first-child, .pg-invoices .inv-table td:first-child{padding-left:16px;width:34px;}',
     '.pg-invoices .inv-table th:last-child, .pg-invoices .inv-table td:last-child{padding-right:16px;}',
     '.pg-invoices .inv-table tr.on td{background:var(--brand-soft-2);}',
     '.pg-invoices .inv-no{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;}',
     '.pg-invoices .inv-sub{font-size:11.5px;color:var(--muted);margin-top:1px;white-space:nowrap;}',
     '.pg-invoices .inv-guest{display:flex;align-items:center;gap:8px;min-width:0;}',
-    '.pg-invoices .inv-guest .inv-nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}',
+    '.pg-invoices .inv-guest .inv-nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;}',
     '.pg-invoices .inv-acts{display:flex;gap:4px;justify-content:flex-end;align-items:center;white-space:nowrap;}',
     '.pg-invoices .ib{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--surface);border-radius:8px;color:var(--text-2);flex-shrink:0;padding:0;}',
     '.pg-invoices .ib:hover{background:var(--surface-2);border-color:var(--border-strong);}',
@@ -78,6 +96,7 @@
     '.pg-invoices .log-ic{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);flex-shrink:0;}',
     '.pg-invoices .log-ic svg{width:14px;height:14px;}',
     '.pg-invoices .log-row .when{margin-left:auto;color:var(--muted);font-size:11.5px;white-space:nowrap;}',
+    '.inv-pv .doc td.num{white-space:nowrap;}',
     '.inv-menu{position:fixed;z-index:150;min-width:210px;}',
     '.inv-menu .pop-opt svg{width:15px;height:15px;color:var(--muted);}',
     '.inv-menu .pop-opt[disabled]{opacity:0.45;cursor:not-allowed;}',
@@ -95,21 +114,27 @@
     ' .pg-invoices .inv-table td{display:block;border:none;padding:0 !important;}',
     ' .pg-invoices .inv-table td:first-child{grid-row:1 / span 4;width:auto;}',
     ' .pg-invoices .inv-table td.c-inv{grid-column:2;} .pg-invoices .inv-table td.c-total{grid-column:3;grid-row:1;text-align:right;font-weight:800;}',
-    ' .pg-invoices .inv-table td.c-guest, .pg-invoices .inv-table td.c-prop, .pg-invoices .inv-table td.c-stay{grid-column:2 / span 2;}',
+    ' .pg-invoices .inv-table td.c-guest{grid-column:2 / span 2;} .pg-invoices .inv-table td.c-guest .inv-sub{display:none;}',
+    ' .pg-invoices .inv-table td.c-prop{grid-column:2;} .pg-invoices .inv-table td.c-stay{grid-column:3;text-align:right;white-space:nowrap;}',
     ' .pg-invoices .inv-table td.c-prop, .pg-invoices .inv-table td.c-stay{font-size:12px;color:var(--muted);}',
     ' .pg-invoices .inv-table td.c-stay .inv-sub{display:inline;} .pg-invoices .inv-table td.c-stay .inv-sub::before{content:" · ";}',
     ' .pg-invoices .inv-table td.c-ist .inv-sub, .pg-invoices .inv-table td.c-rst .inv-sub{margin:0;}',
     ' .pg-invoices .inv-table td.c-ist, .pg-invoices .inv-table td.c-rst{grid-column:2 / span 2;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:11.5px;color:var(--muted);} .pg-invoices .inv-table td .inv-sub{white-space:normal;}',
+    ' .pg-invoices .inv-table td.c-ist .inv-sub{display:none;}',
     ' .pg-invoices .inv-table td.c-ist::before{content:"Invoice";} .pg-invoices .inv-table td.c-rst::before{content:"Receipt";}',
     ' .pg-invoices .inv-table td.c-acts{grid-column:2 / span 2;margin-top:6px;}',
     ' .pg-invoices .inv-acts{justify-content:flex-start;flex-wrap:wrap;}',
-    ' .pg-invoices .inv-acts .btn-xs{padding:7px 10px;} .pg-invoices .ib{width:36px;height:36px;}',
+    ' .pg-invoices .inv-acts .btn-xs{padding:9px 12px;} .pg-invoices .ib{width:40px;height:40px;}',
+    ' .pg-invoices .btn, .pg-invoices .chip, .pg-invoices .select, .pg-invoices .input, .pg-invoices .dr-btn, .pg-invoices .seg button{min-height:40px;} .pg-invoices .search{height:40px;} .pg-invoices .switch::before{content:"";position:absolute;inset:-10px -4px;}',
+    ' .pg-invoices input.check-in{width:22px;height:22px;}',
     ' .pg-invoices .inv-filters .select{flex:1 1 140px;min-width:0;} .pg-invoices .inv-filters .search{flex:1 1 100%;} .pg-invoices .inv-filters .dr{max-width:100%;}',
     ' .pg-invoices .inv-filters .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px;}',
     ' .pg-invoices .inv-guest .inv-nm{max-width:none;}',
     ' .pg-invoices .set-row{flex-direction:column;} .pg-invoices .set-row .ctl{align-items:flex-start;}',
     ' .pg-invoices .set-num, .pg-invoices .sst-fields{grid-template-columns:minmax(0,1fr);}',
     ' .inv-bsend .bs-row{grid-template-columns:minmax(0,1fr);}',
+    ' .pg-invoices .inv-await{padding:12px 14px;} .pg-invoices .inv-await .aw-od{padding-left:0;border-left:none;} .pg-invoices .inv-await .aw-acts{margin-left:0;width:100%;} .pg-invoices .inv-await .aw-acts .btn-ghost{flex:1;min-height:40px;}',
+    ' .pg-invoices .inv-table td.c-rst .inv-due{display:inline;margin:0;}',
     '}'
   ].join('\n'));
 
@@ -118,7 +143,16 @@
     if (st.preset) { var p = U.preset(st.preset); return { from: p.from, to: p.to }; }
     return { from: st.from, to: st.to };
   }
-  function prop(id) { return D.propById[id]; }
+  /* old records can point at a property that was removed */
+  function prop(id) { return D.propById[id] || { id: id, name: 'Removed property', short: 'Removed property', area: '' }; }
+  /* when the money is due: platforms pay out by arrival, direct guests pay 7 days before arrival (or at booking if later) */
+  function dueDate(b) {
+    if (b.channel !== 'direct') return b.checkIn;
+    var due = d.add(b.checkIn, -7);
+    return due < b.invoiceDate ? b.invoiceDate : due;
+  }
+  function openInvoices() { return D.bookings.filter(function (b) { return b.invoiceNo && b.status !== 'cancelled' && !b.paidAt; }); }
+  function isOverdue(b) { return !b.paidAt && b.status !== 'cancelled' && dueDate(b) < D.TODAY; }
   function base() { /* invoices in range + platform + property (not status / search) */
     var r = range();
     return D.bookings.filter(function (b) {
@@ -142,8 +176,10 @@
     }
   }
   function rows() {
-    return base().filter(function (b) { return matchQ(b) && matchStatus(b, st.status); })
-      .sort(function (a, b) { return a.invoiceDate !== b.invoiceDate ? (a.invoiceDate < b.invoiceDate ? 1 : -1) : (a.invoiceNo < b.invoiceNo ? 1 : -1); });
+    var list = base().filter(function (b) { return matchQ(b) && matchStatus(b, st.status); });
+    /* awaiting payment reads like a collections list: the soonest (or longest overdue) due date first */
+    if (st.status === 'awaiting') return list.sort(function (a, b) { var x = dueDate(a), y = dueDate(b); return x !== y ? (x < y ? -1 : 1) : (a.invoiceNo < b.invoiceNo ? -1 : 1); });
+    return list.sort(function (a, b) { return a.invoiceDate !== b.invoiceDate ? (a.invoiceDate < b.invoiceDate ? 1 : -1) : (a.invoiceNo < b.invoiceNo ? 1 : -1); });
   }
   function sum(list, f) { return list.reduce(function (s, x) { return s + f(x); }, 0); }
   function unsent(list) { return list.filter(function (b) { return !b.invoiceSent || (b.paidAt && !b.receiptSent); }); }
@@ -153,6 +189,17 @@
     return v;
   }
   function addrFor(b, via) { return via === 'WhatsApp' ? b.guest.phone : b.guest.email; }
+  /* guest phone and email are shown only with bookings.contacts (local copies; see docs/notes/v4-finance.md) */
+  function canContacts() { return O.can('bookings.contacts'); }
+  function maskPhone(ph) {
+    ph = String(ph || ''); var n = ph.replace(/\D/g, '').length, seen = 0;
+    return ph.replace(/\d/g, function (ch) { seen++; return seen <= 2 || seen > n - 2 ? ch : '•'; });
+  }
+  function maskEmail(em) {
+    var m = /^([^@]*)@(.*)$/.exec(String(em || '')); if (!m) return em ? '•••' : '';
+    return (m[1].charAt(0) || '') + '•••@' + m[2];
+  }
+  function shownAddr(b, via) { var a = addrFor(b, via); return canContacts() ? a : via === 'WhatsApp' ? maskPhone(a) : maskEmail(a); }
   function stamp(b, kind, via) {
     var s = { via: via, at: D.TODAY, time: D.NOW_TIME, to: addrFor(b, via) };
     if (kind === 'invoice') b.invoiceSent = s; else b.receiptSent = s;
@@ -162,7 +209,8 @@
   function nextNo(kind, skipId) {
     var key = kind === 'invoice' ? 'invoiceNo' : 'receiptNo';
     var max = D.bookings.reduce(function (m, x) { return x[key] && x.id !== skipId ? Math.max(m, seqOf(x[key])) : m; }, 1000);
-    var pat = kind === 'invoice' ? S.invPattern : S.rcpPattern;
+    var cfg = D.invoiceSettings || {};
+    var pat = (kind === 'invoice' ? cfg.invPattern : cfg.rcpPattern) || (kind === 'invoice' ? 'INV-{YYYY}-{seq}' : 'RCP-{YYYY}-{seq}');
     return pat.replace(/\{YYYY\}/g, D.TODAY.slice(0, 4)).replace(/\{YY\}/g, D.TODAY.slice(2, 4)).replace(/\{MM\}/g, D.TODAY.slice(5, 7)).replace(/\{seq\}/g, String(max + 1));
   }
   /* core O.invoice.markPaid always writes RCP-YYYY-n. Apply the receipt numbering format from the settings card on top of it,
@@ -183,6 +231,7 @@
 
   /* ------------------------------------------------------------------ actions */
   function recordPayment(b) {
+    if (!canPay()) { U.toast(NO_PAY + '. An account owner can allow it in Staff Access.', 'bad'); return; }
     var body = O.html('<div class="stack">' +
       '<div class="note">' + esc(b.guest.name) + ' · ' + esc(prop(b.propertyId).name) + ' · ' + d.fmtRange(b.checkIn, b.checkOut) + '<br>Invoice ' + esc(b.invoiceNo) + ' · total <b>' + fmt.money(b.total, { dp: 2 }) + '</b></div>' +
       '<div class="form-grid"><div class="field"><label for="inv-pm">Payment method</label><select class="select" id="inv-pm">' + PAY_METHODS.map(function (m) { return '<option>' + m + '</option>'; }).join('') + '</select></div>' +
@@ -203,9 +252,18 @@
       }]
     });
   }
+  /* document preview; "Send to guest" only for people who may send */
   function viewDoc(b, kind) {
-    if (kind === 'receipt' && !b.paidAt) return recordPayment(b);
-    O.invoice.preview(b, kind);
+    if (kind === 'receipt' && !b.paidAt) { if (canPay()) recordPayment(b); else U.toast('No payment yet, so there is no receipt. ' + NO_PAY + '.', 'bad'); return; }
+    var isR = kind === 'receipt', acts = [{ label: 'Download PDF', onClick: function () { O.invoice.pdf(b, kind); return false; } }];
+    if (canSend()) acts.push({ label: 'Send to guest', kind: 'primary', onClick: function () { setTimeout(function () { O.invoice.send(b, [kind]); }, 0); } });
+    else acts.push({ label: 'Close', kind: 'primary' });
+    U.modal({ title: isR ? 'Payment receipt ' + (b.receiptNo || '') : 'Invoice ' + b.invoiceNo, sub: b.guest.name + ' · ' + prop(b.propertyId).name, size: 'wide',
+      body: '<div class="pv-wrap inv-pv">' + O.invoice.html(b, kind) + '</div>', actions: acts, autofocus: false });
+  }
+  function sendOne(b) {
+    if (!canSend()) { U.toast(NO_SEND + '. An account owner can allow it in Staff Access.', 'bad'); return; }
+    O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']);
   }
   function bulkSend(list) {
     var onlyNew = true;
@@ -227,7 +285,7 @@
       O.$$('.bs-row', body).forEach(function (row) {
         var b = D.booking(row.dataset.id), docs = docsFor(b), via = O.$('[data-via]', row).value;
         nDocs += docs.length; if (docs.length) nGuests++;
-        O.$('.bs-docs', row).textContent = docs.length ? (docs.map(function (k) { return k === 'invoice' ? 'Invoice' : 'Receipt ' + b.receiptNo; }).join(' + ') + ' → ' + addrFor(b, via)) : 'Nothing new to send';
+        O.$('.bs-docs', row).textContent = docs.length ? (docs.map(function (k) { return k === 'invoice' ? 'Invoice' : 'Receipt ' + b.receiptNo; }).join(' + ') + ' → ' + shownAddr(b, via)) : 'Nothing new to send';
       });
       O.$('.bs-sum', body).textContent = nDocs ? nDocs + ' document' + (nDocs === 1 ? '' : 's') + ' to ' + nGuests + ' guest' + (nGuests === 1 ? '' : 's') + '.' : 'Everything selected has already been sent. Untick the box above to send again.';
     }
@@ -256,11 +314,12 @@
   }
   function exportCSV(list) {
     var r = range();
-    var out = [['Invoice no', 'Invoice date', 'Receipt no', 'Paid on', 'Booking', 'Guest', 'Country', 'Phone', 'Email', 'Property', 'Platform', 'Check-in', 'Check-out', 'Nights', 'Accommodation (RM)', 'Cleaning (RM)', 'Tourism tax (RM)', 'Total (RM)', 'Payment method', 'Invoice sent', 'Receipt sent']];
+    var cc = canContacts(); /* without bookings.contacts the phone and email columns are left out */
+    var out = [['Invoice no', 'Invoice date', 'Receipt no', 'Paid on', 'Booking', 'Guest', 'Country'].concat(cc ? ['Phone', 'Email'] : []).concat(['Property', 'Platform', 'Check-in', 'Check-out', 'Nights', 'Accommodation (RM)', 'Cleaning (RM)', 'Tourism tax (RM)', 'Total (RM)', 'Payment method', 'Invoice sent', 'Receipt sent'])];
     list.forEach(function (b) {
-      out.push([b.invoiceNo, b.invoiceDate, b.receiptNo || '', b.paidAt || '', b.id, b.guest.name, b.guest.countryName, b.guest.phone, b.guest.email, prop(b.propertyId).name, U.platName(b.channel), b.checkIn, b.checkOut, b.nights,
+      out.push([b.invoiceNo, b.invoiceDate, b.receiptNo || '', b.paidAt || '', b.id, b.guest.name, b.guest.countryName].concat(cc ? [b.guest.phone, b.guest.email] : []).concat([prop(b.propertyId).name, U.platName(b.channel), b.checkIn, b.checkOut, b.nights,
         b.accommodation.toFixed(2), b.cleaningFee.toFixed(2), b.tourismTax.toFixed(2), b.total.toFixed(2), b.paidAt ? b.payMethod : '',
-        b.invoiceSent ? b.invoiceSent.at + ' by ' + b.invoiceSent.via : 'Not sent', b.receiptSent ? b.receiptSent.at + ' by ' + b.receiptSent.via : (b.paidAt ? 'Not sent' : 'Awaiting payment')]);
+        b.invoiceSent ? b.invoiceSent.at + ' by ' + b.invoiceSent.via : 'Not sent', b.receiptSent ? b.receiptSent.at + ' by ' + b.receiptSent.via : (b.paidAt ? 'Not sent' : 'Awaiting payment')]));
     });
     O.downloadCSV('Invoices-' + r.from + '-to-' + r.to + '.csv', out);
   }
@@ -271,7 +330,7 @@
     menuEl = O.html('<div class="pop-menu open inv-menu" role="menu">' +
       '<button type="button" class="pop-opt" data-m="pdf-inv" role="menuitem">' + O.icon('download') + 'Download invoice PDF</button>' +
       '<button type="button" class="pop-opt" data-m="pdf-rcp" role="menuitem"' + (b.paidAt ? '' : ' disabled') + '>' + O.icon('download') + 'Download receipt PDF</button>' +
-      (b.paidAt ? '' : '<button type="button" class="pop-opt" data-m="pay" role="menuitem">' + O.icon('check') + 'Record payment</button>') +
+      (b.paidAt || !canPay() ? '' : '<button type="button" class="pop-opt" data-m="pay" role="menuitem">' + O.icon('check') + 'Record payment</button>') +
       '<button type="button" class="pop-opt" data-m="open" role="menuitem">' + O.icon('bookings') + 'Open booking ' + esc(b.id) + '</button></div>');
     document.body.appendChild(menuEl);
     var r = btn.getBoundingClientRect(), w = menuEl.offsetWidth, h = menuEl.offsetHeight;
@@ -293,21 +352,17 @@
   window.addEventListener('resize', closeMenu);
 
   /* ------------------------------------------------------------------ render pieces */
-  function kpis(list) {
-    var paid = list.filter(function (b) { return b.paidAt; }), unpaid = list.filter(function (b) { return !b.paidAt; });
-    var notSent = list.filter(function (b) { return !b.invoiceSent; });
-    var rNot = paid.filter(function (b) { return !b.receiptSent; });
-    var sameDay = list.filter(function (b) { return b.invoiceSent && b.invoiceSent.at === b.invoiceDate; });
-    var tax = sum(list, function (b) { return b.tourismTax; });
-    return U.kpis([
-      { label: 'Invoices issued', value: fmt.num(list.length), sub: fmt.money(sum(list, function (b) { return b.total; })) + ' billed', hl: true },
-      { label: 'Paid', value: fmt.money(sum(paid, function (b) { return b.total; })), sub: fmt.plural(paid.length, 'receipt') + ' issued' },
-      { label: 'Awaiting payment', value: fmt.money(sum(unpaid, function (b) { return b.total; })), sub: unpaid.length ? fmt.plural(unpaid.length, 'invoice') + ' open' : 'Nothing outstanding' },
-      { label: 'Invoices not sent', value: fmt.num(notSent.length), sub: notSent.length ? 'Waiting to go out' : 'All sent' },
-      { label: 'Receipts not sent', value: fmt.num(rNot.length), sub: rNot.length ? 'Paid, receipt not sent' : 'All sent' },
-      { label: 'Sent on booking day', value: list.length ? fmt.pct(sameDay.length / list.length) : '–', sub: fmt.num(sameDay.length) + ' of ' + fmt.num(list.length) + ' invoices', title: 'Invoices sent to the guest on the day the booking was confirmed' },
-      { label: 'Tourism tax billed', value: fmt.money(tax), sub: fmt.num(sum(list, function (b) { return b.tourismTax ? b.nights : 0; })) + ' foreign nights', title: 'RM 10 per night for foreign guests, passed through to the government' }
-    ]);
+  /* the one figure that stays at the top: every open invoice (any date), overdue ones called out */
+  function awaitingCard() {
+    var open = openInvoices(), od = open.filter(isOverdue), total = sum(open, function (b) { return b.total; });
+    var next = open.filter(function (b) { return !isOverdue(b); }).sort(function (a, b) { return dueDate(a) < dueDate(b) ? -1 : 1; })[0];
+    var odHTML = od.length ? U.pill(od.length + ' overdue · ' + fmt.money(sum(od, function (b) { return b.total; })), 'bad') + '<span>oldest due ' + d.fmt(od.map(dueDate).sort()[0]) + '</span>'
+      : open.length ? U.pill('Nothing overdue', 'ok') + (next ? '<span>next due ' + (dueDate(next) === D.TODAY ? 'today' : d.fmt(dueDate(next))) + '</span>' : '') : '';
+    var stats = O.allowed('statistics') ? '<button type="button" class="btn btn-quiet btn-sm" data-act="stats">' + O.icon('statistics') + 'See statistics</button>' : '';
+    return '<div class="card inv-await"><div class="aw-main"><span class="aw-k">Awaiting payment</span><span class="aw-v">' + fmt.money(total) + '</span>' +
+      '<span class="aw-n">' + (open.length ? fmt.plural(open.length, 'open invoice') + ', any date' : D.bookings.some(function (b) { return b.invoiceNo; }) ? 'Every invoice is paid' : 'No invoices yet') + '</span></div>' +
+      (odHTML ? '<div class="aw-od">' + odHTML + '</div>' : '') +
+      '<div class="aw-acts">' + (open.length ? '<button type="button" class="btn btn-ghost btn-sm" data-act="showopen">Show them</button>' : '') + stats + '</div></div>';
   }
   function filtersHTML(b0) {
     var q = b0.filter(matchQ);
@@ -332,13 +387,28 @@
       '<td class="c-stay"><span class="nowrap">' + d.fmtRange(b.checkIn, b.checkOut) + '</span><div class="inv-sub">' + fmt.plural(b.nights, 'night') + '</div></td>' +
       '<td class="c-total num"><b>' + fmt.money(b.total) + '</b>' + (b.tourismTax ? '<div class="inv-sub">incl. tax ' + fmt.money(b.tourismTax) + '</div>' : '') + '</td>' +
       '<td class="c-ist">' + O.invoice.statusHTML(b, 'invoice') + (b.invoiceSent ? '<div class="inv-sub">' + (b.invoiceSent.at === D.TODAY ? 'Today' : d.fmt(b.invoiceSent.at)) + '</div>' : '') + '</td>' +
-      '<td class="c-rst">' + O.invoice.statusHTML(b, 'receipt') + (b.receiptNo ? '<div class="inv-sub">' + esc(b.receiptNo) + ' · paid ' + d.fmt(b.paidAt) + '</div>' : '') + '</td>' +
+      '<td class="c-rst">' + O.invoice.statusHTML(b, 'receipt') + (b.receiptNo ? '<div class="inv-sub">' + esc(b.receiptNo) + ' · paid ' + d.fmt(b.paidAt) + '</div>' : dueHTML(b)) + '</td>' +
       '<td class="c-acts"><div class="inv-acts">' +
       '<button type="button" class="ib" data-act="inv" aria-label="View invoice ' + esc(b.invoiceNo) + '" title="View invoice">' + O.icon('file') + '</button>' +
-      '<button type="button" class="ib" data-act="rcp" aria-label="' + (b.paidAt ? 'View receipt ' + esc(b.receiptNo) : 'Record payment') + '" title="' + (b.paidAt ? 'View receipt' : 'Record payment') + '">' + O.icon(b.paidAt ? 'check' : 'card') + '</button>' +
-      '<button type="button" class="ib" data-act="send" aria-label="Send to ' + esc(b.guest.name) + '" title="Send to guest">' + O.icon('send') + '</button>' +
+      (b.paidAt ? '<button type="button" class="ib" data-act="rcp" aria-label="View receipt ' + esc(b.receiptNo) + '" title="View receipt">' + O.icon('check') + '</button>'
+        : '<button type="button" class="ib" data-act="rcp" aria-label="Record payment"' + (canPay() ? ' title="Record payment"' : ' disabled title="' + NO_PAY + '"') + '>' + O.icon('card') + '</button>') +
+      '<button type="button" class="ib" data-act="send" aria-label="Send to ' + esc(b.guest.name) + '"' + (canSend() ? ' title="Send to guest"' : ' disabled title="' + NO_SEND + '"') + '>' + O.icon('send') + '</button>' +
       '<button type="button" class="ib" data-act="more" aria-label="More actions for ' + esc(b.invoiceNo) + '" title="Download PDF and more">' + O.icon('more') + '</button>' +
       '</div></td></tr>';
+  }
+  function dueHTML(b) {
+    if (b.paidAt || b.status === 'cancelled') return '';
+    var due = dueDate(b), od = due < D.TODAY;
+    return '<div class="inv-due' + (od ? ' od' : '') + '">' + (od ? 'Overdue since ' + d.fmt(due) : due === D.TODAY ? 'Due today' : 'Due ' + d.fmt(due)) + '</div>';
+  }
+  /* empty states: one sentence and the next useful action */
+  function emptyHTML(b0) {
+    if (b0.length) return U.empty('No invoices match these filters. Try another status or clear the search.', '🧾') + '<div class="inv-empty"><button type="button" class="btn btn-ghost btn-sm" data-act="clear">Clear filters</button></div>';
+    var any = D.bookings.some(function (b) { return b.invoiceNo; });
+    if (any) return U.empty('No invoices are dated in this range. Choose a longer date range.', '🧾') + '<div class="inv-empty"><button type="button" class="btn btn-ghost btn-sm" data-act="alldates">Show all dates</button></div>';
+    var noProps = !D.properties.length, can = noProps ? O.can('properties.create') : O.can('bookings.create');
+    return U.empty('Each confirmed booking gets its invoice here automatically, and a receipt once it is paid.', '🧾') +
+      (can ? '<div class="inv-empty"><button type="button" class="btn btn-primary btn-sm" data-act="' + (noProps ? 'goprops' : 'gobookings') + '">' + O.icon('plus') + (noProps ? 'Add your first property' : 'Add a booking') + '</button></div>' : '');
   }
   function tableCard(b0, list) {
     var shown = list.slice(0, st.limit);
@@ -346,10 +416,9 @@
     var allOn = list.length && list.every(function (b) { return st.sel[b.id]; });
     var r = range();
     var head = '<div class="card-head"><div><h3>Invoices and receipts</h3><div class="sub">' + fmt.plural(list.length, 'invoice') + ' dated ' + esc(U.rangeLabel(r.from, r.to)) + (st.status !== 'all' ? ' · ' + esc(STATUSES.filter(function (s) { return s[0] === st.status; })[0][1].toLowerCase()) : '') + '</div></div>' +
-      '<div class="row-flex wrap">' + (st.status !== 'all' || st.plat || st.prop || st.q ? '<button type="button" class="btn btn-quiet btn-sm" data-act="clear">Clear filters</button>' : '') +
-      '<button type="button" class="btn btn-ghost btn-sm" data-act="csv">' + O.icon('download') + 'Export list</button></div></div>';
+      '<div class="row-flex wrap">' + (st.status !== 'all' || st.plat || st.prop || st.q ? '<button type="button" class="btn btn-quiet btn-sm" data-act="clear">Clear filters</button>' : '') + '</div></div>';
     var bulk = selIds.length ? '<div class="inv-bulk" role="region" aria-label="Selection"><b>' + selIds.length + ' selected</b><span class="muted">' + fmt.money(sum(selIds.map(D.booking), function (b) { return b.total; })) + '</span>' +
-      '<button type="button" class="btn btn-primary btn-sm" data-act="bulksend">' + O.icon('send') + 'Send selected</button>' +
+      (canSend() ? '<button type="button" class="btn btn-primary btn-sm" data-act="bulksend">' + O.icon('send') + 'Send selected</button>' : '') +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="bulkcsv">' + O.icon('download') + 'Export selected</button>' +
       '<button type="button" class="btn btn-quiet btn-sm" data-act="selnone">Clear selection</button></div>' : '';
     var body = list.length ? '<div class="table-wrap"><table class="table inv-table"><thead><tr>' +
@@ -357,8 +426,8 @@
       '<th>Invoice</th><th>Guest</th><th>Property</th><th>Stay</th><th class="num">Total</th><th>Invoice status</th><th>Receipt</th><th class="right">Actions</th></tr></thead><tbody>' +
       shown.map(rowHTML).join('') + '</tbody></table></div>' +
       (list.length > shown.length ? '<div class="inv-more-row"><button type="button" class="btn btn-ghost btn-sm" data-act="more-rows">Show ' + Math.min(25, list.length - shown.length) + ' more · ' + (list.length - shown.length) + ' hidden</button></div>' : '')
-      : U.empty(b0.length ? 'No invoices match these filters. Try another status or clear the search.' : 'No invoices are dated in this range. Choose a longer date range.', '🧾');
-    return '<div class="card">' + head + filtersHTML(b0) + bulk + body + '</div>';
+      : emptyHTML(b0);
+    return '<div class="card inv-list">' + head + filtersHTML(b0) + bulk + body + '</div>';
   }
   function seg(name, val, opts) {
     return '<div class="seg" role="group" aria-label="' + esc(name) + '">' + opts.map(function (o) { return '<button type="button" data-set="' + name + '" data-v="' + o[0] + '" class="' + (val === o[0] ? 'on' : '') + '" aria-pressed="' + (val === o[0]) + '">' + esc(o[1]) + '</button>'; }).join('') + '</div>';
@@ -366,7 +435,10 @@
   function settingsCard() {
     var ws = O.ws();
     var sendOpts = [['auto', 'Auto'], ['Email', 'Email'], ['WhatsApp', 'WhatsApp'], ['off', 'Off']];
+    var ro = !canSet();
     return '<div class="card"><div class="card-head"><div><h3>Invoice settings</h3><div class="sub">Applies to every invoice and receipt created from now on</div></div></div><div class="card-body">' +
+      (ro ? '<div class="inv-ro">' + O.icon('lock') + 'You can see these settings. Your access does not include changing them.</div>' : '') +
+      '<fieldset class="inv-set"' + (ro ? ' disabled' : '') + '>' +
       '<div class="set-row"><div><div class="t">Send the invoice automatically</div><div class="s">When a booking is confirmed. Auto uses WhatsApp for direct guests and email for platform guests.</div></div><div class="ctl">' + seg('autoInvoice', S.autoInvoice, sendOpts) + '</div></div>' +
       '<div class="set-row"><div><div class="t">Send the receipt automatically</div><div class="s">When payment arrives, from the platform payout or a direct payment.</div></div><div class="ctl">' + seg('autoReceipt', S.autoReceipt, sendOpts) + '</div></div>' +
       '<div class="set-row" style="display:block"><div class="t">Numbering</div><div class="s">Use {YYYY}, {YY} and {MM} for the date and end with {seq}, the running number. Numbers never repeat or skip.</div>' +
@@ -377,13 +449,17 @@
       '<div class="set-row"><div><div class="t">Tourism tax line</div><div class="s">RM 10 per room per night for foreign guests. Malaysians are exempt. Shown on the invoice and passed through, not counted as revenue.</div></div><div class="ctl"><button type="button" class="switch' + (S.tourismTax ? ' on' : '') + '" data-tog="tourismTax" role="switch" aria-checked="' + S.tourismTax + '" aria-label="Tourism tax line"></button></div></div>' +
       '<div class="set-row" style="display:block"><div class="row-flex" style="justify-content:space-between;align-items:flex-start;gap:14px"><div><div class="t">Service tax (SST)</div><div class="s">Turn on once you are registered. Registration is required when taxable sales pass RM 500,000 in 12 months.</div></div><button type="button" class="switch' + (S.sst ? ' on' : '') + '" data-tog="sst" role="switch" aria-checked="' + S.sst + '" aria-label="Service tax"></button></div>' +
       (S.sst ? '<div class="sst-fields"><div class="field"><label for="sst-no">SST registration no.</label><input class="input" id="sst-no" data-sst="sstNo" value="' + esc(S.sstNo) + '" placeholder="e.g. W10-1808-32000123"></div><div class="field"><label for="sst-rate">Rate</label><select class="select" id="sst-rate" data-sst="sstRate">' + [6, 8].map(function (r) { return '<option value="' + r + '"' + (+S.sstRate === r ? ' selected' : '') + '>' + r + '%</option>'; }).join('') + '</select></div></div>' : '') +
-      '</div></div></div>';
+      '</div></fieldset></div></div>';
   }
   function previewCard() {
-    var paid = D.bookings.filter(function (b) { return b.paidAt && b.status !== 'cancelled' && b.tourismTax; }).sort(function (a, b) { return a.paidAt < b.paidAt ? 1 : -1; })[0] || D.bookings.filter(function (b) { return b.paidAt; })[0];
+    var ok = function (b) { return b.invoiceNo && b.status !== 'cancelled' && D.propById[b.propertyId]; };
+    var paid = D.bookings.filter(function (b) { return ok(b) && b.paidAt && b.tourismTax; }).sort(function (a, b) { return a.paidAt < b.paidAt ? 1 : -1; })[0] ||
+      D.bookings.filter(function (b) { return ok(b) && b.paidAt; })[0] || D.bookings.filter(ok)[0];
+    if (!paid) return '<div class="card"><div class="card-head"><div><h3>What guests receive</h3><div class="sub">Uses your logo and brand colours</div></div></div><div class="card-body">' + U.empty('A preview of the invoice and receipt appears here once you have your first booking.', '🧾') + '</div></div>';
+    var pv = st.preview === 'receipt' && !paid.paidAt ? 'invoice' : st.preview;
     return '<div class="card"><div class="card-head"><div><h3>What guests receive</h3><div class="sub">' + esc(paid.guest.name) + ' · ' + esc(prop(paid.propertyId).short) + ' · uses your logo and brand colours</div></div>' +
-      U.seg([['invoice', 'Invoice'], ['receipt', 'Receipt']], st.preview, 'data-pv') + '</div>' +
-      '<div class="card-body"><div class="pv-wrap">' + O.invoice.html(paid, st.preview) + '</div>' + taxNote() + '</div></div>';
+      U.seg([['invoice', 'Invoice'], ['receipt', 'Receipt']], pv, 'data-pv') + '</div>' +
+      '<div class="card-body"><div class="pv-wrap">' + O.invoice.html(paid, pv) + '</div>' + taxNote() + '</div></div>';
   }
   function taxNote() {
     var parts = [];
@@ -405,25 +481,26 @@
       (ev.length ? ev.map(function (e) {
         return '<div class="log-row"><span class="log-ic" aria-hidden="true">' + O.icon(e.via === 'WhatsApp' ? 'whatsapp' : 'mail') + '</span><div style="min-width:0"><div><b>' + (e.kind === 'invoice' ? 'Invoice ' + esc(e.b.invoiceNo) : 'Receipt ' + esc(e.b.receiptNo)) + '</b> to ' + esc(e.b.guest.name) + '</div><div class="small muted">' + esc(e.via) + ' · ' + esc(prop(e.b.propertyId).short) + '</div></div><span class="when">' + (e.at.slice(0, 10) === D.TODAY ? 'Today, ' + fmt.time(e.at.slice(11, 16)) : d.fmt(e.at.slice(0, 10))) + '</span></div>';
       }).join('') : U.empty('Nothing has been sent yet.', '✉')) +
-      '</div><div class="card-foot">Prototype: documents are not really delivered. Sending updates the status and this log.</div></div>';
+      '</div><div class="card-foot">Email and WhatsApp delivery is not connected in this version. Sending updates the status and this log.</div></div>';
   }
 
   /* ------------------------------------------------------------------ page */
   O.page('invoices', {
-    desc: 'Created automatically from each booking and sent straight to the guest',
+    desc: 'One invoice per booking, one receipt per payment, sent straight to the guest',
     render: function (root, ctx) {
       closeMenu();
+      if (!D.invoiceSettings) D.invoiceSettings = { autoInvoice: 'auto', autoReceipt: 'auto', invPattern: 'INV-{YYYY}-{seq}', rcpPattern: 'RCP-{YYYY}-{seq}', tourismTax: true, sst: false, sstNo: '', sstRate: 8, dueDays: 7 };
+      S = D.invoiceSettings;
       if (ctx.fresh && ctx.params) {
         if (ctx.params.status) { st.status = ctx.params.status; st.limit = 25; }
         if (ctx.params.q || ctx.params.bookingId) st.q = ctx.params.q || ctx.params.bookingId;
       }
-      var b0 = base(), list = rows(), ws = O.ws();
+      var b0 = base(), list = rows(), todo = unsent(b0);
       Object.keys(st.sel).forEach(function (k) { if (!list.some(function (b) { return b.id === k; })) delete st.sel[k]; });
-      ctx.setActions('<button type="button" class="btn btn-ghost" data-top="csv">' + O.icon('download') + 'Export CSV</button>' +
-        '<button type="button" class="btn btn-primary" data-top="sendall"' + (unsent(b0).length ? '' : ' disabled title="Every invoice and receipt in this range has been sent"') + '>' + O.icon('send') + 'Send unsent</button>');
+      ctx.setActions('<button type="button" class="btn btn-ghost" data-top="csv"' + (list.length ? '' : ' disabled title="Nothing to export in this view"') + '>' + O.icon('download') + 'Export CSV</button>' +
+        '<button type="button" class="btn btn-primary" data-top="sendall"' + (!canSend() ? ' disabled title="' + NO_SEND + '"' : todo.length ? '' : ' disabled title="Every invoice and receipt in this range has been sent"') + '>' + O.icon('send') + 'Send unsent' + (todo.length && canSend() ? ' (' + todo.length + ')' : '') + '</button>');
       root.innerHTML = '<div class="pg-invoices">' +
-        '<div class="note brand inv-rule">' + O.icon('invoices') + '<div><b>One invoice per booking, created when the booking is confirmed. One payment receipt, created when payment arrives.</b> Both are filled in from the booking and guest details, carry the ' + esc(ws.name) + ' logo and colours, and can be sent straight to the guest by WhatsApp or email. <span class="proto">Prototype: nothing is really sent.</span></div></div>' +
-        kpis(b0) + tableCard(b0, list) +
+        awaitingCard() + tableCard(b0, list) +
         '<div class="inv-bottom">' + settingsCard() + '<div class="stack">' + previewCard() + logCard() + '</div></div></div>';
 
       U.mount(root, 'range', U.dateRange({
@@ -436,8 +513,9 @@
         var x = e.target.closest('[data-top]'); if (!x || x.disabled) return;
         if (x.dataset.top === 'csv') exportCSV(rows());
         if (x.dataset.top === 'sendall') {
-          var todo = unsent(base());
-          if (todo.length) bulkSend(todo);
+          if (!canSend()) return;
+          var all = unsent(base());
+          if (all.length) bulkSend(all);
         }
       };
 
@@ -448,16 +526,18 @@
         var pv = t.closest('[data-pv]'); if (pv) { st.preview = pv.dataset.pv; ctx.rerender(); return; }
         var sg = t.closest('[data-set]');
         if (sg) {
+          if (!canSet()) return;
           S[sg.dataset.set] = sg.dataset.v;
           var lbl = sg.dataset.set === 'autoInvoice' ? 'Invoices' : 'Receipts';
           U.toast(sg.dataset.v === 'off' ? lbl + ' will not be sent automatically' : lbl + ' will be sent automatically ' + (sg.dataset.v === 'auto' ? 'on the guest’s usual channel' : 'by ' + sg.dataset.v));
-          ctx.rerender(); return;
+          O.emit('data', { type: 'invoiceSettings' }); return;
         }
         var tg = t.closest('[data-tog]');
         if (tg) {
+          if (!canSet()) return;
           var k = tg.dataset.tog; S[k] = !S[k];
           U.toast(k === 'sst' ? (S.sst ? 'Service tax will be added to new invoices. Add your SST registration number.' : 'Service tax removed from new invoices') : (S.tourismTax ? 'Tourism tax line turned on' : 'Tourism tax line turned off for new invoices'));
-          ctx.rerender(); return;
+          O.emit('data', { type: 'invoiceSettings' }); return;
         }
         if (t.matches('[data-selall]')) { var on = t.checked; rows().forEach(function (b) { if (on) st.sel[b.id] = true; else delete st.sel[b.id]; }); ctx.rerender(); return; }
         if (t.matches('[data-sel]')) { if (t.checked) st.sel[t.dataset.sel] = true; else delete st.sel[t.dataset.sel]; ctx.rerender(); return; }
@@ -466,7 +546,7 @@
           var tr = a.closest('tr[data-id]'), b = tr ? D.booking(tr.dataset.id) : null, act = a.dataset.act;
           if (act === 'inv') viewDoc(b, 'invoice');
           else if (act === 'rcp') viewDoc(b, 'receipt');
-          else if (act === 'send') O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']);
+          else if (act === 'send') sendOne(b);
           else if (act === 'more') { e.stopPropagation(); if (menuEl && menuEl._for === b.id) closeMenu(); else { openMenu(a, b); menuEl._for = b.id; } }
           else if (act === 'csv') exportCSV(rows());
           else if (act === 'clear') { st.status = 'all'; st.plat = ''; st.prop = ''; st.q = ''; ctx.rerender(); }
@@ -475,6 +555,16 @@
           else if (act === 'bulkcsv') exportCSV(Object.keys(st.sel).map(D.booking).filter(Boolean));
           else if (act === 'selnone') { st.sel = {}; ctx.rerender(); }
           else if (act === 'brand') O.go('brand');
+          else if (act === 'stats') O.go('statistics', { tab: 'invoices' });
+          else if (act === 'showopen') {
+            var open = openInvoices(); if (!open.length) return;
+            st.preset = null; st.from = open.reduce(function (m, x) { return x.invoiceDate < m ? x.invoiceDate : m; }, D.TODAY); st.to = D.TODAY;
+            st.status = 'awaiting'; st.plat = ''; st.prop = ''; st.q = ''; st.limit = 25; ctx.rerender();
+            var card = O.$('.pg-invoices .inv-list'); if (card) card.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          }
+          else if (act === 'alldates') { st.preset = 'since'; st.from = null; st.to = null; ctx.rerender(); }
+          else if (act === 'gobookings') O.go('bookings');
+          else if (act === 'goprops') O.go('properties');
           return;
         }
         var row = t.closest('tr.click[data-id]');
@@ -483,12 +573,12 @@
       page.addEventListener('change', function (e) {
         var t = e.target;
         if (t.dataset.f) { st[t.dataset.f] = t.value; st.limit = 25; ctx.rerender(); }
-        if (t.dataset.sst) { S[t.dataset.sst] = t.value; U.toast('Service tax details saved'); }
-        if (t.dataset.pat) {
+        if (t.dataset.sst && canSet()) { S[t.dataset.sst] = t.dataset.sst === 'sstRate' ? +t.value : t.value; U.toast('Service tax details saved'); O.emit('data', { type: 'invoiceSettings' }); }
+        if (t.dataset.pat && canSet()) {
           var v = t.value.trim();
           if (!/\{seq\}$/.test(v)) { U.toast('End the format with {seq} so every number is unique and keeps counting up', 'bad'); t.value = S[t.dataset.pat]; var k0 = t.dataset.pat === 'invPattern' ? 'invoice' : 'receipt'; O.$(k0 === 'invoice' ? '.nx-inv' : '.nx-rcp', root).textContent = nextNo(k0); return; }
           S[t.dataset.pat] = v; U.toast('Numbering saved. New documents use ' + nextNo(t.dataset.pat === 'invPattern' ? 'invoice' : 'receipt'));
-          ctx.rerender();
+          O.emit('data', { type: 'invoiceSettings' });
         }
       });
       var qIn = O.$('#inv-q', root), qt;

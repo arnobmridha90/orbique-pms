@@ -1,40 +1,55 @@
-/* Orbique Command Center v3 — Reviews
+/* Orbique Command Center v4 — Reviews
    Arnob: "Need to be able to select platform plus number of stars, for example Airbnb & Needs reply
    when selected together must show the reviews in Airbnb that need to be replied to."
    - Combinable filters: platform, reply status, stars (multi), property, date range, search.
      Every chip count reflects the other active filters. Summary sentence + clear filters.
-   - KPI strip, ratings by platform, star mix, sub-scores, by property, what low ratings mention.
+   - v4: only two numbers at the top (Average rating, Needs reply) and a link to Statistics, where the rating trend,
+     platform split, star mix and category scores now live. Side panels: by property, what low ratings mention.
    - Each review: guest, platform, stars, property, stay, linked booking, tags, sub-scores,
      reply composer with a suggested reply built from the stars, tags and text. Low ratings flagged.
+   Permissions: reviews.reply (composer and edits), reviews edit level (link a booking), tasks.create (+ tasks.assign to
+   assign it), inbox / bookings pages for the shortcuts. Dates are read at render time.
    Honours ctx.params: needsReply, platform, propertyId, stars. */
 (function () {
   var O = window.O, D = O.data, M = O.metrics, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
   /* ---- data fix (reported to the lead): data.js links two story reviews to the first booking with the same
      guest name, which is an older stay at another property. Re-link them to the stay at the reviewed property. */
-  D.reviews.forEach(function (r) {
-    var b = r.bookingId && D.booking(r.bookingId);
-    if (!b || (b.propertyId === r.propertyId && b.checkOut <= r.date)) return;
-    var best = D.bookings.filter(function (x) { return x.guest.name === r.guest && x.propertyId === r.propertyId && x.status !== 'cancelled' && x.checkOut <= r.date; })
-      .sort(function (a, c) { return a.checkOut < c.checkOut ? 1 : -1; })[0];
-    if (best) r.bookingId = best.id;
-  });
+  function relink() {
+    D.reviews.forEach(function (r) {
+      var b = r.bookingId && D.booking(r.bookingId);
+      if (!b || (b.propertyId === r.propertyId && b.checkOut <= r.date)) return;
+      var best = D.bookings.filter(function (x) { return x.guest && x.guest.name === r.guest && x.propertyId === r.propertyId && x.status !== 'cancelled' && x.checkOut <= r.date; })
+        .sort(function (a, c) { return a.checkOut < c.checkOut ? 1 : -1; })[0];
+      if (best) r.bookingId = best.id;
+    });
+  }
+  relink();
 
   var PLATS = ['airbnb', 'booking', 'agoda', 'vrbo', 'google'];
   var SUBS = [['cleanliness', 'Cleanliness'], ['communication', 'Communication'], ['checkin', 'Check-in'], ['accuracy', 'Accuracy']];
   var PAGE = 15;
   var DEFAULT_PRESET = 'since';
   var PRESETS = ['since', 'last7', 'last30', 'mtd', 'lastMonth', 'last90', 'qtd', 'ytd'];
+  /* call only at render time: the preset is turned into dates with today's date */
   function defaults() {
     var p = U.preset(DEFAULT_PRESET);
     return { platform: 'all', reply: 'all', stars: [], prop: '', q: '', from: p.from, to: p.to, preset: p.preset };
   }
-  var st = Object.assign(defaults(), { sort: 'newest', shown: PAGE, drafts: {}, variant: {}, editing: {}, keep: {} });
+  var st = { platform: 'all', reply: 'all', stars: [], prop: '', q: '', from: null, to: null, preset: DEFAULT_PRESET, sort: 'newest', shown: PAGE, drafts: {}, variant: {}, editing: {}, keep: {} };
+  function syncDates() { if (st.preset) { var p = U.preset(st.preset); if (p) { st.from = p.from; st.to = p.to; } } if (!st.from || !st.to) { var dp = U.preset(DEFAULT_PRESET); st.from = dp.from; st.to = dp.to; st.preset = DEFAULT_PRESET; } }
 
   /* ------------------------------------------------------------------ styles */
   O.css('reviews', `
 .pg-reviews{display:flex;flex-direction:column;gap:14px;}
 .pg-reviews .kpis{margin-bottom:0;}
+.pg-reviews .rv-head{display:flex;align-items:stretch;gap:10px;}
+.pg-reviews .rv-head .kpis{flex:0 1 640px;}
+.pg-reviews .rv-head .rv-statlink{display:flex;align-items:center;margin-left:auto;}
+.pg-reviews .rv-head .kpi .rv-link{font-size:12px;}
+.pg-reviews .rv-ro{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:10px;padding:9px 12px;}
+.pg-reviews .rv-ro svg{width:14px;height:14px;flex-shrink:0;}
+.pg-reviews .rv-empty{text-align:center;padding:4px 16px 24px;}
 .pg-reviews .kpi .k-val small{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px;}
 .pg-reviews .rv-filters{padding:12px 16px;display:flex;flex-direction:column;gap:10px;}
 .pg-reviews .rv-frow{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;}
@@ -145,6 +160,9 @@
   .pg-reviews .rv-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
 }
 @media (max-width:760px){
+  .pg-reviews .rv-head{flex-direction:column;}
+  .pg-reviews .rv-head .kpis{flex:none;}
+  .pg-reviews .rv-head .rv-statlink{margin-left:0;}
   .pg-reviews .rv-side{grid-template-columns:minmax(0,1fr);}
   .pg-reviews .rv-fgroup .chip-group-label{min-width:0;width:100%;}
   .pg-reviews .rv-tools .select{min-width:0;flex:1 1 45%;}
@@ -160,11 +178,17 @@
   .pg-reviews .rv-meta .dotsep::before{display:none;}
   .pg-reviews .rv-summary .btn{margin-left:0;}
   .pg-reviews .rv-compose .rc-acts .btn{flex:1 1 auto;}
+ .pg-reviews .btn, .pg-reviews .chip, .pg-reviews .select, .pg-reviews .input, .pg-reviews .dr-btn, .pg-reviews .seg button{min-height:40px;} .pg-reviews .search{height:40px;} .pg-reviews .switch::before{content:"";position:absolute;inset:-10px -4px;}
+  .pg-reviews .rv-link{padding:12px 0;margin:-12px 0;}
+  .pg-reviews .mention button{min-height:40px;}
+  .pg-reviews .kpi .k-sub{white-space:normal;}
 }
 `);
 
   /* ------------------------------------------------------------------ helpers */
-  function prop(id) { return D.propById[id]; }
+  function prop(id) { return D.propById[id] || { id: id, name: 'Removed property', short: 'Removed property', housekeeper: null }; }
+  function canReply() { return O.can('reviews.reply'); }
+  var NO_REPLY = 'Replying to reviews is not part of your access. An account owner can change this in Staff Access.';
   function staffName(id) { var s = D.staffById(id); return s ? s.name : 'Team'; }
   var SURNAME_FIRST = ['Tan', 'Lim', 'Zhang', 'Chen', 'Wang', 'Kim', 'Nguyen', 'Wong', 'Goh', 'Khoo', 'Koh', 'Ong', 'Lee'];
   function greetName(name) {
@@ -321,25 +345,14 @@
     var cur = D.reviews.filter(function (r) { return inScope(r, st.from, st.to); });
     var prev = D.reviews.filter(function (r) { return inScope(r, pFrom, pTo); });
     var a = avg(cur, function (r) { return r.stars; }), pa = avg(prev, function (r) { return r.stars; });
-    var replied = cur.filter(function (r) { return r.reply; });
     var needs = cur.filter(function (r) { return !r.reply; });
-    var replyDays = avg(replied, function (r) { return Math.max(0, d.diff(r.date, r.reply.date)); });
-    var five = cur.filter(function (r) { return r.stars === 5; }).length;
-    var pfive = prev.filter(function (r) { return r.stars === 5; }).length;
-    /* weekly review counts for a sparkline */
-    var weeks = [], w = st.to;
-    while (weeks.length < 12 && w >= st.from) { var ws = d.add(w, -6) < st.from ? st.from : d.add(w, -6); weeks.unshift(cur.filter(function (r) { return r.date >= ws && r.date <= w; }).length); w = d.add(ws, -1); }
-    var hasPrev = prev.length > 0;
     var lowNeeds = needs.filter(function (r) { return r.stars <= 3; }).length;
     var oldest = needs.reduce(function (m, r) { return Math.max(m, age(r)); }, 0);
-    return U.kpis([
-      { label: 'Average rating' + scopeLabel(), value: a == null ? '–' : a.toFixed(2) + '<small>/ 5</small>', sub: hasPrev && a != null && pa ? absDelta(a - pa, 2, '') + ' vs previous ' + len + ' days' : 'from ' + fmt.plural(cur.length, 'review'), hl: true, title: 'Reply and star filters narrow the list only. These figures cover the platform, property and dates you picked.' },
-      { label: 'Reviews', value: fmt.num(cur.length), delta: hasPrev ? fmt.change(cur.length, prev.length) : null, sub: hasPrev ? 'vs ' + prev.length + ' before' : weeks.length > 2 ? 'per week' : '', spark: weeks.length > 2 ? weeks : null },
-      { label: 'Needs reply', value: String(needs.length), sub: needs.length ? lowNeeds + ' low rated · oldest ' + fmt.plural(oldest, 'day') : 'All caught up' },
-      { label: 'Response rate', value: cur.length ? fmt.pct(replied.length / cur.length) : '–', sub: replyDays != null ? 'avg ' + replyDays.toFixed(1) + ' days to reply' : 'no replies yet' },
-      { label: '5-star share', value: cur.length ? fmt.pct(five / cur.length) : '–', sub: hasPrev && cur.length && prev.length ? absDelta((five / cur.length - pfive / prev.length) * 100, 1, ' pts') + ' vs before' : five + ' of ' + cur.length },
-      { label: '3 stars or lower', value: String(cur.filter(function (r) { return r.stars <= 3; }).length), sub: cur.length ? fmt.pct(cur.filter(function (r) { return r.stars <= 3; }).length / cur.length) + ' of reviews' : '' }
-    ]);
+    var stats = O.allowed('statistics') ? '<div class="rv-statlink"><button type="button" class="btn btn-quiet btn-sm" data-act="stats">' + O.icon('statistics') + 'See statistics</button></div>' : '';
+    return '<div class="rv-head">' + U.kpis([
+      { label: 'Average rating' + scopeLabel(), value: a == null ? '–' : a.toFixed(2) + '<small>/ 5</small>', sub: prev.length && a != null && pa ? absDelta(a - pa, 2, '') + ' vs previous ' + fmt.plural(len, 'day') + ' · ' + fmt.plural(cur.length, 'review') : 'from ' + fmt.plural(cur.length, 'review'), hl: true, title: 'Reply and star filters narrow the list only. This covers the platform, property and dates you picked.' },
+      { label: 'Needs reply', value: String(needs.length), sub: needs.length ? (lowNeeds ? lowNeeds + ' low rated · ' : '') + 'oldest ' + fmt.plural(oldest, 'day') + (st.reply !== 'needs' ? ' · <button type="button" class="rv-link" data-reply="needs">Show them</button>' : '') : 'All caught up' }
+    ]) + stats + '</div>';
   }
 
   function reviewHTML(r) {
@@ -351,14 +364,18 @@
     if (task) flags.push('<span class="pill info" title="' + esc(task.title) + '">Task ' + esc(task.id) + ': ' + esc(task.title.replace(/ \(.*\)$/, '')) + ' · ' + esc(task.status === 'done' ? 'done' : task.assigneeId ? staffName(task.assigneeId) : 'unassigned') + '</span>');
     var minSub = Math.min.apply(null, SUBS.map(function (s) { return r.sub[s[0]]; }));
     var subs = '<div class="rv-subs" aria-label="Category scores">' + SUBS.map(function (s) { var v = r.sub[s[0]]; return '<span class="' + (v <= 3 && v === minSub ? 'lo' : '') + '">' + s[1] + ' <b>' + v + '</b></span>'; }).join('') + '</div>';
+    var canBk = O.allowed('bookings'), canLink = O.can('reviews', 'edit'), canTask = O.can('tasks.create'), canChat = O.allowed('inbox');
     var meta = '<span>' + esc(p.name) + '</span>' +
-      (b ? '<span class="dotsep">Stayed ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(b.nights, 'night') + '</span><span class="dotsep"><button type="button" class="rv-link" data-open="' + esc(b.id) + '" aria-label="Open booking ' + esc(b.id) + '">' + esc(b.id) + '</button></span>'
-        : '<span class="dotsep">Not linked to a booking</span><span class="dotsep"><button type="button" class="rv-link" data-act="link" data-id="' + r.id + '">Link booking</button></span>');
+      (b ? '<span class="dotsep">Stayed ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(b.nights, 'night') + '</span><span class="dotsep">' + (canBk ? '<button type="button" class="rv-link" data-open="' + esc(b.id) + '" aria-label="Open booking ' + esc(b.id) + '">' + esc(b.id) + '</button>' : esc(b.id)) + '</span>'
+        : '<span class="dotsep">Not linked to a booking</span>' + (canLink ? '<span class="dotsep"><button type="button" class="rv-link" data-act="link" data-id="' + r.id + '">Link booking</button></span>' : ''));
+    var taskBtn = low && !task && canTask ? '<button type="button" class="btn btn-ghost btn-sm" data-act="task" data-id="' + r.id + '">' + O.icon('tasks') + 'Create follow-up task</button>' : '';
+    var chatBtn = conv && canChat ? '<button type="button" class="btn btn-ghost btn-sm" data-act="chat" data-id="' + r.id + '">' + O.icon('chat') + 'Message guest</button>' : '';
     var reply;
     if (r.reply && !st.editing[r.id]) {
-      reply = '<div class="rv-replied"><div class="rh">' + O.icon('check') + '<span>Replied by ' + esc(staffName(r.reply.by)) + ' on ' + esc(d.fmt(r.reply.date)) + (r.reply.date === r.date ? ' (same day)' : ' (' + fmt.plural(d.diff(r.date, r.reply.date), 'day') + ' after the review)') + '</span><button type="button" class="btn btn-quiet btn-xs" data-act="edit" data-id="' + r.id + '">' + O.icon('edit') + 'Edit reply</button></div>' + esc(r.reply.text).replace(/\n/g, '<br>') + '</div>' +
-        (low && (!task || conv) ? '<div class="rv-after">' + (!task ? '<button type="button" class="btn btn-ghost btn-sm" data-act="task" data-id="' + r.id + '">' + O.icon('tasks') + 'Create follow-up task</button>' : '') +
-          (conv ? '<button type="button" class="btn btn-ghost btn-sm" data-act="chat" data-id="' + r.id + '">' + O.icon('chat') + 'Message guest</button>' : '') + '</div>' : '');
+      reply = '<div class="rv-replied"><div class="rh">' + O.icon('check') + '<span>Replied by ' + esc(staffName(r.reply.by)) + ' on ' + esc(d.fmt(r.reply.date)) + (r.reply.date === r.date ? ' (same day)' : ' (' + fmt.plural(d.diff(r.date, r.reply.date), 'day') + ' after the review)') + '</span>' + (canReply() ? '<button type="button" class="btn btn-quiet btn-xs" data-act="edit" data-id="' + r.id + '">' + O.icon('edit') + 'Edit reply</button>' : '') + '</div>' + esc(r.reply.text).replace(/\n/g, '<br>') + '</div>' +
+        (low && (taskBtn || chatBtn) ? '<div class="rv-after">' + taskBtn + chatBtn + '</div>' : '');
+    } else if (!canReply()) {
+      reply = '<div class="rv-ro">' + O.icon('lock') + '<span>No reply yet. ' + esc(NO_REPLY) + '</span></div>' + (taskBtn || chatBtn ? '<div class="rv-after">' + taskBtn + chatBtn + '</div>' : '');
     } else {
       var text = st.drafts[r.id] != null ? st.drafts[r.id] : (r.reply ? r.reply.text : suggest(r, st.variant[r.id] || 0));
       var isSug = st.drafts[r.id] == null && !r.reply;
@@ -369,8 +386,7 @@
         '<button type="button" class="btn btn-ghost btn-sm" data-act="another" data-id="' + r.id + '">' + O.icon('refresh') + 'Another suggestion</button>' +
         (r.reply ? '<button type="button" class="btn btn-ghost btn-sm" data-act="canceledit" data-id="' + r.id + '">Cancel</button>' : '') +
         '<span class="grow"></span>' +
-        (low && !task ? '<button type="button" class="btn btn-ghost btn-sm" data-act="task" data-id="' + r.id + '">' + O.icon('tasks') + 'Create follow-up task</button>' : '') +
-        (conv ? '<button type="button" class="btn btn-ghost btn-sm" data-act="chat" data-id="' + r.id + '">' + O.icon('chat') + 'Message guest</button>' : '') +
+        taskBtn + chatBtn +
         '</div></div>';
     }
     return '<article class="rv-card' + (low ? ' low' : '') + '" data-rv="' + r.id + '">' +
@@ -386,50 +402,16 @@
   function listHTML() {
     var list = sortList(D.reviews.filter(function (r) { return match(r) || (st.keep[r.id] && match(r, 'reply')); }));
     if (!list.length) {
-      var msg = st.reply === 'needs' ? 'Nothing waiting for a reply with these filters. Nicely done.' : 'No reviews match these filters. Try a wider date range or clear the filters.';
-      return '<div class="card">' + U.empty(msg, st.reply === 'needs' ? '✓' : '∅') + (isDefault() ? '' : '<div class="center" style="padding:0 0 18px"><button type="button" class="btn btn-ghost btn-sm" data-act="clear">Clear filters</button></div>') + '</div>';
+      var msg = st.reply === 'needs' ? 'Nothing is waiting for a reply with these filters.' : 'No reviews match these filters.';
+      return '<div class="card">' + U.empty(msg, st.reply === 'needs' ? '✓' : '∅') + '<div class="center" style="padding:0 0 18px">' + (isDefault() ? '<button type="button" class="btn btn-ghost" data-act="alldates">Show all dates</button>' : '<button type="button" class="btn btn-ghost" data-act="clear">Clear filters</button>') + '</div></div>';
     }
     var shown = list.slice(0, st.shown);
     return shown.map(reviewHTML).join('') +
       (list.length > shown.length ? '<div class="rv-more"><span>Showing ' + shown.length + ' of ' + list.length + '</span><button type="button" class="btn btn-ghost btn-sm" data-act="more">Show ' + Math.min(PAGE, list.length - shown.length) + ' more</button><button type="button" class="btn btn-quiet btn-sm" data-act="all">Show all</button></div>'
         : '<div class="rv-more"><span>All ' + fmt.plural(list.length, 'review') + ' shown</span></div>') +
-      '<div class="rv-note">' + O.icon('alert') + 'Prototype: replies are saved here but not really posted to Airbnb, Booking.com, Agoda, Vrbo or Google.</div>';
+      '<div class="rv-note">' + O.icon('alert') + 'Replies are saved here. Posting them to Airbnb, Booking.com, Agoda, Vrbo and Google is not connected in this version.</div>';
   }
 
-  function platformPanel() {
-    var scope = D.reviews.filter(function (r) { return inScope(r, st.from, st.to, { allPlatforms: true }); });
-    var rows = PLATS.map(function (p) {
-      var l = scope.filter(function (r) { return r.platform === p; });
-      return { p: p, n: l.length, a: avg(l, function (r) { return r.stars; }), nr: l.filter(function (r) { return !r.reply; }).length };
-    });
-    return '<div class="card"><div class="card-head"><div><h3>Ratings by platform</h3><div class="sub">Average stars, reviews and replies due. Click to filter.</div></div></div><div class="card-body">' +
-      rows.map(function (x) {
-        return '<button type="button" class="rv-pl' + (st.platform === x.p ? ' on' : '') + '" data-plat="' + x.p + '" aria-pressed="' + (st.platform === x.p) + '">' +
-          '<span style="min-width:0;display:flex;flex-direction:column;gap:5px">' + U.plat(x.p) + '<span class="mini-track"><i style="width:' + (x.a ? (x.a / 5 * 100).toFixed(1) : 0) + '%"></i></span></span>' +
-          '<span class="avg">' + (x.a ? x.a.toFixed(2) : '–') + '</span><span class="cnt">' + x.n + '</span>' +
-          '<span class="nr">' + (x.nr ? '<span class="pill warn">' + x.nr + ' to reply</span>' : x.n ? '<span class="pill ok">Done</span>' : '') + '</span></button>';
-      }).join('') + '</div></div>';
-  }
-  function starPanel() {
-    var scope = D.reviews.filter(function (r) { return inScope(r, st.from, st.to); });
-    var max = Math.max.apply(null, [1].concat([1, 2, 3, 4, 5].map(function (n) { return scope.filter(function (r) { return r.stars === n; }).length; })));
-    return '<div class="card"><div class="card-head"><div><h3>Star mix</h3><div class="sub">Click a row to add it to the star filter</div></div></div><div class="card-body">' +
-      [5, 4, 3, 2, 1].map(function (n) {
-        var c = scope.filter(function (r) { return r.stars === n; }).length;
-        return '<button type="button" class="sd-row' + (st.stars.indexOf(n) >= 0 ? ' on' : '') + '" data-star="' + n + '" aria-label="' + starLabel(n) + ': ' + c + ' reviews"><span class="lbl">' + n + ' <span class="stars" aria-hidden="true">★</span></span><span class="sd-bar"><i class="' + (n <= 3 ? 'lo' : '') + '" style="width:' + (c / max * 100).toFixed(1) + '%"></i></span><span class="v">' + c + '</span><span class="p">' + (scope.length ? fmt.pct(c / scope.length) : '–') + '</span></button>';
-      }).join('') + '</div></div>';
-  }
-  function subPanel() {
-    var len = d.diff(st.from, st.to) + 1;
-    var cur = D.reviews.filter(function (r) { return inScope(r, st.from, st.to); });
-    var prev = D.reviews.filter(function (r) { return inScope(r, d.add(st.from, -len), d.add(st.from, -1)); });
-    var vals = SUBS.map(function (s) { return { k: s[0], l: s[1], v: avg(cur, function (r) { return r.sub[s[0]]; }), p: avg(prev, function (r) { return r.sub[s[0]]; }) }; });
-    var minV = Math.min.apply(null, vals.map(function (x) { return x.v == null ? 9 : x.v; }));
-    return '<div class="card"><div class="card-head"><div><h3>Category scores</h3><div class="sub">' + (prev.length ? 'Average out of 5, change in points vs the previous ' + len + ' days' : 'Average out of 5') + '</div></div></div><div class="card-body">' +
-      (cur.length ? vals.map(function (x) {
-        return '<div class="ss-row' + (x.v === minV && cur.length > 2 ? ' weak' : '') + '"><span class="lbl">' + x.l + '</span><span class="mini-track"><i style="width:' + (x.v / 5 * 100).toFixed(1) + '%"></i></span><span class="v">' + x.v.toFixed(2) + '</span><span class="dl">' + (x.p ? absDelta(x.v - x.p, 2, '') : '') + '</span></div>';
-      }).join('') : U.empty('No reviews in this range')) + '</div></div>';
-  }
   function propertyPanel() {
     var scope = D.reviews.filter(function (r) { return inScope(r, st.from, st.to, { allProps: true }); });
     var rows = D.properties.map(function (p) {
@@ -437,7 +419,7 @@
       return { p: p, n: l.length, a: avg(l, function (r) { return r.stars; }), nr: l.filter(function (r) { return !r.reply; }).length };
     }).filter(function (x) { return x.n; }).sort(function (a, b) { return a.a - b.a; });
     var all = avg(scope, function (r) { return r.stars; });
-    return '<div class="card"><div class="card-head"><div><h3>By property</h3><div class="sub">' + (all != null ? 'Lowest first. Red is below your ' + all.toFixed(2) + ' average. Click to filter.' : 'Lowest average first. Click to filter.') + '</div></div></div><div class="card-body flush"><div class="table-wrap"><table class="table pp-table"><thead><tr><th>Property</th><th class="num">Avg</th><th class="num">Reviews</th><th class="num">To reply</th></tr></thead><tbody>' +
+    return '<div class="card"><div class="card-head"><div><h3>By property</h3><div class="sub">' + (all != null ? 'Lowest first. Red is below your ' + all.toFixed(2) + ' average. Select one to filter.' : 'Lowest average first. Select one to filter.') + '</div></div></div><div class="card-body flush"><div class="table-wrap"><table class="table pp-table"><thead><tr><th>Property</th><th class="num">Avg</th><th class="num">Reviews</th><th class="num">To reply</th></tr></thead><tbody>' +
       (rows.length ? rows.map(function (x) {
         return '<tr class="click' + (st.prop === x.p.id ? ' on' : '') + '" data-prop="' + x.p.id + '" tabindex="0"><td><span class="row-flex"><span class="prop-dot" style="background:' + U.propColor(x.p.id) + '"></span>' + esc(x.p.short) + '</span></td><td class="num avg' + (all != null && x.a < all - 0.005 ? ' lo' : '') + '">' + x.a.toFixed(2) + '</td><td class="num">' + x.n + '</td><td class="num">' + (x.nr ? '<b>' + x.nr + '</b>' : '<span class="muted">0</span>') + '</td></tr>';
       }).join('') : '<tr><td colspan="4">' + U.empty('No reviews in this range') + '</td></tr>') + '</tbody></table></div></div></div>';
@@ -449,13 +431,14 @@
     var tags = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
     return '<div class="card"><div class="card-head"><div><h3>What low ratings mention</h3><div class="sub">Tags on reviews of 3 stars or lower</div></div></div><div class="card-body">' +
       (tags.length ? '<div class="mention">' + tags.map(function (t) { var on = st.q.toLowerCase() === t.toLowerCase(); return '<button type="button" class="' + (on ? 'on' : '') + '" data-tag="' + esc(t) + '" aria-pressed="' + on + '">' + esc(t) + ' <span class="c">' + counts[t] + '</span></button>'; }).join('') + '</div>' +
-        '<div class="side-cap">' + esc(tags[0]) + ' comes up most often. Click a tag to read those reviews, and use "Create follow-up task" on a review to get it fixed.</div>'
+        '<div class="side-cap">' + esc(tags[0]) + ' comes up most often. Select a tag to read those reviews' + (O.can('tasks.create') ? ', and use "Create follow-up task" on a review to get it fixed' : '') + '.</div>'
         : U.empty('No reviews of 3 stars or lower in this range', '✓')) + '</div></div>';
   }
 
   /* ------------------------------------------------------------------ actions */
   function findReview(id) { return D.reviews.filter(function (r) { return r.id === id; })[0]; }
   function post(r, text) {
+    if (!canReply()) { U.toast(NO_REPLY, 'bad'); return; }
     text = (text || '').trim();
     if (text.length < 10) { U.toast('Write a reply of at least 10 characters first', 'bad'); return; }
     var was = !!r.reply;
@@ -486,6 +469,7 @@
     return D.tasks.filter(function (t) { return t.propertyId === r.propertyId && t.status !== 'done' && t.due.slice(0, 10) >= r.date && hit[0].test(t.title + ' ' + (t.note || '')); })[0] || null;
   }
   function createTask(r) {
+    if (!O.can('tasks.create')) { U.toast('Creating tasks is not part of your access', 'bad'); return; }
     var cover = coveringTask(r);
     if (cover) {
       r.taskId = cover.id;
@@ -499,20 +483,22 @@
     var maint = who === 'maint', clean = who === 'clean';
     var p = prop(r.propertyId);
     var roleStaff = function (role, fb) { var x = D.staff.filter(function (s) { return s.role === role; })[0]; return x ? x.id : fb; };
-    var assignee = maint ? roleStaff('maintenance', 's6') : clean ? p.housekeeper : roleStaff('ops', 's2');
-    var max = D.tasks.reduce(function (m, t) { var n = +String(t.id).replace(/\D/g, ''); return n > m ? n : m; }, 300);
+    var assignee = maint ? roleStaff('maintenance', null) : clean ? p.housekeeper : roleStaff('ops', null);
+    if (assignee && !D.staffById(assignee)) assignee = null;
+    if (assignee && assignee !== O.state.viewer && !O.can('tasks.assign')) assignee = null; /* only people who may assign tasks give them to someone else */
     var title = (hit ? hit[1] : maint ? 'Fix the issue from a guest review' : clean ? 'Deep clean after a low review' : 'Follow up on a guest review') + ' (' + starLabel(r.stars) + ' on ' + U.platName(r.platform) + ')';
     var t = {
-      id: 'T-' + (max + 1), title: title, type: hit ? hit[2] : maint ? 'Maintenance' : clean ? 'Turnover' : 'Inspection',
-      propertyId: p.id, assigneeId: assignee, due: d.add(D.TODAY, 1) + 'T12:00', priority: r.stars <= 2 ? 'high' : 'medium', status: 'todo',
+      id: O.uid('T'), title: title, type: hit ? hit[2] : maint ? 'Maintenance' : clean ? 'Turnover' : 'Inspection',
+      propertyId: D.propById[r.propertyId] ? r.propertyId : null, assigneeId: assignee, due: d.add(D.TODAY, 1) + 'T12:00', priority: r.stars <= 2 ? 'high' : 'medium', status: 'todo', createdAt: D.NOW, createdBy: O.state.viewer, reviewId: r.id,
       note: U.platName(r.platform) + ' review by ' + r.guest + ' (' + starLabel(r.stars) + '): "' + (r.text.length > 110 ? r.text.slice(0, 107) + '…' : r.text) + '"'
     };
     D.tasks.push(t); r.taskId = t.id;
-    U.toast('Task ' + t.id + ' created for ' + p.short + ' and assigned to ' + staffName(assignee) + '. They were notified on WhatsApp.');
+    U.toast(assignee ? 'Task created for ' + p.short + ' and assigned to ' + staffName(assignee) + '. They were notified on WhatsApp.' : 'Task created for ' + p.short + '. It is waiting for someone to pick it up.');
     O.emit('data', { type: 'task', id: t.id });
   }
   /* reviews that arrive without a reservation code (Google, or a platform that did not share it) can be matched by hand */
   function linkBooking(r) {
+    if (!O.can('reviews', 'edit')) { U.toast('Your access does not include changing reviews', 'bad'); return; }
     var opts = D.bookings.filter(function (b) { return b.propertyId === r.propertyId && b.status !== 'cancelled' && b.checkOut <= r.date && b.checkOut >= d.add(r.date, -21); })
       .sort(function (a, b) { return a.checkOut < b.checkOut ? 1 : -1; });
     if (!opts.length) { U.toast('No stays at ' + prop(r.propertyId).short + ' ended in the three weeks before this review', 'bad'); return; }
@@ -523,8 +509,8 @@
         return '<option value="' + b.id + '"' + (same[0] && same[0].id === b.id ? ' selected' : '') + '>' + esc(b.guest.name) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + esc(U.platName(b.channel)) + ' · ' + esc(b.id) + '</option>';
       }).join('') + '</select><div class="hint">Stays at this unit that ended in the three weeks before the review, latest first.</div></div></div>',
       actions: [{ label: 'Cancel' }, { label: 'Link booking', kind: 'primary', onClick: function (close, el) {
-        var id = O.$('#rv-lb', el).value; r.bookingId = id;
-        U.toast('Review linked to ' + id + ' (' + D.booking(id).guest.name + ')');
+        var id = O.$('#rv-lb', el).value, lb = D.booking(id); r.bookingId = id;
+        U.toast('Review linked to ' + id + (lb && lb.guest ? ' (' + lb.guest.name + ')' : ''));
         O.emit('data', { type: 'review', id: r.id });
       } }]
     });
@@ -543,6 +529,9 @@
     desc: 'Every platform in one place: filter, reply and spot what to fix',
     render: function (root, ctx) {
       var pr = ctx.params || {};
+      syncDates();
+      relink();
+      if (st.prop && !D.propById[st.prop]) st.prop = '';
       /* low reviews waiting for a reply get linked to an open task that already covers the problem */
       D.reviews.forEach(function (r) { if (!r.taskId && !r.reply && r.stars <= 3) { var c = coveringTask(r); if (c) r.taskId = c.id; } });
       if (ctx.fresh && (pr.needsReply || pr.platform || pr.propertyId || pr.stars)) {
@@ -553,12 +542,20 @@
         if (pr.stars) st.stars = [].concat(pr.stars).map(Number).filter(function (n) { return n >= 1 && n <= 5; });
         ctx.params = {};
       }
+      if (!D.reviews.length) { /* nothing yet (new workspace): one sentence plus the main action */
+        ctx.setActions('');
+        var noProps = !D.properties.length, canAdd = noProps ? O.can('properties.create') : O.allowed('bookings');
+        root.innerHTML = '<div class="pg-reviews"><div class="card rv-empty">' + U.empty('Reviews from Airbnb, Booking.com, Agoda, Vrbo and Google show up here after your guests stay.', '★') +
+          (canAdd ? '<button type="button" class="btn btn-primary" data-go="' + (noProps ? 'properties' : 'bookings') + '">' + (noProps ? O.icon('plus') + 'Add your first property' : 'See bookings') + '</button>' : '') + '</div></div>';
+        O.$('.pg-reviews', root).addEventListener('click', function (e) { var g = e.target.closest('[data-go]'); if (g) O.go(g.dataset.go); });
+        return;
+      }
       var acts = ctx.setActions('<button type="button" class="btn btn-ghost btn-sm" data-top="csv">' + O.icon('download') + 'Export CSV</button>');
       O.$('[data-top=csv]', acts).onclick = exportCSV;
       O.$('[data-top=csv]', acts).title = 'Download the reviews that match the current filters';
 
       root.innerHTML = '<div class="pg-reviews">' + kpisHTML() + filtersHTML() +
-        '<div class="rv-main"><div class="rv-list">' + listHTML() + '</div><aside class="rv-side" aria-label="Review analysis">' + platformPanel() + starPanel() + subPanel() + propertyPanel() + mentionPanel() + '</aside></div></div>';
+        '<div class="rv-main"><div class="rv-list">' + listHTML() + '</div><aside class="rv-side" aria-label="Review analysis">' + propertyPanel() + mentionPanel() + '</aside></div></div>';
       var page = O.$('.pg-reviews', root);
 
       U.mount(page, 'dr', U.dateRange({
@@ -579,6 +576,8 @@
         if ((x = e.target.closest('[data-open]'))) { O.booking.open(x.dataset.open); return; }
         if (!(x = e.target.closest('[data-act]'))) return;
         var act = x.dataset.act, r = x.dataset.id ? findReview(x.dataset.id) : null;
+        if (act === 'stats') { O.go('statistics', { tab: 'reviews' }); return; }
+        if (act === 'alldates') { st.preset = 'since'; syncDates(); st.shown = PAGE; st.keep = {}; ctx.rerender(); return; }
         if (act === 'clear') { var keepSort = st.sort; Object.assign(st, defaults(), { shown: PAGE, keep: {}, sort: keepSort === 'waiting' ? 'newest' : keepSort }); ctx.rerender(); return; }
         if (act === 'more') { st.shown += PAGE; ctx.rerender(); return; }
         if (act === 'all') { st.shown = 9999; ctx.rerender(); return; }
