@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-local/
+.vercel/
+.env
+.env.*
+*.png
+!public/**/*.png
+__pycache__/
