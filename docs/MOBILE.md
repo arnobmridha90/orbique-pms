@@ -339,7 +339,8 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
   (it checks `Capacitor.isNativePlatform()`). It replaces `O.download` (file written to the app cache with the
   Filesystem plugin, then the Share plugin), `O.voice` (the Text-to-Speech plugin), `window.open` and clicks on links to
   other sites (the Browser plugin; `tel:`, `mailto:`, `sms:`, `geo:` and WhatsApp go to the phone), the Android back
-  button (App plugin), the status bar icon colour (SystemBars, following the colour at the top of the screen), hides
+  button (App plugin), the status and navigation bar icon colours (SystemBars, following the colour under each bar; on Android phones
+  whose System WebView is older than 140 the app sits below the bars over a fixed light background, so dark icons), hides
   the splash screen after the first screen is drawn, catches the clock up when the app comes back to the front, and
   sets `O.APP_URL` from `config.appUrl` so guest and invite links point at the live site.
   `tests/native_sim.py` checks it in Chromium with a simulated native side (see its notes).
@@ -388,10 +389,12 @@ optional: steps that need a missing secret are skipped.
 `android-test` pre-release after the emulator check passes, and the iPhone build goes to TestFlight when the Apple
 secrets are set. Pull requests and other branches never publish. To publish again without a new commit (for example
 after changing `ORBIQUE_SITE_URL`), use **Run workflow** on `main`. Re-running an old run instead rebuilds that run's
-commit, which may be older than `main`.
+commit, which may be older than `main`; it is not published if the test build already has a newer commit.
 
 One run per branch at a time: a new pull request run cancels the older one. On `main` a new run waits for the running
-one, and a run that is still waiting is replaced by a newer one, so the newest commit is published last.
+one, and a run that is still waiting is replaced by a newer one, so the newest commit is published last. A commit that
+changes nothing the app is built from (for example only docs or database migrations) starts no run and does not stop
+the run before it from publishing.
 
 | Job | What it does | Output (Actions, the run, Artifacts) |
 |---|---|---|

@@ -224,10 +224,12 @@
     barTimer = null;
     if (!Bars || !Bars.setStyle) return;
     /* Android System WebView older than 140: SystemBars cannot pass the insets through, so it pads the app below the
-       bars (and sets --safe-area-inset-top to 0px). The bars then sit over the window background, not the page, so
-       they follow the phone's light/dark setting like that background does */
+       bars (and sets --safe-area-inset-top to 0px). The bars then sit over the window background, not the page. That
+       background is a fixed light colour (android res/values/colors.xml), so dark icons on both bars. Not DEFAULT: the
+       plugin turns DEFAULT into LIGHT or DARK once, and on Android 10 and 11 a later switch of the phone's theme would
+       leave the icons the same colour as a background that followed the theme */
     if (platform === 'android' && document.documentElement.style.getPropertyValue('--safe-area-inset-top').trim() === '0px') {
-      setBar('StatusBar', 'DEFAULT'); setBar('NavigationBar', 'DEFAULT'); return;
+      setBar('StatusBar', 'LIGHT'); setBar('NavigationBar', 'LIGHT'); return;
     }
     /* each bar follows the colour under it. Android applies a style without a bar to both bars, and iOS ignores the bar
        (its home indicator adapts by itself), so iOS only gets the status bar's */

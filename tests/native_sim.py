@@ -687,7 +687,7 @@ def android(browser, base, out):
     r.js("() => document.documentElement.style.setProperty('--safe-area-inset-top', '0px')")
     pg.click('#menu-btn')
     r.wait(400)
-    r.check('bars: app padded below the bars (old WebView) -> both DEFAULT, even with the dark side menu open', r.js(bars) == {'StatusBar': 'DEFAULT', 'NavigationBar': 'DEFAULT'}, r.js(bars))
+    r.check('bars: app padded below the bars (old WebView) -> both LIGHT (fixed light window behind them), even with the dark side menu open', r.js(bars) == {'StatusBar': 'LIGHT', 'NavigationBar': 'LIGHT'}, r.js(bars))
     r.js("() => { document.querySelector('.scrim').click(); document.documentElement.style.setProperty('--safe-area-inset-top', '47px'); }")
     r.wait(400)
     r.check('bars: insets passed through again -> back to following the page', r.js(bars) == {'StatusBar': 'LIGHT', 'NavigationBar': 'LIGHT'}, r.js(bars))

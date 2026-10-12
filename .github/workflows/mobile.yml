@@ -19,6 +19,7 @@ on:
       - 'ios/**'
       - 'api/**'
       - 'scripts/build.mjs'
+      - 'scripts/android-test-key.*'
       - 'capacitor.config.json'
       - 'config/mobile.json'
       - 'package.json'
@@ -31,6 +32,7 @@ on:
       - 'ios/**'
       - 'api/**'
       - 'scripts/build.mjs'
+      - 'scripts/android-test-key.*'
       - 'capacitor.config.json'
       - 'config/mobile.json'
       - 'package.json'
@@ -408,11 +410,23 @@ jobs:
         run: |
           set -euo pipefail
           tag=android-test
-          # Only the newest commit on main publishes: re-running an older run must not move the download back
-          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')
-          if [ "$head" != "$GITHUB_SHA" ]; then
-            echo "::notice::Not published: this run built ${GITHUB_SHA:0:7}, but main is now at ${head:0:7}. Run the workflow on main for the newest build."
+          # Publish a commit that is on main and not older than the build already published: re-running an older run
+          # must not move the download back, and a later docs or database commit on main (which starts no run here) must
+          # not stop this build from being published
+          on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...main" --jq '.status')
+          if [ "$on_main" != ahead ] && [ "$on_main" != identical ]; then
+            echo "::notice::Not published: ${GITHUB_SHA:0:7} is not on main."
             exit 0
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
+            cur=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')
+            # "behind": this commit comes before the published one. Anything else (newer, the same, or the published
+            # commit no longer in main's history) publishes
+            rel=$(gh api "repos/$GITHUB_REPOSITORY/compare/$cur...$GITHUB_SHA" --jq '.status' 2>/dev/null) || rel=unknown
+            if [ "$rel" = behind ]; then
+              echo "::notice::Not published: the test build already has ${cur:0:7}, which is newer than ${GITHUB_SHA:0:7}."
+              exit 0
+            fi
           fi
           # Move (or create) the tag at this commit
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then

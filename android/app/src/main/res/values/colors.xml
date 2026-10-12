@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Behind the app and, on phones whose System WebView is older than 140, behind the status and navigation bars.
+         Fixed light (the app's page colour, capacitor.config.json backgroundColor) so the bar icons, which the app
+         sets to dark on this path, stay readable when the phone switches to dark theme. -->
+    <color name="appWindowBackground">#F6F7F9</color>
+</resources>
