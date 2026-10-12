@@ -223,7 +223,10 @@
   function soon() { if (!barTimer) barTimer = setTimeout(paintBar, 120); }
   new MutationObserver(soon).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
   window.addEventListener('resize', soon);
-  window.addEventListener('scroll', soon, { passive: true, capture: true }); /* what sits under the bars changes as pages scroll */
+  /* what sits under the bars also changes as pages scroll and when a slide-in (the side menu) finishes moving */
+  window.addEventListener('scroll', soon, { passive: true, capture: true });
+  document.addEventListener('transitionend', soon, true);
+  document.addEventListener('animationend', soon, true);
 
   /* ---------------- splash screen: hide once the first screen is drawn ---------------- */
   var t0 = Date.now();
