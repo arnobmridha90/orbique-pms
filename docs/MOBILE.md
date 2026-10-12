@@ -321,7 +321,8 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
 - The site address comes from the environment variable `ORBIQUE_SITE_URL` or `config/mobile.json` (`siteUrl`), for
   example `ORBIQUE_SITE_URL=https://app.orbique.my npm run mobile:sync`. The build reads the public Supabase URL and
   key from that site's `/config.js` (or from `SUPABASE_URL` and `SUPABASE_ANON_KEY`), fails loudly if the site is set
-  but unreachable, and refuses a service-role key. With no address the app is a local test copy.
+  but unreachable, and refuses a service-role key. With no address, or `ORBIQUE_SITE_URL=none`, the app is a local
+  test copy.
 - App settings (app ID, splash screen, status bar) are in `capacitor.config.json`.
 - Android build types (`android/app/build.gradle`), run from `android/`:
   - `debug`: debuggable, with WebView inspection (`chrome://inspect`). `./gradlew assembleDebug`; this is also what
@@ -388,7 +389,8 @@ optional: steps that need a missing secret are skipped.
 
 **Publishing:** only runs on `main` publish, whether a push or **Run workflow** started them. The APK goes to the
 `android-test` pre-release after the emulator check passes, and the iPhone build goes to TestFlight when the Apple
-secrets are set. Pull requests and other branches never publish. To publish again without a new commit (for example
+secrets are set. Pull requests and other branches never publish, and their builds are local test copies: the live
+site runs `main`'s server code, so their app is tested without it. To publish again without a new commit (for example
 after changing `ORBIQUE_SITE_URL`), use **Run workflow** on `main`. Re-running an old run instead rebuilds that run's
 commit, which may be older than `main`; it is not published if the test build already has a newer commit.
 
@@ -400,7 +402,7 @@ the run before it from publishing.
 | Job | What it does | Output (Actions, the run, Artifacts) |
 |---|---|---|
 | Android build | Node 22, `npm ci`; the build number and the app ID (read from `capacitor.config.json` and passed to the emulator check); Java 21; the runner's Android SDK (`ANDROID_HOME`, written to `android/local.properties`); `npm run mobile:build` (prints the site address the app connects to); `npx cap sync android`; the test signing key (below); `./gradlew assembleBeta`; checks the APK's signer matches the test key; `bundleRelease` when the four upload key secrets exist (and checks the bundle is signed) | `orbique-android-test` (`Orbique-test.apk`), `orbique-android-play-bundle` |
-| Android emulator check | Boots an Android 15 emulator (API 35, x86_64, KVM), installs the APK, launches `<app ID>/.MainActivity`, screenshots at 15 and 30 seconds. Fails if the app is not running at 30 seconds, if logcat has a crash or "not responding" for the app, or if the page logged any error (Capacitor forwards the page console to logcat with the tag `Capacitor/Console`; errors and uncaught exceptions are level E; see "Page console on Android" above) | `orbique-android-smoke` (screenshots, `logcat.txt`, `crash.txt`) |
+| Android emulator check | On `main`, first waits (up to 10 minutes) until the live site's `/api/health` reports this commit or a newer one, since Vercel deploys it in parallel. Boots an Android 15 emulator (API 35, x86_64, KVM), installs the APK, launches `<app ID>/.MainActivity`, screenshots at 15 and 30 seconds. Fails if the app is not running at 30 seconds, if logcat has a crash or "not responding" for the app, or if the page logged any error (Capacitor forwards the page console to logcat with the tag `Capacitor/Console`; errors and uncaught exceptions are level E; see "Page console on Android" above) | `orbique-android-smoke` (screenshots, `logcat.txt`, `crash.txt`) |
 | Publish the Android test build | On `main` only (a push or **Run workflow**, never a pull request), after both jobs above pass: moves the tag `android-test` to the commit, writes the release notes (commit, build number, date, site address, build log, and whether the build installs over the old one or testers must uninstall first) and replaces `Orbique-test.apk` on that pre-release (only this job may write to the repository; it cannot replace the file if "immutable releases" is turned on in the repository settings) | https://github.com/arnobmridha90/orbique-pms/releases/tag/android-test |
 | iPhone build | Picks the newest Xcode on `macos-latest`, stops early if it is older than Capacitor needs (read from `node_modules/@capacitor/ios`: Xcode 26, iOS 15), builds for the simulator without signing; on `main` (a push or **Run workflow**) with the four Apple secrets, archives and uploads to TestFlight | `orbique-ios-simulator` (unzip and drag `App.app` onto a running iOS Simulator) |
 

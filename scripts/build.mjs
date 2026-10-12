@@ -136,7 +136,10 @@ async function buildMobile() {
   const env = process.env;
   let file = {};
   try { file = JSON.parse(read(path.join(ROOT, 'config', 'mobile.json'))); } catch (e) { /* optional */ }
-  const site = String(env.ORBIQUE_SITE_URL || file.siteUrl || '').trim().replace(/\/+$/, '');
+  /* ORBIQUE_SITE_URL=none: a local test copy even when config/mobile.json names a site (CI uses it for pull requests,
+     whose server changes are not on the live site yet) */
+  const asked = String(env.ORBIQUE_SITE_URL || '').trim();
+  const site = asked.toLowerCase() === 'none' ? '' : String(asked || file.siteUrl || '').trim().replace(/\/+$/, '');
   if (site && !/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(site)) { console.error('The site address must look like https://app.example.com (got ' + site + ')'); process.exit(1); }
   let supabaseUrl = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '';
   let supabaseKey = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';

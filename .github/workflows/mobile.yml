@@ -113,7 +113,9 @@ jobs:
         id: web
         env:
           # Empty is fine: the build then uses config/mobile.json, and with no address there either the app is a local test copy.
-          ORBIQUE_SITE_URL: ${{ vars.ORBIQUE_SITE_URL }}
+          # Only main connects to the live site, which runs main's server code. Pull requests and other branches build a
+          # local test copy, so the emulator check tests their app without the live site's older server code
+          ORBIQUE_SITE_URL: ${{ github.ref != 'refs/heads/main' && 'none' || vars.ORBIQUE_SITE_URL }}
         run: |
           npm run mobile:build
           site=$(node -e "const vm = require('vm'), fs = require('fs'); const w = {}; vm.runInNewContext(fs.readFileSync('mobile/www/config.js', 'utf8'), { window: w }); process.stdout.write(String((w.ORBIQUE_CONFIG || {}).appUrl || ''))")
@@ -273,6 +275,27 @@ jobs:
         with:
           name: orbique-android-test
           path: ${{ runner.temp }}/apk
+
+      # The app talks to the live site. Vercel deploys the same commit in parallel; wait until the site runs it (or a
+      # newer commit), so the check never tests this app against older server code
+      - name: Wait for the live site to run this commit
+        if: needs.android.outputs.site != ''
+        env:
+          SITE: ${{ needs.android.outputs.site }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          got=""
+          for i in $(seq 1 60); do
+            got=$(curl -fsS -m 20 "$SITE/api/health" | jq -r '.commit // ""' || true)
+            if [ -n "$got" ]; then
+              rel=$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...$got" --jq '.status' 2>/dev/null || true)
+              if [ "$rel" = identical ] || [ "$rel" = ahead ]; then echo "$SITE runs $got."; exit 0; fi
+            fi
+            echo "attempt $i: $SITE runs '${got:-?}', waiting for ${GITHUB_SHA:0:7}"
+            sleep 10
+          done
+          echo "::error::$SITE still runs '${got:-?}', not ${GITHUB_SHA:0:7} or newer, after 10 minutes. Check the site's deploy on Vercel, then re-run this job."
+          exit 1
 
       - name: Enable KVM for the emulator
         run: |
@@ -523,7 +546,7 @@ jobs:
 
       - name: Build the web files
         env:
-          ORBIQUE_SITE_URL: ${{ vars.ORBIQUE_SITE_URL }}
+          ORBIQUE_SITE_URL: ${{ github.ref != 'refs/heads/main' && 'none' || vars.ORBIQUE_SITE_URL }}
         run: npm run mobile:build
 
       - name: Copy the web files into the iOS project
