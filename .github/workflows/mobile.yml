@@ -112,9 +112,9 @@ jobs:
       - name: Build the web files
         id: web
         env:
-          # Empty is fine: the build then uses config/mobile.json, and with no address there either the app is a local test copy.
           # Only main connects to the live site, which runs main's server code. Pull requests and other branches build a
-          # local test copy, so the emulator check tests their app without the live site's older server code
+          # local test copy, so the emulator check tests their app without the live site's older server code. On main an
+          # empty variable is fine: the build then uses config/mobile.json
           ORBIQUE_SITE_URL: ${{ github.ref != 'refs/heads/main' && 'none' || vars.ORBIQUE_SITE_URL }}
         run: |
           npm run mobile:build
@@ -341,6 +341,13 @@ jobs:
             done
             adb shell pidof "$pkg" | tr -d '\r' > "$out/pid.txt" || true
             adb shell dumpsys activity activities > "$out/activities.txt" 2>&1 || true
+            # after an ANR, keep Android's thread dump of the app (needs root, which this emulator image allows)
+            if grep -q "ANR in $pkg" "$out/logcat.txt"; then
+              adb root > /dev/null 2>&1 || true
+              sleep 3
+              adb wait-for-device
+              adb shell 'for f in /data/anr/*; do echo "== $f"; cat "$f"; done' > "$out/anr-traces.txt" 2>&1 || true
+            fi
           fi
           adb logcat -d -b crash > "$out/crash.txt" 2>&1 || true
           sleep 2
@@ -392,6 +399,12 @@ jobs:
           fi
           if grep -E "ANR in $pkg_re( |\$)" "$log"; then
             echo "::error::The app stopped responding (ANR in logcat.txt)."
+            # the reason, the load and the CPU use ActivityManager logs with it, and the app's main thread if it was dumped
+            grep -E -A 25 "ANR in $pkg_re( |\$)" "$log" | grep -E ' ActivityManager: ' | head -40
+            if [ -s "$out/anr-traces.txt" ]; then
+              echo "--- the app's main thread at the ANR ---"
+              awk '/^"main"/ { f = 1 } f { print } f && /^$/ { exit }' "$out/anr-traces.txt" | head -45
+            fi
             fail=1
           fi
           # Capacitor's SystemBars plugin sets the safe-area CSS on every insets change, including before the page has a
