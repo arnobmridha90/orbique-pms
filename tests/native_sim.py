@@ -537,6 +537,15 @@ def android(browser, base, out):
     r.check('no speech engine: brief shows the text with the "not available" note', st['btn'] == 'start' and st['unavailable'] and not st['speaking'], st)
     r.check('no speech engine: does not try to speak every sentence', st['n'] <= 1, st)
     r.js("() => { __sim.ttsUnavailable = false; }")
+    # the engine accepts the language but refuses the first sentence (offline network voice, audio error)
+    r.clear_calls()
+    r.js("() => { __sim.speakError = 'Failed to read text.'; O.go('dashboard'); }")
+    r.wait(300)
+    pg.click(btn)
+    r.wait(2000)
+    st = r.js("() => ({ btn: document.querySelector('.dsh-brief-btn').dataset.brief, unavailable: !!document.querySelector('.dsh-brief .note.warn'), speaking: O.voice.speaking(), n: __nativeCalls.filter(c => c.method === 'speak').length })")
+    r.check('engine refuses the first sentence: brief shows the "not available" note, not "read"', st['btn'] == 'start' and st['unavailable'] and not st['speaking'] and st['n'] == 1, st)
+    r.js("() => { __sim.speakError = null; }")
     # one sentence fails mid-way (engine error): the rest is still read
     r.clear_calls()
     r.js("() => { window.__ends = []; __sim.ttsMs = 30; __sim.failText = 'Two.'; O.voice.speak(['One.', 'Two.', 'Three.'], { onend: (ok) => __ends.push(ok) }); }")
@@ -648,6 +657,13 @@ def android(browser, base, out):
     r.shot('back-7-website-preview')
     r.back(300)
     r.check('back: website full-screen preview closes (still on Website)', full and r.js("() => !document.querySelector('.wb-full') && O.state.page === 'website'"), full)
+    # sign-in screens: "Request access" has its own "Back to sign in" button (app/server/auth.js); back presses it
+    r.clear_calls()
+    r.js("() => { const a = document.createElement('div'); a.id = 'auth-root'; a.innerHTML = '<button type=\"button\" data-go=\"back\">Back to sign in</button>'; a.querySelector('button').onclick = () => { window.__authBack = (window.__authBack || 0) + 1; }; document.body.appendChild(a); }")
+    r.js('() => __simBack()')
+    r.wait(150)
+    r.check("back: sign-in screen's own Back to sign in is pressed, the app is not minimized", r.js('() => window.__authBack') == 1 and not r.calls('App', 'minimizeApp'), (r.js('() => window.__authBack'), r.calls('App')))
+    r.js("() => document.getElementById('auth-root').remove()")
     r.check('back: the back button sequence caused no JS errors', not r.errors, r.errors)
 
     # ---- status bar and navigation bar icons follow the colour under each bar
@@ -667,6 +683,15 @@ def android(browser, base, out):
     r.js("() => document.getElementById('sim-dark-foot').remove()")
     r.wait(400)
     r.check('bars: back to light at the bottom -> navigation bar LIGHT', r.js(bars) == {'StatusBar': 'LIGHT', 'NavigationBar': 'LIGHT'}, r.js(bars))
+    # Android System WebView < 140: SystemBars pads the app below the bars and injects --safe-area-inset-top: 0px
+    r.js("() => document.documentElement.style.setProperty('--safe-area-inset-top', '0px')")
+    pg.click('#menu-btn')
+    r.wait(400)
+    r.check('bars: app padded below the bars (old WebView) -> both DEFAULT, even with the dark side menu open', r.js(bars) == {'StatusBar': 'DEFAULT', 'NavigationBar': 'DEFAULT'}, r.js(bars))
+    r.js("() => { document.querySelector('.scrim').click(); document.documentElement.style.setProperty('--safe-area-inset-top', '47px'); }")
+    r.wait(400)
+    r.check('bars: insets passed through again -> back to following the page', r.js(bars) == {'StatusBar': 'LIGHT', 'NavigationBar': 'LIGHT'}, r.js(bars))
+    r.js("() => document.documentElement.style.removeProperty('--safe-area-inset-top')")
 
     # ---- coming back to the app catches up with the clock at once
     print('  -- resume')
@@ -689,6 +714,7 @@ def android(browser, base, out):
     r.wait(100)
     bo = r.calls('Browser', 'open')
     r.check('window.open(https) -> Browser.open, returns null', ret is None and len(bo) == 1 and bo[0]['options']['url'].startswith('https://example.com'), (ret, bo))
+    r.check('Browser.open full screen (no popover: a narrow panel on iPad)', len(bo) == 1 and 'presentationStyle' not in bo[0]['options'], bo)
     r.js("() => { __sim.browserError = 'No browser available'; window.open('https://example.net/fallback'); }")
     r.wait(300)
     r.check('Browser.open fails -> the address is handed to the phone instead', 'https://example.net/fallback' in r.handed, r.handed)

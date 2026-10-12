@@ -389,10 +389,11 @@
         if (run !== B.run) return; started = true;
         highlight(total === sentences.length ? i : Math.min(sentences.length - 1, Math.floor(i * sentences.length / Math.max(1, total))));
       },
-      onend: function () {
+      onend: function (ok) {
         if (run !== B.run) return;
         B.run++; B.reading = false; clearTimeout(B.timer);
-        st.brief.mode = started ? 'done' : 'unavailable'; st.brief.idx = -1;
+        /* ok === false: the phone's speech engine refused (the phone app's read-aloud), even if a sentence had started */
+        st.brief.mode = started && ok !== false ? 'done' : 'unavailable'; st.brief.idx = -1;
         paintBrief(); afterBrief();
       }
     });

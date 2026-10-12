@@ -63,8 +63,10 @@
   /* ---------------- read aloud -> the phone's text-to-speech ----------------
      Same contract as core's O.voice: onend runs once for every read-aloud, also when it is stopped (back button,
      app sent to the background, a newer read-aloud), so the page that started it can show it has ended.
-     The plugin refuses a sentence in a language the phone has no voice for, so the language is checked first;
-     with no usable voice onend(false) comes before any onpart, and the page shows the text instead. */
+     The plugin refuses a sentence in a language the phone has no voice for, so the language is checked first: with no
+     usable voice onend(false) comes before any onpart. onpart(i) fires as sentence i is handed to the engine (the
+     plugin has no "started speaking" event), so when the engine then refuses the first sentence onend(false) comes
+     after onpart(0); pages treat onend(false) as "reading aloud is not available" either way. */
   if (TTS) {
     var LANGS = ['en-GB', 'en-US'], run = 0, job = null;
     var noop = function () {};
@@ -133,7 +135,8 @@
     return { kind: 'browser', url: u.href };
   }
   function openOut(x) {
-    if (x.kind === 'browser' && Browser) return Browser.open({ url: x.url, presentationStyle: 'popover' }).catch(function () { location.href = x.url; });
+    /* full screen (the plugin's default): a 'popover' with no size is a narrow 320pt panel on iPads and large iPhones held sideways */
+    if (x.kind === 'browser' && Browser) return Browser.open({ url: x.url }).catch(function () { location.href = x.url; });
     location.href = x.url; /* Capacitor hands addresses outside the app to the phone (dialer, mail, WhatsApp, browser) */
   }
   var winOpen = window.open;
@@ -180,8 +183,10 @@
     if (full) { var c = full.querySelector('[data-act="close-full"]'); if (c) c.click(); else full.remove(); return; }
     var side = O.$('.side.open');
     if (side) { var scrim = O.$('.scrim'); if (scrim) scrim.click(); else side.classList.remove('open'); return; }
-    /* a page's own back arrow (the inbox on a phone: from a chat back to the list) */
+    /* a screen's own back button: the inbox on a phone (from a chat back to the list), and the sign-in screens
+       ("Request access" back to sign in) */
     var own = O.$('#page-root [data-act="back"]');
+    if (!shown(own)) own = O.$('#auth-root [data-go="back"]');
     if (shown(own)) { own.click(); return; }
     if (!O.$('#app').hidden && O._started) {
       while (trail.length) {
@@ -218,6 +223,12 @@
   function paintBar() {
     barTimer = null;
     if (!Bars || !Bars.setStyle) return;
+    /* Android System WebView older than 140: SystemBars cannot pass the insets through, so it pads the app below the
+       bars (and sets --safe-area-inset-top to 0px). The bars then sit over the window background, not the page, so
+       they follow the phone's light/dark setting like that background does */
+    if (platform === 'android' && document.documentElement.style.getPropertyValue('--safe-area-inset-top').trim() === '0px') {
+      setBar('StatusBar', 'DEFAULT'); setBar('NavigationBar', 'DEFAULT'); return;
+    }
     /* each bar follows the colour under it. Android applies a style without a bar to both bars, and iOS ignores the bar
        (its home indicator adapts by itself), so iOS only gets the status bar's */
     setBar('StatusBar', styleAt(1));

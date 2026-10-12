@@ -6,8 +6,10 @@ apply plugin: 'com.android.application'
 //   ORBIQUE_VERSION_NAME   the version people see, such as 0.5.0. Default 0.5.0.
 //   ORBIQUE_KEYSTORE_FILE, ORBIQUE_KEYSTORE_PASSWORD, ORBIQUE_KEY_ALIAS, ORBIQUE_KEY_PASSWORD
 //                          the upload key (use a full path for the file). Used only when all four are set; otherwise the
-//                          release build stays unsigned and still builds. Debug builds always use Android's debug key
-//                          (~/.android/debug.keystore).
+//                          release build stays unsigned and still builds. Debug and beta builds always use Android's
+//                          debug key (~/.android/debug.keystore; CI puts the stable test key there).
+// Build types: debug (developers: debuggable, WebView inspection on), beta (the published test APK: the release build,
+// not debuggable, signed with the test key so it installs without Google Play), release (Google Play upload).
 def orbiqueEnv = { String name ->
     def value = System.getenv(name)
     return (value != null && !value.trim().isEmpty()) ? value : null
@@ -57,6 +59,12 @@ android {
             if (orbiqueReleaseSigning) {
                 signingConfig = signingConfigs.release
             }
+        }
+        beta {
+            initWith release
+            debuggable false
+            signingConfig = signingConfigs.debug
+            matchingFallbacks = ['release']
         }
     }
 }
