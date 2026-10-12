@@ -431,3 +431,31 @@ html.guest-mode body{background:var(--bg);}
 }
 @media (prefers-reduced-motion: reduce){ .side, .switch::after{transition:none;} }
 @media print{ .side, .topbar, .toasts, .tabbar{display:none !important;} .content{padding:0;} }
+
+/* ---------------- phone app (Capacitor, html.native): keep clear of the status bar, notch and home indicator ----------------
+   The app draws edge to edge (viewport-fit=cover); browsers report 0 for these insets, so only the phone app changes. */
+html.native{--sat:env(safe-area-inset-top, 0px); --sar:env(safe-area-inset-right, 0px); --sab:env(safe-area-inset-bottom, 0px); --sal:env(safe-area-inset-left, 0px); --topbar-h:calc(64px + var(--sat));}
+html.native .topbar{padding-top:calc(12px + var(--sat)); padding-left:calc(24px + var(--sal)); padding-right:calc(24px + var(--sar)); min-height:calc(64px + var(--sat));}
+html.native .content{padding-left:calc(24px + var(--sal)); padding-right:calc(24px + var(--sar)); padding-bottom:calc(64px + var(--sab));}
+html.native .side{padding-top:var(--sat); padding-left:var(--sal);}
+html.native .side .side-foot{padding-bottom:calc(12px + var(--sab));}
+html.native .drawer{padding-top:var(--sat); padding-right:var(--sar); padding-bottom:var(--sab);}
+html.native .modal-back{padding-top:max(6vh, calc(16px + var(--sat)));}
+html.native .toasts{bottom:calc(18px + var(--sab));}
+html.native .pg-website .wb-fullbar{padding-top:calc(10px + var(--sat)); padding-left:calc(14px + var(--sal)); padding-right:calc(14px + var(--sar));}
+@media (max-width:960px){
+  html.native{--topbar-h:calc(56px + var(--sat));}
+  html.native .topbar{padding-top:calc(10px + var(--sat)); padding-left:calc(14px + var(--sal)); padding-right:calc(14px + var(--sar)); min-height:calc(56px + var(--sat));}
+  html.native .content{padding-left:calc(14px + var(--sal)); padding-right:calc(14px + var(--sar)); padding-bottom:calc(56px + var(--sab));}
+  html.native .modal-back{padding-top:0;}
+  html.native .modal{padding-bottom:var(--sab); max-height:calc(92vh - var(--sat));}
+}
+@media (max-width:760px){
+  html.native .content{padding-bottom:calc(84px + var(--sab));}
+  html.native .toasts{bottom:calc(72px + var(--sab));}
+  html.native .tabbar{padding-left:calc(4px + var(--sal)); padding-right:calc(4px + var(--sar));}
+}
+@media (max-width:560px){
+  html.native .dr-pop.open{bottom:calc(16px + var(--sab));}
+  html.native .pg-website .wb-fullbar{padding-top:calc(8px + var(--sat)); padding-left:calc(10px + var(--sal)); padding-right:calc(10px + var(--sar));}
+}

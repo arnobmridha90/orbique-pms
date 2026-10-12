@@ -71,6 +71,18 @@ node scripts/dev.mjs                               # build dist/ and serve it on
 Screenshot tests: `tests/shot.py` (see its docstring). CI (`.github/workflows/ci.yml`) checks the syntax of every
 JavaScript file and runs both builds on every push and pull request.
 
+## Phone app
+
+The same app also ships as an Android and iPhone app built with Capacitor (`capacitor.config.json`, `android/`,
+`ios/`, `app/native/bridge.js`). It connects to the live site and its database; guests keep using the web link.
+`npm run mobile:sync` (Node.js 22 or newer) builds the app's files into `mobile/www` and copies them into both native
+projects. The **Phone app** workflow (`.github/workflows/mobile.yml`) builds both on every change, and the newest
+Android test build is always at
+https://github.com/arnobmridha90/orbique-pms/releases/download/android-test/Orbique-test.apk.
+
+Installing, connecting the app to the live site, TestFlight, Google Play and the developer notes:
+**[docs/MOBILE.md](docs/MOBILE.md)**.
+
 ## Deploy
 
 Orbique runs on **Vercel** with a **Supabase** database added from the Vercel Marketplace. The step-by-step guide for

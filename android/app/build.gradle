@@ -1,0 +1,91 @@
+apply plugin: 'com.android.application'
+
+// Version numbers and the Google Play upload key come from environment variables, so CI can set them without
+// editing this file (see docs/MOBILE.md):
+//   ORBIQUE_VERSION_CODE   whole number that must go up with every Google Play upload (CI uses its build number). Default 1.
+//   ORBIQUE_VERSION_NAME   the version people see, such as 0.5.0. Default 0.5.0.
+//   ORBIQUE_KEYSTORE_FILE, ORBIQUE_KEYSTORE_PASSWORD, ORBIQUE_KEY_ALIAS, ORBIQUE_KEY_PASSWORD
+//                          the upload key (use a full path for the file). Used only when all four are set; otherwise the
+//                          release build stays unsigned and still builds. Debug builds always use Android's debug key
+//                          (~/.android/debug.keystore).
+def orbiqueEnv = { String name ->
+    def value = System.getenv(name)
+    return (value != null && !value.trim().isEmpty()) ? value : null
+}
+def orbiqueVersionCode = (orbiqueEnv('ORBIQUE_VERSION_CODE') ?: '1').trim()
+if (!(orbiqueVersionCode ==~ /[1-9][0-9]{0,9}/) || orbiqueVersionCode.toLong() > 2100000000L) {
+    throw new GradleException("ORBIQUE_VERSION_CODE must be a whole number from 1 to 2100000000 (got '${orbiqueVersionCode}').")
+}
+def orbiqueVersionName = (orbiqueEnv('ORBIQUE_VERSION_NAME') ?: '0.5.0').trim()
+def orbiqueSigningNames = ['ORBIQUE_KEYSTORE_FILE', 'ORBIQUE_KEYSTORE_PASSWORD', 'ORBIQUE_KEY_ALIAS', 'ORBIQUE_KEY_PASSWORD']
+def orbiqueSigningMissing = orbiqueSigningNames.findAll { orbiqueEnv(it) == null }
+def orbiqueReleaseSigning = orbiqueSigningMissing.isEmpty()
+if (!orbiqueReleaseSigning && orbiqueSigningMissing.size() < orbiqueSigningNames.size()) {
+    logger.warn("Orbique: release signing is off because ${orbiqueSigningMissing.join(', ')} not set; the release build will be unsigned.")
+}
+
+android {
+    namespace = "com.orbique.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.orbique.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode = orbiqueVersionCode.toInteger()
+        versionName = orbiqueVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (orbiqueReleaseSigning) {
+            release {
+                storeFile = file(orbiqueEnv('ORBIQUE_KEYSTORE_FILE'))
+                storePassword = orbiqueEnv('ORBIQUE_KEYSTORE_PASSWORD')
+                keyAlias = orbiqueEnv('ORBIQUE_KEY_ALIAS')
+                keyPassword = orbiqueEnv('ORBIQUE_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (orbiqueReleaseSigning) {
+                signingConfig = signingConfigs.release
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

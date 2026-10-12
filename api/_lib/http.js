@@ -30,6 +30,27 @@ export function send(res, status, payload) {
   res.end(body);
 }
 
+/* The phone app (docs/MOBILE.md) runs from its own local address and calls these functions across origins:
+ * Android https://localhost, iOS capacitor://localhost. Sign-in travels as a bearer token, never a cookie,
+ * so answering these origins gives them nothing a bearer token would not already give. */
+const APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost']);
+
+/** Cross-origin headers for the phone app. Returns true when it answered a preflight (OPTIONS) request. */
+export function cors(req, res) {
+  const origin = req.headers && req.headers.origin;
+  if (origin && APP_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Max-Age', '600');
+  }
+  res.setHeader('Vary', 'Origin');
+  if (req.method !== 'OPTIONS') return false;
+  res.statusCode = 204;
+  res.end();
+  return true;
+}
+
 export const ok = (res, data) => send(res, 200, Object.assign({ ok: true }, data || {}));
 
 /** Answer with a plain-English error. Unknown errors are logged (message only) and shown generically. */

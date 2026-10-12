@@ -4,15 +4,32 @@
   "private": true,
   "description": "Orbique property management platform: operators run their short-term rental units; guests get an app per booking.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "node scripts/migrate.mjs && node scripts/build.mjs",
     "build:local": "node scripts/build.mjs --local",
-    "migrate": "node scripts/migrate.mjs"
+    "migrate": "node scripts/migrate.mjs",
+    "mobile:build": "node scripts/build.mjs --mobile",
+    "mobile:sync": "npm run mobile:build && npx cap sync"
   },
   "dependencies": {
+    "@capacitor-community/text-to-speech": "^8.0.2",
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.4",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/keyboard": "^8.0.6",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.2",
     "@supabase/supabase-js": "^2.58.0",
     "jspdf": "^2.5.1",
     "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
   }
 }

@@ -1,0 +1,81 @@
+name: Live site check
+
+# Runs after each production deploy on Vercel finishes (Vercel reports it to GitHub as a deployment status),
+# or by hand from the Actions tab. It checks the public address, not the deploy's own protected URL:
+# the page loads, config.js names a Supabase project, /api/health reaches the database, the phone app's
+# CORS preflight is answered and guest links serve the app.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: Site address
+        default: https://orbique-pms.vercel.app
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       (github.event.deployment.environment == 'Production' ||
+        github.event.deployment.environment == 'Production – orbique-pms'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SITE: ${{ inputs.site || vars.ORBIQUE_SITE_URL || 'https://orbique-pms.vercel.app' }}
+      SHA: ${{ github.event.deployment.sha || '' }}
+    steps:
+      - name: Wait for this deploy to be on the public address
+        if: env.SHA != ''
+        shell: bash
+        run: |
+          want="${SHA:0:7}"
+          for i in $(seq 1 24); do
+            got=$(curl -fsS -m 20 "$SITE/api/health" | jq -r '.commit // ""' || true)
+            echo "attempt $i: live commit '$got', expecting '$want'"
+            [ "$got" = "$want" ] && exit 0
+            sleep 5
+          done
+          echo "::warning::The public address still serves commit '$got', not '$want'. Checking it anyway."
+
+      - name: Page, config, health, CORS and guest links
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          bad() { echo "::error::$1"; fail=1; }
+
+          code=$(curl -sS -m 20 -o page.html -w '%{http_code}' "$SITE/")
+          [ "$code" = 200 ] || bad "$SITE/ answered $code"
+          grep -qi 'orbique' page.html || bad "$SITE/ does not look like Orbique"
+
+          curl -fsS -m 20 "$SITE/config.js" -o config.js || bad "$SITE/config.js did not load"
+          url=$(grep -oE '"supabaseUrl": *"[^"]*"' config.js | sed -E 's/.*"([^"]*)"$/\1/')
+          [[ "$url" =~ ^https://[a-z0-9]+\.supabase\.co$ ]] || bad "config.js has no Supabase address (got '$url')"
+          grep -qE 'sb_secret_|service_role' config.js && bad "config.js contains a secret key"
+          echo "config.js -> $url"
+
+          health=$(curl -fsS -m 30 "$SITE/api/health" || echo '{}')
+          echo "health -> $health"
+          [ "$(echo "$health" | jq -r '.ok')" = true ] || bad "/api/health did not answer ok"
+          [ "$(echo "$health" | jq -r '.db')" = true ] || bad "/api/health cannot reach the database (Supabase keys missing in Vercel, or the database is down)"
+          if [ "$(echo "$health" | jq -r '.needsBootstrap')" = true ]; then
+            echo "::notice::No platform admin yet: open $SITE and choose Set up Orbique."
+          fi
+
+          for origin in https://localhost capacitor://localhost; do
+            hdr=$(curl -sS -m 20 -o /dev/null -D - -X OPTIONS "$SITE/api/account" \
+              -H "Origin: $origin" -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: authorization, content-type')
+            echo "$hdr" | grep -qiE "^access-control-allow-origin: *$origin" || bad "phone app origin $origin is not allowed by /api/account"
+          done
+
+          code=$(curl -sS -m 20 -o guest.html -w '%{http_code}' "$SITE/guest/check-$GITHUB_RUN_ID")
+          [ "$code" = 200 ] && grep -qi 'orbique' guest.html || bad "guest links do not serve the app (answered $code)"
+
+          [ $fail = 0 ] && echo "Live site OK: $SITE"
+          exit $fail
