@@ -671,6 +671,17 @@ def android(browser, base, out):
     r.wait(400)
     r.check('bars: back to light at the bottom -> navigation bar LIGHT', r.js(bars) == {'StatusBar': 'LIGHT', 'NavigationBar': 'LIGHT'}, r.js(bars))
 
+    # ---- coming back to the app catches up with the clock at once
+    print('  -- resume')
+    r.js("() => { window.__days = 0; O.on('day', () => __days++); window.ORBIQUE_NOW = '2026-10-06T18:42'; __simAppState(false); __simAppState(true); }")
+    r.wait(300)
+    st = r.js("() => ({ now: O.data.NOW, clock: (document.querySelector('.dsh-clock') || {}).textContent || '' })")
+    r.check('resume: the clock catches up (D.NOW and the dashboard clock)', st['now'] == '2026-10-06T18:42' and '6:42' in st['clock'], st)
+    r.js("() => { window.ORBIQUE_NOW = '2026-10-07T08:05'; __simAppState(true); }")
+    r.wait(400)
+    st = r.js("() => ({ today: O.data.TODAY, days: __days })")
+    r.check('resume on the next day: TODAY moves on and the day jobs run once', st == {'today': '2026-10-07', 'days': 1}, st)
+
     # ---- outside links
     print('  -- outside links')
     r.js("() => O.go('dashboard')")
