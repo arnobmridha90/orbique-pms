@@ -271,6 +271,9 @@ class Run:
         os.makedirs(self.out, exist_ok=True)
         self.ctx = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1, is_mobile=True, has_touch=True)
         self.ctx.add_init_script('window.ORBIQUE_NOW = %s;' % json.dumps(DEMO_NOW))
+        # service worker registrations (app/server/pwa.js) are recorded in window.__swRegs
+        self.ctx.add_init_script("""(() => { const C = window.ServiceWorkerContainer; window.__swRegs = []; if (!C) return; const reg = C.prototype.register;
+            C.prototype.register = function (url) { __swRegs.push(String(url)); return reg.apply(this, arguments); }; })();""")
         if platform:
             self.ctx.add_init_script(native_init_script(platform, **cfg))
         self.pg = self.ctx.new_page()
@@ -390,6 +393,7 @@ def android(browser, base, out):
     r.check('App backButton listener registered', len(lis.get('backButton', [])) == 1, lis)
     r.check('App appStateChange listener registered', len(lis.get('appStateChange', [])) >= 1, lis)
     r.check('read aloud reports available', info['voice'])
+    r.check('no service worker registered inside the phone app', r.js('() => __swRegs') == [], r.js('() => __swRegs'))
 
     # ---- downloads
     r.clear_calls()
