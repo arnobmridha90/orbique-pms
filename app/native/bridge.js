@@ -5,8 +5,11 @@
    - downloads (PDF, CSV, photos): saved to the app's cache, then the phone's share sheet (Save to Files, Drive, WhatsApp...)
    - read aloud: the phone's own text-to-speech (Android's app view has no speech synthesis)
    - links that leave Orbique: the in-app browser; tel:, mailto: and WhatsApp hand over to the phone
-   - Android back button: closes the open menu, window or drawer, then goes back through the pages, then leaves
-   - status bar icons follow the colour under them; the splash screen stays until the first screen is drawn
+   - Android back button: closes the open menu, stops read-aloud, closes the window or drawer, steps back inside a page
+     (inbox chat -> list), then goes back through the pages, then leaves
+   - status bar (and Android navigation bar) icons follow the colour under them; the splash screen stays until the first
+     screen is drawn
+   tests/native_sim.py runs these files in Chromium with Capacitor's native side simulated.
    - guest and invite links point at the live site (window.ORBIQUE_CONFIG.appUrl), not at the app's own files
    Loaded after app/server/*.js and before O.boot().
    =================================================================== */
@@ -191,7 +194,7 @@
   }
   if (App && platform === 'android') App.addListener('backButton', back);
 
-  /* ---------------- status bar icons follow the colour under them ---------------- */
+  /* ---------------- status bar / navigation bar icons follow the colour under them ---------------- */
   function bgAt(x, y) {
     var el = document.elementFromPoint(x, y);
     while (el && el.nodeType === 1) {

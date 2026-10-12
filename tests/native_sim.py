@@ -286,7 +286,6 @@ class Run:
         self.pg.route(re.compile(r'^https?://(?!localhost[:/]|127\.0\.0\.1[:/]).*'), self._outside)
         if insets:
             self.pg.route(re.compile(r'.*/index\.html(\?.*)?$'), self._rewrite_env)
-        self.local = []  # paths requested from the app's own files
         self.pg.on('request', self._request)
         self.ctx.on('page', lambda p: self.popups.append(p.url))
         self.pg.on('pageerror', lambda e: self._error('pageerror: ' + str(e).splitlines()[0][:300]))
@@ -295,8 +294,6 @@ class Run:
     def _request(self, req):
         if req.is_navigation_request() and re.match(r'^(tel|mailto|sms|whatsapp|geo):', req.url):
             self.handed.append(req.url)  # Capacitor hands these to the phone (dialer, mail, WhatsApp)
-        elif req.url.startswith(self.base):
-            self.local.append(req.url[len(self.base):])
 
     def _outside(self, route):
         if route.request.is_navigation_request():
@@ -734,7 +731,6 @@ def android(browser, base, out):
 # ------------------------------------------------------------------ safe areas
 def insets(browser, base, out):
     print('insets (status bar 47px, home bar 34px; landscape 47px sides)')
-    res = []
     r = Run(browser, base, 'insets', out, 'android', insets=True)
     pg = r.pg
     ins = dict(top=47, right=0, bottom=34, left=0)
