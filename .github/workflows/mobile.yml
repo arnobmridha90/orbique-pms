@@ -196,7 +196,10 @@ jobs:
           key=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey)
           apk=$("$apksigner" verify --print-certs "$RUNNER_TEMP/apk/Orbique-test.apk")
           want=$(printf '%s\n' "$key" | awk '/SHA256:/ && !n { sub(/^.*SHA256: */, ""); gsub(":", ""); print tolower($0); n = 1 }')
-          got=$(printf '%s\n' "$apk" | awk '/^Signer #1 certificate SHA-256 digest:/ && !n { sub(/^.*digest: */, ""); print tolower($0); n = 1 }')
+          # Certificate names and digests only (public). Every signer's SHA-256 must be the test key's; read the digests
+          # whatever apksigner calls the signer ("Signer #1", "Signer (minSdkVersion=..)"), skipping a source stamp
+          printf '%s\n' "$apk"
+          got=$(printf '%s\n' "$apk" | grep -i 'sha-256' | grep -iv 'source stamp' | grep -oiE '[0-9a-f]{64}' | tr 'A-F' 'a-f' | sort -u || true)
           echo "debug key SHA-256: $want"
           echo "APK signer SHA-256: $got"
           if [ -z "$want" ] || [ "$want" != "$got" ]; then
