@@ -21,9 +21,6 @@
       "insetsHandling": "css",
       "style": "LIGHT",
       "initialViewportFitValueHint": "cover"
-    },
-    "Keyboard": {
-      "resizeOnFullScreen": true
     }
   }
 }

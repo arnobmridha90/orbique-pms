@@ -78,7 +78,7 @@ NATIVE_SHELL_JS = r"""
 (function () {
   'use strict';
   var SIM = window.__sim = Object.assign({ platform: 'android', latency: 4, ttsMs: 120, shareError: null, speakError: null,
-    ttsUnavailable: false, langs: ['en-GB', 'en-US'] }, __SIM_CONFIG__);
+    ttsUnavailable: false, browserError: null, langs: ['en-GB', 'en-US'] }, __SIM_CONFIG__);
   var calls = window.__nativeCalls = [];
   var spoken = window.__ttsSpoken = [];
   var listeners = window.__nativeListeners = {};
@@ -126,7 +126,7 @@ NATIVE_SHELL_JS = r"""
     'App.getInfo': function (c) { ok(c, { name: 'Orbique', id: 'com.orbique.app', build: '1', version: '1.0.0' }); },
     'App.getLaunchUrl': function (c) { ok(c, {}); },
     'App.getAppLanguage': function (c) { ok(c, { value: 'en' }); },
-    'Browser.open': function (c) { if (!(c.options || {}).url) return err(c, 'Must provide a URL to open'); ok(c); },
+    'Browser.open': function (c) { if (SIM.browserError) return err(c, SIM.browserError); if (!(c.options || {}).url) return err(c, 'Must provide a URL to open'); ok(c); },
     'Browser.close': ok,
     'Filesystem.writeFile': function (c) {
       var o = c.options || {};
@@ -403,7 +403,7 @@ def android(browser, base, out):
         o = w[0]['options']
         r.check('CSV: written to the cache as exports/t.csv', o.get('directory') == 'CACHE' and o.get('path') == 'exports/t.csv' and o.get('recursive') is True, {k: v for k, v in o.items() if k != 'data'})
         txt = b64text(o.get('data', ''))
-        r.check('CSV: base64 decodes to the CSV', txt == '﻿a,b\r\n1,2', repr(txt))
+        r.check('CSV: base64 decodes to the CSV', txt == '\ufeffa,b\r\n1,2', repr(txt))
         uri = r.js("() => Object.keys(__nativeFiles).pop()")
         r.check('CSV: Share.share with files [the written uri]', len(s) == 1 and s[0]['options'].get('files') == [uri], s)
     r.check('CSV: "Ready" toast', any('t.csv' in t['text'] and not t['bad'] for t in r.toasts()), r.toasts())
@@ -689,6 +689,11 @@ def android(browser, base, out):
     r.wait(100)
     bo = r.calls('Browser', 'open')
     r.check('window.open(https) -> Browser.open, returns null', ret is None and len(bo) == 1 and bo[0]['options']['url'].startswith('https://example.com'), (ret, bo))
+    r.js("() => { __sim.browserError = 'No browser available'; window.open('https://example.net/fallback'); }")
+    r.wait(300)
+    r.check('Browser.open fails -> the address is handed to the phone instead', 'https://example.net/fallback' in r.handed, r.handed)
+    r.js("() => { __sim.browserError = null; }")
+    del r.handed[:]
     r.js("""() => { const box = document.createElement('div'); box.id = 'sim-links'; box.style.cssText = 'position:fixed;left:10px;top:120px;z-index:9999;background:#fff;padding:4px;display:flex;flex-direction:column;gap:6px';
         box.innerHTML = '<a id="l-blank" href="https://example.org/page?a=1" target="_blank" rel="noopener">blank</a>' +
           '<a id="l-tel" href="tel:+60123456789">tel</a><a id="l-mail" href="mailto:host@example.com">mail</a>' +
@@ -752,8 +757,8 @@ def insets(browser, base, out):
     r.boot()
     set_insets(ins)
     W, H = 390, 844
-    sat = r.js("() => getComputedStyle(document.documentElement).getPropertyValue('--sat').trim()")
-    r.check('--sat follows the (simulated) safe-area-inset-top', sat in ('47px', 'var(--sim-inset-top, 0px)') or r.js("() => { const d = document.createElement('div'); d.style.height = 'var(--sat)'; document.body.appendChild(d); const h = d.getBoundingClientRect().height; d.remove(); return h; }") == 47, sat)
+    sat = r.js("() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;top:0;height:var(--sat);width:var(--sab)'; document.body.appendChild(d); const b = d.getBoundingClientRect(); d.remove(); return [b.height, b.width]; }")
+    r.check('html.native --sat / --sab follow the (simulated) safe-area insets', sat == [47, 34], sat)
     r.js("() => O.ui.toast('A message for the inset check')")
     r.wait(100)
     shot('portrait-dashboard', ins)
@@ -879,7 +884,7 @@ def ios(browser, base, out):
     r.clear_calls()
     res = r.js("() => O.downloadCSV('ios.csv', [['a','b'],[1,2]])")
     w, s = r.calls('Filesystem', 'writeFile'), r.calls('Share', 'share')
-    ok = res is True and len(w) == 1 and b64text(w[0]['options']['data']) == '﻿a,b\r\n1,2' and len(s) == 1 and s[0]['options']['files'][0].startswith('file:///var/mobile/')
+    ok = res is True and len(w) == 1 and b64text(w[0]['options']['data']) == '\ufeffa,b\r\n1,2' and len(s) == 1 and s[0]['options']['files'][0].startswith('file:///var/mobile/')
     r.check('download: writeFile (cache) + Share.share with the file', ok, (res, [x['options'].get('path') for x in w], s))
     r.clear_calls()
     r.js("() => { window.__ends = []; O.voice.speak(['One.', 'Two.', 'Three.'], { onend: () => __ends.push('a') }); }")

@@ -32,7 +32,7 @@
   } catch (e) { /* cosmetic only */ }
 
   var local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  var phoneApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); /* the app ships its own files */
+  var phoneApp = !!((window.ORBIQUE_CONFIG && window.ORBIQUE_CONFIG.native) || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())); /* the app ships its own files */
   if (phoneApp || !('serviceWorker' in navigator) || !(location.protocol === 'https:' || local)) return;
   function register() {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function (e) {

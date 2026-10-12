@@ -448,7 +448,7 @@ html.native .pg-website .wb-fullbar{padding-top:calc(10px + var(--sat)); padding
   html.native .topbar{padding-top:calc(10px + var(--sat)); padding-left:calc(14px + var(--sal)); padding-right:calc(14px + var(--sar)); min-height:calc(56px + var(--sat));}
   html.native .content{padding-left:calc(14px + var(--sal)); padding-right:calc(14px + var(--sar)); padding-bottom:calc(56px + var(--sab));}
   html.native .modal-back{padding-top:0;}
-  html.native .modal{padding-bottom:var(--sab); max-height:calc(92vh - var(--sat));}
+  html.native .modal{padding-bottom:var(--sab); padding-left:var(--sal); padding-right:var(--sar); max-height:calc(92vh - var(--sat));}
 }
 @media (max-width:760px){
   html.native .content{padding-bottom:calc(84px + var(--sab));}
