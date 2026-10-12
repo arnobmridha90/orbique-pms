@@ -327,7 +327,8 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
   - `debug`: debuggable, with WebView inspection (`chrome://inspect`). `./gradlew assembleDebug`; this is also what
     Android Studio and `npx cap run android` build by default.
   - `beta`: the APK that CI publishes. It is the release build (`initWith release`), not debuggable and so without
-    WebView inspection, signed with the debug key in `~/.android/debug.keystore` (where CI puts the test key).
+    WebView inspection, signed with the keystore named by `ORBIQUE_TEST_KEYSTORE` (CI sets it to the test key), or
+    with the debug key when that is not set.
     `./gradlew assembleBeta` writes `app/build/outputs/apk/beta/app-beta.apk`.
   - `release`: the Google Play bundle, `./gradlew bundleRelease` (see "Release signing" below).
 
@@ -413,8 +414,8 @@ Settings it reads: the repository variable `ORBIQUE_SITE_URL`, and the secrets `
 Every published test APK must be signed with the same key, or it will not install over the previous one. The key
 never sits in the repository, a release or the Actions cache (in a public repository, pull requests from forks can
 read the cache). It comes only from a secret, and GitHub does not give secrets to pull requests from forks. The step
-"Test signing key" writes it to `~/.android/debug.keystore`, which the `beta` build type signs with. It uses the first
-of these that is set:
+"Test signing key" writes it to `~/.android/debug.keystore`, and the build passes that path to the `beta` build type
+as `ORBIQUE_TEST_KEYSTORE`. It uses the first of these that is set:
 
 1. `ANDROID_TEST_KEY_SEED` (recommended; the owner steps are in "Same key for every test build" above): a phrase of
    at least 16 characters (leading and trailing spaces are ignored; a shorter phrase fails the run).

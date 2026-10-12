@@ -6,8 +6,9 @@ apply plugin: 'com.android.application'
 //   ORBIQUE_VERSION_NAME   the version people see, such as 0.5.0. Default 0.5.0.
 //   ORBIQUE_KEYSTORE_FILE, ORBIQUE_KEYSTORE_PASSWORD, ORBIQUE_KEY_ALIAS, ORBIQUE_KEY_PASSWORD
 //                          the upload key (use a full path for the file). Used only when all four are set; otherwise the
-//                          release build stays unsigned and still builds. Debug and beta builds always use Android's
-//                          debug key (~/.android/debug.keystore; CI puts the stable test key there).
+//                          release build stays unsigned and still builds.
+//   ORBIQUE_TEST_KEYSTORE  full path of the test key that signs the beta build (alias androiddebugkey, store and key
+//                          password android). CI sets it. Unset: beta, like debug, uses Android's own debug key.
 // Build types: debug (developers: debuggable, WebView inspection on), beta (the published test APK: the release build,
 // not debuggable, signed with the test key so it installs without Google Play), release (Google Play upload).
 def orbiqueEnv = { String name ->
@@ -22,6 +23,10 @@ def orbiqueVersionName = (orbiqueEnv('ORBIQUE_VERSION_NAME') ?: '0.5.0').trim()
 def orbiqueSigningNames = ['ORBIQUE_KEYSTORE_FILE', 'ORBIQUE_KEYSTORE_PASSWORD', 'ORBIQUE_KEY_ALIAS', 'ORBIQUE_KEY_PASSWORD']
 def orbiqueSigningMissing = orbiqueSigningNames.findAll { orbiqueEnv(it) == null }
 def orbiqueReleaseSigning = orbiqueSigningMissing.isEmpty()
+def orbiqueTestKeystore = orbiqueEnv('ORBIQUE_TEST_KEYSTORE')
+if (orbiqueTestKeystore != null && !file(orbiqueTestKeystore).isFile()) {
+    throw new GradleException("ORBIQUE_TEST_KEYSTORE is set to '${orbiqueTestKeystore}', but there is no file there.")
+}
 if (!orbiqueReleaseSigning && orbiqueSigningMissing.size() < orbiqueSigningNames.size()) {
     logger.warn("Orbique: release signing is off because ${orbiqueSigningMissing.join(', ')} not set; the release build will be unsigned.")
 }
@@ -43,6 +48,14 @@ android {
         }
     }
     signingConfigs {
+        if (orbiqueTestKeystore != null) {
+            orbiqueTest {
+                storeFile = file(orbiqueTestKeystore)
+                storePassword = 'android'
+                keyAlias = 'androiddebugkey'
+                keyPassword = 'android'
+            }
+        }
         if (orbiqueReleaseSigning) {
             release {
                 storeFile = file(orbiqueEnv('ORBIQUE_KEYSTORE_FILE'))
@@ -63,7 +76,7 @@ android {
         beta {
             initWith release
             debuggable false
-            signingConfig = signingConfigs.debug
+            signingConfig = orbiqueTestKeystore != null ? signingConfigs.orbiqueTest : signingConfigs.debug
             matchingFallbacks = ['release']
         }
     }

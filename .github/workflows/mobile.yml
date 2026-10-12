@@ -183,6 +183,9 @@ jobs:
         run: |
           chmod +x gradlew
           export ORBIQUE_VERSION_CODE="$BUILD_NUMBER"
+          # sign with the key from the step above by its path: the Android Gradle plugin's default debug key location
+          # is not always ~/.android on the runner, and then it would make and use a key of its own
+          export ORBIQUE_TEST_KEYSTORE="$HOME/.android/debug.keystore"
           # page console to logcat in this non-debuggable build too, for the emulator check (not in the Play bundle)
           node -e "const f = 'app/src/main/assets/capacitor.config.json', fs = require('fs'), c = JSON.parse(fs.readFileSync(f, 'utf8')); c.android = Object.assign({}, c.android, { loggingBehavior: 'production' }); fs.writeFileSync(f, JSON.stringify(c, null, 2));"
           ./gradlew --no-daemon assembleBeta
