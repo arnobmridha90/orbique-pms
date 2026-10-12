@@ -61,7 +61,6 @@ const NATIVE_VENDORS = [
   ['node_modules/@capacitor/app/dist/plugin.js', 'vendor/cap-app.js'],
   ['node_modules/@capacitor/browser/dist/plugin.js', 'vendor/cap-browser.js'],
   ['node_modules/@capacitor/filesystem/dist/plugin.js', 'vendor/cap-filesystem.js'],
-  ['node_modules/@capacitor/keyboard/dist/plugin.js', 'vendor/cap-keyboard.js'],
   ['node_modules/@capacitor/share/dist/plugin.js', 'vendor/cap-share.js'],
   ['node_modules/@capacitor/splash-screen/dist/plugin.js', 'vendor/cap-splash.js'],
   ['node_modules/@capacitor-community/text-to-speech/dist/plugin.js', 'vendor/cap-tts.js']

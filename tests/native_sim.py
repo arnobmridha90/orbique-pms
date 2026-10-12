@@ -19,7 +19,7 @@ A fake native side answers those calls and records each one in window.__nativeCa
 App (addListener / removeListener / removeAllListeners, minimizeApp, exitApp), Browser.open, Filesystem.writeFile
 (returns a file:// uri in the app cache), Share.share (window.__sim.shareError makes it fail, e.g. "Share canceled"),
 SplashScreen.hide, SystemBars.setStyle, TextToSpeech.speak (answers after __sim.ttsMs; a stopped sentence never
-answers on Android and is resolved on iOS, like the real plugins), .stop, .isLanguageSupported, and Keyboard.
+answers on Android and is resolved on iOS, like the real plugins), .stop, .isLanguageSupported.
 Listeners are kept by callback id and called again with each event, as the native side does.
     window.__simBack()          presses the Android back button like the App plugin (backButton event, then the
                                 document "backbutton" event; with no listener the app view goes back in history)
@@ -64,7 +64,6 @@ NATIVE_PLUGINS = {
     'Filesystem': 'readFile readFileInChunks:callback writeFile appendFile deleteFile mkdir rmdir readdir getUri stat rename copy downloadFile',
     'Share': 'canShare share',
     'SplashScreen': 'show hide',
-    'Keyboard': 'show hide setAccessoryBarVisible setScroll setStyle setResizeMode getResizeMode',
     'TextToSpeech': 'speak stop getSupportedLanguages getSupportedVoices isLanguageSupported openInstall',
     'SystemBars': 'setStyle show hide setAnimation',
     'WebView': 'setServerAssetPath setServerBasePath getServerBasePath persistServerBasePath',
@@ -180,7 +179,7 @@ NATIVE_SHELL_JS = r"""
     if (c.methodName === 'addListener') { var L = listeners[c.pluginId] = listeners[c.pluginId] || {}; (L[o.eventName] = L[o.eventName] || []).push(c.callbackId); return; }
     if (c.methodName === 'removeListener') { var R = (listeners[c.pluginId] || {})[o.eventName]; if (R && R.indexOf(o.callbackId) >= 0) R.splice(R.indexOf(o.callbackId), 1); return; }
     if (c.methodName === 'removeAllListeners') { delete listeners[c.pluginId]; ok(c); return; }
-    var h = H[c.pluginId + '.' + c.methodName] || (c.pluginId === 'Keyboard' ? ok : null);
+    var h = H[c.pluginId + '.' + c.methodName];
     if (h) h(c); else err(c, '"' + c.pluginId + '.' + c.methodName + '()" is not implemented in the simulation', 'UNIMPLEMENTED');
   }
 

@@ -394,7 +394,11 @@ jobs:
             echo "::error::The app stopped responding (ANR in logcat.txt)."
             fail=1
           fi
-          errors=$(grep -E ' E Capacitor/Console *: ' "$log" || true)
+          # Capacitor's SystemBars plugin sets the safe-area CSS on every insets change, including before the page has a
+          # document ("Cannot read properties of null (reading 'style')"), and sets it again once the page is visible
+          # (onPageCommitVisible). Those early attempts are not page errors
+          errors=$(grep -E ' E Capacitor/Console *: ' "$log" \
+            | grep -vE "Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null \(reading 'style'\)" || true)
           if [ -n "$errors" ]; then
             echo "::error::The page logged $(printf '%s\n' "$errors" | wc -l | tr -d ' ') JavaScript error(s); the first ones follow."
             printf '%s\n' "$errors" | sed -E 's/^.* E Capacitor\/Console *: //' | head -20 | while IFS= read -r line; do echo "::error::$line"; done
