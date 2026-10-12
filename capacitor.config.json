@@ -4,8 +4,7 @@
   "webDir": "mobile/www",
   "backgroundColor": "#F6F7F9",
   "android": {
-    "allowMixedContent": false,
-    "loggingBehavior": "production"
+    "allowMixedContent": false
   },
   "plugins": {
     "SplashScreen": {

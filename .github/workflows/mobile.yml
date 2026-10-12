@@ -41,8 +41,8 @@ on:
 permissions:
   contents: read
 
-# One run at a time per branch. Pull requests cancel their older run; main finishes each run in order, so the newest
-# commit is always the one published last.
+# One run at a time per branch. Pull requests cancel their older run. On main a running build always finishes; if
+# several pushes arrive meanwhile, GitHub keeps only the newest waiting run, so the newest commit is published last.
 concurrency:
   group: mobile-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -139,7 +139,8 @@ jobs:
       # One stable test key, so each published test APK installs over the previous one. The key never sits in the
       # repository, a release or the Actions cache (pull requests from forks can read the cache of a public repository);
       # it comes from a secret, and secrets are never given to pull requests from forks:
-      # 1. ANDROID_TEST_KEY_SEED: any long phrase; scripts/android-test-key.py turns it into the same key every time.
+      # 1. ANDROID_TEST_KEY_SEED: any long phrase; scripts/android-test-key.py turns it into the same key every time
+      #    (its packages are pinned by hash in scripts/android-test-key.requirements.txt).
       # 2. ANDROID_DEBUG_KEYSTORE_BASE64: a keystore file (alias androiddebugkey, password android), base64.
       # Without either, this run signs with a one-off key and the release notes tell testers to uninstall first.
       - name: Test signing key
@@ -151,16 +152,18 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.android
           rm -f ~/.android/debug.keystore
-          if [ -n "$DEBUG_KEYSTORE" ]; then
+          if [ -n "$ANDROID_TEST_KEY_SEED" ]; then
+            if [ -n "$DEBUG_KEYSTORE" ]; then echo "::notice::Both test key secrets are set; using ANDROID_TEST_KEY_SEED."; fi
+            python3 -m venv "$RUNNER_TEMP/keyenv"
+            "$RUNNER_TEMP/keyenv/bin/pip" install --quiet --disable-pip-version-check --require-hashes -r scripts/android-test-key.requirements.txt
+            "$RUNNER_TEMP/keyenv/bin/python" scripts/android-test-key.py ~/.android/debug.keystore
+            echo "Test key: from the ANDROID_TEST_KEY_SEED secret."
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$DEBUG_KEYSTORE" ]; then
             printf '%s' "$DEBUG_KEYSTORE" | base64 --decode --ignore-garbage > ~/.android/debug.keystore
             keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey > /dev/null \
               || { echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 must be a debug keystore with alias androiddebugkey and password android"; exit 1; }
-            echo "Test key: the ANDROID_DEBUG_KEYSTORE_BASE64 secret."
-            echo "stable=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "$ANDROID_TEST_KEY_SEED" ]; then
-            python3 -m venv "$RUNNER_TEMP/keyenv"
-            "$RUNNER_TEMP/keyenv/bin/pip" install --quiet --disable-pip-version-check 'cryptography==49.0.0'
-            "$RUNNER_TEMP/keyenv/bin/python" scripts/android-test-key.py ~/.android/debug.keystore
+            echo "Test key: from the ANDROID_DEBUG_KEYSTORE_BASE64 secret."
             echo "stable=true" >> "$GITHUB_OUTPUT"
           else
             keytool -genkeypair -keystore ~/.android/debug.keystore -storetype PKCS12 \
@@ -178,11 +181,13 @@ jobs:
         run: |
           chmod +x gradlew
           export ORBIQUE_VERSION_CODE="$BUILD_NUMBER"
+          # page console to logcat in this non-debuggable build too, for the emulator check (not in the Play bundle)
+          node -e "const f = 'app/src/main/assets/capacitor.config.json', fs = require('fs'), c = JSON.parse(fs.readFileSync(f, 'utf8')); c.android = Object.assign({}, c.android, { loggingBehavior: 'production' }); fs.writeFileSync(f, JSON.stringify(c, null, 2));"
           ./gradlew --no-daemon assembleBeta
           mkdir -p "$RUNNER_TEMP/apk"
           cp app/build/outputs/apk/beta/app-beta.apk "$RUNNER_TEMP/apk/Orbique-test.apk"
 
-      - name: Check the APK is signed with the stable debug key
+      - name: Check the APK is signed with this run's test key
         run: |
           set -eu
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
@@ -217,6 +222,8 @@ jobs:
           export ORBIQUE_KEYSTORE_FILE="$RUNNER_TEMP/upload.keystore"
           trap 'rm -f "$ORBIQUE_KEYSTORE_FILE"' EXIT
           printf '%s' "$KEYSTORE" | base64 --decode --ignore-garbage > "$ORBIQUE_KEYSTORE_FILE"
+          # the Play build keeps Capacitor's default logging (the test APK step turned console logging on)
+          node -e "const f = 'app/src/main/assets/capacitor.config.json', fs = require('fs'), c = JSON.parse(fs.readFileSync(f, 'utf8')); if (c.android) delete c.android.loggingBehavior; fs.writeFileSync(f, JSON.stringify(c, null, 2));"
           ./gradlew --no-daemon bundleRelease
           aab=app/build/outputs/bundle/release/app-release.aab
           certs=$(keytool -printcert -jarfile "$aab" 2>&1 || true)
@@ -401,6 +408,12 @@ jobs:
         run: |
           set -euo pipefail
           tag=android-test
+          # Only the newest commit on main publishes: re-running an older run must not move the download back
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "::notice::Not published: this run built ${GITHUB_SHA:0:7}, but main is now at ${head:0:7}. Run the workflow on main for the newest build."
+            exit 0
+          fi
           # Move (or create) the tag at this commit
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true --silent
@@ -412,7 +425,7 @@ jobs:
           # a manual Run workflow has no head_commit: read the subject from the API
           if [ -z "$subject" ]; then subject=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq '.commit.message' | head -n 1 || true); fi
           {
-            printf 'The newest Orbique test build for Android phones. It is replaced each time main changes.\n\n'
+            printf 'The newest Orbique test build for Android phones. It is replaced by each new build of main.\n\n'
             printf -- '- Commit: [%s](https://github.com/%s/commit/%s) %s\n' "${GITHUB_SHA:0:7}" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$subject"
             printf -- '- Build number: %s (version %s)\n' "$BUILD_NUMBER" "$ORBIQUE_VERSION_NAME"
             printf -- '- Built: %s\n' "$(date -u '+%Y-%m-%d %H:%M UTC')"
