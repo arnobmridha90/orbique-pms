@@ -1574,9 +1574,13 @@
       O.voice.stop();
       /* text: one string (split into sentences) or an array of sentences (kept as given, so "4.5" is not split) */
       var parts = Array.isArray(text) ? text.filter(function (x) { return String(x).trim(); }) : (String(text).match(/(?:\d\.\d|[^.!?])+[.!?]*/g) || [text]), i = 0, started = false;
+      /* each read-aloud ends exactly once (finish), also when stopped; a cancelled sentence's late onerror must not
+         carry the old chain on into a newer read-aloud */
+      var me = O.voice._run = (O.voice._run || 0) + 1, job = O.voice._job = { o: o, over: false };
       O.voice._on = true;
       function next() {
-        if (!O.voice._on || i >= parts.length) { O.voice._on = false; if (o.onend) o.onend(true); return; }
+        if (me !== O.voice._run) return;
+        if (i >= parts.length) { O.voice._finish(job, true); return; }
         var u = new SpeechSynthesisUtterance(parts[i].trim()), v = O.voice.pick();
         if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
         u.rate = o.rate || 1.02; u.pitch = o.pitch || 0.95;
@@ -1586,7 +1590,18 @@
       }
       next(); return true;
     },
-    stop: function () { O.voice._on = false; try { speechSynthesis.cancel(); } catch (e) {} },
+    stop: function () {
+      O.voice._run = (O.voice._run || 0) + 1;
+      var j = O.voice._job; O.voice._job = null; O.voice._on = false;
+      try { speechSynthesis.cancel(); } catch (e) {}
+      O.voice._finish(j, true);
+    },
+    _finish: function (j, ok) {
+      if (!j || j.over) return;
+      j.over = true;
+      if (O.voice._job === j) { O.voice._job = null; O.voice._on = false; }
+      if (j.o.onend) { try { j.o.onend(ok); } catch (e) { if (window.console) console.error(e); } }
+    },
     speaking: function () { return !!O.voice._on; },
     /* true once the device has at least one voice (some phones load them a moment after the page) */
     hasVoices: function () { try { return O.voice.available() && speechSynthesis.getVoices().length > 0; } catch (e) { return false; } }

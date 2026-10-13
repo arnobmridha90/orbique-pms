@@ -1,0 +1,649 @@
+name: Phone app
+
+# Builds the Orbique phone app (Capacitor) for Android and iPhone. See docs/MOBILE.md.
+# - android: test APK (artifact orbique-android-test: the release build, not debuggable, signed with the test key) and,
+#   when the upload key secrets exist, a signed Google Play bundle.
+# - android-smoke: installs the APK on an Android emulator, takes screenshots and fails on a crash or a JavaScript error.
+# - android-release (main only, on a push or a manual Run workflow): puts the APK on the rolling pre-release
+#   "android-test" as Orbique-test.apk.
+# - ios: builds for the iPhone simulator; on main (push or Run workflow), uploads to TestFlight when the App Store
+#   Connect secrets exist.
+# Secrets are optional: every step that needs one checks it first and skips cleanly without it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'android/**'
+      - 'ios/**'
+      - 'api/**'
+      - 'scripts/build.mjs'
+      - 'scripts/android-test-key.*'
+      - 'capacitor.config.json'
+      - 'config/mobile.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'android/**'
+      - 'ios/**'
+      - 'api/**'
+      - 'scripts/build.mjs'
+      - 'scripts/android-test-key.*'
+      - 'capacitor.config.json'
+      - 'config/mobile.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time per branch. Pull requests cancel their older run. On main a running build always finishes; if
+# several pushes arrive meanwhile, GitHub keeps only the newest waiting run, so the newest commit is published last.
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The version people see in the stores. Build numbers are run number x 100 + attempt, so a re-run gets a new one too.
+  ORBIQUE_VERSION_NAME: '0.5.0'
+
+jobs:
+  android:
+    name: Android build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      site: ${{ steps.web.outputs.site }}
+      build: ${{ steps.meta.outputs.build }}
+      app: ${{ steps.meta.outputs.app }}
+      stable: ${{ steps.testkey.outputs.stable }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Stores refuse a build number they have already seen, and a re-run keeps github.run_number, so the attempt is
+      # folded in: run 57 -> 5701, its re-run -> 5702, run 58 -> 5801.
+      - name: Build number and app ID
+        id: meta
+        run: |
+          build=$(( GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT ))
+          app=$(node -p "require('./capacitor.config.json').appId")
+          echo "BUILD_NUMBER=$build" >> "$GITHUB_ENV"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "Build number $build, app ID $app"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle
+            android/app/*.gradle
+            android/gradle/wrapper/gradle-wrapper.properties
+            package-lock.json
+
+      # GitHub's Ubuntu runner ships the Android SDK and sets ANDROID_HOME (/usr/local/lib/android/sdk). The Android
+      # Gradle plugin reads ANDROID_HOME on its own; writing sdk.dir makes it explicit. Missing platforms or build tools
+      # are downloaded by Gradle (the licences are already accepted on the runner).
+      - name: Point Gradle at the runner's Android SDK
+        run: |
+          test -d "${ANDROID_HOME:-}" || { echo "::error::ANDROID_HOME is not set on this runner"; exit 1; }
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          echo "Android SDK: $ANDROID_HOME"
+          echo "Platforms: $(ls "$ANDROID_HOME/platforms" | tr '\n' ' ')"
+          echo "Build tools: $(ls "$ANDROID_HOME/build-tools" | tr '\n' ' ')"
+          java -version
+
+      - name: Build the web files
+        id: web
+        env:
+          # Only main connects to the live site, which runs main's server code. Pull requests and other branches build a
+          # local test copy, so the emulator check tests their app without the live site's older server code. On main an
+          # empty variable is fine: the build then uses config/mobile.json
+          ORBIQUE_SITE_URL: ${{ github.ref != 'refs/heads/main' && 'none' || vars.ORBIQUE_SITE_URL }}
+        run: |
+          npm run mobile:build
+          site=$(node -e "const vm = require('vm'), fs = require('fs'); const w = {}; vm.runInNewContext(fs.readFileSync('mobile/www/config.js', 'utf8'), { window: w }); process.stdout.write(String((w.ORBIQUE_CONFIG || {}).appUrl || ''))")
+          echo "site=$site" >> "$GITHUB_OUTPUT"
+          echo "The app connects to: ${site:-nothing (local test copy, data stays on the phone)}"
+
+      - name: Copy the web files into the Android project
+        run: npx cap sync android
+
+      - name: Check which signing secrets are set
+        id: keys
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Google Play bundle skipped: the four ANDROID_KEYSTORE_* / ANDROID_KEY_* secrets are not all set."
+          fi
+
+      # One stable test key, so each published test APK installs over the previous one. The key never sits in the
+      # repository, a release or the Actions cache (pull requests from forks can read the cache of a public repository);
+      # it comes from a secret, and secrets are never given to pull requests from forks:
+      # 1. ANDROID_TEST_KEY_SEED: any long phrase; scripts/android-test-key.py turns it into the same key every time
+      #    (its packages are pinned by hash in scripts/android-test-key.requirements.txt).
+      # 2. ANDROID_DEBUG_KEYSTORE_BASE64: a keystore file (alias androiddebugkey, password android), base64.
+      # Without either, this run signs with a one-off key and the release notes tell testers to uninstall first.
+      - name: Test signing key
+        id: testkey
+        env:
+          DEBUG_KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          ANDROID_TEST_KEY_SEED: ${{ secrets.ANDROID_TEST_KEY_SEED }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          rm -f ~/.android/debug.keystore
+          if [ -n "$ANDROID_TEST_KEY_SEED" ]; then
+            if [ -n "$DEBUG_KEYSTORE" ]; then echo "::notice::Both test key secrets are set; using ANDROID_TEST_KEY_SEED."; fi
+            python3 -m venv "$RUNNER_TEMP/keyenv"
+            "$RUNNER_TEMP/keyenv/bin/pip" install --quiet --disable-pip-version-check --require-hashes -r scripts/android-test-key.requirements.txt
+            "$RUNNER_TEMP/keyenv/bin/python" scripts/android-test-key.py ~/.android/debug.keystore
+            echo "Test key: from the ANDROID_TEST_KEY_SEED secret."
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$DEBUG_KEYSTORE" ]; then
+            printf '%s' "$DEBUG_KEYSTORE" | base64 --decode --ignore-garbage > ~/.android/debug.keystore
+            keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey > /dev/null \
+              || { echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 must be a debug keystore with alias androiddebugkey and password android"; exit 1; }
+            echo "Test key: from the ANDROID_DEBUG_KEYSTORE_BASE64 secret."
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storetype PKCS12 \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10950 -dname "CN=Android Debug,O=Android,C=US" > /dev/null 2>&1
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No ANDROID_TEST_KEY_SEED secret, so this build has a one-off signing key: testers must uninstall the previous Orbique test app before installing it (docs/MOBILE.md, 'Same key for every test build')."
+          fi
+          chmod 600 ~/.android/debug.keystore
+
+      # The beta build type (android/app/build.gradle) is the release build, not debuggable and without WebView
+      # inspection, signed with the test key above so it installs without Google Play.
+      - name: Build the test APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          export ORBIQUE_VERSION_CODE="$BUILD_NUMBER"
+          # sign with the key from the step above by its path: the Android Gradle plugin's default debug key location
+          # is not always ~/.android on the runner, and then it would make and use a key of its own
+          export ORBIQUE_TEST_KEYSTORE="$HOME/.android/debug.keystore"
+          # page console to logcat in this non-debuggable build too, for the emulator check (not in the Play bundle)
+          node -e "const f = 'app/src/main/assets/capacitor.config.json', fs = require('fs'), c = JSON.parse(fs.readFileSync(f, 'utf8')); c.android = Object.assign({}, c.android, { loggingBehavior: 'production' }); fs.writeFileSync(f, JSON.stringify(c, null, 2));"
+          ./gradlew --no-daemon assembleBeta
+          mkdir -p "$RUNNER_TEMP/apk"
+          cp app/build/outputs/apk/beta/app-beta.apk "$RUNNER_TEMP/apk/Orbique-test.apk"
+
+      - name: Check the APK is signed with this run's test key
+        run: |
+          set -eu
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
+          key=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey)
+          apk=$("$apksigner" verify --print-certs "$RUNNER_TEMP/apk/Orbique-test.apk")
+          want=$(printf '%s\n' "$key" | awk '/SHA256:/ && !n { sub(/^.*SHA256: */, ""); gsub(":", ""); print tolower($0); n = 1 }')
+          # Certificate names and digests only (public). Every signer's SHA-256 must be the test key's; read the digests
+          # whatever apksigner calls the signer ("Signer #1", "Signer (minSdkVersion=..)"), skipping a source stamp
+          printf '%s\n' "$apk"
+          got=$(printf '%s\n' "$apk" | grep -i 'sha-256' | grep -iv 'source stamp' | grep -oiE '[0-9a-f]{64}' | tr 'A-F' 'a-f' | sort -u || true)
+          echo "debug key SHA-256: $want"
+          echo "APK signer SHA-256: $got"
+          if [ -z "$want" ] || [ "$want" != "$got" ]; then
+            echo "::error::The APK is not signed with the test key in ~/.android/debug.keystore."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbique-android-test
+          path: ${{ runner.temp }}/apk/Orbique-test.apk
+          if-no-files-found: error
+
+      - name: Build the signed Google Play bundle
+        if: steps.keys.outputs.release == 'true'
+        working-directory: android
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ORBIQUE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORBIQUE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORBIQUE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export ORBIQUE_VERSION_CODE="$BUILD_NUMBER"
+          export ORBIQUE_KEYSTORE_FILE="$RUNNER_TEMP/upload.keystore"
+          trap 'rm -f "$ORBIQUE_KEYSTORE_FILE"' EXIT
+          printf '%s' "$KEYSTORE" | base64 --decode --ignore-garbage > "$ORBIQUE_KEYSTORE_FILE"
+          # the Play build keeps Capacitor's default logging (the test APK step turned console logging on)
+          node -e "const f = 'app/src/main/assets/capacitor.config.json', fs = require('fs'), c = JSON.parse(fs.readFileSync(f, 'utf8')); if (c.android) delete c.android.loggingBehavior; fs.writeFileSync(f, JSON.stringify(c, null, 2));"
+          ./gradlew --no-daemon bundleRelease
+          aab=app/build/outputs/bundle/release/app-release.aab
+          certs=$(keytool -printcert -jarfile "$aab" 2>&1 || true)
+          grep -q 'SHA256:' <<< "$certs" || { echo "::error::The Google Play bundle came out unsigned"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/aab"
+          cp "$aab" "$RUNNER_TEMP/aab/Orbique-$ORBIQUE_VERSION_NAME-$ORBIQUE_VERSION_CODE.aab"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.keys.outputs.release == 'true'
+        with:
+          name: orbique-android-play-bundle
+          path: ${{ runner.temp }}/aab/*.aab
+          if-no-files-found: error
+
+      - name: Summary
+        env:
+          SITE: ${{ steps.web.outputs.site }}
+          RELEASE: ${{ steps.keys.outputs.release }}
+          STABLE: ${{ steps.testkey.outputs.stable }}
+        run: |
+          {
+            printf '### Android build %s (version %s)\n\n' "$BUILD_NUMBER" "$ORBIQUE_VERSION_NAME"
+            printf -- '- Connects to: %s\n' "${SITE:-local test copy (no site address set)}"
+            printf -- '- Test APK: artifact **orbique-android-test**\n'
+            if [ "$STABLE" != "true" ]; then printf -- '- Signed with a one-off key (no ANDROID_TEST_KEY_SEED secret): uninstall the old test app first\n'; fi
+            if [ "$RELEASE" = "true" ]; then printf -- '- Google Play bundle: artifact **orbique-android-play-bundle**\n'; fi
+            if [ "$GITHUB_EVENT_NAME" != "pull_request" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              printf -- '- After the emulator check passes: https://github.com/%s/releases/download/android-test/Orbique-test.apk\n' "$GITHUB_REPOSITORY"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  android-smoke:
+    name: Android emulator check
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbique-android-test
+          path: ${{ runner.temp }}/apk
+
+      # The app talks to the live site. Vercel deploys the same commit in parallel; wait until the site runs it (or a
+      # newer commit), so the check never tests this app against older server code
+      - name: Wait for the live site to run this commit
+        if: needs.android.outputs.site != ''
+        env:
+          SITE: ${{ needs.android.outputs.site }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          got=""
+          for i in $(seq 1 60); do
+            got=$(curl -fsS -m 20 "$SITE/api/health" | jq -r '.commit // ""' || true)
+            if [ -n "$got" ]; then
+              rel=$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...$got" --jq '.status' 2>/dev/null || true)
+              if [ "$rel" = identical ] || [ "$rel" = ahead ]; then echo "$SITE runs $got."; exit 0; fi
+            fi
+            echo "attempt $i: $SITE runs '${got:-?}', waiting for ${GITHUB_SHA:0:7}"
+            sleep 10
+          done
+          echo "::error::$SITE still runs '${got:-?}', not ${GITHUB_SHA:0:7} or newer, after 10 minutes. Check the site's deploy on Vercel, then re-run this job."
+          exit 1
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The emulator action runs each line of its script separately, so the steps live in one file.
+      - name: Write the check script
+        run: |
+          cat > "$RUNNER_TEMP/smoke.sh" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -uo pipefail
+          pkg="${PKG:?}"
+          apk="$RUNNER_TEMP/apk/Orbique-test.apk"
+          out="$RUNNER_TEMP/smoke"
+          mkdir -p "$out"
+          adb wait-for-device
+          for i in $(seq 1 30); do adb shell pm path android > /dev/null 2>&1 && break; sleep 2; done
+          adb shell input keyevent 82 || true
+          adb shell svc power stayon true || true
+          adb logcat -G 16M > /dev/null 2>&1 || true
+          adb logcat -c || true
+          adb logcat -v threadtime > "$out/logcat.txt" 2>&1 &
+          logger=$!
+          status=0
+          installed=0
+          for i in 1 2 3; do
+            if adb install -r "$apk" > "$out/install.txt" 2>&1; then installed=1; break; fi
+            cat "$out/install.txt"; sleep 10
+          done
+          if [ "$installed" != 1 ]; then
+            echo "::error::The APK did not install on the emulator"
+            status=1
+          else
+            adb shell dumpsys package "$pkg" | grep -E 'versionCode|versionName' > "$out/version.txt" || true
+            t0=$(date +%s)
+            timeout 90 adb shell am start -W -n "$pkg/.MainActivity" | tee "$out/launch.txt"
+            for t in 15 30; do
+              left=$(( t0 + t - $(date +%s) ))
+              if [ "$left" -gt 0 ]; then sleep "$left"; fi
+              adb exec-out screencap -p > "$out/screen-${t}s.png" || echo "::warning::No screenshot at ${t}s"
+            done
+            adb shell pidof "$pkg" | tr -d '\r' > "$out/pid.txt" || true
+            adb shell dumpsys activity activities > "$out/activities.txt" 2>&1 || true
+            # after an ANR, keep Android's thread dump of the app (needs root, which this emulator image allows)
+            if grep -q "ANR in $pkg" "$out/logcat.txt"; then
+              adb root > /dev/null 2>&1 || true
+              sleep 3
+              adb wait-for-device
+              adb shell 'for f in /data/anr/*; do echo "== $f"; cat "$f"; done' > "$out/anr-traces.txt" 2>&1 || true
+            fi
+          fi
+          adb logcat -d -b crash > "$out/crash.txt" 2>&1 || true
+          sleep 2
+          kill "$logger" 2>/dev/null || true
+          wait "$logger" 2>/dev/null || true
+          exit "$status"
+          SCRIPT
+
+      - name: Install and launch on an Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          PKG: ${{ needs.android.outputs.app }}
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: bash "$RUNNER_TEMP/smoke.sh"
+
+      # Capacitor forwards the page's console to logcat with the tag Capacitor/Console: console.error and uncaught
+      # JavaScript errors at level E, as "File: <url> - Line <n> - Msg: <message>" (BridgeWebChromeClient.onConsoleMessage).
+      - name: Check the app started cleanly
+        env:
+          PKG: ${{ needs.android.outputs.app }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/smoke"
+          pkg_re=$(printf '%s' "$PKG" | sed 's/\./\\./g')
+          log="$out/logcat.txt"
+          fail=0
+          if [ ! -s "$log" ]; then
+            echo "::error::No logcat was recorded, so the check cannot tell whether the app started."
+            exit 1
+          fi
+          pid=$(cat "$out/pid.txt" 2>/dev/null | tr -d '[:space:]')
+          if [ -z "$pid" ]; then
+            echo "::error::The app was not running 30 seconds after launch (it crashed or closed)."
+            fail=1
+          else
+            echo "App process is running (pid $pid)."
+          fi
+          if cat "$log" "$out/crash.txt" 2>/dev/null | grep -E "AndroidRuntime *: Process: $pkg_re,"; then
+            echo "::error::The app crashed (FATAL EXCEPTION in logcat.txt)."
+            fail=1
+          fi
+          if grep -E "ANR in $pkg_re( |\$)" "$log"; then
+            echo "::error::The app stopped responding (ANR in logcat.txt)."
+            # the reason, the load and the CPU use ActivityManager logs with it, and the app's main thread if it was dumped
+            grep -E -A 25 "ANR in $pkg_re( |\$)" "$log" | grep -E ' ActivityManager: ' | head -40
+            if [ -s "$out/anr-traces.txt" ]; then
+              echo "--- the app's main thread at the ANR ---"
+              awk '/^"main"/ { f = 1 } f { print } f && /^$/ { exit }' "$out/anr-traces.txt" | head -45
+            fi
+            fail=1
+          fi
+          # Capacitor's SystemBars plugin sets the safe-area CSS on every insets change, including before the page has a
+          # document ("Cannot read properties of null (reading 'style')"), and sets it again once the page is visible
+          # (onPageCommitVisible). Those early attempts are not page errors
+          errors=$(grep -E ' E Capacitor/Console *: ' "$log" \
+            | grep -vE "Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null \(reading 'style'\)" || true)
+          if [ -n "$errors" ]; then
+            echo "::error::The page logged $(printf '%s\n' "$errors" | wc -l | tr -d ' ') JavaScript error(s); the first ones follow."
+            printf '%s\n' "$errors" | sed -E 's/^.* E Capacitor\/Console *: //' | head -20 | while IFS= read -r line; do echo "::error::$line"; done
+            fail=1
+          fi
+          grep -q 'Loading app at' "$log" || echo "::warning::Capacitor's 'Loading app at' line is missing from logcat; look at the screenshots."
+          grep -qE "ResumedActivity.*$pkg_re/" "$out/activities.txt" 2>/dev/null \
+            || echo "::warning::Orbique was not the app on screen at 30 seconds; look at the screenshots."
+          echo "--- page console (first 60 lines) ---"
+          grep -E ' Capacitor/Console *: ' "$log" | head -60 || true
+          exit "$fail"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbique-android-smoke
+          path: ${{ runner.temp }}/smoke/
+          if-no-files-found: warn
+
+  android-release:
+    name: Publish the Android test build
+    needs: [android, android-smoke]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbique-android-test
+          path: ${{ runner.temp }}/apk
+
+      - name: Move the android-test pre-release to this build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SITE: ${{ needs.android.outputs.site }}
+          BUILD_NUMBER: ${{ needs.android.outputs.build }}
+          STABLE: ${{ needs.android.outputs.stable }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          tag=android-test
+          # Publish a commit that is on main and not older than the build already published: re-running an older run
+          # must not move the download back, and a later docs or database commit on main (which starts no run here) must
+          # not stop this build from being published
+          on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...main" --jq '.status')
+          if [ "$on_main" != ahead ] && [ "$on_main" != identical ]; then
+            echo "::notice::Not published: ${GITHUB_SHA:0:7} is not on main."
+            exit 0
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
+            cur=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')
+            # "behind": this commit comes before the published one. Anything else (newer, the same, or the published
+            # commit no longer in main's history) publishes
+            rel=$(gh api "repos/$GITHUB_REPOSITORY/compare/$cur...$GITHUB_SHA" --jq '.status' 2>/dev/null) || rel=unknown
+            if [ "$rel" = behind ]; then
+              echo "::notice::Not published: the test build already has ${cur:0:7}, which is newer than ${GITHUB_SHA:0:7}."
+              exit 0
+            fi
+          fi
+          # Move (or create) the tag at this commit
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true --silent
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" --silent
+          fi
+          link="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/Orbique-test.apk"
+          subject=${COMMIT_MESSAGE%%$'\n'*}
+          # a manual Run workflow has no head_commit: read the subject from the API
+          if [ -z "$subject" ]; then subject=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq '.commit.message' | head -n 1 || true); fi
+          {
+            printf 'The newest Orbique test build for Android phones. It is replaced by each new build of main.\n\n'
+            printf -- '- Commit: [%s](https://github.com/%s/commit/%s) %s\n' "${GITHUB_SHA:0:7}" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$subject"
+            printf -- '- Build number: %s (version %s)\n' "$BUILD_NUMBER" "$ORBIQUE_VERSION_NAME"
+            printf -- '- Built: %s\n' "$(date -u '+%Y-%m-%d %H:%M UTC')"
+            if [ -n "$SITE" ]; then
+              printf -- '- Connects to: %s\n' "$SITE"
+            else
+              printf -- '- Connects to: nothing, this is a local test copy (data stays on the phone)\n'
+            fi
+            printf -- '- Build log: https://github.com/%s/actions/runs/%s\n\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf 'Install: open %s on the phone, allow installs from your browser when asked, then open the file. ' "$link"
+            if [ "$STABLE" = "true" ]; then
+              printf 'New test builds install over the old one. '
+            else
+              printf '**This build has a new signing key: uninstall the Orbique test app first, then install this one.** '
+            fi
+            printf 'Only install Orbique from this page, never from a file someone sends you. Guide: https://github.com/%s/blob/main/docs/MOBILE.md\n' "$GITHUB_REPOSITORY"
+          } > "$RUNNER_TEMP/notes.md"
+          title="Android test build $BUILD_NUMBER"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release edit "$tag" --title "$title" --notes-file "$RUNNER_TEMP/notes.md" --prerelease
+          else
+            gh release create "$tag" --title "$title" --notes-file "$RUNNER_TEMP/notes.md" --prerelease --verify-tag
+          fi
+          gh release upload "$tag" "$RUNNER_TEMP/apk/Orbique-test.apk" --clobber
+          echo "Published: $link"
+          printf '### Android test build %s published\n\n%s\n' "$BUILD_NUMBER" "$link" >> "$GITHUB_STEP_SUMMARY"
+
+  ios:
+    name: iPhone build
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build number
+        run: echo "BUILD_NUMBER=$(( GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT ))" >> "$GITHUB_ENV"
+
+      # Capacitor 8 needs Xcode 26 or newer: its iOS package builds and tests against the iOS 26 SDK
+      # (node_modules/@capacitor/ios/package.json, script xc:build:Capacitor) and supports iOS 15 and newer
+      # (Capacitor.podspec, ios.deployment_target).
+      - name: Use the newest Xcode and check it is new enough
+        run: |
+          set -euo pipefail
+          newest=$(find /Applications -maxdepth 1 -name 'Xcode_*.app' \( -type d -o -type l \) \
+            | sed -nE 's#^/Applications/Xcode_([0-9]+(\.[0-9]+)*)\.app$#\1#p' \
+            | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "/Applications/Xcode_$newest.app/Contents/Developer"; fi
+          xcode-select -p
+          xcodebuild -version
+          echo "iOS simulator SDK: $(xcrun --sdk iphonesimulator --show-sdk-version)"
+          swift --version
+          echo "Node $(node --version), macOS $(sw_vers -productVersion)"
+          cap=$(node -p "require('./node_modules/@capacitor/ios/package.json').version")
+          min_xcode=$(node -p "(((require('./node_modules/@capacitor/ios/package.json').scripts || {})['xc:build:Capacitor'] || '').match(/OS=(\d+)/) || [])[1] || '26'")
+          min_ios=$(sed -nE "s/.*ios\.deployment_target *= *'([0-9.]+)'.*/\1/p" node_modules/@capacitor/ios/Capacitor.podspec | awk 'NR == 1')
+          project_ios=$(sed -nE 's/.*IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);.*/\1/p' ios/App/App.xcodeproj/project.pbxproj | sort -t. -k1,1n -k2,2n | awk 'NR == 1')
+          have=$(xcodebuild -version | sed -nE '1s/^Xcode ([0-9.]+).*/\1/p')
+          echo "Capacitor iOS $cap needs Xcode $min_xcode or newer and iOS ${min_ios:-?} or newer. This runner has Xcode $have; the project targets iOS $project_ios."
+          if [ -z "$have" ] || [ "${have%%.*}" -lt "$min_xcode" ]; then
+            echo "::error::Capacitor $cap needs Xcode $min_xcode or newer, but the newest Xcode on this runner is ${have:-unknown}. Use a newer macOS runner image in .github/workflows/mobile.yml (runs-on)."
+            exit 1
+          fi
+          if [ -n "$min_ios" ] && [ "${project_ios%%.*}" -lt "${min_ios%%.*}" ]; then
+            echo "::error::The Xcode project targets iOS $project_ios but Capacitor $cap needs iOS $min_ios or newer (IPHONEOS_DEPLOYMENT_TARGET)."
+            exit 1
+          fi
+
+      - name: Build the web files
+        env:
+          ORBIQUE_SITE_URL: ${{ github.ref != 'refs/heads/main' && 'none' || vars.ORBIQUE_SITE_URL }}
+        run: npm run mobile:build
+
+      - name: Copy the web files into the iOS project
+        run: npx cap sync ios
+
+      - name: Build for the iPhone simulator (no signing)
+        run: |
+          set -euo pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            MARKETING_VERSION="$ORBIQUE_VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO -quiet build
+          mkdir -p "$RUNNER_TEMP/ios"
+          ditto -c -k --keepParent "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/App.app" "$RUNNER_TEMP/ios/Orbique-simulator.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbique-ios-simulator
+          path: ${{ runner.temp }}/ios/Orbique-simulator.zip
+          if-no-files-found: error
+
+      - name: Check the App Store Connect secrets
+        id: asc
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$KEY_ID" ] && [ -n "$ISSUER_ID" ] && [ -n "$KEY_P8" ] && [ -n "$TEAM_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "TestFlight upload skipped: the four App Store Connect secrets are not all set (see docs/MOBILE.md)."
+          fi
+
+      # Untested until the Apple Developer account exists (docs/MOBILE.md). Xcode signs automatically with the API key:
+      # -allowProvisioningUpdates lets it create the certificate and profile it needs.
+      - name: Upload to TestFlight
+        if: steps.asc.outputs.ready == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$TEAM_ID" | grep -qE '^[A-Z0-9]{10}$'; then
+            echo "::error::APPLE_TEAM_ID should be the 10-character team ID from developer.apple.com (Membership details)."
+            exit 1
+          fi
+          key="$RUNNER_TEMP/AuthKey_$KEY_ID.p8"
+          trap 'rm -f "$key"' EXIT
+          case "$KEY_P8" in
+            -----BEGIN*) printf '%s\n' "$KEY_P8" > "$key" ;;
+            *) printf '%s' "$KEY_P8" | base64 --decode > "$key" ;;
+          esac
+          grep -q 'BEGIN PRIVATE KEY' "$key" || { echo "::error::APP_STORE_CONNECT_KEY_P8_BASE64 is not a base64-encoded .p8 key"; exit 1; }
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID")
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Orbique.xcarchive" \
+            "${auth[@]}" DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$ORBIQUE_VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            -quiet archive
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Orbique.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" "${auth[@]}"
+          printf '### iPhone build %s (version %s) sent to TestFlight\n\nApple takes a few minutes to process it before it shows in TestFlight.\n' \
+            "$BUILD_NUMBER" "$ORBIQUE_VERSION_NAME" >> "$GITHUB_STEP_SUMMARY"

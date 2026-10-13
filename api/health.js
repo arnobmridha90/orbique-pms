@@ -3,10 +3,11 @@
  * needsBootstrap: no platform admin exists yet (the first sign-in screen offers "Set up Orbique").
  * No sign-in needed; never reveals keys or error details.
  */
-import { send } from './_lib/http.js';
+import { send, cors } from './_lib/http.js';
 import { adminClient, platformAdminCount } from './_lib/supabase.js';
 
 export default async function handler(req, res) {
+  if (cors(req, res)) return;
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.setHeader('Allow', 'GET');
     return send(res, 405, { ok: false, error: 'method', message: 'Use GET for this address.' });

@@ -7,3 +7,11 @@ dist-local/
 *.png
 !public/**/*.png
 __pycache__/
+!android/**/*.png
+!ios/**/*.png
+!mobile/assets/*.png
+mobile/www/
+*.keystore
+*.jks
+*.p12
+*.mobileprovision

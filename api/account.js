@@ -9,7 +9,7 @@
  * Sign-in: "Authorization: Bearer <Supabase access token>". See docs/API.md for the results.
  * Uses the service-role key (server only). Errors are plain English; no keys or stack traces are ever returned.
  */
-import { ApiError, ok, fail, send, readJson, bearer, bad, forbidden, conflict, tooMany, text, email as emailField, phone as phoneField, id as idField, uuid as uuidField, password as passwordField } from './_lib/http.js';
+import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, conflict, tooMany, text, email as emailField, phone as phoneField, id as idField, uuid as uuidField, password as passwordField } from './_lib/http.js';
 import { requireAdminClient, check, caller, isPlatformAdmin, platformAdminCount, getOrg, membership, requireOwner, findUserByEmail, createUser, deleteUserQuietly } from './_lib/supabase.js';
 import { tempPassword } from './_lib/passwords.js';
 import { isPlatformOwnerEmail } from './_lib/owners.js';
@@ -195,6 +195,7 @@ const ACTIONS = {
 };
 
 export default async function handler(req, res) {
+  if (cors(req, res)) return;
   try {
     if (req.method !== 'POST') {
       res.setHeader('Allow', 'POST');

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Orbique</string>
+    <string name="title_activity_main">Orbique</string>
+    <string name="package_name">com.orbique.app</string>
+    <string name="custom_url_scheme">com.orbique.app</string>
+</resources>

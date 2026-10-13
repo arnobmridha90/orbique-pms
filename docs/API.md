@@ -6,6 +6,10 @@ They use the Supabase **service-role key** (env `SUPABASE_SERVICE_ROLE_KEY`, or 
 Write handlers so they work both on Vercel and under `scripts/dev.mjs`: parse the body yourself when `req.body` is
 undefined or a string, and answer with `res.statusCode`, `res.setHeader` and `res.end(JSON.stringify(...))`.
 
+The phone app (docs/MOBILE.md) calls these functions from its own origin (Android `https://localhost`, iOS
+`capacitor://localhost`) with the site address as `ORBIQUE_CONFIG.apiBase`. Handlers start with `if (cors(req, res)) return;`
+(`api/_lib/http.js`), which answers the OPTIONS preflight and adds the cross-origin headers for those two origins only.
+
 Every response is JSON: `{ok: true, ...}` or `{ok: false, error: '<code>', message: '<plain English for the screen>'}`
 with status 400 (bad input), 401 (not signed in), 403 (not allowed), 409 (conflict), 429 (too many) or 500.
 

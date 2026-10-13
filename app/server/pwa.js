@@ -2,7 +2,7 @@
  * - Moves the manifest and icon tags into <head> (build.mjs places them after <title> in the body, and Chrome
  *   only reads the manifest from <head>).
  * - Guest links (/guest/<token>): no manifest, so "Add to Home Screen" saves the guest's own link, not the staff app.
- * - Registers /sw.js (offline copy of the app) on https or localhost.
+ * - Registers /sw.js (offline copy of the app) on https or localhost, but not inside the phone app.
  */
 (function () {
   'use strict';
@@ -32,7 +32,8 @@
   } catch (e) { /* cosmetic only */ }
 
   var local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  if (!('serviceWorker' in navigator) || !(location.protocol === 'https:' || local)) return;
+  var phoneApp = !!((window.ORBIQUE_CONFIG && window.ORBIQUE_CONFIG.native) || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())); /* the app ships its own files */
+  if (phoneApp || !('serviceWorker' in navigator) || !(location.protocol === 'https:' || local)) return;
   function register() {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function (e) {
       if (window.console && console.warn) console.warn('Offline support is not available here:', e && e.message);
