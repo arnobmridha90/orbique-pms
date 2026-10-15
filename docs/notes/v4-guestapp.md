@@ -69,13 +69,20 @@ highlights and scrolls to that booking; `preview: true` with `bookingId` opens i
 - `D.guestApp` gets every missing default key and service through the automation `guestAppSettings` (sets `v: 4`), so
   the blob is saved once and the database sees full content.
 - Demo seeds: 7 guest requests, 2 damage reports (drawn SVG photos), online check-ins for guests whose code went out.
-- `O.guestStay(b)` is exported for other pages: `{state, ciTime, coTime, ciAt, coAt, revealAt, checkinDone, idVerified,
+- `O.guestStay(b)` is exported for other pages: `{state, ciTime, coTime, ciAt, coAt, revealAt, unitAt, checkinDone, idVerified,
   waiting, visible}`.
+- **Unit types (0008_guest_units.sql)**: for a booking of a typed unit (`unitTypeId` on the booking or the unit) the payload's
+  `property.name` is the building name + type name ("Seri Saujana Residences · Deluxe"), `property.address` is the
+  building's address, and three fields are added: `unitType` (type name), `unitNo` (the unit number, `null` until
+  `unitAt` and outside arrival/in-house/check-out days) and `unitAt` (check-in time minus 30 minutes). The Wi-Fi of a typed
+  unit follows the unit number (its name may carry the number). The check-in time falls back from the booking to the unit,
+  then the building, then 15:00. Untyped units give exactly the payload they gave before (no new fields).
 
 ## Decisions and why
 
-- **One rule for the door code**, written once in JS (`stayInfo`) and once in SQL (`guest__stay`): the code shows from
-  check-in time minus `codeLeadHours` (0 to 12, never before midnight of the arrival day) until check-out time, only when
+- **One rule for the door code**, written once in JS (`stayInfo`) and once in SQL (`guest__stay`, re-created in
+  `0008_guest_units.sql`): the code shows from 30 minutes before the check-in time (the same moment as the unit number,
+  owner decision 2026-10-15; `codeLeadHours` is kept in the settings and the payload but no longer used) until check-out time, only when
   the booking is not pending or cancelled, the guest checked in online (if required), the ID is verified (if required),
   and a code is set and not cancelled / expired. The guest is told exactly what is missing.
 - **The guest API returns a purpose-built payload**, never raw records: no phone, email, amounts, notes, other bookings,
@@ -173,13 +180,14 @@ Errors: `{ok: false, error: 'not_found'}` (bad token, no booking, more than one 
   brand: { name, logo | null, primary | null, accent | null },
   booking: { ref, guestName, guests, nights, checkIn, checkOut, checkInTime, checkOutTime, channel, status },
   property: null | { name, area, address, type, beds, parking, lockBrand, photo | null,
-                     wifi: null | { name, password } },          // wifi only for arrival / inhouse / checkout
+                     wifi: null | { name, password },            // wifi only for arrival / inhouse / checkout (typed units: from unitAt)
+                     unitType, unitNo | null, unitAt },          // typed units only (0008): unitNo from unitAt on arrival / inhouse / checkout
   checkin: { done, at, names: [], arrivalTime, signedName, idSubmitted, idVerified },
   door: { visible, code: string | null,   // code only when visible
-          from, until,                    // from = check-in time minus lead hours (not before 00:00 that day); until = check-out
+          from, until,                    // from = check-in time minus 30 minutes (with the unit number); until = check-out
           waitingFor: [],                 // 'confirmation' | 'checkin' | 'id' | 'time' | 'host' | 'ended'
           helpOpen },                     // an open code-help request exists
-  app: { requireCheckin, requireId, requireName, codeLeadHours (0-12), reviewPrompt, welcome,
+  app: { requireCheckin, requireId, requireName, codeLeadHours (0-12, no longer used), reviewPrompt, welcome,
          contact: { phone, whatsapp, hours },                    // phone falls back to the workspace phone
          rules: [{id, title, text}], entry: [{id, text}], guide: [{id, title, text}], checkout: [{id, text}],
          todo: {city: [...]}, dont: [...], videos: [...],
