@@ -178,9 +178,11 @@
   /* ---------- template preview ---------- */
   function samples() { return D.bookings.filter(function (b) { return live(b) && b.checkIn >= D.TODAY && b.checkIn <= d.add(D.TODAY, 7); }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : a.checkInTime < b.checkInTime ? -1 : 1; }).slice(0, 12); }
   function vars(b) {
-    var p = D.propById[b.propertyId] || {}, wifi = p.wifi || [];
+    /* typed units: guests see "Building · Type"; the unit's own Wi-Fi only once the unit number shows (30 minutes before check-in) */
+    var p = D.propById[b.propertyId] || {}, gp = O.guestPlace(b), early = gp.typed && !(p.id && D.NOW >= O.assign.unitRevealAt(b, p.checkInTime));
+    var wifi = early ? ['[in the guest app from 30 minutes before check-in]', '[in the guest app]'] : p.wifi || [];
     return {
-      property: p.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
+      property: gp.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
       door_code: b.doorCode, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking,
       id_link: O.ws().domain + '/id/' + b.id.toLowerCase(), guest_app_link: O.ws().domain + '/stay/' + b.id.toLowerCase()
     };
