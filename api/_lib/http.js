@@ -94,6 +94,46 @@ export async function readJson(req) {
   return body;
 }
 
+/**
+ * The body exactly as received, as a Buffer (for signature checks; never re-serialised from parsed JSON).
+ * Uses req.rawBody (scripts/dev.mjs sets it), else reads the stream if nothing has read it yet,
+ * else a Buffer or string req.body. A body already parsed into an object cannot be checked: 500.
+ */
+export async function rawBody(req, limit = MAX_BODY) {
+  const tooLarge = () => new ApiError(413, 'too-large', 'The request is too large.');
+  if (req.rawBody !== undefined && req.rawBody !== null) {
+    const buf = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from(String(req.rawBody), 'utf8');
+    if (buf.length > limit) throw tooLarge();
+    return buf;
+  }
+  // Check the stream before touching req.body: Vercel's req.body getter reads and parses it
+  if (typeof req.on === 'function' && !req.readableEnded && req.readable !== false) {
+    const buf = await new Promise((resolve, reject) => {
+      const chunks = [];
+      let size = 0;
+      req.on('data', (c) => {
+        size += c.length;
+        if (size > limit) { reject(tooLarge()); req.destroy(); return; }
+        chunks.push(c);
+      });
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+      req.on('error', reject);
+    });
+    req.rawBody = buf;
+    return buf;
+  }
+  let body;
+  try { body = req.body; } catch (e) { body = undefined; }
+  if (body === undefined || body === null) return Buffer.alloc(0);
+  if (Buffer.isBuffer(body) || typeof body === 'string') {
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8');
+    if (buf.length > limit) throw tooLarge();
+    return buf;
+  }
+  console.error('[api] rawBody: the body was already parsed; the exact bytes are gone');
+  throw new ApiError(500, 'server', 'Something went wrong on our side. Please try again in a minute.');
+}
+
 /** The bearer token from the Authorization header, or ''. */
 export function bearer(req) {
   const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';

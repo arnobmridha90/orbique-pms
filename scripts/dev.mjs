@@ -8,7 +8,10 @@
  *    --dist <dir> builds and serves another folder (handy when several people share one checkout).
  * 3. Serves the files, the rewrites and the headers from vercel.json (files first, then rewrites, e.g. /guest/<token> -> index.html).
  * 4. Routes /api/<name> to the default export of api/<name>.js with a Vercel-like req.body / req.query and res.status() / res.json().
+ *    req.rawBody holds the exact bytes received (webhook signature checks; see rawBody in api/_lib/http.js).
  *    Edits to api/<name>.js are picked up on the next request; restart after changing api/_lib/*.js.
+ *
+ * 5. --worker: POSTs {task: 'tick'} to /api/channex-worker every 20 s with CHANNEX_WORKER_SECRET (stands in for pg_cron).
  *
  * Needs SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) + SUPABASE_ANON_KEY for the app and SUPABASE_SERVICE_ROLE_KEY for the API.
  * Without them the app runs as a local test copy and /api/health reports db: false.
@@ -26,6 +29,7 @@ const PORT = Number(arg('--port', process.env.PORT || 8787));
 const HOST = arg('--host', '127.0.0.1');
 const DIST = path.resolve(arg('--dist', path.join(ROOT, 'dist')));
 const BUILD = !args.includes('--no-build');
+const WORKER = args.includes('--worker');
 
 /* ---------- .env.local (KEY=value lines; # comments; optional quotes; "export " prefix allowed) ---------- */
 export function parseEnv(src) {
@@ -159,6 +163,7 @@ async function runApi(req, res, url, name) {
   try {
     if (!['GET', 'HEAD'].includes(req.method)) {
       const raw = await readBody(req);
+      req.rawBody = raw;
       const type = String(req.headers['content-type'] || '');
       if (!raw.length) req.body = undefined;
       else if (/application\/json/i.test(type)) {
@@ -215,4 +220,28 @@ server.listen(PORT, HOST, () => {
   console.log(`  serving ${path.relative(ROOT, DIST) || DIST}/  ·  api/*.js at /api/<name>`);
   console.log(`  database URL ${db ? 'set' : 'NOT set (local test copy)'}  ·  service key ${key ? 'set' : 'NOT set (/api/account will refuse)'}`);
   console.log('  restart after changing api/_lib/*.js or vercel.json; run with --no-build to skip the build\n');
+  if (WORKER) startWorker();
 });
+
+/* ---------- --worker: the Channex sending job every 20 s (pg_cron does this in production) ---------- */
+function startWorker() {
+  const secret = String(process.env.CHANNEX_WORKER_SECRET || '').trim();
+  if (!secret) { console.log('  --worker: set CHANNEX_WORKER_SECRET to run the Channex worker'); return; }
+  const url = `http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}/api/channex-worker`;
+  let busy = false;
+  const run = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + secret, 'Content-Type': 'application/json' }, body: JSON.stringify({ task: 'tick' }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || (j.ari && (j.ari.calls || j.ari.errors))) console.log('[worker]', r.status, JSON.stringify(j.ari || j));
+    } catch (e) {
+      console.log('[worker]', e && e.message ? e.message : String(e));
+    } finally {
+      busy = false;
+    }
+  };
+  console.log('  --worker: Channex worker every 20 s');
+  setInterval(run, 20000).unref();
+}

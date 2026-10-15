@@ -130,7 +130,7 @@
   /* 'Fee rates: Airbnb, Booking.com and Agoda 15%, Vrbo 8%, direct bookings 3% card fees.' built from D.channels */
   function feeNote() {
     var g = {}, order = [];
-    D.channelOrder.forEach(function (ch) { if (ch === 'direct' || !D.channels[ch]) return; var k = String(Math.round(D.channels[ch].feePct * 100)); if (!g[k]) { g[k] = []; order.push(k); } g[k].push(D.channels[ch].name); });
+    U.channelsInUse().forEach(function (ch) { if (ch === 'direct' || !D.channels[ch]) return; var k = String(Math.round(D.channels[ch].feePct * 100)); if (!g[k]) { g[k] = []; order.push(k); } g[k].push(D.channels[ch].name); });
     var parts = order.map(function (k) { var n = g[k]; return (n.length > 1 ? n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] : n[0]) + ' ' + k + '%'; });
     return 'Fee rates: ' + parts.join(', ') + ' commission on the room rate; direct bookings ' + Math.round(((D.channels.direct || {}).feePct || 0) * 100) + '% card fees.';
   }
@@ -398,7 +398,7 @@
     if (c) cols.push({ label: 'Before', type: 'money', w: 21 }, { label: 'Change', type: 'delta', w: 14 });
     else cols[0].w = 74;
     var total = { v: ['All properties', rev, nights, adr, rp, fe, rev - fe].concat(c ? [revP, chg(rev, revP)] : []) };
-    var byCh = D.channelOrder.map(function (ch) { return { ch: ch, v: M.revenue(r.from, r.to, { propertyId: pid, channel: ch }) }; }).sort(function (a, b) { return b.v - a.v; });
+    var byCh = U.channelsInUse().map(function (ch) { return { ch: ch, v: M.revenue(r.from, r.to, { propertyId: pid, channel: ch }) }; }).sort(function (a, b) { return b.v - a.v; });
     var side = { title: 'Revenue by channel', sub: 'Before platform fees', html: '<div class="side-list">' + O.chart.hbars(byCh.map(function (x) { return { label: U.plat(x.ch), value: x.v, display: fmt.moneyShort(x.v) }; })) + '</div>' };
     return {
       kpis: kpis, chartTitle: 'Revenue ' + chart.unit, chartSub: 'Accommodation and cleaning fees earned on nights in the range', chart: chart, side: side,
@@ -456,7 +456,7 @@
   BUILD.channels = function (r, c) {
     var pid = st.pid, money = canMoney();
     var totN = M.nightsSold(r.from, r.to, f(pid)), totR = M.revenue(r.from, r.to, f(pid));
-    var data = D.channelOrder.map(function (ch) {
+    var data = U.channelsInUse().map(function (ch) {
       var ff = { propertyId: pid, channel: ch };
       var st0 = D.bookings.filter(function (b) { return live(b) && b.channel === ch && pidOk(b) && M.nightsIn(b, r.from, r.to) > 0; });
       var mk = created(r, pid, true).filter(function (b) { return b.channel === ch; });

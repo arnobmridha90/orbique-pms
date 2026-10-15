@@ -56,18 +56,37 @@
   function flushThen(fn) { return Promise.resolve().then(function () { return O.sync.started ? O.sync.flush() : null; }).catch(function () {}).then(fn); }
   function apiBase() { return String(CFG.apiBase || '').replace(/\/$/, ''); }
 
-  /* POST /api/account {action, ...}; resolves the JSON body, rejects Error(message) with .code */
-  A.api = function (action, body) {
+  /* POST <path> (an /api function) with the signed-in person's token; resolves the JSON body,
+     rejects Error(message) with .code, .status and .body (the whole answer, e.g. problems: [...]) */
+  A.call = function (path, body) {
     return sb().auth.getSession().then(function (r) {
       var tok = r && r.data && r.data.session ? r.data.session.access_token : null;
       var h = { 'Content-Type': 'application/json' }; if (tok) h.Authorization = 'Bearer ' + tok;
-      return fetch(apiBase() + '/api/account', { method: 'POST', headers: h, body: JSON.stringify(Object.assign({ action: action }, body || {})) });
+      return fetch(apiBase() + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) });
     }).then(function (res) {
       return res.json().catch(function () { return { ok: false, message: 'The server did not answer properly. Please try again in a minute.' }; }).then(function (j) {
-        if (!res.ok || !j || !j.ok) { var e = new Error((j && j.message) || 'Something went wrong. Please try again.'); e.code = j && j.error; e.status = res.status; throw e; }
+        if (!res.ok || !j || !j.ok) { var e = new Error((j && j.message) || 'Something went wrong. Please try again.'); e.code = j && j.error; e.status = res.status; e.body = j; throw e; }
         return j;
       });
     }, function () { throw new Error('Orbique could not be reached. Check your connection and try again.'); });
+  };
+  /* POST /api/account {action, ...} */
+  A.api = function (action, body) { return A.call('/api/account', Object.assign({ action: action }, body || {})); };
+  /* POST /api/channex {action, orgId, ...} for the open workspace (docs/API.md) */
+  A.channex = function (action, body) {
+    if (!S.org) return Promise.reject(new Error('Open a workspace first.'));
+    return A.call('/api/channex', Object.assign({ action: action, orgId: S.org.id }, body || {}));
+  };
+  /* live changes to the open workspace's channel manager rows (connections, alerts, waiting changes): cb(table, payload).
+     Returns a function that stops listening. */
+  A.channexRealtime = function (cb) {
+    if (!S.org) return function () {};
+    var orgId = S.org.id, ch = sb().channel('orbique-channex-' + orgId);
+    ['channex_properties', 'channex_alerts', 'channex_outbox'].forEach(function (t) {
+      ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t, filter: 'org_id=eq.' + orgId }, function (p) { try { cb(t, p); } catch (e) { console.error(e); } });
+    });
+    ch.subscribe();
+    return function () { try { sb().removeChannel(ch); } catch (e) {} };
   };
   A.supabase = function () { return sb(); };
   A.appUrl = function () { return String(CFG.appUrl || (location.origin && location.origin !== 'null' ? location.origin : '')).replace(/\/$/, ''); };

@@ -12,6 +12,9 @@
  * Vercel preview deployments skip migrations (they usually share the production database) unless
  * ORBIQUE_MIGRATE_PREVIEW=1. A file whose first line is "-- migrate:no-transaction" runs outside a transaction.
  *
+ * After the files, when CHANNEX_WORKER_SECRET and APP_URL (or VERCEL_PROJECT_PRODUCTION_URL) are set, the Channex
+ * worker address and secret are stored in Supabase Vault for pg_cron (0007). The secret is never printed.
+ *
  * Locally: node --env-file=.env.local scripts/migrate.mjs
  */
 import fs from 'node:fs';
@@ -117,8 +120,30 @@ async function main() {
       log(`${again ? 're-applied' : 'applied'} ${name} (${Date.now() - started} ms)`);
     }
     if (!statusOnly) log(ran ? `${ran} file(s) applied; schema up to date.` : 'schema already up to date.');
+    if (!statusOnly) await channexWorker(client);
   } finally {
     await client.end().catch(() => {});
+  }
+}
+
+/* Channex worker clock (0007): store the worker address and its bearer secret in Supabase Vault, so pg_cron can call
+   /api/channex-worker. Only when CHANNEX_WORKER_SECRET and an app URL (APP_URL, else VERCEL_PROJECT_PRODUCTION_URL)
+   are set, never on preview deployments, and only when the database has Vault and channex_set_worker(). The secret is
+   passed as a query parameter and never printed. A failure here is a warning: the schema itself is applied. */
+async function channexWorker(client) {
+  const secret = String(env.CHANNEX_WORKER_SECRET || '').trim();
+  const base = String(env.APP_URL || (env.VERCEL_PROJECT_PRODUCTION_URL ? 'https://' + env.VERCEL_PROJECT_PRODUCTION_URL : '')).trim().replace(/\/+$/, '');
+  if (!secret || !base) return;
+  if (env.VERCEL_ENV === 'preview') { log('preview deployment: the Channex worker address was not changed.'); return; }
+  const hide = (s) => String(s || '').split(secret).join('<secret>');
+  try {
+    const has = await client.query("select to_regprocedure('public.channex_set_worker(text,text)') is not null as fn, to_regnamespace('vault') is not null as vault");
+    if (!has.rows[0].fn) return;
+    if (!has.rows[0].vault) { log('Channex worker not scheduled: this database has no Supabase Vault.'); return; }
+    await client.query('select public.channex_set_worker($1, $2)', [base + '/api/channex-worker', secret]);
+    log(`Channex worker address stored: ${base}/api/channex-worker (secret from CHANNEX_WORKER_SECRET).`);
+  } catch (e) {
+    console.warn('migrate: WARNING the Channex worker address was not stored: ' + hide(e && e.message));
   }
 }
 

@@ -364,6 +364,7 @@
     statistics: '<path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
     properties: '<path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 21v-5h6v5M9 10h.01M15 10h.01M9 13.5h.01M15 13.5h.01"/>',
     inventory: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+    channels: '<circle cx="12" cy="12" r="2.5"/><circle cx="4.5" cy="5.5" r="2"/><circle cx="19.5" cy="5.5" r="2"/><circle cx="4.5" cy="18.5" r="2"/><circle cx="19.5" cy="18.5" r="2"/><path d="M6 7l4.2 3.4M18 7l-4.2 3.4M6 17l4.2-3.4M18 17l-4.2-3.4"/>',
     platform: '<rect x="3" y="3" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/><path d="M7 6.5h.01M7 17.5h.01"/>',
     speaker: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
@@ -434,7 +435,7 @@
     return '<span class="avatar ' + (size || '') + '" style="background:' + c + '" aria-hidden="true">' + O.esc(O.fmt.initials(name)) + '</span>';
   };
   /* platform badge: monogram marks in each platform's colour (stand-ins until official assets are added) */
-  var PLAT_MARK = { airbnb: 'a', booking: 'B', agoda: 'ag', vrbo: 'V', google: 'G' };
+  var PLAT_MARK = { airbnb: 'a', booking: 'B', agoda: 'ag', vrbo: 'V', google: 'G', expedia: 'E', trip: 'T', other: '•' };
   U.platIcon = function (id, title, size) { /* size: optional pixel size, e.g. 14 inside chips and calendar bars */
     var name = (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id);
     var inner = id === 'direct' ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 11h3v9h5v-6h4v6h5v-9h3z"/></svg>'
@@ -447,6 +448,11 @@
     opts = opts || {};
     var name = (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id);
     return '<span class="plat">' + U.platIcon(id) + (opts.icon ? '' : O.esc(name)) + '</span>';
+  };
+  /* D.channelOrder without the platforms only the channel manager brings (Expedia, Trip.com, other) until a booking uses them */
+  U.channelsInUse = function () {
+    var later = { expedia: 1, trip: 1, other: 1 };
+    return D.channelOrder.filter(function (c) { return !later[c] || D.bookings.some(function (b) { return b.channel === c; }); });
   };
   U.platName = function (id) { return (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id); };
   var ST_LABEL = { confirmed: 'Confirmed', checked_in: 'In-house', pending: 'Pending', checked_out: 'Checked out', cancelled: 'Cancelled', block: 'Blocked' };
@@ -1207,8 +1213,22 @@
 
   /* ---------------- booking drawer (used by every page) ---------------- */
   O.booking = {};
-  /* buttons any page can add to the booking drawer: {label, icon, kind, show(b) -> bool, run(b, close)} (Bookings adds Edit, Copy guest link, Cancel) */
+  /* buttons any page can add to the booking drawer: {label, icon, kind, show(b) -> bool, disabled(b) -> reason or '', run(b, close)}
+     (Bookings adds Edit, Copy guest link, Cancel) */
   O.booking.actions = [];
+  /* a booking from a platform through the channel manager: "From Booking.com · Reservation 4012345678" */
+  O.booking.source = function (b) {
+    if (!b || !b.channel || b.channel === 'direct' || !(b.reservationCode || b.channex || b.otaName)) return '';
+    return 'From ' + U.platName(b.channel) + (b.reservationCode ? ' · Reservation ' + b.reservationCode : '');
+  };
+  /* "Double booking" and "Needs a unit" pills (booking.conflict from the channel manager, needsUnit from unit assignment) */
+  O.booking.flags = function (b) {
+    if (!b || b.status === 'cancelled') return '';
+    var h = '';
+    if (b.conflict && b.conflict.kind === 'double_booking') h += '<span class="pill bad" title="' + O.esc('Another booking or a block overlaps these nights' + (b.conflict.with && b.conflict.with.length ? ' (' + b.conflict.with.join(', ') + ')' : '') + '. Move one of them.') + '">Double booking</span>';
+    if (b.unitTypeId && !b.propertyId) h += '<span class="pill warn" title="No single unit of the type is free for the whole stay. Pick one by hand.">Needs a unit</span>';
+    return h;
+  };
   O.booking.open = function (id) {
     var b = typeof id === 'string' ? D.booking(id) : id; if (!b) return;
     function place() { return D.propById[b.propertyId] || { id: b.propertyId, name: O.bookingPlace(b), short: 'Removed' }; }
@@ -1221,8 +1241,9 @@
       var contact = canContacts ? ' · ' + O.esc(b.guest.phone || '') + ' · ' + O.esc(b.guest.email || '') : ' · <span title="Your access does not include guest contact details">contact details hidden</span>';
       var extra = O.booking.actions.filter(function (x) { try { return !x.show || x.show(b); } catch (e) { return false; } });
       return '<div class="stack">' +
-        '<div class="row-flex wrap">' + U.status(b.status) + U.plat(b.channel) + (b.sameDay ? '<span class="pill accent">⚡ Same-day booking</span>' : '') + '<span class="muted small">Booked ' + O.fmt.dateTime(b.createdAt) + '</span></div>' +
-        (extra.length ? '<div class="row-flex wrap">' + extra.map(function (x, i) { return '<button class="btn btn-' + (x.kind || 'ghost') + ' btn-sm" data-extra="' + i + '">' + (x.icon ? O.icon(x.icon) : '') + O.esc(x.label) + '</button>'; }).join('') + '</div>' : '') +
+        '<div class="row-flex wrap">' + U.status(b.status) + U.plat(b.channel) + (b.sameDay ? '<span class="pill accent">⚡ Same-day booking</span>' : '') + O.booking.flags(b) + '<span class="muted small">Booked ' + O.fmt.dateTime(b.createdAt) + '</span></div>' +
+        (O.booking.source(b) ? '<div class="small muted bk-src">' + O.esc(O.booking.source(b)) + '</div>' : '') +
+        (extra.length ? '<div class="row-flex wrap">' + extra.map(function (x, i) { var why = x.disabled ? x.disabled(b) : ''; return '<button class="btn btn-' + (x.kind || 'ghost') + ' btn-sm" data-extra="' + i + '"' + (why ? ' disabled title="' + O.esc(why) + '"' : '') + '>' + (x.icon ? O.icon(x.icon) : '') + O.esc(x.label) + '</button>'; }).join('') + '</div>' : '') +
         '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(p.area || p.location || p.city ? O.propLabel(p) : p.name) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
         (b.status !== 'cancelled' && b.checkOut > D.TODAY ? '<div><div class="section-title" style="margin-top:0">Arrival readiness</div>' + O.readinessHTML(b) + '<div class="row-flex wrap" style="margin-top:8px">' + (!b.idVerified && canEdit ? '<button class="btn btn-ghost btn-sm" data-act="verify">Mark ID verified</button>' : '') + (canCodes ? '<button class="btn btn-ghost btn-sm" data-act="lock">' + O.icon('key') + 'Change door code</button><span class="small muted">Guest code <span class="kbd">' + O.esc(b.doorCode || '') + '</span></span>' : '') + '</div></div>' : '') +
         '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (conv && O.can('inbox') ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
@@ -1237,7 +1258,7 @@
     var dr = U.drawer({ titleHTML: O.esc(b.guest.name), subHTML: O.esc(b.id) + ' · ' + O.esc(p.name), body: render() });
     function wire() {
       O.$$('[data-extra]', dr.el).forEach(function (x) {
-        x.onclick = function () { var list = O.booking.actions.filter(function (y) { try { return !y.show || y.show(b); } catch (e) { return false; } }), act = list[+x.dataset.extra]; if (act) act.run(b, dr.close); };
+        x.onclick = function () { var list = O.booking.actions.filter(function (y) { try { return !y.show || y.show(b); } catch (e) { return false; } }), act = list[+x.dataset.extra]; if (act && !(act.disabled && act.disabled(b))) act.run(b, dr.close); };
       });
       O.$$('[data-act]', dr.el).forEach(function (x) {
         x.onclick = function () {
@@ -1282,6 +1303,7 @@
     ['website', 'Website builder', [['edit', 'Edit the website', 'Template, text and photos', 'do'], ['publish', 'Publish changes', '', 'do']]],
     ['guestapp', 'Guest app', [['edit', 'Edit the guest app', 'Guide, house rules, videos and services', 'do'], ['doorCodes', 'See and change door codes', 'Guest codes and master codes on smart locks', 'do'], ['requests', 'Handle guest requests', 'SIM cards, car rental, extra cleaning, damage reports', 'do']]],
     ['properties', 'Properties', [['create', 'Add properties', '', 'do'], ['edit', 'Edit property details', 'Name, address, rooms and owner', 'do'], ['access', 'See lock codes and Wi-Fi passwords', '', 'see'], ['archive', 'Archive properties', '', 'do']]],
+    ['channels', 'Channels', [['connect', 'Connect and set up channels', 'Booking.com, Agoda, Airbnb, Expedia, Trip.com', 'do'], ['rates', 'Change rates and restrictions', 'Rates, minimum stay, stop sell, closed to arrival or departure', 'do'], ['sync', 'Send full updates', '', 'do']]],
     ['inventory', 'Inventory', [['in', 'Record stock in', 'Purchases and deliveries', 'do'], ['out', 'Record stock used', 'What was used, by whom, for which unit', 'do'], ['adjust', 'Correct stock counts', 'Stock takes and write-offs', 'do'], ['items', 'Add and edit items', 'The item list and reorder levels', 'do'], ['money', 'See stock costs', 'Purchase prices, stock value and spend', 'see']]],
     ['pricing', 'Pricing', [['change', 'Change prices', 'Apply suggested prices and edit nightly rates', 'do'], ['rules', 'Edit pricing rules', 'Minimums, weekend and event uplifts', 'do']]],
     ['automations', 'Automations', [['toggle', 'Turn automations on or off', '', 'do'], ['edit', 'Edit messages and rules', '', 'do']]],
@@ -1301,11 +1323,11 @@
   }
   function all(keys) { var o = {}; keys.split(' ').forEach(function (k) { o[k] = true; }); return o; }
   O.DEFAULT_ROLE_PERMS = {
-    ops: roleDefaults({ dashboard: 'edit', statistics: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', invoices: 'edit', expenses: 'edit', reports: 'view', website: 'edit', guestapp: 'edit', properties: 'edit', inventory: 'edit', pricing: 'edit', automations: 'edit', owner: 'view', staff: 'view', brand: 'view' },
-      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value bookings.export calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies tasks.create tasks.assign tasks.others tasks.delete tasks.checklists invoices.send invoices.payments expenses.record expenses.viewAll reports.money reports.export website.edit website.publish guestapp.edit guestapp.doorCodes guestapp.requests properties.create properties.edit properties.access inventory.in inventory.out inventory.adjust inventory.items inventory.money pricing.change pricing.rules automations.toggle automations.edit owner.statements staff.invite')),
+    ops: roleDefaults({ dashboard: 'edit', statistics: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', invoices: 'edit', expenses: 'edit', reports: 'view', website: 'edit', guestapp: 'edit', properties: 'edit', channels: 'edit', inventory: 'edit', pricing: 'edit', automations: 'edit', owner: 'view', staff: 'view', brand: 'view' },
+      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value bookings.export calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies tasks.create tasks.assign tasks.others tasks.delete tasks.checklists invoices.send invoices.payments expenses.record expenses.viewAll reports.money reports.export website.edit website.publish guestapp.edit guestapp.doorCodes guestapp.requests properties.create properties.edit properties.access channels.connect channels.rates channels.sync inventory.in inventory.out inventory.adjust inventory.items inventory.money pricing.change pricing.rules automations.toggle automations.edit owner.statements staff.invite')),
     housekeeping: roleDefaults({ dashboard: 'view', bookings: 'view', calendar: 'view', inbox: 'edit', tasks: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud inbox.send inbox.notes tasks.create expenses.record guestapp.requests properties.access inventory.out')),
-    frontdesk: roleDefaults({ dashboard: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', pricing: 'view', automations: 'view', invoices: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'view' },
+    frontdesk: roleDefaults({ dashboard: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', pricing: 'view', channels: 'view', automations: 'view', invoices: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'view' },
       all('dashboard.readAloud bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies tasks.create tasks.assign tasks.others invoices.send invoices.payments expenses.record guestapp.edit guestapp.doorCodes guestapp.requests properties.access')),
     maintenance: roleDefaults({ dashboard: 'view', calendar: 'view', inbox: 'view', tasks: 'edit', expenses: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud tasks.create expenses.record properties.access inventory.out')),
@@ -1320,7 +1342,8 @@
     if (s.role === 'owner') return 'edit';
     if (PERM_INDEX[sec] && PERM_INDEX[sec].ownerOnly) return 'none';
     if (m && m.overrides && ('section:' + sec) in m.overrides) return m.overrides['section:' + sec] || 'none';
-    var rp = D.rolePerms[s.role]; return (rp && rp.sections && rp.sections[sec]) || 'none';
+    var rp = D.rolePerms[s.role]; if (rp && rp.sections && !(sec in rp.sections)) rp = O.DEFAULT_ROLE_PERMS[s.role]; /* a section added after the role was saved */
+    return (rp && rp.sections && rp.sections[sec]) || 'none';
   };
   O.can = function (key, level, staffId) {
     var s = D.staffById(staffId || O.state.viewer); if (!s) return false;
@@ -1333,7 +1356,8 @@
     var sec = key.slice(0, i), need = info.kind === 'do' ? 2 : 1;
     if (LV[O.sectionLevel(s.id, sec)] < need) return false;
     if (m && m.overrides && key in m.overrides) return !!m.overrides[key];
-    var rp = D.rolePerms[s.role]; return !!(rp && rp.actions && rp.actions[key]);
+    var rp = D.rolePerms[s.role]; if (rp && rp.actions && !(key in rp.actions)) rp = O.DEFAULT_ROLE_PERMS[s.role]; /* an action added after the role was saved */
+    return !!(rp && rp.actions && rp.actions[key]);
   };
   O.permLabel = function (key) { var info = O.permInfo(PERM_ALIAS[key] || key); return info ? info.label : key; };
 
@@ -1430,6 +1454,11 @@
   ['invItems', 'checklists'].forEach(function (k) { S.records(k, 'config'); });
   ['lockLog', 'sentLog', 'auditLog', 'priceLog'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo', cap: 500 }; });
   ['priceOverrides', 'priceOverrideMeta', 'pricingRules', 'ownerPayouts', 'staffMeta'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo' }; });
+  /* channel manager (pages/channels.js): rate plans per unit type, rates and restrictions per plan and month, and in practice
+     mode the connections (channelSim) and what would have been sent (channelLog, newest first) */
+  ['ratePlans', 'channelRates'].forEach(function (k) { S.records(k, 'demo'); });
+  REG.channelLog = { type: 'blob', kind: 'demo', cap: 500 };
+  REG.channelSim = { type: 'blob', kind: 'demo' };
   ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
 
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
@@ -1510,6 +1539,11 @@
       if (res && res.readOnly) { S.readOnly = true; setStatus('readonly'); U.toast('This workspace is view only right now, so changes are not saved.'); return; }
       if (res && res.rejected && res.rejected.length) U.toast('Some changes were not saved because your access does not allow them (' + res.rejected.map(function (r) { return r.coll || r.key; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ') + ').', 'bad');
       setStatus(S.adapter.name === 'local' ? 'local' : 'saved');
+      /* 'synced': this batch is saved (the channel manager sends what changed); {colls, blobs} name what it touched */
+      var colls = [], keys = [];
+      batch.rows.forEach(function (r) { if (colls.indexOf(r.coll) < 0) colls.push(r.coll); });
+      batch.blobs.forEach(function (b) { if (keys.indexOf(b.key) < 0) keys.push(b.key); });
+      O.emit('synced', { colls: colls, blobs: keys, adapter: S.adapter.name });
       if (S.pending) { S.pending = false; return S.flush(); }
     }, function (e) {
       S._writing = null; console.error('save failed', e);
@@ -1686,10 +1720,10 @@
      =================================================================== */
   O.LANGS = [['en', 'English', 'EN'], ['bn', 'বাংলা', 'Bangla'], ['ms', 'Bahasa Malaysia', 'MS'], ['zh', '中文（福建話）', 'Hokkien']];
   var NAV_I18N = {
-    en: { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Guest Inbox', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', guestapp: 'Guest App', properties: 'Properties', inventory: 'Inventory', pricing: 'Pricing', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' },
-    bn: { overview: 'ওভারভিউ', operate: 'পরিচালনা', insights: 'বিশ্লেষণ', finance: 'ফাইন্যান্স', grow: 'প্রবৃদ্ধি', manage: 'ব্যবস্থাপনা', dashboard: 'ড্যাশবোর্ড', bookings: 'বুকিং', calendar: 'ক্যালেন্ডার', reviews: 'রিভিউ', inbox: 'গেস্ট ইনবক্স', tasks: 'কাজ ও পরিষ্কার', statistics: 'পরিসংখ্যান', reports: 'রিপোর্ট', invoices: 'ইনভয়েস ও রসিদ', expenses: 'খরচ', financials: 'আর্থিক হিসাব', website: 'ওয়েবসাইট নির্মাতা', guestapp: 'গেস্ট অ্যাপ', properties: 'প্রপার্টি', inventory: 'ইনভেন্টরি', pricing: 'মূল্য নির্ধারণ', automations: 'স্বয়ংক্রিয়তা', owner: 'মালিক পোর্টাল', staff: 'স্টাফ অ্যাক্সেস', brand: 'ব্র্যান্ড ও সেটআপ', more: 'আরও', home: 'হোম', platform: 'প্ল্যাটফর্ম অ্যাডমিন' },
-    ms: { overview: 'Gambaran', operate: 'Operasi', insights: 'Analisis', finance: 'Kewangan', grow: 'Perkembangan', manage: 'Pengurusan', dashboard: 'Papan Pemuka', bookings: 'Tempahan', calendar: 'Kalendar', reviews: 'Ulasan', inbox: 'Peti Masuk Tetamu', tasks: 'Tugasan & Pembersihan', statistics: 'Statistik', reports: 'Laporan', invoices: 'Invois & Resit', expenses: 'Perbelanjaan', financials: 'Penyata Kewangan', website: 'Pembina Laman Web', guestapp: 'Aplikasi Tetamu', properties: 'Hartanah', inventory: 'Inventori', pricing: 'Harga', automations: 'Automasi', owner: 'Portal Pemilik', staff: 'Akses Kakitangan', brand: 'Jenama & Persediaan', more: 'Lagi', home: 'Utama', platform: 'Pentadbir platform' },
-    zh: { overview: '总览', operate: '营运', insights: '分析', finance: '财务', grow: '拓展', manage: '管理', dashboard: '仪表板', bookings: '订单', calendar: '日历', reviews: '评价', inbox: '住客收件箱', tasks: '任务与清洁', statistics: '统计', reports: '报表', invoices: '发票与收据', expenses: '支出', financials: '财务报表', website: '网站建设器', guestapp: '住客应用', properties: '房源', inventory: '库存', pricing: '定价', automations: '自动化', owner: '业主门户', staff: '员工权限', brand: '品牌与设置', more: '更多', home: '首页', platform: '平台管理' }
+    en: { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Guest Inbox', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' },
+    bn: { overview: 'ওভারভিউ', operate: 'পরিচালনা', insights: 'বিশ্লেষণ', finance: 'ফাইন্যান্স', grow: 'প্রবৃদ্ধি', manage: 'ব্যবস্থাপনা', dashboard: 'ড্যাশবোর্ড', bookings: 'বুকিং', calendar: 'ক্যালেন্ডার', reviews: 'রিভিউ', inbox: 'গেস্ট ইনবক্স', tasks: 'কাজ ও পরিষ্কার', statistics: 'পরিসংখ্যান', reports: 'রিপোর্ট', invoices: 'ইনভয়েস ও রসিদ', expenses: 'খরচ', financials: 'আর্থিক হিসাব', website: 'ওয়েবসাইট নির্মাতা', guestapp: 'গেস্ট অ্যাপ', properties: 'প্রপার্টি', channels: 'চ্যানেল', inventory: 'ইনভেন্টরি', pricing: 'মূল্য নির্ধারণ', automations: 'স্বয়ংক্রিয়তা', owner: 'মালিক পোর্টাল', staff: 'স্টাফ অ্যাক্সেস', brand: 'ব্র্যান্ড ও সেটআপ', more: 'আরও', home: 'হোম', platform: 'প্ল্যাটফর্ম অ্যাডমিন' },
+    ms: { overview: 'Gambaran', operate: 'Operasi', insights: 'Analisis', finance: 'Kewangan', grow: 'Perkembangan', manage: 'Pengurusan', dashboard: 'Papan Pemuka', bookings: 'Tempahan', calendar: 'Kalendar', reviews: 'Ulasan', inbox: 'Peti Masuk Tetamu', tasks: 'Tugasan & Pembersihan', statistics: 'Statistik', reports: 'Laporan', invoices: 'Invois & Resit', expenses: 'Perbelanjaan', financials: 'Penyata Kewangan', website: 'Pembina Laman Web', guestapp: 'Aplikasi Tetamu', properties: 'Hartanah', channels: 'Saluran', inventory: 'Inventori', pricing: 'Harga', automations: 'Automasi', owner: 'Portal Pemilik', staff: 'Akses Kakitangan', brand: 'Jenama & Persediaan', more: 'Lagi', home: 'Utama', platform: 'Pentadbir platform' },
+    zh: { overview: '总览', operate: '营运', insights: '分析', finance: '财务', grow: '拓展', manage: '管理', dashboard: '仪表板', bookings: '订单', calendar: '日历', reviews: '评价', inbox: '住客收件箱', tasks: '任务与清洁', statistics: '统计', reports: '报表', invoices: '发票与收据', expenses: '支出', financials: '财务报表', website: '网站建设器', guestapp: '住客应用', properties: '房源', channels: '渠道', inventory: '库存', pricing: '定价', automations: '自动化', owner: '业主门户', staff: '员工权限', brand: '品牌与设置', more: '更多', home: '首页', platform: '平台管理' }
   };
   O.t = function (key) { return (NAV_I18N[O.state.lang] || NAV_I18N.en)[key] || NAV_I18N.en[key] || key; };
 
@@ -1702,7 +1736,7 @@
     ['insights', ['statistics', 'reports']],
     ['finance', ['invoices', 'expenses', 'financials']],
     ['grow', ['website', 'guestapp']],
-    ['manage', ['properties', 'inventory', 'pricing', 'automations', 'owner', 'staff', 'brand']]
+    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'automations', 'owner', 'staff', 'brand']]
   ];
   O.OWNER_ONLY = { financials: true };
   O.allowed = function (id) { if (O.EXTRA_PAGES && O.EXTRA_PAGES[id]) return O.EXTRA_PAGES[id].allowed ? O.EXTRA_PAGES[id].allowed() : true; return O.OWNER_ONLY[id] ? O.isOwner() : O.can(id, 'view'); };

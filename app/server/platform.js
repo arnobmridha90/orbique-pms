@@ -226,11 +226,32 @@
     if (!cache.fallback) kp.push({ label: 'Bookings', value: num(sum('bookings')) });
     kp.push({ label: 'New requests', value: num(newReqs), hl: newReqs > 0, sub: newReqs ? 'Waiting for you' : 'Nothing waiting' });
     root.innerHTML = '<div class="pf">' + U.kpis(kp) +
-      '<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="ops" class="' + (st.tab === 'ops' ? 'on' : '') + '">Operators</button><button type="button" role="tab" data-tab="req" class="' + (st.tab === 'req' ? 'on' : '') + '">Access requests' + (newReqs ? ' <span class="pf-n">' + newReqs + '</span>' : '') + '</button></div>' +
+      '<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="ops" class="' + (st.tab === 'ops' ? 'on' : '') + '">Operators</button><button type="button" role="tab" data-tab="req" class="' + (st.tab === 'req' ? 'on' : '') + '">Access requests' + (newReqs ? ' <span class="pf-n">' + newReqs + '</span>' : '') + '</button><button type="button" role="tab" data-tab="chx" class="' + (st.tab === 'chx' ? 'on' : '') + '">Channel manager</button></div>' +
       '<div class="pf-body"></div></div>';
     O.$$('[data-tab]', root).forEach(function (b) { b.onclick = function () { st.tab = b.dataset.tab; paint(root); }; });
     var body = O.$('.pf-body', root);
-    if (st.tab === 'ops') paintOps(body, ops); else paintReqs(body, reqs);
+    if (st.tab === 'ops') paintOps(body, ops); else if (st.tab === 'chx') paintChannex(body); else paintReqs(body, reqs);
+  }
+  /* ---------------- channel manager setup: POST /api/channex {action:'admin-setup'} ----------------
+     Checks which server settings are present and creates or updates the one global Channex webhook. */
+  var chx = { busy: false, res: null, err: null };
+  function paintChannex(body) {
+    var r = chx.res, s = r && r.settings, w = r && r.webhook;
+    var yes = function (v) { return v ? U.pill('Set', 'ok') : U.pill('Missing', 'warn'); };
+    var rows = s ? [['Channex API key', yes(s.apiKey)], ['Environment', U.pill(s.env || 'staging', s.env === 'production' ? 'brand' : 'info') + ' <span class="xs muted">' + esc(s.baseUrl || '') + '</span>'], ['App address (APP_URL)', s.appUrl ? esc(s.appUrl) : U.pill('Missing', 'warn')],
+      ['Webhook signing', s.webhookSecret && s.signingKeyId ? U.pill('Signed', 'ok') : s.webhookToken ? U.pill('Token header', 'ok') : U.pill('Missing', 'warn')], ['Worker secret (cron)', yes(s.workerSecret)],
+      ['Workspaces switched on', s.allowlist ? esc(O.fmt.plural(s.allowlist, 'workspace')) : esc(s.env === 'production' ? 'All workspaces' : 'None (staging needs CHANNEX_ORG_ALLOWLIST)')], ['Last call to Channex', s.lastCallAt ? esc(ago(s.lastCallAt).replace(/^Active /, '')) : 'Never']] : [];
+    body.innerHTML = '<div class="card" data-card="channex-setup"><div class="card-head"><div><h3>Channel manager setup</h3><div class="sub">Checks the server settings and creates or updates the one Channex webhook that brings bookings in. Safe to run again.</div></div>' +
+      '<button type="button" class="btn btn-primary btn-sm" data-act="chx-run"' + (chx.busy ? ' disabled' : '') + '>' + O.icon('refresh') + (chx.busy ? 'Checking…' : r ? 'Check again' : 'Check and set up') + '</button></div><div class="card-body stack">' +
+      (chx.err ? '<div class="note warn">' + esc(chx.err) + '</div>' : '') +
+      (r ? '<dl class="kv">' + rows.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + x[1] + '</dd>'; }).join('') + '<dt>Webhook</dt><dd>' + (w ? U.pill({ ok: 'Already right', updated: 'Updated', created: 'Created' }[w.state] || w.state, 'ok') + ' <span class="xs muted">' + esc(w.callbackUrl || '') + (w.signed ? ' · signed' : '') + '</span>' : U.pill('Not set up', 'warn')) + '</dd></dl>' +
+        (r.message ? '<div class="note warn">' + esc(r.message) + '</div>' : '') : '<div class="small muted">Nothing checked yet. The check calls Channex, so run it after changing the server settings.</div>') + '</div></div>';
+    var b = O.$('[data-act="chx-run"]', body);
+    if (b) b.onclick = function () {
+      chx.busy = true; chx.err = null; paintChannex(body);
+      O.auth.call('/api/channex', { action: 'admin-setup' }).then(function (res) { chx.busy = false; chx.res = res; U.toast(res.webhook ? 'Channel manager webhook is ready' : 'Some settings are still missing', res.webhook ? 'ok' : 'bad'); }, function (e) { chx.busy = false; chx.err = errText(e); })
+        .then(function () { if (document.body.contains(body)) paintChannex(body); });
+    };
   }
   function paintOps(body, ops) {
     var q = st.q.toLowerCase();
@@ -290,7 +311,7 @@
   }
 
   O.page('platform', {
-    desc: 'Operators, plans and access requests',
+    desc: 'Operators, plans, access requests and the channel manager',
     noDataRerender: true,
     render: function (root, ctx) {
       if (!O.auth.isPlatformAdmin()) { root.innerHTML = U.locked('the platform admin area', { reason: 'permission' }); return; }

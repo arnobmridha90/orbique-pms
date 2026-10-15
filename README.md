@@ -68,8 +68,10 @@ node scripts/dev.mjs                               # build dist/ and serve it on
 `vercel.json`, and runs `api/<name>.js` for `/api/<name>` the way Vercel does. Options: `--port 8787`,
 `--dist /tmp/me/dist` (build into another folder), `--no-build`. Restart it after changing `api/_lib/*.js`.
 
-Screenshot tests: `tests/shot.py` (see its docstring). CI (`.github/workflows/ci.yml`) checks the syntax of every
-JavaScript file and runs both builds on every push and pull request.
+Screenshot tests: `tests/shot.py` (see its docstring). Channel manager tests: `node --test tests/channex/*.test.mjs`
+(they start their own Channex stand-in, `scripts/channex-mock.mjs`; no key or network needed). CI
+(`.github/workflows/ci.yml`) checks the syntax of every JavaScript file, runs the channel manager tests and both builds
+on every push and pull request.
 
 ## Phone app
 

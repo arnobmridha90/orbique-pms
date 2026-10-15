@@ -204,6 +204,7 @@
       stays: O.can('bookings') || O.can('calendar'), openBooking: O.can('bookings'),
       tasks: O.can('tasks'), others: O.can('tasks.others'), taskEdit: O.can('tasks', 'edit'), assign: O.can('tasks.assign'), create: O.can('tasks.create'),
       inbox: O.can('inbox'), reviews: O.can('reviews'), inventory: O.can('inventory') && !!O.inventory, /* alerts only once pages/inventory.js has loaded */
+      channels: !!O.channel && (O.can('channels') || O.can('bookings')), /* double bookings, bookings without a unit, sending problems */
       invManage: O.can('inventory.in') || O.can('inventory.adjust') || O.can('inventory.items'), /* overuse is for the people who buy and count stock */
       money: O.can('dashboard.money'), brief: O.can('dashboard.readAloud'),
       stats: O.allowed ? O.allowed('statistics') : O.can('statistics'),
@@ -581,12 +582,20 @@
       var unit = w.propertyId && D.propById[w.propertyId] ? D.propById[w.propertyId].short : '', what = invName(w);
       out.push({ tone: 'warn', icon: 'alert', t: (unit || 'A unit') + ' is using more ' + (what ? what.replace(/\s+\d+(\.\d+)?\s?(ml|l|g|kg|pcs|pack)$/i, '').toLowerCase() : 'than usual'), s: String(w.text || ''), go: ['inventory', { tab: 'overuse' }] });
     });
+    if (p.channels) {
+      var ci = O.channel.conflicts();
+      if (ci.length) {
+        var one = ci.length === 1 ? ci[0] : null, bad = ci.some(function (c) { return c.tone === 'bad'; });
+        out.unshift({ tone: bad ? 'bad' : 'warn', icon: 'alert', t: one ? one.t : fmt.plural(ci.length, 'channel issue'), s: one ? one.s : ci.slice(0, 2).map(function (c) { return c.t; }).join(' · ') + (ci.length > 2 ? ' and ' + (ci.length - 2) + ' more' : ''),
+          go: one ? one.go : (O.allowed('channels') ? ['channels', { tab: 'alerts' }] : ['bookings']), n: ci.length });
+      }
+    }
     if (p.inventory && m.overuse.length > 3) out.push({ tone: 'info', icon: 'inventory', t: fmt.plural(m.overuse.length - 3, 'more usage warning'), s: 'See them all in Inventory', go: ['inventory', { tab: 'overuse' }], n: m.overuse.length - 3 });
     return out;
   }
   function attentionHTML(m, list) {
     var p = m.perm;
-    if (!p.inbox && !p.reviews && !p.inventory) return '';
+    if (!p.inbox && !p.reviews && !p.inventory && !(p.channels && list.length)) return '';
     var body = list.length ? list.map(function (a, i) {
       return '<button type="button" class="dsh-al" data-alert="' + i + '"><span class="ai ' + a.tone + '">' + O.icon(a.icon) + '</span><span class="tx"><span class="at">' + esc(a.t) + '</span><span class="as">' + esc(a.s) + '</span></span>' + O.icon('chevron', 'chev') + '</button>';
     }).join('') : '<div class="dsh-quiet">' + (p.inbox && p.reviews ? 'Your inbox and reviews are all caught up.' : p.inbox ? 'Your inbox is all caught up.' : p.reviews ? 'Every review has a reply.' : 'Stock levels look fine.') + '</div>';
@@ -598,7 +607,7 @@
     var step = function (k, title, text, btn) { return '<div class="dsh-step"><span class="k">' + k + '</span><b>' + esc(title) + '</b><span class="tx">' + esc(text) + '</span>' + (btn || '') + '</div>'; };
     var steps = [
       step(1, 'Add your properties', 'Name, location, check-in times, lock and Wi-Fi details for each unit.', p.addProperty ? '<button type="button" class="btn btn-primary" data-go="properties" data-add="1">' + O.icon('plus') + 'Add your first property</button>' : (O.allowed('properties') ? '<button type="button" class="btn btn-ghost" data-go="properties">Open Properties</button>' : '')),
-      step(2, 'Bring in your bookings', 'Add bookings by hand or connect Airbnb, Booking.com and Agoda. Arrivals and turnovers then show here every day.', O.allowed('bookings') ? '<button type="button" class="btn btn-ghost" data-go="bookings">' + O.icon('bookings') + 'Go to Bookings</button>' : ''),
+      step(2, 'Bring in your bookings', 'Add bookings by hand or connect Booking.com, Agoda, Airbnb, Expedia and Trip.com. Arrivals and turnovers then show here every day.', O.allowed('channels') ? '<button type="button" class="btn btn-ghost" data-go="channels">' + O.icon('channels') + 'Connect channels</button>' : O.allowed('bookings') ? '<button type="button" class="btn btn-ghost" data-go="bookings">' + O.icon('bookings') + 'Go to Bookings</button>' : ''),
       step(3, 'Invite your team', 'Housekeepers, front desk and accounts each see what their role needs.', p.invite && O.allowed('staff') ? '<button type="button" class="btn btn-ghost" data-go="staff">' + O.icon('staff') + 'Invite people</button>' : '')
     ];
     return '<section class="card dsh-welcome" aria-label="Get started"><div><div class="dsh-date">' + O.icon('clock', 'ico') + '<span class="dsh-clock">' + esc(longDate(m.t)) + ' · ' + esc(fmt.time(m.time)) + '</span></div>' +

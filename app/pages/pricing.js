@@ -384,9 +384,21 @@
   }
 
   /* ------------------------------------------------------------------ actions */
+  /* typed units share one price: the unit type's main rate plan (O.channel, pages/channels.js) */
+  function mainPlanOf(P) { return P && P.unitTypeId && O.channel ? O.channel.mainPlan(P.unitTypeId) : null; }
+  function typeNote(P) {
+    var t = P && P.unitTypeId && O.unitType(P.unitTypeId), n = t ? O.unitsOfType(t.id).length : 0;
+    return t && n > 1 && mainPlanOf(P) ? 'Prices apply to all ' + n + ' ' + t.name + ' units' : '';
+  }
+  function channelNote(P) {
+    if (O.channel) return O.channel.notice('price', P && P.unitTypeId ? [P.unitTypeId] : []);
+    return 'Channel calendars update within 15 minutes (prototype: nothing is sent).';
+  }
   function applyPrices(pid, list, how) {
     if (!canChange()) { U.toast(WHY_CHANGE, 'bad'); return; }
     if (!list.length) { U.toast('Nothing to apply: no open nights selected', 'bad'); return; }
+    var mp = mainPlanOf(D.propById[pid]);
+    if (mp) O.channel.setDays(list.map(function (x) { return { planId: mp.id, dates: [x.iso], set: { rate: x.price } }; }), { emit: false, audit: false, how: how === 'Price set manually' ? 'manual' : 'suggestion' });
     D.priceOverrides[pid] = D.priceOverrides[pid] || {};
     var meta = D.priceOverrideMeta[pid] = D.priceOverrideMeta[pid] || {};
     var manual = how === 'Price set manually';
@@ -396,17 +408,21 @@
     D.priceLog.unshift({ at: D.NOW, pid: pid, n: list.length, by: v ? v.name : '', how: how || 'Suggestions applied', first: list[0].iso, last: list[list.length - 1].iso });
     audit((manual ? 'Set the price for ' + range + ' to ' + fmt.money(list[0].price) : 'Applied ' + fmt.plural(list.length, 'suggested price') + ' (' + range + ')') + ' for ' + P.name);
     st.picked = {};
-    U.toast((list.length === 1 ? 'New price for ' + d.fmt(list[0].iso) : list.length + ' new prices') + ' saved for ' + P.short + '. Channel calendars update within 15 minutes (prototype: nothing is sent).');
+    var tn = typeNote(P);
+    U.toast((list.length === 1 ? 'New price for ' + d.fmt(list[0].iso) : list.length + ' new prices') + ' saved for ' + (tn ? tn.replace('Prices apply to ', '') : P.short) + '. ' + channelNote(P));
     O.emit('data', { type: 'pricing' });
   }
   function revert(pid, isoList) {
     if (!canChange()) { U.toast(WHY_CHANGE, 'bad'); return; }
-    var o = D.priceOverrides[pid]; if (!o) return;
+    var mp = mainPlanOf(D.propById[pid]);
+    if (mp) O.channel.setDays([{ planId: mp.id, dates: isoList, set: { rate: null } }], { emit: false, audit: false });
+    var o = D.priceOverrides[pid]; if (!o) { if (mp) O.emit('data', { type: 'pricing' }); return; }
     var meta = D.priceOverrideMeta[pid] || {};
     isoList.forEach(function (iso) { delete o[iso]; delete meta[iso]; });
     D.priceLog.unshift({ at: D.NOW, pid: pid, n: isoList.length, by: (O.viewer() || {}).name || '', how: 'Reverted to model rate', first: isoList[0], last: isoList[isoList.length - 1] });
     audit('Put ' + fmt.plural(isoList.length, 'night') + ' (' + d.fmt(isoList[0]) + ') back on the model rate for ' + D.propById[pid].name);
-    U.toast('Back on the model rate for ' + fmt.plural(isoList.length, 'night') + '.');
+    var tn = typeNote(D.propById[pid]);
+    U.toast('Back on the model rate for ' + fmt.plural(isoList.length, 'night') + (tn ? ' (' + tn.replace('Prices apply to ', '') + ')' : '') + '.' + (O.channel && O.channel.mode() === 'live' && D.propById[pid].unitTypeId && O.channel.typeConnected(D.propById[pid].unitTypeId) ? ' ' + channelNote(D.propById[pid]) : ''));
     O.emit('data', { type: 'pricing' });
   }
   function moneySigned(v) { return Math.round(v) === 0 ? fmt.money(0) : (v > 0 ? '+' : '−') + fmt.money(Math.abs(v)); }
@@ -671,7 +687,7 @@
     var bulk = !edit ? '<span class="pill neutral">' + O.icon('lock') + 'View only</span>'
       : (pickedNights.length ? '<span class="small"><b>' + fmt.plural(pickedNights.length, 'night') + '</b> selected · ' + signed(pickedChg) + ' in total</span><button type="button" class="btn btn-ghost btn-sm" data-clear-pick>Clear</button>' : '') +
         '<button type="button" class="btn btn-primary btn-sm" data-apply-picked' + (pickedNights.length ? '' : ' disabled') + '>' + O.icon('check') + 'Apply to selected' + (pickedNights.length ? ' (' + pickedNights.length + ')' : '') + '</button>';
-    return '<div class="card pr-tablecard"><div class="card-head"><div class="hd"><h3>Night by night</h3><div class="sub">' + (edit ? 'Tick nights and apply their suggestions, or click a night to see its reasoning.' : 'Click a night to see its reasoning.') + ' Pace: share of ' + esc(m.groupName) + ' booked for that night; the marker shows the usual share at the same lead time.</div></div>' +
+    return '<div class="card pr-tablecard"><div class="card-head"><div class="hd"><h3>Night by night</h3><div class="sub">' + (edit ? 'Tick nights and apply their suggestions, or click a night to see its reasoning.' : 'Click a night to see its reasoning.') + ' Pace: share of ' + esc(m.groupName) + ' booked for that night; the marker shows the usual share at the same lead time.' + (typeNote(m.P) ? ' <b>' + esc(typeNote(m.P)) + '.</b>' : '') + '</div></div>' +
       '<div class="pr-bulk">' + bulk + '</div></div>' +
       '<div class="card-body" style="padding-bottom:10px"><div class="row-flex wrap">' +
       U.seg([['all', 'All nights ' + cnt.all], ['open', 'Open ' + cnt.open], ['booked', 'Booked ' + cnt.booked], ['changes', 'Change ≥ 5% ' + cnt.changes], ['manual', 'Changed by you ' + cnt.manual]], st.view, 'data-view') + '</div></div>' +
@@ -879,7 +895,7 @@
           '<dt>Prices going down</dt><dd><span class="neg">' + fmt.plural(dns.length, 'night') + (dns.length ? ' · ' + signed(sum(dns.map(function (x) { return x.change; }))) : '') + '</span></dd>' +
           '<dt>Expected impact</dt><dd>' + moneySigned(s.impact) + '</dd><dt>If every open night sells</dt><dd>' + moneySigned(s.upside) + '</dd></dl>' +
           '<div><div class="label" style="margin-bottom:4px">Biggest changes</div>' + big.map(function (x) { return '<div class="row-flex small" style="justify-content:space-between"><span>' + d.dowName(x.iso) + ' ' + d.fmt(x.iso) + '</span><span>' + fmt.money(x.our) + ' → <b>' + fmt.money(x.sugg) + '</b> <span class="' + (x.change > 0 ? 'pos' : 'neg') + '">' + signed(x.change) + '</span></span></div>'; }).join('') + '</div>' +
-          '<div class="small muted">Booked and blocked nights do not change. New prices go to Airbnb, Booking.com, Agoda, Vrbo and the direct site within 15 minutes (prototype: nothing is sent).</div></div>';
+          '<div class="small muted">Booked and blocked nights do not change.' + (typeNote(P) ? ' ' + esc(typeNote(P)) + '.' : '') + ' ' + esc(channelNote(P)) + '</div></div>';
         U.modal({
           title: 'Apply ' + fmt.plural(openChanges.length, 'suggested price') + ' to ' + (P.short || P.name) + '?', sub: U.rangeLabel(st.from, st.to) + ' · ' + fmt.plural(s.open.length, 'open night'), body: body,
           actions: [{ label: 'Cancel' }, { label: 'Apply ' + fmt.plural(openChanges.length, 'price'), kind: 'primary', onClick: function () { applyPrices(pid, openChanges.map(function (x) { return { iso: x.iso, price: x.sugg }; }), 'Suggestions applied'); } }]

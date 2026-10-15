@@ -5,6 +5,7 @@
   "outputDirectory": "dist",
   "regions": ["sin1"],
   "functions": {
+    "api/channex-worker.js": { "maxDuration": 30, "includeFiles": "config/**" },
     "api/*.js": { "maxDuration": 20, "includeFiles": "config/**" }
   },
   "rewrites": [

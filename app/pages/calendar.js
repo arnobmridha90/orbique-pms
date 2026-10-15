@@ -7,6 +7,9 @@
    many units are free each night, labelled by unit number, then "Unassigned" lanes for bookings of the type that have no
    unit yet. Block dates can close several units at once ("All Deluxe units"); unlocked bookings on them move to another
    unit of their type (O.reassignUnits).
+   Rates & restrictions view (channels.view; editing needs channels.rates): a row per unit type × rate plan with the rate,
+   minimum and maximum stay, closed to arrival or departure and stop sell of each night; edits collect in a changes tray and
+   "Send N changes" writes them with one O.channel.setDays (one batched call to the channel manager).
    Exposes O.blockDates(opts) for other sections. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
@@ -16,7 +19,7 @@
   var PHONE_Q = '(max-width:760px), (max-height:500px) and (max-width:960px)';
   var LEGEND = [['confirmed', 'confirmed', 'Confirmed'], ['checked_in', 'inhouse', 'In-house'], ['pending', 'pending', 'Pending'], ['checked_out', 'past', 'Checked out']];
 
-  var st = { start: null, prop: '', flash: null, scroll: null };
+  var st = { start: null, prop: '', flash: null, scroll: null, view: null, tray: [], anchor: null };
 
   O.css('calendar', `
 .pg-calendar{--pc:210px;}
@@ -142,6 +145,44 @@
 .pg-calendar .cal-prop.sub{padding-left:24px;}
 .pg-calendar .cal-row.unas .cal-prop .pn{color:var(--warn);}
 .pg-calendar .cal-bar.unas{outline:2px dashed var(--warn); outline-offset:-2px;}
+
+/* rates & restrictions view */
+.pg-calendar .cal-view button{padding:5px 10px; font-size:12px;}
+.pg-calendar .rr-lane{position:relative; flex:none;}
+.pg-calendar .rr-c{position:absolute; top:3px; bottom:3px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; border:1px solid transparent; border-radius:6px; background:none; font:inherit; padding:0 2px; min-width:0; overflow:hidden; color:var(--text);}
+.pg-calendar .rr-c:not([disabled]):hover{border-color:var(--border-strong); background:var(--surface-2);}
+.pg-calendar .rr-c[disabled]{cursor:default; opacity:1;}
+.pg-calendar .rr-c .v{font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; line-height:1.15;}
+.pg-calendar .rr-c.man .v{color:var(--brand-text); font-weight:800;}
+.pg-calendar .rr-c .bd{display:flex; gap:2px; font-size:9.5px; font-weight:800; color:var(--muted); white-space:nowrap; line-height:1.1; min-height:11px;}
+.pg-calendar .rr-c .bd i{font-style:normal; background:var(--surface-2); border-radius:3px; padding:0 2px;}
+.pg-calendar .rr-c .bd i.w{background:var(--warn-soft); color:var(--warn);}
+.pg-calendar .rr-c.stop{background:repeating-linear-gradient(135deg, var(--bad-soft) 0 5px, transparent 5px 8px); color:var(--bad);}
+.pg-calendar .rr-c.stop .v{color:var(--bad);}
+.pg-calendar .rr-c.sel{border-color:var(--brand-strong); box-shadow:inset 0 0 0 1px var(--brand-strong);}
+.pg-calendar .rr-c.pend{outline:2px dashed var(--accent, #F59E0B); outline-offset:-2px;}
+.pg-calendar .cal-row.rr-row .cal-prop .pl{font-size:10.5px;}
+.pg-calendar .rr-tray{margin-bottom:12px;}
+.pg-calendar .rr-tray .card-head{padding:10px 14px;}
+.pg-calendar .rr-tray ul{list-style:none; margin:0; padding:0;}
+.pg-calendar .rr-tray li{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:8px 14px; border-top:1px solid var(--border); font-size:12.5px;}
+.pg-calendar .rr-tray li b{font-weight:800;}
+.pg-calendar .rr-tray li .s{color:var(--text-2);}
+.pg-calendar .rr-tray li .x{color:var(--muted);}
+.pg-calendar .rr-tools{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.pg-calendar .rr-list{display:flex; flex-direction:column;}
+.pg-calendar .rr-lh{padding:10px 12px 6px; font-size:12px; font-weight:800; color:var(--muted); background:var(--surface-2); border-top:1px solid var(--border);}
+.pg-calendar .rr-lh:first-child{border-top:none;}
+.pg-calendar .rr-li{display:grid; grid-template-columns:96px 1fr auto; gap:8px; align-items:center; width:100%; background:none; border:none; border-top:1px solid var(--border); padding:9px 12px; text-align:left; font:inherit; font-size:13px; min-height:44px; color:var(--text);}
+.pg-calendar .rr-li .bd{display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; font-size:10.5px; font-weight:800; color:var(--muted);}
+.pg-calendar .rr-li .bd i{font-style:normal; background:var(--surface-2); border-radius:4px; padding:1px 4px;}
+.pg-calendar .rr-li.stop{background:var(--bad-soft);}
+.pg-calendar .rr-li.pend{box-shadow:inset 3px 0 0 var(--brand-strong);}
+.pg-calendar .rr-li .v{font-weight:800; font-variant-numeric:tabular-nums;}
+.rr-wd{display:flex; flex-wrap:wrap; gap:4px 12px;}
+.rr-wd label{display:inline-flex; align-items:center; gap:5px; font-size:13px; min-height:30px;}
+.rr-tri{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px;}
+@media (max-width:560px){ .rr-tri{grid-template-columns:1fr;} }
 
 @media (max-width:1100px){ .pg-calendar{--pc:170px;} }
 
@@ -354,7 +395,7 @@
       '<div class="field"><label>Reason</label>' + U.seg([['maintenance', 'Maintenance'], ['owner', 'Owner stay']], type, 'data-type') + '</div>' +
       '<div class="field"><label>Note</label><input class="input" name="note" maxlength="120" placeholder="For example: aircon service, owner family visit" value="' + esc(bl ? bl.note || '' : '') + '"></div>' +
       '<div class="blk-sum" role="status"></div>' +
-      '<div class="xs muted">Blocked nights close the unit for new bookings on your website and every connected platform.</div></div>');
+      '<div class="xs muted">Blocked nights close the unit for new bookings on your website' + (O.channel && O.channel.mode() === 'live' ? ' and every connected channel' : '') + '.</div></div>');
     function syncAll() { types.forEach(function (t) { var all = O.$('[data-all="' + t.id + '"]', body), us = O.$$('[name=u][data-t="' + t.id + '"]', body); if (!all) return; var n = us.filter(function (c) { return c.checked; }).length; all.checked = n > 0 && n === us.length; all.indeterminate = n > 0 && n < us.length; }); }
     function vals() {
       var pids = multi ? O.$$('[name=u]:checked', body).map(function (c) { return c.value; }) : [O.$('[name=pid]', body).value];
@@ -424,7 +465,8 @@
       else if (tt) label = (ps.length === O.unitsOfType(t0).length ? 'all ' : '') + ps.length + ' ' + tt.name + ' units';
       else label = ps.length + ' units';
       var moves = O.reassignUnits(), lost = moves.filter(function (m) { return !m.to; }).length;
-      U.toast((bl ? 'Block updated: ' : 'Blocked ') + label + ' for ' + fmt.plural(n, 'night') + when + '. All platform calendars are closed for these nights.' +
+      var note = O.channel ? O.channel.notice('block', ps.map(function (p) { return p && p.unitTypeId; })) : '';
+      U.toast((bl ? 'Block updated: ' : 'Blocked ') + label + ' for ' + fmt.plural(n, 'night') + when + '.' + (note ? ' ' + note : '') +
         (moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' moved to another unit' + (lost ? ', ' + lost + ' still need' + (lost === 1 ? 's' : '') + ' a unit' : '') + '.' : ''), lost ? 'bad' : undefined);
       O.emit('data', { type: 'block' });
     }
@@ -434,7 +476,8 @@
         var i = D.blocks.indexOf(bl); if (i >= 0) D.blocks.splice(i, 1);
         var bp = D.propById[bl.propertyId];
         var moves = O.reassignUnits();
-        U.toast('Block removed. ' + (bp ? unitName(bp) : 'The unit') + ' is bookable again for ' + d.fmtRange(bl.start, d.add(bl.end, -1)) + '.' + (moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' now ' + (moves.length === 1 ? 'has' : 'have') + ' a unit.' : ''));
+        var note = O.channel ? O.channel.notice('unblock', [bp && bp.unitTypeId]) : '';
+        U.toast('Block removed. ' + (bp ? unitName(bp) : 'The unit') + ' is bookable again for ' + d.fmtRange(bl.start, d.add(bl.end, -1)) + '.' + (moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' now ' + (moves.length === 1 ? 'has' : 'have') + ' a unit.' : '') + (note ? ' ' + note : ''));
         O.emit('data', { type: 'block' });
       }
     });
@@ -445,6 +488,128 @@
   function newBooking(pid, ci, co) {
     var o = { propertyId: pid, checkIn: ci, checkOut: co, onCreated: function (b) { st.flash = b.id; if (b.checkIn < st.start || b.checkIn > d.add(st.start, viewDays() - 1)) st.start = b.checkIn; } };
     if (O.newBooking) O.newBooking(o); else O.go('bookings', { new: true, propertyId: pid, checkIn: ci });
+  }
+
+  /* ---------------- rates & restrictions (O.channel, pages/channels.js) ----------------
+     Rows: unit type × rate plan. A click on a day opens the editor; shift-click a second day of the same plan for a range;
+     "Add change" takes explicit From–To dates (long ranges, phones). Edits wait in the changes tray; "Send N changes"
+     writes them all with one O.channel.setDays, so the server sends them in one batched call. */
+  var WD = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
+  function CH() { return O.channel || null; }
+  function ratesOK() { return !!(CH() && (O.can('channels') || O.can('channels.rates'))); }
+  function r2(v) { return v == null || !isFinite(v) ? '–' : String(Math.round(v * 100) / 100); }
+  function rateTypes() {
+    var one = st.prop && D.propById[st.prop];
+    return liveTypes().filter(function (t) {
+      if (st.prop.indexOf('bd:') === 0 && t.buildingId !== st.prop.slice(3)) return false;
+      if (st.prop.indexOf('type:') === 0 && t.id !== st.prop.slice(5)) return false;
+      if (st.prop.indexOf('area:') === 0 && !O.unitsOfType(t.id).some(function (p) { return region(p) === st.prop.slice(5); })) return false;
+      if (one && one.unitTypeId !== t.id) return false;
+      return CH().plansOf(t.id).length > 0;
+    });
+  }
+  function allPlans() { var out = []; liveTypes().forEach(function (t) { CH().plansOf(t.id).forEach(function (p) { out.push({ t: t, p: p }); }); }); return out; }
+  function setText(s, cur) {
+    var out = [];
+    if (s.rate === null) out.push('rate back to default');
+    else if (s.rate !== undefined) out.push('rate ' + (cur ? cur + ' ' : '') + r2(s.rate));
+    if (s.minStay !== undefined) out.push(s.minStay ? 'min stay ' + s.minStay : 'min stay as the plan');
+    if (s.maxStay !== undefined) out.push(s.maxStay ? 'max stay ' + s.maxStay : 'no max stay');
+    if (s.cta !== undefined) out.push(s.cta ? 'closed to arrival' : 'open to arrival');
+    if (s.ctd !== undefined) out.push(s.ctd ? 'closed to departure' : 'open to departure');
+    if (s.stopSell !== undefined) out.push(s.stopSell ? 'stop sell' : 'selling');
+    return out.join(', ');
+  }
+  function wdText(w) { if (!w || w.length >= 7) return ''; return WD.filter(function (x) { return w.indexOf(x[0]) >= 0; }).map(function (x) { return x[1]; }).join(', '); }
+  function changeText(c) {
+    var p = CH().plan(c.planId), t = p && O.unitType(p.unitTypeId);
+    return { head: (t ? t.name + ' · ' : '') + (p ? p.name : 'Removed rate plan'), when: (c.from === c.to ? d.fmtY(c.from) : U.rangeLabel(c.from, c.to)) + (wdText(c.weekdays) ? ' · ' + wdText(c.weekdays) + ' only' : ''), what: setText(c.set, t ? CH().currency(t.buildingId) : '') };
+  }
+  function trayDates(c) { var out = {}; (c.from <= c.to ? d.range(c.from, c.to) : []).forEach(function (iso) { if (!c.weekdays || c.weekdays.indexOf(d.dow(iso)) >= 0) out[iso] = 1; }); return out; }
+  /* o = {planId, from, to, add}; adds one change to st.tray, then onDone() */
+  function openRateEditor(o, onDone) {
+    var C = CH(); if (!C) return;
+    if (!C.canEditRates()) { U.toast(O.viewer().name + '\'s access does not include changing rates and restrictions.', 'bad'); return; }
+    var plans = allPlans();
+    if (!plans.length) { U.toast('Add a rate plan first in Channels → Rate plans.', 'bad'); return; }
+    var T = D.TODAY, last = d.add(T, C.DAYS - 1);
+    var p0 = o.planId && C.plan(o.planId) ? o.planId : plans[0].p.id;
+    var from = o.from && o.from >= T ? o.from : T, to = o.to && o.to >= from ? o.to : from;
+    var map = C.rateMap();
+    function now(planId) { /* the single day's current values, as hints */
+      var p = C.plan(planId); if (!p || from !== to) return null;
+      var day = C.dayIn(map, planId, from) || {};
+      return { rate: C.planRateIn(map, p, from), min: day.minStay || p.minStay || 1, max: day.maxStay || p.maxStay || 0, cta: !!day.cta, ctd: !!day.ctd, stop: !!day.stopSell };
+    }
+    var groups = {}, order = [];
+    plans.forEach(function (x) { if (!groups[x.t.id]) { groups[x.t.id] = []; order.push(x.t); } groups[x.t.id].push(x.p); });
+    function tri(name, label, cur) { return '<div class="field"><label>' + label + '</label><select class="select" name="' + name + '"><option value="">No change' + (cur == null ? '' : ' (now ' + (cur ? 'yes' : 'no') + ')') + '</option><option value="1">Yes</option><option value="0">No</option></select></div>'; }
+    var n0 = now(p0);
+    var body = O.html('<div class="stack rr-ed">' +
+      '<div class="field"><label>Rate plan</label><select class="select" name="plan">' + order.map(function (t) { return '<optgroup label="' + esc(O.typeTitle(t)) + '">' + groups[t.id].map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === p0 ? ' selected' : '') + '>' + esc(t.name + ' · ' + p.name) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></div>' +
+      '<div class="form-grid"><div class="field"><label>From</label><input type="date" class="input" name="from" min="' + T + '" max="' + last + '" value="' + from + '"></div>' +
+      '<div class="field"><label>To (last night)</label><input type="date" class="input" name="to" min="' + T + '" max="' + last + '" value="' + to + '"></div></div>' +
+      '<div class="field"><label>Days of the week</label><div class="rr-wd">' + WD.map(function (w) { return '<label><input type="checkbox" name="wd" value="' + w[0] + '" checked>' + w[1] + '</label>'; }).join('') + '</div></div>' +
+      '<div class="form-grid"><div class="field"><label>Rate a night</label><input class="input" name="rate" type="number" min="0" step="0.01" inputmode="decimal" placeholder="' + (n0 ? 'Now ' + esc(r2(n0.rate)) : 'No change') + '">' +
+      '<label class="check" style="margin-top:6px"><input type="checkbox" name="rclear"><span class="small">Back to the default or Pricing rate</span></label></div>' +
+      '<div class="field"><label>Minimum stay (nights)</label><input class="input" name="min" type="number" min="1" step="1" placeholder="' + (n0 ? 'Now ' + n0.min : 'No change') + '"></div></div>' +
+      '<div class="form-grid"><div class="field"><label>Maximum stay (nights)</label><input class="input" name="max" type="number" min="0" step="1" placeholder="' + (n0 ? 'Now ' + (n0.max || 'none') : 'No change') + '"><div class="hint">0 removes the maximum.</div></div><div></div></div>' +
+      '<div class="rr-tri">' + tri('cta', 'Closed to arrival', n0 ? n0.cta : null) + tri('ctd', 'Closed to departure', n0 ? n0.ctd : null) + tri('stop', 'Stop sell', n0 ? n0.stop : null) + '</div>' +
+      '<div class="blk-sum ok" role="status"></div></div>');
+    function read() {
+      var v = { planId: O.$('[name=plan]', body).value, from: O.$('[name=from]', body).value, to: O.$('[name=to]', body).value, set: {} };
+      var wd = O.$$('[name=wd]:checked', body).map(function (c) { return +c.value; });
+      v.weekdays = wd.length === 7 ? null : wd; v.wdCount = wd.length;
+      var rate = O.$('[name=rate]', body).value.trim(), min = O.$('[name=min]', body).value.trim(), max = O.$('[name=max]', body).value.trim();
+      if (O.$('[name=rclear]', body).checked) v.set.rate = null; else if (rate !== '') v.set.rate = +rate;
+      if (min !== '') v.set.minStay = +min;
+      if (max !== '') v.set.maxStay = +max === 0 ? null : +max;
+      [['cta', 'cta'], ['ctd', 'ctd'], ['stop', 'stopSell']].forEach(function (k) { var x = O.$('[name=' + k[0] + ']', body).value; if (x !== '') v.set[k[1]] = x === '1'; });
+      return v;
+    }
+    function check(v) {
+      if (!C.plan(v.planId)) return 'Choose a rate plan.';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v.from) || !/^\d{4}-\d{2}-\d{2}$/.test(v.to)) return 'Choose the first and last night.';
+      if (v.to < v.from) return 'The last night must be on or after the first night.';
+      if (v.from < T || v.to > last) return 'Rates and restrictions can be set from today up to 500 days ahead (until ' + d.fmtY(last) + ').';
+      if (!v.wdCount) return 'Tick at least one day of the week.';
+      if (!Object.keys(v.set).length) return 'Change at least one thing: a rate, a stay length, closed or stop sell.';
+      if (v.set.rate !== undefined && v.set.rate !== null && !(v.set.rate > 0)) return 'Enter a rate above 0.';
+      if (v.set.minStay !== undefined && !(v.set.minStay >= 1 && v.set.minStay === Math.floor(v.set.minStay))) return 'The minimum stay is a whole number of nights, 1 or more.';
+      if (v.set.maxStay != null && !(v.set.maxStay >= 1 && v.set.maxStay === Math.floor(v.set.maxStay))) return 'The maximum stay is a whole number of nights.';
+      if (v.set.maxStay && v.set.minStay && v.set.maxStay < v.set.minStay) return 'The maximum stay is shorter than the minimum stay.';
+      return '';
+    }
+    function update() {
+      var v = read(), err = check(v), box = O.$('.blk-sum', body), any = Object.keys(v.set).length;
+      var n = v.from && v.to && v.to >= v.from ? Object.keys(trayDates(v)).length : 0;
+      box.className = 'blk-sum ' + (err && any ? 'bad' : 'ok');
+      box.textContent = err && any ? err : n ? fmt.plural(n, 'night') + (any ? ': ' + setText(v.set, '') + '.' : '. Fill in what should change; empty fields stay as they are.') : 'Choose the nights.';
+    }
+    body.addEventListener('input', update);
+    body.addEventListener('change', function (e) { if (e.target.name === 'from') { var z = O.$('[name=to]', body); if (!z.value || z.value < e.target.value) z.value = e.target.value; } if (e.target.name === 'rclear') O.$('[name=rate]', body).disabled = e.target.checked; update(); });
+    update();
+    U.modal({
+      title: o.add ? 'Add a change' : 'Rates & restrictions', sub: 'Changes wait in the tray until you send them.', body: body,
+      actions: [{ label: 'Cancel' }, {
+        label: 'Add to changes', kind: 'primary', id: 'rr-add-btn', onClick: function () {
+          var v = read(), err = check(v);
+          if (err) { var box = O.$('.blk-sum', body); box.className = 'blk-sum bad'; box.textContent = err; return false; }
+          st.tray.push({ id: O.uid('RC'), planId: v.planId, from: v.from, to: v.to, weekdays: v.weekdays, set: v.set });
+          if (onDone) onDone();
+        }
+      }]
+    });
+  }
+  function sendTray(done) {
+    var C = CH(); if (!C || !st.tray.length) return;
+    if (!C.canEditRates()) { U.toast(O.viewer().name + '\'s access does not include changing rates and restrictions.', 'bad'); return; }
+    var list = st.tray.slice(), types = [];
+    list.forEach(function (c) { var p = C.plan(c.planId); if (p && types.indexOf(p.unitTypeId) < 0) types.push(p.unitTypeId); });
+    st.tray = []; st.anchor = null;
+    var n = C.setDays(list.map(function (c) { return { planId: c.planId, from: c.from, to: c.to, weekdays: c.weekdays, set: c.set }; }), { why: ('Sent ' + fmt.plural(list.length, 'rate and restriction change') + ' from the calendar: ' + list.map(function (c) { var x = changeText(c); return x.head + ' ' + x.when + ' (' + x.what + ')'; }).join('; ')).slice(0, 400) });
+    U.toast(n ? 'Saved ' + fmt.plural(list.length, 'change') + '. ' + C.notice('rates', types) : 'Nothing changed: those nights are in the past or more than 500 days ahead.', n ? undefined : 'bad');
+    if (done) done();
   }
 
   /* ---------------- page ---------------- */
@@ -487,6 +652,18 @@
       }
 
       var days = viewDays(), from = st.start, to = d.add(from, days - 1);
+      if (st.view === null) st.view = O.store.get('calendar.view', 'stays');
+      var canRates = ratesOK() && liveTypes().length > 0, rates = canRates && st.view === 'rates';
+      var canEditR = rates && CH().canEditRates();
+      function trayHTML() {
+        if (!canEditR) return '<div class="note rr-tray">Rates and restrictions per rate plan. Your access lets you look but not change them.</div>';
+        var n = st.tray.length;
+        var list = st.tray.map(function (c) { var x = changeText(c); return '<li data-tray="' + esc(c.id) + '"><div><b>' + esc(x.head) + '</b> <span class="x">' + esc(x.when) + '</span><div class="s">' + esc(x.what) + '</div></div><button type="button" class="icon-btn" data-rr-del="' + esc(c.id) + '" aria-label="Remove this change" title="Remove this change">' + O.icon('x') + '</button></li>'; }).join('');
+        return '<div class="card rr-tray"><div class="card-head"><div><h3>' + (n ? 'Changes to send (' + n + ')' : 'Changes') + '</h3><div class="sub">' + (n ? 'They go out together in one update.' : (phone ? 'Tap' : 'Click') + ' a day to change it' + (phone ? '' : ', shift-click a second day of the same plan for a range') + ', or add a change with From and To dates.') + '</div></div>' +
+          '<div class="rr-tools"><button type="button" class="btn btn-ghost btn-sm" data-act="rr-add">' + O.icon('plus') + 'Add change</button>' +
+          (n ? '<button type="button" class="btn btn-ghost btn-sm" data-act="rr-clear">Discard</button><button type="button" class="btn btn-primary btn-sm" data-act="rr-send">Send ' + fmt.plural(n, 'change') + '</button>' : '') + '</div></div>' +
+          (n ? '<ul>' + list + '</ul>' : '') + '</div>';
+      }
       function buildingOpts(all) {
         var ts = liveTypes(); if (!ts.length) return '';
         var bds = []; ts.forEach(function (t) { if (bds.indexOf(t.buildingId) < 0) bds.push(t.buildingId); });
@@ -509,17 +686,21 @@
         '<button type="button" class="icon-btn" data-nav="1" aria-label="Next ' + STEP + ' days" title="Next ' + STEP + ' days">' + O.icon('right') + '</button></div>' +
         '<button type="button" class="btn btn-ghost btn-sm cal-today" data-nav="0"' + (from === T ? ' disabled title="Already showing today"' : '') + '>Today</button>' +
         (phone ? '' : '<div class="seg cal-len" role="group" aria-label="Days shown">' + LENGTHS.map(function (n) { return '<button type="button" data-len="' + n + '" class="' + (n === days ? 'on' : '') + '" aria-pressed="' + (n === days) + '">' + n + ' days</button>'; }).join('') + '</div>') +
+        (canRates ? '<div class="seg cal-view" role="group" aria-label="View">' + [['stays', 'Stays'], ['rates', phone ? 'Rates' : 'Rates & restrictions']].map(function (v) { var on = (v[0] === 'rates') === rates; return '<button type="button" data-view="' + v[0] + '" class="' + (on ? 'on' : '') + '" aria-pressed="' + on + '">' + esc(v[1]) + '</button>'; }).join('') + '</div>' : '') +
         '<span class="sp"></span>' +
         '<select class="select" data-f="prop" aria-label="Properties">' + propOpts + '</select>' +
         (phone && canNew ? '<button type="button" class="btn btn-primary cal-act" data-act="new">' + O.icon('plus') + 'Booking</button>' : '') +
         (phone && canBlock ? '<button type="button" class="icon-btn cal-act" data-act="block" aria-label="Block dates" title="Block dates">' + O.icon('lock') + '</button>' : '') +
         '</div>' +
+        (rates ? trayHTML() + '<div class="card cal-card rr-card"><div class="cal-scroll" tabindex="-1"></div>' +
+          '<div class="cal-legend"><span class="lg"><b>2+</b>&nbsp;minimum stay</span><span class="lg"><b>≤4</b>&nbsp;maximum stay</span><span class="lg"><b>CTA</b>&nbsp;closed to arrival</span><span class="lg"><b>CTD</b>&nbsp;closed to departure</span><span class="lg"><i class="sw" style="background:var(--bad-soft)"></i>Stop sell</span>' +
+          '<span class="hint">Rates in blue were set by hand; the others follow Pricing or the plan.</span></div></div>' :
         '<div class="card cal-card"><div class="cal-scroll" tabindex="-1"></div>' +
         '<div class="cal-legend">' + LEGEND.map(function (s) { return '<span class="lg"><i class="sw" style="background:var(--st-' + s[1] + ')"></i>' + s[2] + '</span>'; }).join('') +
         '<span class="lg"><i class="sw sw-block"></i>Blocked</span>' +
-        (phone ? '' : '<span class="lg-sep"></span>' + D.channelOrder.map(function (c) { return '<span class="lg">' + U.platIcon(c) + esc(U.platName(c)) + '</span>'; }).join('')) +
+        (phone ? '' : '<span class="lg-sep"></span>' + U.channelsInUse().map(function (c) { return '<span class="lg">' + U.platIcon(c) + esc(U.platName(c)) + '</span>'; }).join('')) +
         '<span class="hint">' + (phone ? 'Tap' : 'Click') + ' a bar to open the booking' + (canNew || canBlock ? ', or a free night to ' + (canNew ? 'add a booking' : 'block it') : '') + '.</span></div>' +
-        '</div></div>';
+        '</div>') + '</div>';
       var wrap = O.$('.pg-calendar', root), scroll = O.$('.cal-scroll', wrap);
       if (phone) { var tb = O.$('.topbar'); if (tb) wrap.style.setProperty('--cal-top', tb.offsetHeight + 'px'); }
 
@@ -655,12 +836,92 @@
           st.flash = null;
         }
       }
-      paintGrid();
+      /* rates & restrictions: per unit type a row of free units, then a row per rate plan */
+      function paintRates() {
+        var C = CH(), from = G.from, to = G.to, days = G.days, T = D.TODAY;
+        var cw = scroll.clientWidth, pc = parseFloat(getComputedStyle(wrap).getPropertyValue('--pc')) || 120;
+        G.cw = cw;
+        var types = rateTypes(), map = C.rateMap(), pend = {};
+        st.tray.forEach(function (c) { Object.keys(trayDates(c)).forEach(function (iso) { if (iso >= from && iso <= to) pend[c.planId + '|' + iso] = 1; }); });
+        if (!types.length) {
+          scroll.innerHTML = '<div class="cal-empty">' + O.icon('pricing') + '<div>' + (allPlans().length ? 'No rate plans for this selection.' : 'Rates and restrictions belong to rate plans. Add one for each unit type in Channels → Rate plans.') + '</div>' +
+            (O.allowed('channels') ? '<button type="button" class="btn btn-primary" data-go-ch="1">Open Channels</button>' : '') + '</div>';
+          return;
+        }
+        function info(p, iso) {
+          var day = C.dayIn(map, p.id, iso) || {}, b = [];
+          var mn = day.minStay || p.minStay || 1, mx = day.maxStay || p.maxStay || 0;
+          if (mn > 1) b.push(['', mn + '+', 'minimum stay ' + mn + ' nights']);
+          if (mx) b.push(['', '≤' + mx, 'maximum stay ' + mx + ' nights']);
+          if (day.cta) b.push(['w', 'CTA', 'closed to arrival']);
+          if (day.ctd) b.push(['w', 'CTD', 'closed to departure']);
+          return { rate: C.planRateIn(map, p, iso), badges: b, stop: !!day.stopSell, manual: day.src === 'manual' && day.rate != null, pend: !!pend[p.id + '|' + iso] };
+        }
+        function tip(t, p, iso, x) {
+          return t.name + ' · ' + p.name + ', ' + d.dowName(iso) + ' ' + d.fmtY(iso) + ': ' + (x.stop ? 'stop sell, ' : '') + C.currency(t.buildingId) + ' ' + r2(x.rate) + (x.manual ? ' (set by hand)' : '') +
+            x.badges.map(function (z) { return ', ' + z[2]; }).join('') + (x.pend ? '. A change is waiting in the tray.' : '') + (canEditR ? '' : '.');
+        }
+        function badges(x) { return x.badges.map(function (z) { return '<i' + (z[0] ? ' class="' + z[0] + '"' : '') + '>' + esc(z[1]) + '</i>'; }).join(''); }
+        if (phone) {
+          var html = '<div class="rr-list">';
+          types.forEach(function (t) {
+            C.plansOf(t.id).forEach(function (p) {
+              html += '<div class="rr-lh">' + esc(t.name + ' · ' + p.name) + '</div>';
+              d.range(from, to).forEach(function (iso) {
+                var x = info(p, iso);
+                html += '<button type="button" class="rr-li' + (x.stop ? ' stop' : '') + (x.pend ? ' pend' : '') + '" data-rr="' + esc(p.id) + '" data-date="' + iso + '"' + (canEditR && iso >= T ? '' : ' disabled') + ' aria-label="' + esc(tip(t, p, iso, x)) + '"><span>' + esc(d.dowName(iso) + ' ' + d.fmt(iso)) + '</span><span class="v">' + (x.stop ? 'Stop sell · ' : '') + esc(C.currency(t.buildingId) + ' ' + r2(x.rate)) + '</span><span class="bd">' + badges(x) + '</span></button>';
+              });
+            });
+          });
+          scroll.innerHTML = html + '</div>';
+          return;
+        }
+        var dw = Math.max(58, Math.floor((cw - pc) / days * 100) / 100), lw = dw * days, rh = 44, gh = 32;
+        G.dw = dw; G.pc = pc;
+        var months = '', dayCells = '', seg = null, cols = '';
+        for (var i = 0; i < days; i++) {
+          var iso = d.add(from, i);
+          if (!seg || iso.slice(0, 7) !== seg.m) { if (seg) months += mcell(seg); seg = { m: iso.slice(0, 7), i0: i, n: 0, iso: iso }; }
+          seg.n++;
+          dayCells += '<div class="cal-d' + (d.isWeekend(iso) ? ' we' : '') + (iso === T ? ' today' : '') + '" style="left:' + (i * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px"><span class="w">' + d.dowName(iso).slice(0, 3) + '</span><span class="n">' + d.day(iso) + '</span></div>';
+          if (d.isWeekend(iso)) cols += '<i class="we" style="left:' + (i * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px"></i>';
+          if (i) cols += '<i class="gl" style="left:' + (i * dw).toFixed(2) + 'px"></i>';
+        }
+        if (seg) months += mcell(seg);
+        function mcell(sg) { var w = sg.n * dw; return '<div class="cal-mo" style="left:' + (sg.i0 * dw).toFixed(2) + 'px;width:' + w.toFixed(2) + 'px">' + esc(w >= 100 ? d.monthName(sg.iso, true) + ' ' + sg.iso.slice(0, 4) : d.monthName(sg.iso)) + '</div>'; }
+        var rows = '';
+        types.forEach(function (t) {
+          var av = O.assign.typeAvailability({ unitTypeId: t.id, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
+          var bd = O.building(t.buildingId), on = C.typeConnected(t.id);
+          rows += '<div class="cal-row grp" style="height:' + gh + 'px"><div class="cal-prop" title="' + esc(O.typeTitle(t) + ': units free each night') + '"><span class="pn">' + esc(t.name) + '</span><span class="pl">' + esc((bd ? bd.name : '') + (on ? '' : ' · not connected')) + '</span></div>' +
+            '<div class="cal-lane ro" style="width:' + lw.toFixed(2) + 'px">' + av.map(function (n, j) {
+              var over = n.raw < 0;
+              return '<span class="cal-av' + (over ? ' over' : n.availability === 0 ? ' full' : '') + '" style="left:' + (j * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px" title="' + esc(d.fmt(n.date) + ': ' + n.availability + ' of ' + n.units + ' free') + '">' + (over ? 'Oversold' : n.availability + ' of ' + n.units) + '</span>';
+            }).join('') + '</div></div>';
+          C.plansOf(t.id).forEach(function (p) {
+            var cells = '';
+            for (var k = 0; k < days; k++) {
+              var iso2 = d.add(from, k), x = info(p, iso2), past = iso2 < T;
+              var sel = st.anchor && st.anchor.planId === p.id && st.anchor.date === iso2;
+              cells += '<button type="button" class="rr-c' + (x.stop ? ' stop' : '') + (x.manual ? ' man' : '') + (x.pend ? ' pend' : '') + (sel ? ' sel' : '') + '" data-rr="' + esc(p.id) + '" data-date="' + iso2 + '" style="left:' + (k * dw + 2).toFixed(2) + 'px;width:' + (dw - 4).toFixed(2) + 'px"' + (canEditR && !past ? '' : ' disabled') + ' title="' + esc(tip(t, p, iso2, x)) + '">' +
+                '<span class="v">' + esc(r2(x.rate)) + '</span><span class="bd">' + (x.stop ? '<i class="w">Stop</i>' : '') + badges(x) + '</span></button>';
+            }
+            rows += '<div class="cal-row rr-row" style="height:' + rh + 'px"><div class="cal-prop sub" title="' + esc(p.name + (p.primary ? ': main plan, follows Pricing' : '')) + '"><span class="pn">' + esc(p.name) + '</span><span class="pl">' + esc((p.primary ? 'Main · ' : '') + C.currency(t.buildingId)) + '</span></div>' +
+              '<div class="rr-lane" style="width:' + lw.toFixed(2) + 'px">' + cells + '</div></div>';
+          });
+        });
+        scroll.innerHTML = '<div class="cal-track" style="width:' + (pc + lw).toFixed(2) + 'px">' +
+          '<div class="cal-hd"><div class="cal-corner"><span class="cnt">' + fmt.plural(types.length, 'unit type') + '</span></div><div class="cal-days" style="width:' + lw.toFixed(2) + 'px">' + months + dayCells + '</div></div>' +
+          '<div class="cal-body"><div class="cal-cols" style="left:' + pc + 'px;width:' + lw.toFixed(2) + 'px">' + cols + '</div>' + rows + '</div></div>';
+        if (st.scroll) { scroll.scrollLeft = st.scroll.l; scroll.scrollTop = st.scroll.t; }
+      }
+      function paint() { if (rates) paintRates(); else paintGrid(); }
+      paint();
 
       if (window.ResizeObserver) {
         var ro = new ResizeObserver(function () {
           if (!document.body.contains(scroll)) { ro.disconnect(); return; }
-          if (Math.abs(scroll.clientWidth - (G.cw || 0)) > 4) paintGrid();
+          if (Math.abs(scroll.clientWidth - (G.cw || 0)) > 4) paint();
         });
         ro.observe(scroll);
         ctx.onLeave(function () { ro.disconnect(); });
@@ -673,6 +934,22 @@
       wrap.addEventListener('click', function (e) {
         var t = e.target.closest('button');
         if (t && wrap.contains(t)) {
+          if (t.dataset.view) { st.view = t.dataset.view; O.store.set('calendar.view', st.view); st.scroll = null; st.anchor = null; ctx.rerender(); return; }
+          if (t.dataset.rr) {
+            var rp = t.dataset.rr, rd = t.dataset.date;
+            if (e.shiftKey && st.anchor && st.anchor.planId === rp && st.anchor.date !== rd) {
+              var ra = st.anchor.date < rd ? st.anchor.date : rd, rz = st.anchor.date < rd ? rd : st.anchor.date;
+              st.anchor = null; openRateEditor({ planId: rp, from: ra, to: rz }, ctx.rerender); return;
+            }
+            st.anchor = { planId: rp, date: rd };
+            O.$$('.rr-c.sel', wrap).forEach(function (x) { x.classList.remove('sel'); }); t.classList.add('sel');
+            openRateEditor({ planId: rp, from: rd, to: rd }, ctx.rerender); return;
+          }
+          if (t.dataset.act === 'rr-add') { openRateEditor({ add: true, planId: st.anchor && st.anchor.planId, from: G.from >= D.TODAY ? G.from : D.TODAY }, ctx.rerender); return; }
+          if (t.dataset.act === 'rr-send') { sendTray(ctx.rerender); return; }
+          if (t.dataset.act === 'rr-clear') { st.tray = []; ctx.rerender(); return; }
+          if (t.dataset.rrDel) { st.tray = st.tray.filter(function (c) { return c.id !== t.dataset.rrDel; }); ctx.rerender(); return; }
+          if (t.dataset.goCh) { O.go('channels', { tab: 'plans' }); return; }
           if (t.dataset.nav != null) {
             var nv = +t.dataset.nav;
             go(nv === 0 ? D.TODAY : d.add(st.start, nv * STEP)); return;

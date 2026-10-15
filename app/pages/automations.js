@@ -223,17 +223,33 @@
     if (r.scope && r.scope !== 'all') meta.push(U.pill(fmt.plural(r.scope.length, 'property', 'properties'), 'neutral'));
     if (MONEY_KEY[r.id]) meta.push(U.pill('Sends by ' + (!r.via || r.via === 'Auto' ? 'WhatsApp or email' : r.via), 'neutral'));
     if (!r.on) meta.push(U.pill('Paused', 'neutral'));
+    if (r.id === 'r-block' && r.on) { var ch = channelState(); if (ch) meta.push(ch); }
     if (s.last) meta.push(U.pill(s.last, s.warn ? 'warn' : 'info'));
     return '<div class="rl' + (r.on ? '' : ' off') + '"><span class="ri">' + O.icon(r.icon || 'automations') + '</span><div class="rw" style="min-width:0"><div class="w"><span class="k">When</span>' + esc(r.when) + '</div><div class="t"><span class="k">Then</span>' + esc(r.then) + '</div>' +
       '<div class="dt">' + esc(r.detail) + '</div>' + (meta.length ? '<div class="meta">' + meta.join('') + '</div>' : '') + '</div>' +
       '<div class="jr-side"><button type="button" class="switch' + (r.on ? ' on' : '') + '" role="switch" aria-checked="' + r.on + '" aria-label="' + esc(r.then) + ' on or off" data-rtog="' + r.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n"><b>' + fmt.num(s.n) + '</b> ' + (s.unit || 'runs') + ', 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-redit="' + r.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
+  }
+  /* the channel manager's part: "Live" once a building is connected for real (pages/channels.js) */
+  function channelState() {
+    if (!O.channel) return '';
+    var on = (D.buildings || []).some(function (b) { return O.channel.connected(b.id); });
+    if (!on) return '';
+    return O.channel.mode() === 'live' ? U.pill('Live', 'ok') : U.pill('Practice mode', 'neutral');
+  }
+  /* built in, always on: what happens when a platform booking arrives through the channel manager */
+  function platformRuleRow() {
+    if (!O.channel) return '';
+    var meta = [U.pill('Built in', 'neutral')], ch = channelState(); if (ch) meta.push(ch);
+    return '<div class="rl" data-rule="r-platform"><span class="ri">' + O.icon('channels') + '</span><div class="rw" style="min-width:0"><div class="w"><span class="k">When</span>A platform booking arrives</div><div class="t"><span class="k">Then</span>Assign a unit and close the dates on every other channel</div>' +
+      '<div class="dt">Booking.com, Agoda, Airbnb, Expedia and Trip.com sell your unit types. Orbique picks the best free unit, opens the invoice and sends the new availability to every other channel within a minute. Changes and cancellations made on the platform arrive the same way.</div>' +
+      '<div class="meta">' + meta.join('') + '</div></div><div class="jr-side"><span class="n">Always on</span></div></div>';
   }
   function rulesHTML(tog, edit) {
     var A = AU();
     return GROUPS.filter(function (g) { return st.group === 'all' || st.group === g[0]; }).map(function (g) {
       var rs = A.rules.filter(function (r) { return r.group === g[0]; });
       if (!rs.length) return '';
-      return '<div class="card"><div class="card-head"><div><h3>' + esc(g[1]) + '</h3><div class="sub">' + rs.filter(function (r) { return r.on; }).length + ' of ' + rs.length + ' on</div></div></div><div>' + rs.map(function (r) { return ruleRow(r, tog, edit); }).join('') + '</div></div>';
+      return '<div class="card"><div class="card-head"><div><h3>' + esc(g[1]) + '</h3><div class="sub">' + rs.filter(function (r) { return r.on; }).length + ' of ' + rs.length + ' on</div></div></div><div>' + rs.map(function (r) { return ruleRow(r, tog, edit); }).join('') + (g[0] === 'ops' ? platformRuleRow() : '') + '</div></div>';
     }).join('') + (A.rules.some(function (r) { return r.group === 'custom'; }) && (st.group === 'all' || st.group === 'custom') ?
       '<div class="card"><div class="card-head"><div><h3>Your automations</h3><div class="sub">Rules you added</div></div></div><div>' + A.rules.filter(function (r) { return r.group === 'custom'; }).map(function (r) { return ruleRow(r, tog, edit); }).join('') + '</div></div>' : '');
   }
