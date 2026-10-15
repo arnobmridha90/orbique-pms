@@ -44,8 +44,8 @@ jobs:
           done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort; echo public/sw.js)
           exit $fail
 
-      - name: Unit tests (unit assignment)
-        run: node --test tests/assign.test.mjs
+      - name: Unit tests (unit assignment, guest message timing)
+        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs
 
       - name: Config files are valid JSON
         run: |
