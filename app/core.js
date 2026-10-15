@@ -1058,7 +1058,7 @@
       '<div class="field lk-guest-row"><label for="lk-bid">Booking</label><select class="select" name="bid" id="lk-bid"></select></div>' +
       '<div class="field"><label for="lk-code">New code</label><div class="row-flex"><input class="input code-in" name="code" id="lk-code" inputmode="numeric" maxlength="8" style="font-size:20px;font-weight:800;letter-spacing:0.25em;max-width:180px"><button type="button" class="btn btn-ghost btn-sm lk-gen">' + O.icon('refresh') + 'Generate</button></div><div class="hint">4 to 8 digits. Avoid repeating or sequential numbers.</div></div>' +
       '<div class="form-grid lk-valid"><div class="field"><label for="lk-from">Works from</label><input type="datetime-local" class="input" name="from" id="lk-from"></div><div class="field"><label for="lk-to">Until</label><input type="datetime-local" class="input" name="to" id="lk-to"></div></div>' +
-      '<label class="check lk-notify"><input type="checkbox" name="notify" checked><span>Send the new code to the guest on WhatsApp (and in their guest app)</span></label>' +
+      '<label class="check lk-notify"><input type="checkbox" name="notify" checked><span>Send the new code to the guest on WhatsApp (and in their guest app) from 30 minutes before check-in</span></label>' +
       '<div class="lk-err small" style="color:var(--bad)"></div></div>');
     var scope = b ? 'guest' : (o.scope || 'guest');
     function bookingsFor(p) { return D.bookings.filter(function (x) { return x.propertyId === p && x.status !== 'cancelled' && x.checkOut > D.TODAY; }).sort(function (a, c) { return a.checkIn < c.checkIn ? -1 : 1; }).slice(0, 6); }
@@ -1094,10 +1094,13 @@
           } else {
             var bk = D.booking(O.$('[name=bid]', body).value);
             if (!bk) { O.$('.lk-err', body).textContent = 'There is no booking to set a guest code for. Choose the master code instead.'; return false; }
-            bk.doorCode = code; if (bk.codeStatus !== 'held') bk.codeStatus = O.$('[name=notify]', body).checked ? 'sent' : bk.codeStatus;
+            /* the guest gets the code only from 30 minutes before check-in (O.guestmsg): earlier, it is scheduled for then */
+            var notify = O.$('[name=notify]', body).checked, bt = O.unitType(bk.unitTypeId) || O.typeOf(D.propById[bk.propertyId]);
+            var at = O.guestmsg.revealAt(bk, O.guestmsg.ciTimeOf(bk, D.propById[bk.propertyId], bt && O.building(bt.buildingId))), later = notify && at && D.NOW < at;
+            bk.doorCode = code; if (bk.codeStatus !== 'held' && notify) bk.codeStatus = later ? 'scheduled' : 'sent';
             D.lockLog.unshift({ at: D.NOW, propertyId: p.id, bookingId: bk.id, by: O.state.viewer, what: 'Guest code changed for ' + bk.guest.name, code: code });
-            if (O.$('[name=notify]', body).checked) D.sentLog.unshift({ at: D.NOW, bookingId: bk.id, kind: 'door code', via: 'WhatsApp', to: bk.guest.phone, by: O.state.viewer });
-            U.toast('New code ' + code + ' set for ' + bk.guest.name + (O.$('[name=notify]', body).checked ? ' and sent on WhatsApp' : ''));
+            if (notify && !later) D.sentLog.unshift({ at: D.NOW, bookingId: bk.id, kind: 'door code', via: 'WhatsApp', to: bk.guest.phone, by: O.state.viewer });
+            U.toast('New code ' + code + ' set for ' + bk.guest.name + (!notify ? '' : later ? '. It goes to the guest on WhatsApp at ' + O.fmt.time(at.slice(11)) + ' on ' + d.fmt(at.slice(0, 10)) + ', 30 minutes before check-in.' : ' and sent on WhatsApp'));
           }
           O.emit('data', { type: 'lock' });
           if (o.onDone) o.onDone({ scope: scope, code: code, propertyId: p.id, bookingId: scope === 'guest' ? O.$('[name=bid]', body).value : null });

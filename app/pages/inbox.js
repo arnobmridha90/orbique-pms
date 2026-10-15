@@ -448,10 +448,14 @@
   function repliesFor(pid) { return D.quickReplies.filter(function (q) { return !q.propertyIds || !q.propertyIds.length || q.propertyIds.indexOf(pid) >= 0; }).sort(function (a, b) { return (b.propertyIds.length ? 1 : 0) - (a.propertyIds.length ? 1 : 0); }); }
   function fill(text, b) {
     if (!b) return text;
-    var p = prop(b.propertyId), held = !b.idVerified || b.codeStatus === 'held';
-    var gp = O.guestPlace(b), early = gp.typed && !(D.propById[b.propertyId] && D.NOW >= O.assign.unitRevealAt(b, p.checkInTime));
-    var wifi = early ? ['[in the guest app from 30 minutes before check-in]', '[in the guest app]'] : p.wifi || ['', ''];
-    var map = { guest_first: guestFirst(b.guest.name), property: gp.name, wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: !canCodes() ? '[door code left out]' : held ? '[sent after the ID check]' : b.doorCode };
+    /* sent now: the door code (and for a unit type the unit number and Wi-Fi) only from 30 minutes before check-in (O.guestmsg) */
+    var p = prop(b.propertyId), held = !b.idVerified || b.codeStatus === 'held', gp = O.guestPlace(b), t = O.unitType(b.unitTypeId) || O.typeOf(D.propById[b.propertyId]);
+    var ci = O.guestmsg.ciTimeOf(b, D.propById[b.propertyId], t && O.building(t.buildingId)), link = O.guestLink && b.guestToken ? O.guestLink(b) : ''; /* never creates a token while previewing */
+    var wifi = p.wifi || ['', ''];
+    var g = O.guestmsg.guardVars({ door_code: b.doorCode, unit_no: gp.typed ? p.unitNo || '' : '', wifi_name: wifi[0], wifi_password: wifi[1] }, { b: b, sendAt: D.NOW, ciTime: ci, typed: gp.typed, link: link }).vars;
+    wifi = [g.wifi_name, g.wifi_password];
+    var timeHeld = g.door_code !== b.doorCode;
+    var map = { guest_first: guestFirst(b.guest.name), property: gp.name, unit_no: g.unit_no, wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: !canCodes() ? '[door code left out]' : timeHeld ? g.door_code : held ? '[sent after the ID check]' : b.doorCode };
     return text.replace(/\{([a-z_]+)\}/g, function (m0, k) { return map[k] != null ? map[k] : m0; });
   }
 
