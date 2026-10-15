@@ -8,7 +8,8 @@
 -- * The check-in time falls back from the booking to the unit, then the building, then 15:00 (merged into the booking as
 --   the hint '_ciTime' for guest__stay; the stored booking is never changed).
 -- * Door code (owner decision 2026-10-15): it shows from the same moment as the unit number, for every booking.
---   guest_act keeps calling guest__stay(b, g, now) and gets the same rule.
+-- * guest__with_ci(org, booking) adds that check-in hint; guest__payload (guest_get) and guest_act both use it, so the
+--   door-code timing is the same in both. guest_act is re-created from 0003 with only that call changed.
 
 -- the stage of a stay and the door-code rule (stayInfo in guestapp.js)
 create or replace function public.guest__stay(b jsonb, g jsonb, p_now text) returns jsonb
@@ -50,6 +51,24 @@ begin
 end $$;
 
 -- the guest's payload (buildPayload in guestapp.js)
+-- the booking plus the check-in hint '_ciTime': the unit's time, else the building's (guest__stay falls back to 15:00)
+create or replace function public.guest__with_ci(p_org uuid, b jsonb) returns jsonb
+language plpgsql stable set search_path = public as $$
+declare p jsonb; t jsonb; bd jsonb; type_id text; ci text;
+begin
+  select r.data into p from records r where r.org_id = p_org and r.coll = 'properties' and r.id = b->>'propertyId' and not r.deleted;
+  type_id := coalesce(nullif(b->>'unitTypeId', ''), nullif(p->>'unitTypeId', ''));
+  if type_id is not null then
+    select r.data into t from records r where r.org_id = p_org and r.coll = 'unitTypes' and r.id = type_id and not r.deleted;
+  end if;
+  if t is not null and nullif(t->>'buildingId', '') is not null then
+    select r.data into bd from records r where r.org_id = p_org and r.coll = 'buildings' and r.id = t->>'buildingId' and not r.deleted;
+  end if;
+  ci := coalesce(case when p->>'checkInTime' ~ '^([01]\d|2[0-3]):[0-5]\d$' then p->>'checkInTime' end,
+                 case when bd->>'checkInTime' ~ '^([01]\d|2[0-3]):[0-5]\d$' then bd->>'checkInTime' end);
+  return case when ci is null then b else b || jsonb_build_object('_ciTime', ci) end;
+end $$;
+
 create or replace function public.guest__payload(p_org uuid, p_bid text, b jsonb) returns jsonb
 language plpgsql stable set search_path = public as $$
 declare
@@ -69,9 +88,7 @@ begin
   if t is not null and nullif(t->>'buildingId', '') is not null then
     select r.data into bd from records r where r.org_id = p_org and r.coll = 'buildings' and r.id = t->>'buildingId' and not r.deleted;
   end if;
-  s := public.guest__stay(b || jsonb_build_object('_ciTime', coalesce(
-      case when p->>'checkInTime' ~ '^([01]\d|2[0-3]):[0-5]\d$' then p->>'checkInTime' end,
-      case when bd->>'checkInTime' ~ '^([01]\d|2[0-3]):[0-5]\d$' then bd->>'checkInTime' end)), g, v_now);
+  s := public.guest__stay(public.guest__with_ci(p_org, b), g, v_now);
   if s is null then return public.guest__err('not_found'); end if;
   st := s->>'state';
   brand := public.guest__brand(p_org, o.name);
@@ -175,13 +192,164 @@ begin
     'feedback', case when jsonb_typeof(b->'guestFeedback') = 'object' then jsonb_build_object('stars', b->'guestFeedback'->'stars', 'text', b->'guestFeedback'->'text', 'at', b->'guestFeedback'->'at') end);
 end $$;
 
+-- guest_act from 0003_guest.sql, unchanged except that guest__stay gets the check-in hint (guest__with_ci)
+create or replace function public.guest_act(p_token text, p_action text, p_args jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  f record; b jsonb; g jsonb; v_now text; s jsonb; st text; o_status text; a jsonb; act text := coalesce(p_action, '');
+  during boolean; active boolean; i int; n int; t text; x jsonb;
+  names jsonb; arr text; signed text; who text;
+  c record; mine jsonb; svc jsonb; vals jsonb; summary text; note text; rid text; code text;
+  item text; descr text; v_when text; room text; photos jsonb; urgent boolean; stars numeric; ftext text;
+  default_services constant jsonb := '[{"id":"towels","name":"Extra towels and linen"},{"id":"late","name":"Late check-out"},{"id":"early","name":"Early check-in"},{"id":"transfer","name":"Airport transfer"},{"id":"clean","name":"Mid-stay clean"},{"id":"sim","name":"Tourist SIM card"},{"id":"car","name":"Car rental"},{"id":"tng","name":"Touch ''n Go card"}]';
+begin
+  select * into f from public.guest__find(p_token, true);
+  if f.o_id is null then return public.guest__err('not_found'); end if;
+  b := f.o_data; a := case when jsonb_typeof(p_args) = 'object' then p_args else '{}'::jsonb end;
+  g := public.guest__cfg(f.o_org); v_now := public.guest__now(); s := public.guest__stay(public.guest__with_ci(f.o_org, b), g, v_now); -- 0008: same check-in time as guest_get
+  if s is null then return public.guest__err('not_found'); end if;
+  st := s->>'state';
+  if st = 'expired' then return public.guest__err('expired'); end if;
+  select status into o_status from orgs where id = f.o_org;
+  if o_status is distinct from 'active' then return public.guest__err('read_only'); end if;
+  during := st in ('upcoming', 'arrival', 'inhouse', 'checkout');
+  active := st in ('arrival', 'inhouse', 'checkout');
+
+  if act = 'checkin' then
+    if st not in ('upcoming', 'arrival', 'inhouse') then return public.guest__err('not_now'); end if;
+    select coalesce(jsonb_agg(to_jsonb(q.t) order by q.n), '[]') into names from (
+      select public.guest__clip(e.x, 80) t, e.n from jsonb_array_elements(case when jsonb_typeof(a->'names') = 'array' then a->'names' else '[]'::jsonb end) with ordinality e(x, n)
+      where e.n <= 10) q where q.t <> '';
+    arr := case when jsonb_typeof(a->'arrivalTime') = 'string' and a->>'arrivalTime' ~ '^([01]\d|2[0-3]):[0-5]\d$' then a->>'arrivalTime' end;
+    signed := public.guest__clip(a->'signedName', 80);
+    if jsonb_array_length(names) = 0 or coalesce(a->'consent' <> 'true'::jsonb, true) or (public.guest__on(g, 'requireName') and char_length(signed) < 3) then return public.guest__err('invalid'); end if;
+    who := coalesce(nullif(signed, ''), names->>0);
+    b := b || jsonb_build_object('guestCheckin', jsonb_build_object('at', v_now, 'names', names, 'arrivalTime', arr, 'consent', true, 'signedName', who),
+                                 'rulesAccepted', jsonb_build_object('at', v_now, 'name', who));
+    if b->>'codeStatus' = 'held' and (b->'idVerified' = 'true'::jsonb or not public.guest__on(g, 'requireId')) then b := b || '{"codeStatus":"scheduled"}'::jsonb; end if;
+    update records set data = b, updated_by = null where org_id = f.o_org and coll = 'bookings' and id = f.o_id;
+    perform public.guest__note(f.o_org, f.o_id, 'Guest app: online check-in done by ' || who || coalesce('. Arriving around ' || public.guest__time(arr), '') || '.', v_now);
+    return '{"ok":true}'::jsonb;
+
+  elsif act = 'id' then
+    -- the ID photo goes into the booking's chat as a picture message (only the latest keeps its picture; staff delete it after the check)
+    if not during then return public.guest__err('not_now'); end if;
+    x := a->'photo';
+    if coalesce(jsonb_typeof(x), '') <> 'object' or coalesce(jsonb_typeof(x->'url'), '') <> 'string' or char_length(x->>'url') > 240000
+       or (x->>'url') !~ '^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$' then
+      return public.guest__err('invalid_photo');
+    end if;
+    select * into c from public.guest__chat(f.o_org, f.o_id, v_now, true);
+    select count(*) into n from jsonb_array_elements(c.o_data->'messages') m where jsonb_typeof(m) = 'object' and m->'idPhoto' = 'true'::jsonb;
+    if n >= 5 then return public.guest__err('too_many'); end if;
+    select coalesce(jsonb_agg(case when jsonb_typeof(e.m) = 'object' and e.m->'idPhoto' = 'true'::jsonb and public.guest__truthy(e.m->'url')
+                                   then (e.m - 'url') || '{"caption":"Earlier ID photo, replaced"}'::jsonb else e.m end order by e.k), '[]'::jsonb)
+      into mine from jsonb_array_elements(c.o_data->'messages') with ordinality e(m, k);
+    mine := mine || jsonb_build_array(jsonb_build_object('from', 'guest', 'type', 'image', 'text', 'ID photo', 'caption', 'ID photo for check-in',
+      'name', coalesce(nullif(public.guest__clip(x->'name', 80), ''), 'id-photo.jpg'), 'url', x->>'url', 'time', v_now, 'via', 'guestapp', 'idPhoto', true));
+    update records set data = c.o_data || jsonb_build_object('messages', mine, 'unread', coalesce(nullif(public.guest__num(c.o_data->'unread'), 0), 0) + 1), updated_by = null
+     where org_id = f.o_org and coll = 'conversations' and id = c.o_id;
+    b := b || jsonb_build_object('idSubmittedAt', v_now);
+    update records set data = b, updated_by = null where org_id = f.o_org and coll = 'bookings' and id = f.o_id;
+    return '{"ok":true}'::jsonb;
+
+  elsif act = 'message' then
+    t := public.guest__clip(a->'text', 1000);
+    if t = '' then return public.guest__err('invalid'); end if;
+    select * into c from public.guest__chat(f.o_org, f.o_id, v_now, true);
+    select count(*), count(*) filter (where coalesce(m->>'time', '') >= public.guest__addmin(v_now, -60)) into n, i
+      from jsonb_array_elements(c.o_data->'messages') m where jsonb_typeof(m) = 'object' and m->>'from' = 'guest' and m->>'via' = 'guestapp' and coalesce(m->'idPhoto' <> 'true'::jsonb, true);
+    if n >= 200 or i >= 20 then return public.guest__err('too_many'); end if;
+    update records set data = c.o_data || jsonb_build_object(
+        'messages', (c.o_data->'messages') || jsonb_build_array(jsonb_build_object('from', 'guest', 'type', 'text', 'text', t, 'time', v_now, 'via', 'guestapp')),
+        'unread', coalesce(nullif(public.guest__num(c.o_data->'unread'), 0), 0) + 1), updated_by = null
+     where org_id = f.o_org and coll = 'conversations' and id = c.o_id;
+    return '{"ok":true}'::jsonb;
+
+  elsif act = 'request' then
+    if not during then return public.guest__err('not_now'); end if;
+    select sv.v into svc from jsonb_array_elements(case when jsonb_typeof(g->'services') = 'array' then g->'services' else default_services end) sv(v)
+      where jsonb_typeof(sv.v) = 'object' and jsonb_typeof(sv.v->'id') = 'string' and jsonb_typeof(a->'type') = 'string' and sv.v->>'id' = a->>'type' and coalesce(sv.v->'on' <> 'false'::jsonb, true) limit 1;
+    if svc is null then return public.guest__err('invalid'); end if;
+    select count(*) into n from records r where r.org_id = f.o_org and r.coll = 'guestRequests' and not r.deleted and r.data->>'bookingId' = f.o_id;
+    if n >= 20 then return public.guest__err('too_many'); end if;
+    if svc->>'id' = 'late' and exists (select 1 from records r where r.org_id = f.o_org and r.coll = 'guestRequests' and not r.deleted and r.data->>'bookingId' = f.o_id and r.data->>'type' = 'late' and r.data->>'status' is distinct from 'declined') then
+      return public.guest__err('duplicate');
+    end if;
+    select coalesce(jsonb_object_agg(q.k, public.guest__clip(q.v, 160)), '{}') into vals from (
+      select e.key k, e.value v from jsonb_each(case when jsonb_typeof(a->'vals') = 'object' then a->'vals' else '{}'::jsonb end) e where e.key ~ '^[a-z]{1,20}$' limit 12) q;
+    summary := coalesce(nullif(public.guest__clip(a->'summary', 300), ''), coalesce(nullif(svc->>'name', ''), svc->>'id'));
+    note := nullif(public.guest__clip(a->'note', 300), '');
+    rid := public.guest__uid('GR');
+    insert into records (org_id, coll, id, data, updated_by) values (f.o_org, 'guestRequests', rid,
+      jsonb_build_object('id', rid, 'bookingId', f.o_id, 'type', svc->>'id', 'summary', summary, 'vals', vals, 'note', note, 'status', 'new', 'at', v_now), null);
+    perform public.guest__note(f.o_org, f.o_id, 'Guest app request: ' || coalesce(nullif(svc->>'name', ''), svc->>'id') || ' (' || summary || ')', v_now);
+    return jsonb_build_object('ok', true, 'id', rid);
+
+  elsif act = 'codehelp' then
+    if not (s->>'visible')::boolean then return public.guest__err('not_now'); end if;
+    if exists (select 1 from records r where r.org_id = f.o_org and r.coll = 'guestRequests' and not r.deleted and r.data->>'bookingId' = f.o_id and r.data->>'type' = 'code' and r.data->>'status' = 'new') then
+      return '{"ok":true}'::jsonb;
+    end if;
+    code := b->>'doorCode'; rid := public.guest__uid('GR');
+    insert into records (org_id, coll, id, data, updated_by) values (f.o_org, 'guestRequests', rid,
+      jsonb_build_object('id', rid, 'bookingId', f.o_id, 'type', 'code', 'summary', 'Guest says code ' || code || ' is not opening the door', 'code', code, 'status', 'new', 'at', v_now), null);
+    perform public.guest__note(f.o_org, f.o_id, 'Guest app: door code ' || code || ' reported as not working.', v_now);
+    return jsonb_build_object('ok', true, 'id', rid);
+
+  elsif act = 'report' then
+    if not active then return public.guest__err('not_now'); end if;
+    select count(*) into n from records r where r.org_id = f.o_org and r.coll = 'damageReports' and not r.deleted and r.data->>'bookingId' = f.o_id;
+    if n >= 10 then return public.guest__err('too_many'); end if;
+    item := public.guest__clip(a->'item', 80); descr := public.guest__clip(a->'desc', 600);
+    v_when := case when a->>'when' = 'arrival' and jsonb_typeof(a->'when') = 'string' then 'arrival' else 'stay' end;
+    if item = '' or char_length(descr) < 3 then return public.guest__err('invalid'); end if;
+    photos := '[]';
+    if jsonb_typeof(a->'photos') = 'array' then
+      if jsonb_array_length(a->'photos') > 3 then return public.guest__err('invalid_photo'); end if;
+      for x in select pe.v from jsonb_array_elements(a->'photos') with ordinality pe(v, k) order by pe.k loop
+        if jsonb_typeof(x) <> 'object' or coalesce(jsonb_typeof(x->'url'), '') <> 'string' or char_length(x->>'url') > 160000
+           or (x->>'url') !~ '^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$' then
+          return public.guest__err('invalid_photo');
+        end if;
+        photos := photos || jsonb_build_array(jsonb_build_object('name', coalesce(nullif(public.guest__clip(x->'name', 80), ''), 'photo.jpg'), 'url', x->>'url'));
+      end loop;
+    end if;
+    room := coalesce(nullif(public.guest__clip(a->'room', 40), ''), 'Other');
+    urgent := v_when = 'stay' and coalesce(a->'urgent' = 'true'::jsonb, false);
+    rid := public.guest__uid('DR');
+    insert into records (org_id, coll, id, data, updated_by) values (f.o_org, 'damageReports', rid,
+      jsonb_build_object('id', rid, 'bookingId', f.o_id, 'propertyId', b->'propertyId', 'guest', public.guest__or(b->'guest'->'name', '"Guest"'), 'room', room,
+        'item', item, 'desc', descr, 'when', v_when, 'urgent', urgent, 'photos', photos, 'at', v_now, 'taskId', null), null);
+    n := jsonb_array_length(photos);
+    perform public.guest__note(f.o_org, f.o_id, 'Guest app: problem reported, "' || item || '" (' || room || ')' || case when urgent then ', marked urgent' else '' end ||
+      ', with ' || n || ' photo' || case when n = 1 then '' else 's' end || '.', v_now);
+    return jsonb_build_object('ok', true, 'id', rid);
+
+  elsif act = 'feedback' then
+    if st not in ('checkout', 'past') then return public.guest__err('not_now'); end if;
+    stars := case when jsonb_typeof(a->'stars') = 'number' then (a->>'stars')::numeric end;
+    if stars is null or stars <> trunc(stars) or stars < 1 or stars > 5 then return public.guest__err('invalid'); end if;
+    ftext := public.guest__clip(a->'text', 1000);
+    b := b || jsonb_build_object('guestFeedback', jsonb_build_object('stars', stars::int, 'text', ftext, 'at', v_now));
+    update records set data = b, updated_by = null where org_id = f.o_org and coll = 'bookings' and id = f.o_id;
+    perform public.guest__note(f.o_org, f.o_id, 'Guest app feedback: ' || stars::int || ' out of 5' || case when ftext <> '' then '. "' || ftext || '"' else '.' end, v_now);
+    return '{"ok":true}'::jsonb;
+  end if;
+
+  return public.guest__err('unknown_action');
+end $$;
+
 -- same grants as 0003: helpers stay closed to the API roles
 do $$
 declare fn text;
 begin
-  foreach fn in array array['guest__stay(jsonb, jsonb, text)', 'guest__payload(uuid, text, jsonb)'] loop
+  foreach fn in array array['guest__stay(jsonb, jsonb, text)', 'guest__with_ci(uuid, jsonb)', 'guest__payload(uuid, text, jsonb)'] loop
     execute format('revoke all on function public.%s from public', fn);
     if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke all on function public.%s from anon', fn); end if;
     if exists (select 1 from pg_roles where rolname = 'authenticated') then execute format('revoke all on function public.%s from authenticated', fn); end if;
   end loop;
 end $$;
+
+revoke all on function public.guest_act(text, text, jsonb) from public;
+grant execute on function public.guest_act(text, text, jsonb) to anon, authenticated;

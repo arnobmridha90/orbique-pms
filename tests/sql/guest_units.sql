@@ -9,6 +9,10 @@ begin;
 
 insert into public.orgs (id, name) values ('00000000-0000-4000-8000-0000000000a8', 'Guest units test');
 insert into public.records (org_id, coll, id, data) values
+  ('00000000-0000-4000-8000-0000000000a8', 'buildings', 'BD-l', '{"id":"BD-l","name":"Late Tower","address":"9 Jalan Lewat","checkInTime":"17:00"}'),
+  ('00000000-0000-4000-8000-0000000000a8', 'unitTypes', 'UT-l', '{"id":"UT-l","buildingId":"BD-l","name":"Studio","beds":1}'),
+  ('00000000-0000-4000-8000-0000000000a8', 'properties', 'P-l', '{"id":"P-l","name":"Late 5-2","unitNo":"5-2","buildingId":"BD-l","unitTypeId":"UT-l","address":"Unit 5-2, 9 Jalan Lewat","lockBrand":"Yale"}'),
+  ('00000000-0000-4000-8000-0000000000a8', 'properties', 'P-v', '{"id":"P-v","name":"Garden Villa","address":"1 Garden Lane","checkInTime":"16:00","lockBrand":"Yale"}'),
   ('00000000-0000-4000-8000-0000000000a8', 'buildings', 'BD-t', '{"id":"BD-t","name":"Seri Saujana Residences","address":"2 Jalan Saujana Indah, 57000 Kuala Lumpur","city":"Kuala Lumpur","checkInTime":"15:00","checkOutTime":"11:00"}'),
   ('00000000-0000-4000-8000-0000000000a8', 'unitTypes', 'UT-t', '{"id":"UT-t","buildingId":"BD-t","name":"Deluxe","beds":2}'),
   ('00000000-0000-4000-8000-0000000000a8', 'properties', 'P-t', '{"id":"P-t","name":"Saujana 21-1","unitNo":"21-1","buildingId":"BD-t","unitTypeId":"UT-t","area":"Bukit Jalil, Kuala Lumpur","address":"Unit 21-1, 2 Jalan Saujana Indah","type":"2BR apartment","beds":2,"wifi":["Saujana21-1","pw-2026"],"lockBrand":"Yale","parking":"P2-21"}'),
@@ -18,6 +22,9 @@ insert into public.records (org_id, coll, id, data) values
   -- typed booking with no unit yet
   ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-n', '{"id":"B-n","propertyId":null,"unitTypeId":"UT-t","needsUnit":true,"checkIn":"2026-11-02","checkOut":"2026-11-03","checkInTime":"15:00","status":"confirmed","guestToken":"gUnitTest0002","doorCode":"7710","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"N"},"guest":{"name":"N"}}'),
   -- untyped unit: same payload as before, door code from 30 minutes before its 16:00 check-in
+  -- no check-in time on these bookings: the unit's 16:00 (B-v) and the building's 17:00 (B-l) decide, in guest_get and guest_act alike
+  ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-v', '{"id":"B-v","propertyId":"P-v","checkIn":"2026-11-02","checkOut":"2026-11-04","status":"confirmed","guestToken":"gUnitTest0004","doorCode":"6060","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"V"},"guest":{"name":"V"}}'),
+  ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-l', '{"id":"B-l","propertyId":"P-l","unitTypeId":"UT-l","checkIn":"2026-11-02","checkOut":"2026-11-03","status":"confirmed","guestToken":"gUnitTest0005","doorCode":"7070","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"L"},"guest":{"name":"L"}}'),
   ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-u', '{"id":"B-u","propertyId":"P-u","checkIn":"2026-11-02","checkOut":"2026-11-05","checkInTime":"16:00","status":"confirmed","guestToken":"gUnitTest0003","doorCode":"5150","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"U"},"guest":{"name":"U"}}');
 
 create temporary table t_guest_units_ok (n int);
@@ -77,6 +84,31 @@ begin
   perform set_config('orbique.guest_now', '2026-11-02T15:29', true);
   j := public.guest_act('gUnitTest0003', 'codehelp', '{}'::jsonb);
   if j->>'error' is distinct from 'not_now' then raise exception 'codehelp before the code shows: %', j; end if;
+
+  perform set_config('orbique.guest_now', '2026-11-02T15:30', true);
+  j := public.guest_act('gUnitTest0003', 'codehelp', '{}'::jsonb);
+  if j->>'ok' is distinct from 'true' then raise exception 'codehelp once the code shows: %', j; end if;
+
+  -- guest_act resolves the check-in time like guest_get: booking, then unit, then building, then 15:00
+  perform set_config('orbique.guest_now', '2026-11-02T15:29', true);
+  j := public.guest_get('gUnitTest0004');
+  if j->'door'->>'from' <> '2026-11-02T15:30' or j->'door'->'code' <> 'null'::jsonb then raise exception 'B-v guest_get at 15:29: %', j->'door'; end if;
+  j := public.guest_act('gUnitTest0004', 'codehelp', '{}'::jsonb);
+  if j->>'error' is distinct from 'not_now' then raise exception 'B-v codehelp at 15:29 (unit 16:00): %', j; end if;
+  perform set_config('orbique.guest_now', '2026-11-02T15:30', true);
+  j := public.guest_act('gUnitTest0004', 'codehelp', '{}'::jsonb);
+  if j->>'ok' is distinct from 'true' then raise exception 'B-v codehelp at 15:30: %', j; end if;
+
+  perform set_config('orbique.guest_now', '2026-11-02T16:29', true);
+  j := public.guest_get('gUnitTest0005');
+  if j->'door'->>'from' <> '2026-11-02T16:30' or j->'door'->'code' <> 'null'::jsonb then raise exception 'B-l guest_get at 16:29: %', j->'door'; end if;
+  j := public.guest_act('gUnitTest0005', 'codehelp', '{}'::jsonb);
+  if j->>'error' is distinct from 'not_now' then raise exception 'B-l codehelp at 16:29 (building 17:00): %', j; end if;
+  perform set_config('orbique.guest_now', '2026-11-02T16:30', true);
+  j := public.guest_get('gUnitTest0005');
+  if j->'door'->>'code' is distinct from '7070' then raise exception 'B-l guest_get at 16:30: %', j->'door'; end if;
+  j := public.guest_act('gUnitTest0005', 'codehelp', '{}'::jsonb);
+  if j->>'ok' is distinct from 'true' then raise exception 'B-l codehelp at 16:30: %', j; end if;
 
   insert into t_guest_units_ok values (1);
   raise notice 'guest_units: all checks passed';
