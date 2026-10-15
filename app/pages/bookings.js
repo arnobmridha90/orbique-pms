@@ -173,7 +173,7 @@
   function place(p) { return p ? (p.area || p.location || p.city || p.address || '') : ''; }
   function propName(p) { return p ? (p.name || p.short || 'Unnamed property') : 'Removed property'; }
   function propLabel(p) { var l = place(p); return propName(p) + (l ? ' · ' + l : ''); }
-  function maxGuests(p) { return Math.max(2, 2 + (+(p && p.beds) || 0) * 2); }
+  function maxGuests(p) { var t = O.typeOf(p); if (t && +t.maxGuests > 0) return +t.maxGuests; return Math.max(2, 2 + (+(p && p.beds) || 0) * 2); }
   function cleaningFor(p) { return CLEANING[p && p.beds] || 80; }
   function feePct(ch) { return (D.channels[ch] && D.channels[ch].feePct) || 0; }
   function rateOf(pid, iso) {
