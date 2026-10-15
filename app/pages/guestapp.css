@@ -64,6 +64,10 @@
 .gx-eyebrow{font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:0.06em; opacity:0.85;}
 .gx-hero h1{font-size:26px; line-height:1.15; margin:4px 0 3px; overflow-wrap:anywhere;}
 .gx-hero-p{font-size:14px; opacity:0.92;}
+.gx-unit{display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; margin-top:10px; background:rgba(255,255,255,0.13); border-radius:12px; padding:8px 12px; max-width:460px;}
+.gx-unit span{font-size:11px; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; opacity:0.8;}
+.gx-unit b{font-size:16px;}
+.gx-unit i{font-style:normal; font-size:12.5px; opacity:0.88; flex-basis:100%;}
 .gx-dates{display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:8px; margin-top:14px; background:rgba(255,255,255,0.13); border-radius:14px; padding:10px 12px; max-width:460px;}
 .gx-dates > div{display:flex; flex-direction:column; min-width:0;}
 .gx-dates span{font-size:11px; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; opacity:0.8;}

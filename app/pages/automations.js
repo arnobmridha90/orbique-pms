@@ -17,8 +17,8 @@
         text: 'Hi {guest_first}, Malaysian law asks us to verify every guest. Please upload your IC or passport here: {id_link}. Your door code is sent once this is done.' },
       { id: 'j3', name: 'Pre-arrival guide', icon: 'map', channels: ['WhatsApp', 'Email'], when: '3 days before check-in', on: true,
         text: 'Your guide for {property} is ready: directions, parking ({parking}) and Wi-Fi. Open the guest app here: {guest_app_link}' },
-      { id: 'j4', name: 'Door code', icon: 'key', channels: ['Smart lock', 'WhatsApp'], when: '24 hours before check-in · only after ID is verified and house rules are accepted', on: true,
-        text: 'Your door code for {property} is {door_code}. It works from {checkin_time} on your arrival day. Please do not share it.' },
+      { id: 'j4', name: 'Door code', icon: 'key', channels: ['Smart lock', 'WhatsApp'], when: '30 minutes before check-in, with the unit number · only after ID is verified and house rules are accepted', on: true,
+        text: 'Your door code for {property} is {door_code}. It works from 30 minutes before {checkin_time} on your arrival day. Please do not share it.' },
       { id: 'j5', name: 'Check-in day', icon: 'home', channels: ['WhatsApp'], when: 'Arrival day at 9:00 AM', on: true,
         text: 'Today is the day, {guest_first}! Check-in is from {checkin_time}. Wi-Fi: {wifi_name}, password {wifi_password}. Message us here if you need anything.' },
       { id: 'j6', name: 'Mid-stay check', icon: 'chat', channels: ['WhatsApp'], when: 'Morning after the first night · stays of 3 nights or more', on: true,
@@ -177,17 +177,26 @@
 
   /* ---------- template preview ---------- */
   function samples() { return D.bookings.filter(function (b) { return live(b) && b.checkIn >= D.TODAY && b.checkIn <= d.add(D.TODAY, 7); }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : a.checkInTime < b.checkInTime ? -1 : 1; }).slice(0, 12); }
-  function vars(b) {
-    var p = D.propById[b.propertyId] || {}, wifi = p.wifi || [];
-    return {
-      property: p.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
-      door_code: b.doorCode, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking,
-      id_link: O.ws().domain + '/id/' + b.id.toLowerCase(), guest_app_link: O.ws().domain + '/stay/' + b.id.toLowerCase()
+  /* the values of a step's message for a booking. The door code (and for a unit type the unit number and Wi-Fi) only
+     go into a message sent from 30 minutes before check-in; earlier steps get guest-app wording (O.guestmsg). */
+  function ciOf(b) { var p = D.propById[b.propertyId], t = O.unitType(b.unitTypeId) || O.typeOf(p); return O.guestmsg.ciTimeOf(b, p, t && O.building(t.buildingId)); }
+  function vars(b, stepId) {
+    var p = D.propById[b.propertyId] || {}, gp = O.guestPlace(b), wifi = p.wifi || [], link = O.ws().domain + '/stay/' + b.id.toLowerCase();
+    var v = {
+      property: gp.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
+      door_code: b.doorCode, unit_no: gp.typed ? p.unitNo || '' : '', checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking,
+      id_link: O.ws().domain + '/id/' + b.id.toLowerCase(), guest_app_link: link
     };
+    if (gp.typed && v.parking) v.parking = 'the building car park (your bay is in the guest app)';
+    var ci = ciOf(b), sendAt = stepId ? O.guestmsg.stepSendAt(stepId, b, ci) : D.NOW;
+    return O.guestmsg.guardVars(v, { b: b, sendAt: sendAt, ciTime: ci, typed: gp.typed, link: link });
   }
-  function fill(text, b) {
-    var v = b ? vars(b) : null;
-    return esc(text).replace(/\{(\w+)\}/g, function (m, k) { return v && v[k] != null ? '<span class="f">' + esc(v[k]) + '</span>' : '<span class="v">{' + k + '}</span>'; });
+  function fill(text, b, stepId) {
+    var g = b ? vars(b, stepId) : null, v = g && g.vars;
+    var out = esc(text).replace(/\{(\w+)\}/g, function (m, k) { return v && v[k] != null ? '<span class="f">' + esc(v[k]) + '</span>' : '<span class="v">{' + k + '}</span>'; });
+    var used = g ? g.held.filter(function (k) { return text.indexOf('{' + k + '}') >= 0; }) : [];
+    if (used.length) out += '<div class="xs muted" style="margin-top:6px">' + esc('This message goes out before ' + fmt.time(O.guestmsg.revealAt(b, ciOf(b)).slice(11)) + ' on ' + d.fmt(b.checkIn) + ', so ' + (used.indexOf('door_code') >= 0 ? 'the door code points' : 'the unit details point') + ' to the guest app instead.') + '</div>';
+    return out;
   }
 
   /* ---------- pieces ---------- */
@@ -202,7 +211,7 @@
       '<div class="jr">' + A.journey.map(function (s, i) {
         var n = journeyCount(s);
         return '<div class="js' + (s.on ? '' : ' off') + '"><span class="jn">' + (i + 1) + '</span><div style="min-width:0"><div class="jt"><b>' + esc(s.name) + '</b>' + s.channels.map(function (c) { return '<span class="ch">' + esc(c) + '</span>'; }).join('') + (s.on ? '' : U.pill('Paused', 'neutral')) + '</div>' +
-          '<div class="jw">' + O.icon('clock') + esc(s.when) + '</div><div class="msg">' + fill(s.text, sm) + '</div></div>' +
+          '<div class="jw">' + O.icon('clock') + esc(s.when) + '</div><div class="msg">' + fill(s.text, sm, s.id) + '</div></div>' +
           '<div class="jr-side"><button type="button" class="switch' + (s.on ? ' on' : '') + '" role="switch" aria-checked="' + s.on + '" aria-label="' + esc(s.name) + ' on or off" data-jtog="' + s.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n"><b>' + fmt.num(n) + '</b> sent, 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-jedit="' + s.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
       }).join('') + '</div>' +
       '<div class="card-foot">Messages go out in the guest\'s language when we know it. Prototype: messages are not really sent.</div></div>';
@@ -263,9 +272,9 @@
     if (!canEdit()) { U.toast(WHY_EDIT, 'bad'); return; }
     var s = AU().journey.filter(function (x) { return x.id === id; })[0], sm = (st.sample && D.booking(st.sample)) || samples()[0] || null;
     if (!s) return;
-    var VARS = ['guest_first', 'property', 'checkin_time', 'checkout_time', 'door_code', 'wifi_name', 'wifi_password', 'parking', 'id_link', 'guest_app_link'];
+    var VARS = ['guest_first', 'property', 'checkin_time', 'checkout_time', 'door_code', 'unit_no', 'wifi_name', 'wifi_password', 'parking', 'id_link', 'guest_app_link'];
     var CH = ['WhatsApp', 'Email', 'SMS', 'Smart lock', 'Booking platform'];
-    var body = '<div class="au-modal stack"><div class="field"><label for="au-when">When it goes out</label><input class="input" id="au-when" name="when" value="' + esc(s.when) + '"></div>' +
+    var body = '<div class="au-modal stack"><div class="field"><label for="au-when">When it goes out</label><input class="input" id="au-when" name="when" value="' + esc(s.when) + '">' + (s.id === 'j4' ? '<div class="hint">The door code goes out 30 minutes before check-in, when the guest app shows it. Messages sent earlier show the guest-app link instead of {door_code}.</div>' : '') + '</div>' +
       '<div class="field"><span class="label">Send on</span><div class="chk">' + CH.map(function (c) { return '<label><input type="checkbox" name="ch" value="' + c + '"' + (s.channels.indexOf(c) >= 0 ? ' checked' : '') + '>' + c + '</label>'; }).join('') + '</div></div>' +
       '<div class="field"><label for="au-text">Message</label><textarea class="textarea" id="au-text" name="text" rows="4">' + esc(s.text) + '</textarea><div class="vars" aria-label="Insert a variable">' + VARS.map(function (v) { return '<button type="button" data-var="' + v + '">{' + v + '}</button>'; }).join('') + '</div></div>' +
       '<div class="field"><span class="label">' + (sm ? 'Preview for ' + esc(sm.guest.name) + ' at ' + esc(shortOf(sm.propertyId)) : 'Preview (the highlighted words are filled in for each guest)') + '</span><div class="preview" data-prev></div></div></div>';
@@ -273,7 +282,7 @@
       title: 'Edit step: ' + s.name, sub: 'Changes apply to messages not sent yet', body: body, size: 'wide',
       onOpen: function (el) {
         var ta = O.$('[name=text]', el);
-        function paint() { O.$('[data-prev]', el).innerHTML = fill(ta.value, sm); }
+        function paint() { O.$('[data-prev]', el).innerHTML = fill(ta.value, sm, s.id); }
         ta.addEventListener('input', paint);
         el.addEventListener('click', function (e) { var b = e.target.closest('[data-var]'); if (!b) return; var p = ta.selectionStart || ta.value.length; ta.value = ta.value.slice(0, p) + '{' + b.dataset.var + '}' + ta.value.slice(ta.selectionEnd || p); ta.focus(); paint(); });
         paint();
@@ -381,8 +390,8 @@
         ['Booking confirmed', 'Invoice and welcome message go out'],
         ['ID verified', 'Guest uploads IC or passport from the link'],
         ['House rules accepted', rulesOn ? 'Ticked and signed in the guest app' : 'Paused: guests can skip the house rules'],
-        ['Code sent 24 hours before', codeOn ? 'By WhatsApp and set on the smart lock' : 'Paused: send codes by hand'],
-        ['Code works from check-in time', 'Expires at check-out time']
+        ['Code sent 30 minutes before check-in', codeOn ? 'By WhatsApp and set on the smart lock' : 'Paused: send codes by hand'],
+        ['Code works from 30 minutes before check-in', 'Expires at check-out time']
       ];
       if (st.group === 'new') st.group = 'all';
       var canAdd = O.allowed('properties') && O.can('properties.create');

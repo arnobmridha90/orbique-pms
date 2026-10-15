@@ -1,6 +1,7 @@
 /* Guest App (v4)
    1. Settings and content of the guest app (D.guestApp, config blob), guest requests and damage reports (demo seeds).
-   2. stayInfo(): the stage of a stay and the door-code timing rule. supabase/migrations/0003_guest.sql mirrors it exactly.
+   2. stayInfo(): the stage of a stay and the door-code timing rule. supabase/migrations/0003_guest.sql mirrors it exactly
+      (0008_guest_units.sql re-creates guest__stay and guest__payload: unit types, unit number and door code from 30 minutes before check-in).
    3. O.guestApi (local): get(token) / act(token, action, args) over D. In production app/server/auth.js replaces it with
       the database functions guest_get / guest_act, which return the same payload. Contract: docs/notes/v4-guestapp.md.
    4. O.guestMode(root, token, opts): the guest's own app (no sign-in), full screen, phone first. Reads only O.guestApi.
@@ -34,7 +35,7 @@
     requireCheckin: true,      /* online check-in must be done before the door code shows */
     requireId: true,           /* and a verified ID */
     requireName: true,         /* guests type their full name to sign the house rules */
-    codeLeadHours: 0,          /* the code shows this many hours before the check-in time (never before the arrival day) */
+    codeLeadHours: 0,          /* no longer used: the code shows 30 minutes before check-in, with the unit number (owner decision 2026-10-15) */
     reviewPrompt: true,        /* ask for feedback after check-out */
     welcome: 'Everything for your stay is here: online check-in, your door code, Wi-Fi, the house guide and a direct line to our team.',
     contact: { phone: '', whatsapp: '', hours: '8 AM to 11 PM' },
@@ -242,12 +243,15 @@
   function leadHours(c) { var n = parseInt(c && c.codeLeadHours, 10); return isNaN(n) ? 0 : Math.max(0, Math.min(12, n)); }
   function on(c, k) { return !(c && c[k] === false); } /* settings that default to on */
   var ACTIVE = ['arrival', 'inhouse', 'checkout'];
-  /* b: booking, c: guest app settings, now: 'YYYY-MM-DDTHH:MM' Malaysia time */
-  function stayInfo(b, c, now) {
-    var ciT = hhmm(b.checkInTime, '15:00'), coT = hhmm(b.checkOutTime, '11:00');
+  /* the guest sees the unit number (typed units) from this many minutes before check-in; the door code shows at the same time */
+  var UNIT_REVEAL_MIN = 30;
+  /* b: booking, c: guest app settings, now: 'YYYY-MM-DDTHH:MM' Malaysia time, ciFallback: the unit's or building's check-in time */
+  function stayInfo(b, c, now, ciFallback) {
+    var ciT = hhmm(b.checkInTime, hhmm(ciFallback, '15:00')), coT = hhmm(b.checkOutTime, '11:00');
     var ciAt = b.checkIn + 'T' + ciT, coAt = b.checkOut + 'T' + coT, today = now.slice(0, 10);
-    var reveal = addMinutes(ciAt, -leadHours(c) * 60);
-    if (reveal < b.checkIn + 'T00:00') reveal = b.checkIn + 'T00:00';
+    var unitAt = addMinutes(ciAt, -UNIT_REVEAL_MIN);
+    /* door code timing (owner decision): from the unit reveal time, for every booking. codeLeadHours is no longer used. */
+    var reveal = unitAt;
     var state = today > d.add(b.checkOut, 30) ? 'expired' : b.status === 'cancelled' ? 'cancelled'
       : (now >= coAt || b.status === 'checked_out') ? 'past' : today < b.checkIn ? 'upcoming'
         : today === b.checkIn ? 'arrival' : today < b.checkOut ? 'inhouse' : 'checkout';
@@ -259,7 +263,7 @@
       if (now < reveal) waiting.push('time');
       if (b.codeStatus === 'cancelled' || b.codeStatus === 'expired' || !b.doorCode) waiting.push('host');
     } else waiting.push('ended');
-    return { state: state, ciTime: ciT, coTime: coT, ciAt: ciAt, coAt: coAt, revealAt: reveal, checkinDone: done, idVerified: idOk, waiting: waiting, visible: !waiting.length };
+    return { state: state, ciTime: ciT, coTime: coT, ciAt: ciAt, coAt: coAt, revealAt: reveal, unitAt: unitAt, checkinDone: done, idVerified: idOk, waiting: waiting, visible: !waiting.length };
   }
 
   /* =================================================================
@@ -339,8 +343,25 @@
     return t && t.status === 'done' ? 'fixed' : (r.when === 'arrival' || isObj(r.noted)) ? 'logged' : 'open';
   }
   /* the guest's payload: only what this guest may see */
+  /* typed units (mirrored in 0008_guest_units.sql): guests see the building + type name and the building's address; the unit
+     number (and the Wi-Fi, whose name may carry it) only from s.unitAt (30 minutes before check-in) while the stay is on */
+  function guestProperty(b, p, s) {
+    var t = (b.unitTypeId && O.unitType(b.unitTypeId)) || O.typeOf(p);
+    var on = ACTIVE.indexOf(s.state) >= 0, shown = on && nowLocal() >= s.unitAt;
+    if (!t) return p ? { name: nz(p.name), area: p.area || '', address: p.address || '', type: p.type || '', beds: p.beds == null ? null : p.beds, parking: p.parking || '', lockBrand: p.lockBrand || '', photo: photoOf(p), wifi: on ? wifiOf(p) : null } : null;
+    var bd = O.building(t.buildingId) || {};
+    return {
+      name: O.typeTitle(t), area: (p && p.area) || bd.city || '', address: bd.address || '', type: (p && p.type) || '', beds: p && p.beds != null ? p.beds : (t.beds == null ? null : t.beds),
+      parking: (p && p.parking) || '', lockBrand: (p && p.lockBrand) || '', photo: photoOf(p), wifi: shown && p ? wifiOf(p) : null,
+      unitType: t.name || '', unitNo: shown && p ? nz(p.unitNo) : null, unitAt: s.unitAt
+    };
+  }
+  function ciFallbackOf(b) {
+    var p = D.propById[b.propertyId], t = (b.unitTypeId && O.unitType(b.unitTypeId)) || O.typeOf(p), bd = t ? O.building(t.buildingId) : null;
+    return (p && hhmm(p.checkInTime, null)) || (bd && hhmm(bd.checkInTime, null)) || null;
+  }
   function buildPayload(b) {
-    var c = cfg(), now = nowLocal(), s = stayInfo(b, c, now), p = D.propById[b.propertyId] || null, brand = localBrand();
+    var c = cfg(), now = nowLocal(), s = stayInfo(b, c, now, ciFallbackOf(b)), p = D.propById[b.propertyId] || null, brand = localBrand();
     if (s.state === 'expired') return { ok: false, error: 'expired', brand: brand };
     var conv = convFor(b.id), gc = isObj(b.guestCheckin) ? b.guestCheckin : null, ra = isObj(b.rulesAccepted) ? b.rulesAccepted : null;
     var msgs = conv && Array.isArray(conv.messages) ? conv.messages.filter(function (m) { return isObj(m) && (m.from === 'guest' || m.from === 'staff') && m.idPhoto !== true; }).slice(-100).map(msgOut) : [];
@@ -351,7 +372,7 @@
       ok: true, v: 1, now: now, state: s.state, readOnly: !!(O.sync && O.sync.readOnly),
       brand: brand,
       booking: { ref: b.id, guestName: (b.guest && b.guest.name) || 'Guest', guests: +b.guests || 1, nights: +b.nights || d.diff(b.checkIn, b.checkOut), checkIn: b.checkIn, checkOut: b.checkOut, checkInTime: s.ciTime, checkOutTime: s.coTime, channel: b.channel || 'direct', status: b.status || 'confirmed' },
-      property: p ? { name: nz(p.name), area: p.area || '', address: p.address || '', type: p.type || '', beds: p.beds == null ? null : p.beds, parking: p.parking || '', lockBrand: p.lockBrand || '', photo: photoOf(p), wifi: ACTIVE.indexOf(s.state) >= 0 ? wifiOf(p) : null } : null,
+      property: guestProperty(b, p, s),
       checkin: { done: s.checkinDone, at: gc ? nz(gc.at) : ra ? nz(ra.at) : null, names: gc && Array.isArray(gc.names) ? gc.names : [], arrivalTime: gc ? nz(gc.arrivalTime) : null, signedName: gc ? nz(gc.signedName) : ra ? nz(ra.name) : null, idSubmitted: !!b.idSubmittedAt, idVerified: s.idVerified },
       door: { visible: s.visible, code: s.visible ? String(b.doorCode) : null, from: s.revealAt, until: s.coAt, waitingFor: s.waiting, helpOpen: (D.guestRequests || []).some(function (r) { return r.bookingId === b.id && r.type === 'code' && r.status === 'new'; }) },
       app: appFor(c, b.propertyId, (O.ws() || {}).phone),
@@ -384,7 +405,7 @@
   function photosPlural(n) { return n + ' photo' + (n === 1 ? '' : 's'); }
   function localAct(b, action, args) {
     args = isObj(args) ? args : {};
-    var c = cfg(), now = nowLocal(), s = stayInfo(b, c, now), st = s.state, i;
+    var c = cfg(), now = nowLocal(), s = stayInfo(b, c, now, ciFallbackOf(b)), st = s.state, i;
     if (st === 'expired') return errRes('expired');
     if (O.sync && O.sync.readOnly) return errRes('read_only');
     var during = ['upcoming', 'arrival', 'inhouse', 'checkout'].indexOf(st) >= 0;
@@ -489,7 +510,7 @@
     }
   };
   O.guestApi = localApi;
-  O.guestStay = function (b) { return stayInfo(b, cfg(), D.NOW); }; /* for other pages: stage and door-code timing of a booking */
+  O.guestStay = function (b) { return stayInfo(b, cfg(), D.NOW, ciFallbackOf(b)); }; /* for other pages: stage and door-code timing of a booking */
 
   /* =================================================================
      4. THE GUEST APP: O.guestMode(root, token, opts)
@@ -692,6 +713,7 @@
       return '<section class="gx-hero' + (pr.photo ? ' ph' : '') + '">' + (pr.photo ? '<img class="gx-hero-img" src="' + esc(pr.photo) + '" alt="">' : '<svg class="gx-hero-art" viewBox="0 0 400 160" preserveAspectRatio="none" aria-hidden="true"><path d="M0 120 70 82 130 104 210 60 290 96 400 50V160H0z" fill="currentColor" opacity="0.10"/><path d="M0 140 90 112 170 128 260 98 340 120 400 104V160H0z" fill="currentColor" opacity="0.10"/></svg>') +
         '<div class="gx-hero-in"><div class="gx-eyebrow">' + esc(eyebrow) + '</div><h1>' + esc(hi) + '</h1>' +
         '<div class="gx-hero-p">' + esc(pr.name || 'Your stay') + (pr.area ? ' · ' + esc(pr.area) : '') + '</div>' +
+        (pr.unitType ? '<div class="gx-unit">' + (pr.unitNo ? '<span>Your unit</span><b>' + esc(pr.unitNo) + '</b>' : '<span>Unit type</span><b>' + esc(pr.unitType) + '</b>' + (st === 'past' || st === 'cancelled' ? '' : '<i>Your unit number appears here at ' + esc(atLabel(pr.unitAt, now)) + '</i>')) + '</div>' : '') +
         '<div class="gx-dates"><div><span>Check-in</span><b>' + esc(dayLabel(b.checkIn)) + '</b><i>from ' + esc(fmt.time(b.checkInTime)) + '</i></div><div class="gx-dates-arrow" aria-hidden="true">' + ic('right') + '</div><div><span>Check-out</span><b>' + esc(dayLabel(b.checkOut)) + '</b><i>by ' + esc(fmt.time(b.checkOutTime)) + '</i></div></div>' +
         '<div class="gx-hero-s">' + fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest') + ' · Booking ' + esc(b.ref) + '</div></div></section>';
     }
@@ -1074,7 +1096,7 @@
   function guestRows() {
     var c = cfg(), now = D.NOW, today = D.TODAY, lim = d.add(today, 7);
     return D.bookings.filter(function (b) { return b && b.checkIn && b.checkOut && ((b.status !== 'cancelled' && b.checkOut >= today && b.checkIn <= lim) || b.id === st.hl); })
-      .map(function (b) { return { b: b, s: stayInfo(b, c, now) }; })
+      .map(function (b) { return { b: b, s: stayInfo(b, c, now, ciFallbackOf(b)) }; })
       .filter(function (x) { return ['upcoming', 'arrival', 'inhouse', 'checkout'].indexOf(x.s.state) >= 0 || x.b.id === st.hl; })
       .sort(function (x, y) { var a = x.b.checkIn + x.s.ciTime, z = y.b.checkIn + y.s.ciTime; return a < z ? -1 : a > z ? 1 : 0; });
   }
@@ -1173,7 +1195,7 @@
     if (b.codeStatus === 'held' && (done || !on(c, 'requireCheckin'))) b.codeStatus = 'scheduled';
     var gone = stripIdPhotos(convFor(b.id), 'ID photo, deleted after the check');
     sysNote(b, 'ID verified by ' + staffName(O.state.viewer) + '.' + (gone ? ' The photo was deleted.' : ''), D.NOW, true);
-    var s = stayInfo(b, c, D.NOW);
+    var s = stayInfo(b, c, D.NOW, ciFallbackOf(b));
     U.toast('ID verified for ' + guestName(b) + (s.visible ? '. The door code now shows in their app.' : s.waiting.indexOf('checkin') >= 0 ? '. The code shows once they check in online.' : '. The code shows from ' + atLabel(s.revealAt, D.NOW) + '.'));
     changed('guestapp-id'); draw();
   }
@@ -1383,17 +1405,15 @@
       '<button type="button" class="switch' + (val ? ' on' : '') + '" role="switch" aria-checked="' + val + '" aria-label="' + esc(label) + '" data-ga-opt="' + key + '"' + (allowed ? '' : ' disabled title="' + esc(why) + '"') + '></button></div>';
   }
   function settingsTabHTML() {
-    var c = cfg(), lead = leadHours(c), edC = writable() && canCode(), ed = canEdit(), noCode = 'Your access does not include door codes', noEdit = 'Your access does not include editing the guest app';
-    var from = fmt.time(addMinutes('2026-01-01T15:00', -lead * 60).slice(11, 16));
+    var c = cfg(), edC = writable() && canCode(), ed = canEdit(), noCode = 'Your access does not include door codes', noEdit = 'Your access does not include editing the guest app';
+    var from = fmt.time(addMinutes('2026-01-01T15:00', -UNIT_REVEAL_MIN).slice(11, 16));
     var cond = [on(c, 'requireCheckin') ? 'they have checked in online' : null, on(c, 'requireId') ? 'their ID is verified' : null].filter(Boolean);
     var rule = 'A guest checking in at ' + fmt.time('15:00') + ' sees the door code from ' + from + ' on the arrival day' + (cond.length ? ', once ' + cond.join(' and ') : '') + '.';
-    var leadOpts = [[0, 'At the check-in time'], [1, '1 hour before check-in'], [2, '2 hours before check-in'], [3, '3 hours before check-in'], [6, '6 hours before check-in']];
-    if (!leadOpts.some(function (o) { return o[0] === lead; })) leadOpts.push([lead, lead + ' hours before check-in']);
     var services = Array.isArray(c.services) ? c.services : [];
     return (!writable() ? viewOnly('changes') : '') +
       '<div class="ga-sets">' +
       '<section class="card"><div class="card-head"><h3>Door code</h3>' + (edC ? '' : '<span class="sub">' + esc(noCode) + '</span>') + '</div><div class="card-body">' +
-        '<div class="ga-set"><div class="ga-set-t"><b>When the code shows</b><span>Never before the arrival day.</span></div><select class="select ga-leadsel" data-ga-lead aria-label="When the door code shows"' + (edC ? '' : ' disabled title="' + esc(noCode) + '"') + '>' + leadOpts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === lead ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></div>' +
+        '<div class="ga-set"><div class="ga-set-t"><b>When the code shows</b><span>30 minutes before the check-in time, together with the unit number.</span></div></div>' +
         switchRow('requireCheckin', 'Online check-in first', 'Guests confirm their names and arrival time and accept the house rules.', edC, noCode) +
         switchRow('requireId', 'Verified ID first', 'Guests add a passport or MyKad photo and your team marks it verified.', edC, noCode) +
         '<div class="note brand ga-rule">' + esc(rule) + '</div></div></section>' +

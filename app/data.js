@@ -616,6 +616,92 @@
     return round5(rateFor(pid, iso) * comp.priceFactor * (0.95 + r() * 0.1));
   }
 
+  /* ---------------- a building with unit types (Channex plan 2.1) ----------------
+     Seri Saujana Residences sells two unit types: Deluxe (units 21-1, 22-6, 22-9) and Deluxe Supreme (46-1, 49b).
+     Platforms sell the type; Orbique picks the unit (O.assign). Unit numbers are for the team only.
+     Generated after everything else, with their own random streams, so the rest of the demo stays exactly as it was. */
+  var buildings = [
+    { id: 'BD-saujana', name: 'Seri Saujana Residences', address: '2 Jalan Saujana Indah, Bukit Jalil, 57000 Kuala Lumpur', city: 'Kuala Lumpur', state: 'Wilayah Persekutuan', zip: '57000', country: 'MY', currency: 'MYR', propertyType: 'apartment', checkInTime: '15:00', checkOutTime: '11:00', createdAt: '2026-07-20T10:00' }
+  ];
+  var unitTypes = [
+    { id: 'UT-deluxe', buildingId: 'BD-saujana', name: 'Deluxe', maxGuests: 4, beds: 2, description: 'Two bedrooms, city view, on the middle floors.', order: 1, createdAt: '2026-07-20T10:05' },
+    { id: 'UT-supreme', buildingId: 'BD-saujana', name: 'Deluxe Supreme', maxGuests: 6, beds: 3, description: 'Three bedrooms on the high floors, with a balcony.', order: 2, createdAt: '2026-07-20T10:06' }
+  ];
+  var SAUJANA = [
+    ['ss211', '21-1', 'UT-deluxe', 's3', '6721', ['Saujana21-1', 'jalil2026']], ['ss226', '22-6', 'UT-deluxe', 's5', '8264', ['Saujana22-6', 'saujana226']],
+    ['ss229', '22-9', 'UT-deluxe', 's3', '9312', ['Saujana22-9', 'indah229']], ['ss461', '46-1', 'UT-supreme', 's5', '4617', ['Saujana46-1', 'skyline461']],
+    ['ss49b', '49b', 'UT-supreme', 's3', '4925', ['Saujana49b', 'tower49b']]
+  ];
+  SAUJANA.forEach(function (u) {
+    var sup = u[2] === 'UT-supreme';
+    var p = { id: u[0], name: 'Saujana ' + u[1], short: 'Saujana ' + u[1], type: sup ? '3BR apartment' : '2BR apartment', beds: sup ? 3 : 2, area: 'Bukit Jalil, Kuala Lumpur', city: 'Kuala Lumpur',
+      address: 'Unit ' + u[1] + ', Seri Saujana Residences, 2 Jalan Saujana Indah, 57000 Kuala Lumpur', base: sup ? 380 : 260, maxGuests: sup ? 6 : 4, owner: 'Saujana Holdings', housekeeper: u[3],
+      lockCode: u[4], lockBrand: 'Igloohome', wifi: u[5], parking: 'Basement P2', checkInTime: '15:00', checkOutTime: '11:00',
+      buildingId: 'BD-saujana', unitTypeId: u[2], unitNo: u[1], createdAt: '2026-07-20T10:10' };
+    properties.push(p); propById[p.id] = p;
+  });
+  var typedFrom = bookings.length;
+  function typed(b, typeId) { b.unitTypeId = typeId; b.assignment = { how: 'auto', by: null, at: b.createdAt, locked: false }; return b; }
+  var sr = rng(5150);
+  function saujanaBooking(o) {
+    var p = propById[o.propertyId] || propById[o.unitOf], country = o.country || 'MY';
+    /* phone and guest count from this stream, never the shared one (the rest of the demo must not change) */
+    var opts = Object.assign({}, o, { propertyId: p.id, phone: phoneFor(country, sr()) });
+    if (!opts.guests) opts.guests = 1 + Math.floor(sr() * (p.beds * 2));
+    if (!opts.status) opts.status = statusFor(o.checkIn, o.checkOut);
+    var b = makeBooking(opts);
+    if (o.unassigned) { b.propertyId = null; b.needsUnit = true; }
+    if (b.idVerified === undefined) b.idVerified = b.checkIn <= TODAY;
+    if (b.codeStatus === undefined) b.codeStatus = b.status === 'cancelled' ? 'cancelled' : b.checkOut <= TODAY ? 'expired' : b.checkIn < TODAY ? 'sent' : (b.idVerified ? 'scheduled' : 'held');
+    bookings.push(typed(b, propById[o.unitOf || o.propertyId].unitTypeId));
+    return b;
+  }
+  /* the story: one Deluxe guest arrives today (unit number shows at 2:30 PM), a Deluxe Supreme family is in-house, and an
+     Agoda booking for Deluxe on 11 to 14 Oct has no unit yet: each night one Deluxe unit is free, but never the same one */
+  saujanaBooking({ propertyId: 'ss211', guest: 'Aiko Suzuki', country: 'JP', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-09', createdAt: '2026-09-18T22:14', checkInTime: '15:00', guests: 2, idVerified: true, codeStatus: 'scheduled' });
+  saujanaBooking({ propertyId: 'ss461', guest: 'Wang Fang', country: 'CN', channel: 'agoda', checkIn: '2026-10-04', checkOut: '2026-10-08', createdAt: '2026-09-09T08:31', guests: 5, idVerified: true, codeStatus: 'sent' });
+  saujanaBooking({ propertyId: 'ss211', guest: 'Nur Aisyah', country: 'MY', channel: 'airbnb', checkIn: '2026-10-10', checkOut: '2026-10-12', createdAt: '2026-09-27T13:02', guests: 3 });
+  saujanaBooking({ propertyId: 'ss226', guest: 'Haruto Sato', country: 'JP', channel: 'booking', checkIn: '2026-10-12', checkOut: '2026-10-15', createdAt: '2026-09-30T19:45', guests: 2 });
+  saujanaBooking({ propertyId: 'ss229', guest: 'Chen Jia Hui', country: 'TW', channel: 'airbnb', checkIn: '2026-10-09', checkOut: '2026-10-16', createdAt: '2026-09-15T07:20', guests: 4 });
+  saujanaBooking({ unitOf: 'ss226', unassigned: true, guest: 'Lucas Silva', country: 'BR', channel: 'agoda', checkIn: '2026-10-11', checkOut: '2026-10-14', createdAt: '2026-10-05T21:18', guests: 2, idVerified: false, codeStatus: 'held' });
+  saujanaBooking({ propertyId: 'ss49b', guest: 'Mia Johansson', country: 'SE', channel: 'booking', checkIn: '2026-10-09', checkOut: '2026-10-12', createdAt: '2026-10-02T16:40', guests: 4, status: 'pending', idVerified: false, codeStatus: 'held' });
+  /* the rest of the calendar, like the other units */
+  SAUJANA.forEach(function (u, i) {
+    var r = rng(9100 + i * 31), pid = u[0], dd = '2026-08-01';
+    while (dd < GEN_TO) {
+      var gap = r() < 0.7 ? (r() < 0.6 ? 0 : 1) : 1 + Math.floor(r() * 4);
+      var ci = O.d.add(dd, gap), co = O.d.add(ci, weighted([[1, 0.14], [2, 0.32], [3, 0.26], [4, 0.14], [5, 0.08], [7, 0.06]], r));
+      if (co > GEN_TO) break;
+      var held = u[2] === 'UT-deluxe' && ci < '2026-10-17' && co > '2026-10-08'; /* keep the story above as it is */
+      if (held || overlaps(pid, ci, co)) { dd = O.d.add(ci, 1); continue; }
+      var lead = weighted([[2, 0.15], [7, 0.25], [14, 0.25], [30, 0.2], [60, 0.15]], r) + Math.floor(r() * 4);
+      var created = O.d.add(ci, -lead);
+      if (created > TODAY) { dd = co; continue; }
+      var g = guestPool[Math.floor(r() * guestPool.length)], st = statusFor(ci, co);
+      if (r() < 0.04) st = 'cancelled'; else if (ci > TODAY && r() < 0.05) st = 'pending';
+      var hh = 7 + Math.floor(r() * 3), mm = Math.floor(r() * 60);
+      var b = saujanaBooking({ propertyId: pid, guest: g[0], country: g[1], channel: weighted([['booking', 0.34], ['agoda', 0.3], ['airbnb', 0.26], ['direct', 0.1]], r), checkIn: ci, checkOut: co, status: st, createdAt: created + 'T' + pad2(hh) + ':' + pad2(mm), idVerified: ci <= TODAY ? true : r() < 0.55 });
+      if (st === 'cancelled') b.cancelledAt = O.d.add(created, Math.max(1, Math.floor(lead / 2)));
+      dd = co;
+    }
+  });
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  /* invoices for the building's bookings continue the numbering */
+  bookings.slice(typedFrom).sort(function (a, b) { return a.createdAt < b.createdAt ? -1 : 1; }).forEach(function (b) {
+    if (b.status === 'cancelled') return;
+    b.invoiceNo = 'INV-' + b.createdAt.slice(0, 4) + '-' + (invSeq++);
+    b.invoiceDate = b.createdAt.slice(0, 10);
+    var paidOn = b.status === 'pending' ? null : b.channel === 'direct' ? O.d.add(b.checkIn, -7) : b.createdAt.slice(0, 10);
+    if (paidOn && paidOn < b.createdAt.slice(0, 10)) paidOn = b.createdAt.slice(0, 10);
+    if (paidOn && paidOn <= TODAY) {
+      b.paidAt = paidOn; b.receiptNo = 'RCP-' + paidOn.slice(0, 4) + '-' + (rcpSeq++);
+      b.payMethod = b.channel === 'direct' ? 'FPX online banking' : 'Paid via ' + channels[b.channel].name;
+    }
+    b.invoiceSent = O.d.diff(b.createdAt.slice(0, 10), TODAY) >= 1 ? { via: b.channel === 'direct' ? 'WhatsApp' : 'Email', at: b.createdAt.slice(0, 10) } : null;
+    b.receiptSent = b.paidAt && O.d.diff(b.paidAt, TODAY) >= 1 ? { via: 'Email', at: b.paidAt } : null;
+  });
+  bookings.sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : 0; });
+
   /* ---------------- metrics (shared so every page agrees) ---------------- */
   function live(b) { return b.status !== 'cancelled'; }
   function nightsIn(b, from, to) { /* nights of booking b that fall within [from, to] inclusive */
@@ -691,7 +777,7 @@
     /* a demo date literal written in page code, moved to match the story date: D.sd('2026-10-05T16:20'). Call it at render time. */
     sd: function (iso) { var D = O.data; if (!iso || !D.SHIFT) return iso; return O.d.add(iso.slice(0, 10), D.SHIFT) + iso.slice(10); },
     invCats: invCats, invItems: invItems, invMoves: invMoves, itemById: itemById, checklists: checklists, capexTypes: CAPEX_TYPES,
-    channels: channels, channelOrder: channelOrder, staff: staff, properties: properties, propById: propById,
+    channels: channels, channelOrder: channelOrder, staff: staff, properties: properties, propById: propById, buildings: buildings, unitTypes: unitTypes,
     bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies,
     expenses: expenses, expenseTypes: expenseTypes, payMethods: payMethods, events: events,
     rateFor: rateFor, eventFor: eventFor, compSet: compSet, compPrice: compPrice, countryName: COUNTRY,
