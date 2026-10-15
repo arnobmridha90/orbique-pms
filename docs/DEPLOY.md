@@ -180,16 +180,22 @@ read only by Orbique's server code; none of them is ever sent to the browser or 
 | `CHANNEX_WEBHOOK_SECRET` | The signing secret Channex uses for the messages it sends when a booking arrives. Orbique refuses messages without a correct signature | Channex: signing keys (the secret is shown once when the key is created) |
 | `CHANNEX_WEBHOOK_TOKEN` | A long random password Channex sends with each message instead, only if signing keys are not available to you | Make one up (for example 40 random letters and digits) |
 | `CHANNEX_WORKER_SECRET` | A long random password that lets the database's once-a-minute timer start Orbique's sending job | Make one up (for example 40 random letters and digits) |
-| `CHANNEX_ORG_ALLOWLIST` | While testing: the workspace ids (comma separated) allowed to connect real channels. Every other workspace keeps the practice copy | The `id` column of the `orgs` table (Supabase dashboard → **Table Editor** → `orgs`) |
+| `CHANNEX_ORG_ALLOWLIST` | While testing: the workspace ids (comma separated) allowed to connect real channels. Every other workspace keeps the practice copy | The `id` column of the `orgs` table (Supabase dashboard → **Table Editor** → `orgs`) (on staging, an empty list lets no workspace connect; on production, every workspace) |
+| `CHANNEX_SIGNING_KEY_ID` | The id of the Channex signing key whose secret is `CHANNEX_WEBHOOK_SECRET`, so the booking webhook is created signed | Channex: signing keys (the id next to the key) |
 
 Redeploy after adding or changing them (step 5). Then open `https://<your-site>/api/health`: `"channex":true` means the
 API key is set. It does not show the key, and it does not prove that the key works.
+
+Then, signed in as an Orbique platform admin, use **Channel manager setup** (the `admin-setup` action of `/api/channex`)
+once: it creates the booking webhook in Channex pointing at `APP_URL/api/channex-webhook` (`APP_URL`, else the Vercel
+production address).
 
 If the API key ever leaks, delete it in Channex, create a new one and update `CHANNEX_API_KEY` in Vercel.
 
 For developers working without a Channex key: `node scripts/channex-mock.mjs` runs a stand-in Channex on your computer.
 Start Orbique with `CHANNEX_BASE_URL=http://127.0.0.1:8899/api/v1` and any `CHANNEX_API_KEY`. The top of
-`scripts/channex-mock.mjs` lists what it can do (including simulated rate limits and errors).
+`scripts/channex-mock.mjs` lists what it can do (including simulated rate limits and errors). `node scripts/dev.mjs --worker` also
+runs the sending job every 20 seconds (needs `CHANNEX_WORKER_SECRET`), standing in for the database timer.
 
 ## Updating Orbique later
 

@@ -4,7 +4,7 @@
  *   channexConfig()                               the CHANNEX_* settings (see docs/DEPLOY.md)
  *   channexRequest(method, path, body, opts)      one call; resolves {status, data, meta, errors} or throws ChannexError
  *   verifySignature(secret, raw, ts, sigs, opts)  checks a signed webhook (HMAC-SHA256 over `${ts}.${raw}`)
- *   logCall(sb, row)                              the call log (channex_calls); a stub until the table exists
+ *   logCall(sb, row)                              the call log (channex_calls)
  *
  * Errors are sorted into three kinds the worker acts on:
  *   rate_limited  429: pause the property and back off
@@ -147,6 +147,12 @@ export function taskIds(result) {
 /** Warnings from an ARI answer: Channex drops invalid items but still answers 200. */
 export const warnings = (result) => (result && result.meta && Array.isArray(result.meta.warnings) ? result.meta.warnings : []);
 
+/** A channel from GET /channels, as Orbique stores and shows it (channex_properties.channels). */
+export function channelView(r) {
+  const a = (r && r.attributes) || {};
+  return { id: (r && r.id) || a.id || null, channel: a.channel || null, title: a.title || null, isActive: a.is_active === true };
+}
+
 /* ---------- webhook signatures ---------- */
 
 export const SIGNATURE_WINDOW_S = 300;
@@ -217,7 +223,19 @@ export function callRow(row) {
   };
 }
 
-/** Record a call in channex_calls. Stub until the table exists (migration 0006): it only shapes the row. */
+/**
+ * Record a call in channex_calls (migration 0006) and resolve the row (with its id when stored).
+ * Without a client it only shapes the row. A failed insert is logged, never thrown: the log must not break a send.
+ */
 export async function logCall(sb, row) {
-  return callRow(row);
+  const out = callRow(row);
+  if (!sb) return out;
+  try {
+    const res = await sb.from('channex_calls').insert(out).select('id').single();
+    if (res.error) console.error('[channex] call log:', res.error.message);
+    else if (res.data) out.id = res.data.id;
+  } catch (e) {
+    console.error('[channex] call log:', e && e.message ? e.message : String(e));
+  }
+  return out;
 }
