@@ -114,6 +114,48 @@
     return m;
   }
 
+  /* ---------------- edit company and owner details ---------------- */
+  function openEdit(o, staffId) {
+    var owners = o.owners || [];
+    var w = owners.filter(function (x) { return x.staffId === staffId; })[0] || owners[0] || null;
+    var body = O.html('<form class="stack" novalidate>' +
+      '<div class="field"><label for="pf-eco">Company name</label><input class="input" id="pf-eco" maxlength="120" autocomplete="organization" value="' + esc(o.name || '') + '"></div>' +
+      (w ? (owners.length > 1 ? '<div class="field"><label for="pf-ew">Owner</label><select class="select" id="pf-ew">' + owners.map(function (x) { return '<option value="' + esc(x.staffId) + '"' + (x.staffId === w.staffId ? ' selected' : '') + '>' + esc(x.name || x.email || x.staffId) + '</option>'; }).join('') + '</select></div>' : '') +
+        '<div class="form-grid"><div class="field"><label for="pf-eon">Owner\'s name</label><input class="input" id="pf-eon" maxlength="80" autocomplete="name" value="' + esc(w.name || '') + '"></div>' +
+        '<div class="field"><label for="pf-eoe">Owner\'s email</label><input class="input" id="pf-eoe" type="email" inputmode="email" maxlength="254" autocomplete="email" value="' + esc(w.email || '') + '"></div></div>' +
+        '<div class="small muted">A new email becomes the owner\'s sign-in straight away. Their password stays the same. Tell them which email to use next time.</div>'
+        : '<div class="small muted">This workspace has no owner yet, so only the company name can be changed.</div>') +
+      '<div class="auth-err" role="alert" hidden></div></form>');
+    var sel = O.$('#pf-ew', body);
+    if (sel) sel.onchange = function () {
+      w = owners.filter(function (x) { return x.staffId === sel.value; })[0] || w;
+      O.$('#pf-eon', body).value = w.name || ''; O.$('#pf-eoe', body).value = w.email || '';
+    };
+    U.modal({
+      title: 'Edit details', sub: o.name, body: body,
+      actions: [{ label: 'Cancel' }, { label: 'Save changes', kind: 'primary', id: 'pf-esave', onClick: function (close, el) {
+        var btn = O.$('#pf-esave', el), er = O.$('.auth-err', body);
+        function fail(t) { er.textContent = t; er.hidden = false; btn.disabled = false; btn.textContent = 'Save changes'; }
+        var v = { orgId: o.id, company: O.$('#pf-eco', body).value.trim() };
+        if (!v.company) { fail('Enter the company name.'); return false; }
+        if (w) {
+          v.staffId = w.staffId; v.ownerName = O.$('#pf-eon', body).value.trim(); v.ownerEmail = O.$('#pf-eoe', body).value.trim().toLowerCase();
+          if (!v.ownerName) { fail('Enter the owner\'s name.'); return false; }
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.ownerEmail)) { fail('Enter a valid email address for the owner.'); return false; }
+          if (v.ownerName === (w.name || '') && v.ownerEmail === String(w.email || '').toLowerCase()) { delete v.staffId; delete v.ownerName; delete v.ownerEmail; }
+        }
+        if (v.company === o.name && !v.staffId) { close(); U.toast('Nothing changed'); return false; }
+        btn.disabled = true; btn.textContent = 'Saving…'; er.hidden = true;
+        O.auth.api('update-operator', v).then(function (j) {
+          close();
+          U.toast(j && j.emailChanged ? 'Saved. ' + firstName(v.ownerName) + ' now signs in with ' + v.ownerEmail + (j.otherWorkspaces ? ', in all their workspaces' : '') : 'Details saved');
+          load(true).then(repaint);
+        }, function (e) { fail(errText(e)); });
+        return false;
+      } }]
+    });
+  }
+
   /* ---------------- manage one operator ---------------- */
   function setupLabel(o) { return o.setup === 'demo' ? U.pill('Demo data', 'info') : o.setup === 'none' ? U.pill('Not set up yet', 'neutral') : ''; }
   function statusPill(o) { return o.status === 'paused' ? U.pill('Paused', 'warn') : U.pill('Active', 'ok'); }
@@ -123,6 +165,7 @@
     var body = O.html('<div class="stack">' +
       '<div class="row-flex wrap">' + statusPill(o) + U.pill(planName(o.plan), 'brand') + setupLabel(o) + '</div>' +
       '<dl class="kv"><dt>Created</dt><dd>' + dateOf(o.createdAt) + '</dd><dt>Last activity</dt><dd>' + esc(ago(o.lastActivity)) + '</dd><dt>Team members</dt><dd>' + num(o.members) + '</dd><dt>Units</dt><dd>' + num(o.units) + '</dd>' + (o.bookings != null ? '<dt>Bookings</dt><dd>' + num(o.bookings) + '</dd>' : '') + '</dl>' +
+      '<div><button type="button" class="btn btn-ghost" data-act="edit">' + O.icon('edit') + 'Edit company and owner details</button></div>' +
       '<div><div class="section-title" style="margin-top:4px">Plan</div><div class="row-flex"><select class="select" id="pf-plan" style="max-width:220px">' + PLANS.concat(PLANS.some(function (p) { return p[0] === o.plan; }) ? [] : [[o.plan, planName(o.plan)]]).map(function (p) { return '<option value="' + esc(p[0]) + '"' + (p[0] === o.plan ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select><button type="button" class="btn btn-ghost" data-act="plan">Save plan</button></div></div>' +
       '<div><div class="section-title" style="margin-top:4px">Workspace</div>' + (o.status === 'paused'
         ? '<div class="small muted" style="margin-bottom:8px">Paused: the team can sign in and look, but nothing can be changed.</div><button type="button" class="btn btn-primary" data-act="resume">' + O.icon('play') + 'Resume workspace</button>'
@@ -134,6 +177,7 @@
     var er = O.$('.auth-err', body);
     function fail(e) { er.textContent = errText(e); er.hidden = false; }
     var m = U.modal({ title: o.name, sub: 'Counts only. Guests and money stay private to the operator.', body: body, autofocus: false, actions: [{ label: 'Close' }] });
+    O.$('[data-act="edit"]', body).onclick = function () { m.close(); openEdit(o); };
     O.$('[data-act="plan"]', body).onclick = function (e) {
       var b = e.currentTarget, plan = O.$('#pf-plan', body).value; if (plan === o.plan) { U.toast('Plan unchanged'); return; }
       b.disabled = true; b.textContent = 'Saving…';

@@ -45,7 +45,7 @@ jobs:
           exit $fail
 
       - name: Unit tests (unit assignment, guest message timing)
-        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs
+        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/account_update.test.mjs
 
       - name: Config files are valid JSON
         run: |

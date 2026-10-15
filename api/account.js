@@ -3,6 +3,7 @@
  *   bootstrap        anyone, only while no platform admin exists   {email, password, name}
  *   signup           anyone                                        {company, contactName, email, phone, units, message}
  *   create-operator  platform admin                                {company, ownerName, ownerEmail, plan?}
+ *   update-operator  platform admin                                {orgId, company?, staffId?, ownerName?, ownerEmail?}
  *   invite           owner of orgId                                {orgId, staffId, name, email, phone?, role}
  *   reset-password   owner of orgId, or a platform admin for owners {orgId, staffId}
  *
@@ -112,6 +113,63 @@ async function createOperator(sb, body, me) {
   return { orgId: org.id, staffId, email: ownerEmail, tempPassword: created ? temp : null, existing: !created };
 }
 
+/* ---------------- update-operator: a platform admin corrects company and owner details ---------------- */
+export async function updateOperator(sb, body, me) {
+  if (!(await isPlatformAdmin(sb, me.id))) throw forbidden('Only Orbique platform admins can change operator details.');
+  const orgId = uuidField(body.orgId);
+  const org = await getOrg(sb, orgId);
+  const company = body.company === undefined ? null : text(body.company, 'Company name', { max: 120, required: true });
+  const wantsOwner = body.ownerName !== undefined || body.ownerEmail !== undefined;
+  const ownerName = body.ownerName === undefined ? null : text(body.ownerName, "Owner's name", { max: 80, required: true });
+  const ownerEmail = body.ownerEmail === undefined ? null : emailField(body.ownerEmail, "Owner's email");
+
+  let target = null;
+  let user = null;
+  if (wantsOwner) {
+    const staffId = idField(body.staffId, 'Owner');
+    target = check(await sb.from('members').select('user_id, staff_id, role').eq('org_id', orgId).eq('staff_id', staffId).maybeSingle(), 'find owner');
+    if (!target || target.role !== 'owner') throw bad('no-owner', 'That owner was not found in this workspace.');
+    const got = await sb.auth.admin.getUserById(target.user_id);
+    user = check(got, 'load owner') && got.data.user;
+    if (!user) throw bad('no-owner', 'That owner was not found in this workspace.');
+  }
+
+  // Check everything before changing anything
+  const emailChanges = !!(user && ownerEmail && ownerEmail !== String(user.email || '').toLowerCase());
+  if (emailChanges) {
+    if (await isPlatformAdmin(sb, user.id)) throw forbidden('This owner is also an Orbique platform admin. Their sign-in email cannot be changed here.');
+    const taken = await findUserByEmail(sb, ownerEmail);
+    if (taken && taken.id !== user.id) throw conflict('email-in-use', 'That email already has an Orbique account. Use a different email address.');
+  }
+
+  if (company !== null && company !== org.name) {
+    check(await sb.from('orgs').update({ name: company }).eq('id', orgId), 'rename workspace');
+  }
+
+  if (user) {
+    const meta = user.user_metadata || {};
+    const name = ownerName !== null ? ownerName : (meta.name || '');
+    const patch = {};
+    if (ownerName !== null && ownerName !== meta.name) patch.user_metadata = Object.assign({}, meta, { name: ownerName });
+    if (emailChanges) { patch.email = ownerEmail; patch.email_confirm = true; }
+    if (Object.keys(patch).length) check(await sb.auth.admin.updateUserById(user.id, patch), 'update owner');
+
+    // Keep the owner's staff record in this workspace in step, so the team sees the same name and email
+    const email = emailChanges ? ownerEmail : String(user.email || '').toLowerCase();
+    const rec = check(await sb.from('records').select('data, deleted').eq('org_id', orgId).eq('coll', 'staff').eq('id', target.staff_id).maybeSingle(), 'load owner staff record');
+    if (rec && !rec.deleted) {
+      const data = Object.assign({}, rec.data || {});
+      let changed = false;
+      if (name && data.name !== name) { data.name = name; data.initials = initials(name); changed = true; }
+      if (data.email !== email) { data.email = email; changed = true; }
+      if (changed) check(await sb.from('records').update({ data, updated_by: me.id }).eq('org_id', orgId).eq('coll', 'staff').eq('id', target.staff_id), 'update owner staff record');
+    }
+  }
+
+  const others = user ? check(await sb.from('members').select('org_id').eq('user_id', user.id).neq('org_id', orgId), 'count workspaces') : [];
+  return { emailChanged: emailChanges, otherWorkspaces: (others || []).length };
+}
+
 /* ---------------- invite: an owner adds a team member ---------------- */
 async function invite(sb, body, me) {
   const orgId = uuidField(body.orgId);
@@ -190,6 +248,7 @@ const ACTIONS = {
   bootstrap: { auth: false, run: (sb, body) => bootstrap(sb, body) },
   signup: { auth: false, run: (sb, body, me, token) => signup(sb, body, token) },
   'create-operator': { auth: true, run: (sb, body, me) => createOperator(sb, body, me) },
+  'update-operator': { auth: true, run: (sb, body, me) => updateOperator(sb, body, me) },
   invite: { auth: true, run: (sb, body, me) => invite(sb, body, me) },
   'reset-password': { auth: true, run: (sb, body, me) => resetPassword(sb, body, me) }
 };
