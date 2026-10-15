@@ -68,6 +68,11 @@ api/                  Vercel serverless functions (production; need the service-
    (phone landscape) for calendar-like views.
 8. **No** `window.open`, `alert`, `confirm`, `prompt`, `print()`, iframes or `<a download>`. Use `U.modal`, `U.confirm`,
    `U.toast`, `O.download`/`O.downloadCSV`/`O.pdf`.
+   **One exception: the Channex channel screen** (Channels → Manage channels), where operators connect and map Booking.com,
+   Agoda, Airbnb, Expedia and Trip.com. Channex only offers it as a page to embed. On a computer it is an iframe inside a
+   full-size `U.modal`; in the phone app it opens with `@capacitor/browser` (the in-app browser), because the iPhone web view
+   blocks the third-party cookies the screen needs. Its address comes from `POST /api/channex {action: 'iframe'}`, which
+   mints a single-use token on the server (the Channex key never reaches the browser). No other page may use an iframe.
 9. **Cleaner interface** is the v4 theme: fewer numbers per screen, more space, one clear primary action per screen,
    in-depth analysis lives in **Statistics** (and Reports), not on operational pages. Keep the existing design tokens and
    components (`.card`, `.kpis`, `.pill`, `.btn`, `U.*`, `O.chart.*`) so everything looks like one product.

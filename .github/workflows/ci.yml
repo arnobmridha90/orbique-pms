@@ -57,6 +57,9 @@ jobs:
             }
             console.log('api functions load');"
 
+      - name: Channex tests (node --test)
+        run: node --test tests/channex/*.test.mjs
+
       - name: Local build (single file)
         run: node scripts/build.mjs --local --out "$RUNNER_TEMP/orbique.html"
 

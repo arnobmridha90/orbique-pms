@@ -163,6 +163,34 @@ In Vercel, open the project's **Settings** then **Domains**, add your domain (fo
 the instructions to update your domain's DNS. Redeploy afterwards so guest links use the new address, and update the
 Supabase **Site URL**.
 
+## Channel manager (Channex) settings
+
+Orbique sends prices and availability to Booking.com, Agoda, Airbnb, Expedia and Trip.com, and receives their bookings,
+through **Channex** (channex.io). Without these settings Orbique never contacts Channex and nothing is sent anywhere, so
+you can skip this section until you are ready to connect channels.
+
+Add these in Vercel under **Settings** then **Environment Variables**, for **Production** and **Preview**. They are
+read only by Orbique's server code; none of them is ever sent to the browser or shown in the app.
+
+| Name | What it is | Where it comes from |
+|---|---|---|
+| `CHANNEX_API_KEY` | Orbique's Channex API key. Treat it like the Supabase secret key | Channex: your user profile → API keys. Staging and production have separate accounts and separate keys |
+| `CHANNEX_BASE_URL` | Which Channex Orbique talks to. Leave it out to use staging, `https://staging.channex.io/api/v1` | Set `https://app.channex.io/api/v1` only after Channex has certified Orbique and given you a production key |
+| `CHANNEX_APP_URL` | The address of Channex's channel screen. Leave it out: it is worked out from `CHANNEX_BASE_URL` | Only needed if Channex gives you your own address for that screen |
+| `CHANNEX_WEBHOOK_SECRET` | The signing secret Channex uses for the messages it sends when a booking arrives. Orbique refuses messages without a correct signature | Channex: signing keys (the secret is shown once when the key is created) |
+| `CHANNEX_WEBHOOK_TOKEN` | A long random password Channex sends with each message instead, only if signing keys are not available to you | Make one up (for example 40 random letters and digits) |
+| `CHANNEX_WORKER_SECRET` | A long random password that lets the database's once-a-minute timer start Orbique's sending job | Make one up (for example 40 random letters and digits) |
+| `CHANNEX_ORG_ALLOWLIST` | While testing: the workspace ids (comma separated) allowed to connect real channels. Every other workspace keeps the practice copy | The `id` column of the `orgs` table (Supabase dashboard → **Table Editor** → `orgs`) |
+
+Redeploy after adding or changing them (step 5). Then open `https://<your-site>/api/health`: `"channex":true` means the
+API key is set. It does not show the key, and it does not prove that the key works.
+
+If the API key ever leaks, delete it in Channex, create a new one and update `CHANNEX_API_KEY` in Vercel.
+
+For developers working without a Channex key: `node scripts/channex-mock.mjs` runs a stand-in Channex on your computer.
+Start Orbique with `CHANNEX_BASE_URL=http://127.0.0.1:8899/api/v1` and any `CHANNEX_API_KEY`. The top of
+`scripts/channex-mock.mjs` lists what it can do (including simulated rate limits and errors).
+
 ## Updating Orbique later
 
 Every change merged into the main branch on GitHub deploys automatically. Database changes are applied during that

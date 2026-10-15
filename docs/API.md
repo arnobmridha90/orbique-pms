@@ -15,7 +15,8 @@ with status 400 (bad input), 401 (not signed in), 403 (not allowed), 409 (confli
 
 ## GET /api/health
 
-No sign-in. `{ok: true, db: <the service key and URL are set and the database answers>, needsBootstrap: <no platform admin yet>, commit}`.
+No sign-in. `{ok: true, db: <the service key and URL are set and the database answers>, needsBootstrap: <no platform admin yet>, channex: <CHANNEX_API_KEY is set>, commit}`.
+Never returns a key or any other setting's value.
 
 ## POST /api/account
 

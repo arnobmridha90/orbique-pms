@@ -8,6 +8,7 @@
  *    --dist <dir> builds and serves another folder (handy when several people share one checkout).
  * 3. Serves the files, the rewrites and the headers from vercel.json (files first, then rewrites, e.g. /guest/<token> -> index.html).
  * 4. Routes /api/<name> to the default export of api/<name>.js with a Vercel-like req.body / req.query and res.status() / res.json().
+ *    req.rawBody holds the exact bytes received (webhook signature checks; see rawBody in api/_lib/http.js).
  *    Edits to api/<name>.js are picked up on the next request; restart after changing api/_lib/*.js.
  *
  * Needs SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) + SUPABASE_ANON_KEY for the app and SUPABASE_SERVICE_ROLE_KEY for the API.
@@ -159,6 +160,7 @@ async function runApi(req, res, url, name) {
   try {
     if (!['GET', 'HEAD'].includes(req.method)) {
       const raw = await readBody(req);
+      req.rawBody = raw;
       const type = String(req.headers['content-type'] || '');
       if (!raw.length) req.body = undefined;
       else if (/application\/json/i.test(type)) {

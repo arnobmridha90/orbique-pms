@@ -1,10 +1,12 @@
-/* GET /api/health -> {ok: true, db, needsBootstrap, commit}
+/* GET /api/health -> {ok: true, db, needsBootstrap, channex, commit}
  * db: the Supabase URL and service key are set and the database answers.
  * needsBootstrap: no platform admin exists yet (the first sign-in screen offers "Set up Orbique").
+ * channex: the channel manager API key (CHANNEX_API_KEY) is set. Says nothing about whether it works.
  * No sign-in needed; never reveals keys or error details.
  */
 import { send, cors } from './_lib/http.js';
 import { adminClient, platformAdminCount } from './_lib/supabase.js';
+import { channexConfigured } from './_lib/channex.js';
 
 export default async function handler(req, res) {
   if (cors(req, res)) return;
@@ -31,5 +33,5 @@ export default async function handler(req, res) {
       clearTimeout(timer);
     }
   }
-  return send(res, 200, { ok: true, db, needsBootstrap, commit });
+  return send(res, 200, { ok: true, db, needsBootstrap, channex: channexConfigured(), commit });
 }
