@@ -139,6 +139,8 @@
     if (x.kind === 'browser' && Browser) return Browser.open({ url: x.url }).catch(function () { location.href = x.url; });
     location.href = x.url; /* Capacitor hands addresses outside the app to the phone (dialer, mail, WhatsApp, browser) */
   }
+  /* the Channex channel screen (Channels -> Manage channels) opens here: the app view blocks the cookies it needs */
+  O.native.browser = function (url) { var x = external(String(url || '')); if (x) openOut(x); return !!x; };
   var winOpen = window.open;
   window.open = function (url, target, features) {
     var x = url ? external(String(url)) : null;

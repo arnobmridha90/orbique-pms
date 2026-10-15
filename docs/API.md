@@ -95,3 +95,15 @@ Check the SQL for the exact argument names.
 `setMemberStatus(staffId, 'active'|'suspended')`, `setMemberRole(staffId, role)`, `resetPassword(staffId) -> Promise<{email, tempPassword}>`,
 `previewAs(staffId | null)`, `isPlatformAdmin()`, `user()`, `signOut()`.
 Pages call them only when they exist (`O.auth && O.auth.enabled && O.auth.enabled() && O.auth.invite`), otherwise they keep the local behaviour.
+
+Channex (Channels page, app/pages/channels.js): `O.auth.call(path, body) -> Promise<json>` (POSTs with the signed-in
+token; a failure rejects with an Error carrying `.code`, `.status` and `.body`), `O.auth.channex(action, body)` (the same
+for `/api/channex`, with `orgId` added) and `O.auth.channexRealtime(onChange) -> unsubscribe` (realtime on
+channex_properties, channex_outbox and channex_alerts for the current org; the Sync log also polls).
+
+The browser side of Channex is `O.channel` (app/pages/channels.js): `mode()` ('live' on the server with Channex configured,
+'simulated' in the local test copy or without a key: nothing leaves the browser and the Sync log shows what would be sent),
+`setDays(changes, opts)` (the one writer of channelRates, also used by Calendar → Rates & restrictions and Pricing),
+`fill(typeIds)` (model rates into channelRates for 500 days), `kick()` (asks the server to send pending changes after a
+save), `conflicts()`, `notice(kind, typeIds)` (mode-aware wording for toasts), plus read helpers (`plansOf`, `mainPlan`,
+`planRate`, `day`, `restriction`, `connected`, `typeConnected`, `status`, `problems`).

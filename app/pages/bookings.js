@@ -198,6 +198,7 @@
   function issues(b) {
     var T = D.TODAY, out = [];
     if (!live(b) || b.status === 'checked_in' || b.status === 'checked_out' || b.checkIn < T) return out;
+    if (b.conflict && b.conflict.kind === 'double_booking') out.push(['bad', 'Double booking', 'Another booking or a block overlaps these nights' + (b.conflict.with && b.conflict.with.length ? ' (' + b.conflict.with.join(', ') + ')' : '') + '. Move one of them.']);
     if (!b.propertyId && b.unitTypeId) out.push(['bad', 'Needs a unit', 'No single ' + ((O.unitType(b.unitTypeId) || {}).name || '') + ' unit is free for the whole stay. Pick one by hand.']);
     if (b.status === 'pending') out.push(['wait', 'Pending', 'Waiting for confirmation or payment']);
     var money = canValue(); /* invoice and payment steps only for people who see booking values */
@@ -225,7 +226,7 @@
   }
   function matchQ(b) {
     var q = (st.q || '').trim().toLowerCase(); if (!q) return true;
-    if (String(b.guest.name || '').toLowerCase().indexOf(q) >= 0 || String(b.id).toLowerCase().indexOf(q) >= 0 || String(b.invoiceNo || '').toLowerCase().indexOf(q) >= 0) return true;
+    if (String(b.guest.name || '').toLowerCase().indexOf(q) >= 0 || String(b.id).toLowerCase().indexOf(q) >= 0 || String(b.invoiceNo || '').toLowerCase().indexOf(q) >= 0 || String(b.reservationCode || '').toLowerCase().indexOf(q) >= 0) return true;
     if (!canContacts()) return false; /* phone and email search only for people who may see them */
     if (String(b.guest.email || '').toLowerCase().indexOf(q) >= 0) return true;
     var digits = q.replace(/\D/g, '');
@@ -274,7 +275,7 @@
   function rowHTML(b, showValue) {
     var cx = b.status === 'cancelled', sub = staySub(b);
     return '<div class="bk-row' + (cx ? ' cx' : '') + '" data-id="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.guest.name + ', ' + d.fmtRange(b.checkIn, b.checkOut) + ', ' + U.statusLabel(b.status)) + '">' +
-      '<div class="c-guest"><div class="l1">' + esc(b.guest.name) + (b.sameDay ? '<span class="sd" title="Booked today (' + esc(fmt.time(b.createdAt)) + ') for arrival today">⚡ Same-day</span>' : '') + '</div><div class="l2">' + esc(b.id) + (b.guest.countryName ? ' · ' + esc(b.guest.countryName) : '') + '</div></div>' +
+      '<div class="c-guest"><div class="l1">' + esc(b.guest.name) + (b.sameDay ? '<span class="sd" title="Booked today (' + esc(fmt.time(b.createdAt)) + ') for arrival today">⚡ Same-day</span>' : '') + '</div><div class="l2">' + esc(b.id) + (b.reservationCode ? ' · ' + esc(U.platName(b.channel) + ' ' + b.reservationCode) : '') + (b.guest.countryName ? ' · ' + esc(b.guest.countryName) : '') + '</div></div>' +
       '<div class="c-stay"><div class="l1">' + d.fmtRange(b.checkIn, b.checkOut) + ' <span class="nts">· ' + fmt.plural(b.nights, 'night') + '</span></div><div class="l2' + (sub[0] ? ' soon' : '') + '">' + esc(sub[1]) + '</div></div>' +
       '<div class="c-plat">' + U.plat(b.channel) + '</div>' +
       '<div class="c-status">' + U.status(b.status) + '</div>' +
@@ -501,7 +502,7 @@
     rows.sort(function (a, b) { return (order[a.propertyId] == null ? 999 : order[a.propertyId]) - (order[b.propertyId] == null ? 999 : order[b.propertyId]); });
     var head = ['Booking ID', 'Property', 'Location', 'Unit type', 'Unit no.', 'Guest', 'Country'];
     if (contacts) head = head.concat(['Phone', 'Email']);
-    head = head.concat(['Check-in', 'Check-out', 'Nights', 'Guests', 'Platform', 'Status', 'Booked at']);
+    head = head.concat(['Check-in', 'Check-out', 'Nights', 'Guests', 'Platform', 'Reservation code', 'Status', 'Booked at']);
     if (money) head = head.concat(['Total (RM)', 'Tourism tax (RM)', 'Revenue (RM)', 'Platform fee (RM)', 'Payout (RM)']);
     head = head.concat(['Invoice no.', 'Invoice sent', 'Receipt no.', 'Paid on', 'Receipt sent', 'ID verified', 'Cancelled on']);
     var out = [head].concat(rows.map(function (b) {
@@ -509,7 +510,7 @@
       var ut = O.unitType(b.unitTypeId);
       var r = [b.id, p ? propName(p) : O.bookingPlace(b), place(p), ut ? O.typeTitle(ut) : '', (p && p.unitNo) || '', b.guest.name, b.guest.countryName || ''];
       if (contacts) r = r.concat([b.guest.phone || '', b.guest.email || '']);
-      r = r.concat([b.checkIn, b.checkOut, b.nights, b.guests, U.platName(b.channel), U.statusLabel(b.status), String(b.createdAt || '').replace('T', ' ')]);
+      r = r.concat([b.checkIn, b.checkOut, b.nights, b.guests, U.platName(b.channel), b.reservationCode || '', U.statusLabel(b.status), String(b.createdAt || '').replace('T', ' ')]);
       if (money) r = r.concat([b.total, b.tourismTax, b.revenue, b.platformFee, b.payout]);
       return r.concat([b.invoiceNo || '', b.invoiceSent ? b.invoiceSent.via + ' ' + (b.invoiceSent.at || '') : 'No', b.receiptNo || '', b.paidAt || '', b.receiptSent ? b.receiptSent.via + ' ' + (b.receiptSent.at || '') : 'No', b.idVerified ? 'Yes' : 'No', b.cancelledAt || '']);
     }));
@@ -522,6 +523,14 @@
      =================================================================== */
   function canEditB(b) { return b.status !== 'cancelled' && b.status !== 'checked_out'; }
   function canCancelB(b) { return b.status === 'confirmed' || b.status === 'pending'; }
+  /* a platform booking that came through the channel manager (or sits on a connected unit type in live mode): its dates,
+     price and cancellation belong to the platform, and changes made there arrive here automatically */
+  function otaLocked(b) {
+    if (!b || !b.channel || b.channel === 'direct') return false;
+    if (b.channex) return true;
+    return !!(O.channel && b.unitTypeId && O.channel.mode() === 'live' && O.channel.typeConnected(b.unitTypeId));
+  }
+  function otaWhy(b, what) { return (what || 'Change') + ' this on ' + U.platName(b.channel) + '; changes arrive here automatically.'; }
   function canLink() { return O.can('bookings', 'edit'); }
   function openBooking(id) {
     var b = typeof id === 'string' ? D.booking(id) : id; if (!b) return null;
@@ -538,7 +547,7 @@
     O.booking.actions.push(
       { from: 'bookings', label: 'Copy guest link', icon: 'copy', show: function (b) { return b.status !== 'cancelled' && canLink(); }, run: function (b) { copyLink(b); } },
       { from: 'bookings', label: 'Edit', icon: 'edit', show: function (b) { return canEditB(b) && O.can('bookings.edit'); }, run: function (b) { editBooking(b); } },
-      { from: 'bookings', label: 'Cancel booking', kind: 'danger-ghost', show: function (b) { return canCancelB(b) && O.can('bookings.cancel'); }, run: function (b) { cancelBooking(b, function () {}); } }
+      { from: 'bookings', label: 'Cancel booking', kind: 'danger-ghost', show: function (b) { return canCancelB(b) && O.can('bookings.cancel'); }, disabled: function (b) { return otaLocked(b) ? otaWhy(b, 'Cancel') : ''; }, run: function (b) { cancelBooking(b, function () {}); } }
     );
   }
   /* Local guard on core's booking drawer until core does this itself (see docs/notes/v4-bookings-calendar.md):
@@ -689,6 +698,7 @@
   function cancelBooking(b, done) {
     if (!O.can('bookings.cancel')) { U.toast(NO.cancel, 'bad'); return; }
     if (!canCancelB(b)) { U.toast('Only upcoming bookings can be cancelled', 'bad'); return; }
+    if (otaLocked(b)) { U.toast(otaWhy(b, 'Cancel'), 'bad'); return; }
     var p = D.propById[b.propertyId];
     var paidNote = b.paidAt && canValue() ? ' The guest paid ' + fmt.money(b.total) + ': arrange any refund with them' + (b.channel === 'direct' ? '' : ' on ' + U.platName(b.channel)) + '.' : '';
     U.modal({
@@ -768,14 +778,14 @@
   function editBooking(b) {
     if (!O.can('bookings.edit')) { U.toast(NO.edit, 'bad'); return; }
     if (!canEditB(b)) { U.toast('Completed and cancelled bookings cannot be changed', 'bad'); return; }
-    var T = D.TODAY, inHouse = b.status === 'checked_in' || b.checkIn < T, contacts = canContacts(), money = canValue();
+    var T = D.TODAY, inHouse = b.status === 'checked_in' || b.checkIn < T, contacts = canContacts(), money = canValue(), ota = otaLocked(b);
     function f(label, input, cls, hint) { return '<div class="field ' + (cls || '') + '"><label>' + label + '</label>' + input + (hint || '') + '</div>'; }
     var props = D.properties.filter(function (p) { return !isArchived(p) || p.id === b.propertyId; });
     var body = O.html('<div class="nb-wrap"><div class="stack">' +
       '<div class="nb-sec">Stay</div><div class="form-grid">' +
       f('Property', '<select class="select" name="pid"' + (inHouse ? ' disabled' : '') + '>' + unitOptions(props, b.unitTypeId && O.unitType(b.unitTypeId) && !inHouse && !(b.assignment && b.assignment.locked) && !(b.propertyId && lockOf(b)) ? 'type:' + b.unitTypeId : b.propertyId) + '</select>', 'full', inHouse ? '<div class="hint">The guest is already in-house, so the unit and check-in date stay as they are.</div>' : '') +
-      f('Check-in', '<input type="date" class="input" name="ci" value="' + b.checkIn + '"' + (inHouse ? ' disabled' : ' min="' + T + '"') + '>') +
-      f('Check-out', '<input type="date" class="input" name="co" value="' + b.checkOut + '" min="' + d.add(inHouse ? T : b.checkIn, 1) + '">') +
+      f('Check-in', '<input type="date" class="input" name="ci" value="' + b.checkIn + '"' + (inHouse || ota ? ' disabled' : ' min="' + T + '"') + '>') +
+      f('Check-out', '<input type="date" class="input" name="co" value="' + b.checkOut + '"' + (ota ? ' disabled' : '') + ' min="' + d.add(inHouse ? T : b.checkIn, 1) + '">', '', ota ? '<div class="hint">' + esc(otaWhy(b)) + '</div>' : '') +
       f('Arrival time', '<input type="time" class="input" name="tin" value="' + esc(b.checkInTime || '15:00') + '">') +
       f('Departure time', '<input type="time" class="input" name="tout" value="' + esc(b.checkOutTime || '11:00') + '">') +
       f('Guests', '<input type="number" class="input" name="guests" min="1" value="' + b.guests + '">', '', '<div class="hint nb-maxg"></div>') +
@@ -785,7 +795,7 @@
         : f('Phone', '<input class="input" disabled value="' + esc(maskPhone(b.guest.phone)) + '">') + f('Email', '<input class="input" disabled value="' + esc(maskEmail(b.guest.email)) + '">', '', '<div class="hint">Contact details are hidden for your access.</div>')) +
       f('Note', '<textarea class="textarea" name="notes" rows="2" placeholder="Optional: arrival details or requests">' + esc(b.notes || '') + '</textarea>', 'full') +
       '</div><div class="nb-err" role="alert"></div></div>' +
-      '<div class="nb-side"><div class="nb-avail"></div><div class="nb-sum"></div>' + (b.channel !== 'direct' ? '<div class="nb-proto">Booked on ' + esc(U.platName(b.channel)) + ': make the same change there so both calendars match.</div>' : '') + '</div></div>');
+      '<div class="nb-side"><div class="nb-avail"></div><div class="nb-sum"></div>' + (ota ? '<div class="nb-proto">' + esc(U.platName(b.channel) + (b.reservationCode ? ' reservation ' + b.reservationCode : ' booking') + '. Dates and price: ' + otaWhy(b).charAt(0).toLowerCase() + otaWhy(b).slice(1)) + ' You can still change the unit, times, guests and notes.</div>' : b.channel !== 'direct' ? '<div class="nb-proto">Booked on ' + esc(U.platName(b.channel)) + ': make the same change there so both calendars match.</div>' : '') + '</div></div>');
     var $ = function (s) { return O.$(s, body); };
     function vals() {
       return { pid: $('[name=pid]').value, ci: $('[name=ci]').value, co: $('[name=co]').value, guests: +$('[name=guests]').value || 0, tin: $('[name=tin]').value || '15:00', tout: $('[name=tout]').value || '11:00',
@@ -831,6 +841,8 @@
             if (d.diff(v.ci, v.co) > 90) err.push('A booking can be at most 90 nights.');
             var cf = r.auto ? [] : conflictsFor(v.pid, v.ci, v.co, b); if (cf.length) err.push((p.short || p.name) + ' is not available: ' + cf[0] + '.');
           }
+          if (ota && (v.ci !== b.checkIn || v.co !== b.checkOut)) err.push(otaWhy(b));
+          if (ota && b.unitTypeId && r.typeId !== b.unitTypeId && !(p && p.unitTypeId === b.unitTypeId)) err.push('This ' + U.platName(b.channel) + ' booking was sold as ' + ((O.unitType(b.unitTypeId) || {}).name || 'its unit type') + ', so it stays with that unit type.');
           if (!v.name) err.push('Enter the guest\'s name.');
           if (contacts && v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) err.push('The email address does not look right.');
           if (p && (v.guests < 1 || v.guests > maxGuests(p))) err.push('Guests must be between 1 and ' + maxGuests(p) + ' for this unit.');
@@ -838,7 +850,7 @@
           var from = b.propertyId || null;
           var moved = v.ci !== b.checkIn || v.co !== b.checkOut || (r.auto ? r.unitId !== from : v.pid !== from);
           b.nights = d.diff(v.ci, v.co);
-          reprice(b, p);
+          if (!ota) reprice(b, p); /* a platform booking keeps the price the platform sent */
           b.checkIn = v.ci; b.checkOut = v.co; b.guests = v.guests; b.checkInTime = v.tin; b.checkOutTime = v.tout;
           if (r.auto) { b.unitTypeId = r.typeId; O.assignBooking(b, { ignoreLock: true }); } /* keeps the unit while it is still free */
           else if (r.typeId || b.unitTypeId) { if (v.pid !== from) O.pickUnit(b, v.pid); }
@@ -866,6 +878,24 @@
     var max = D.bookings.reduce(function (m, b) { var v = b[field]; return v ? Math.max(m, +String(v).split('-').pop() || 0) : m; }, 1000);
     return prefix + (max + 1);
   }
+  /* invoices for platform bookings that the channel manager created on the server (they arrive without a number):
+     the same numbering as direct bookings. Runs with the other automations and when such a booking arrives. */
+  function channelInvoices() {
+    if (!(O.isOwner() || O.can('bookings', 'edit'))) return 0;
+    var n = 0, T = D.TODAY;
+    D.bookings.forEach(function (b) {
+      if (!b || !b.channex || b.invoiceNo || b.status === 'cancelled' || b.channel === 'direct') return;
+      b.invoiceNo = nextNo('invoiceNo', 'INV-' + T.slice(0, 4) + '-'); n++;
+    });
+    return n;
+  }
+  O.automation.register('channel-invoices', function () { if (channelInvoices()) O.emit('data', { type: 'invoices' }); });
+  var invT = null;
+  O.on('remote', function () {
+    if (!D.bookings.some(function (b) { return b && b.channex && !b.invoiceNo && b.status !== 'cancelled'; })) return;
+    clearTimeout(invT); invT = setTimeout(function () { if (O.sync.canWrite() && channelInvoices()) O.emit('data', { type: 'invoices' }); }, 1500);
+  });
+
   O.newBooking = function (o) {
     o = o || {};
     var T = D.TODAY;
