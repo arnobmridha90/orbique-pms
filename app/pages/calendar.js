@@ -517,7 +517,7 @@
         '<div class="card cal-card"><div class="cal-scroll" tabindex="-1"></div>' +
         '<div class="cal-legend">' + LEGEND.map(function (s) { return '<span class="lg"><i class="sw" style="background:var(--st-' + s[1] + ')"></i>' + s[2] + '</span>'; }).join('') +
         '<span class="lg"><i class="sw sw-block"></i>Blocked</span>' +
-        (phone ? '' : '<span class="lg-sep"></span>' + D.channelOrder.map(function (c) { return '<span class="lg">' + U.platIcon(c) + esc(U.platName(c)) + '</span>'; }).join('')) +
+        (phone ? '' : '<span class="lg-sep"></span>' + U.channelsInUse().map(function (c) { return '<span class="lg">' + U.platIcon(c) + esc(U.platName(c)) + '</span>'; }).join('')) +
         '<span class="hint">' + (phone ? 'Tap' : 'Click') + ' a bar to open the booking' + (canNew || canBlock ? ', or a free night to ' + (canNew ? 'add a booking' : 'block it') : '') + '.</span></div>' +
         '</div></div>';
       var wrap = O.$('.pg-calendar', root), scroll = O.$('.cal-scroll', wrap);

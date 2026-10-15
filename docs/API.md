@@ -62,9 +62,25 @@ The sending job, called by pg_cron through pg_net every minute (`{task: 'tick'}`
 queued changes or a full-sync request: one availability call and one restrictions call at most, each only for what
 changed since Channex last accepted it (`channex_state`), within the rate limits (`channex_take_slot`), with 429 backoff
 (60 s x 2^n up to 16 min), a one-minute pause after 5xx or network errors, and status `error` plus an alert after other
-4xx. Nightly: marks the new 500th day, refreshes channel lists, prunes the call log after 60 days, flags unassigned
-arrivals within 48 h, then ticks. Booking feed polling and acknowledgement retries are hooks for the bookings milestone.
+4xx. Before that, each tick retries stored webhook events not handled within a minute and acknowledges revisions that
+were saved but not acknowledged (`inbound`), and every 15 minutes reads `/booking_revisions/feed` (`feed`). Nightly:
+marks the new 500th day, re-runs unit assignment for stays starting in the next 14 days (`reassign`), refreshes channel
+lists, prunes the call log after 60 days, flags unassigned arrivals within 48 h, then ticks.
 Answers `{ok, task, ...counts}`; `maxDuration` 30 s in vercel.json.
+
+## POST /api/channex-webhook
+
+Public; Channex calls it. The body is read raw (at most 256 KB) and must carry a valid `x-hmac-signature-256`
+(HMAC-SHA256 with `CHANNEX_WEBHOOK_SECRET` over `${x-hmac-timestamp}.${body}`, timestamp within 5 minutes) or the
+`X-Orbique-Webhook-Token` header equal to `CHANNEX_WEBHOOK_TOKEN`; otherwise 401. The event is stored once in
+`channex_events` (by the body's sha256; a replay answers `{duplicate: true}`); a database failure answers 500 so
+Channex sends it again. Booking events are then handled for up to about 6 s (`api/_lib/channex-bookings.js`):
+`GET /booking_revisions/:id`, save one booking record per room (ids kept in `channex_bookings`, shared `groupRef` for
+several rooms), unit assignment (`assign.cjs`), `double_booking` / `needs_unit` / `unmapped_room` / `unmapped_rate`
+alerts, and only then `POST /booking_revisions/:id/ack`. A revision older than the one applied is acknowledged and
+not applied. Card data (`guarantee`) is never stored. The 0006 triggers mark availability and the worker closes or
+reopens the dates on Channex. Sync errors and disconnected channels become alerts. Answers 200 `{ok, stored, status}`
+once stored; whatever is left the worker finishes. `GET /bookings` is never used.
 
 ## Database functions the browser calls (supabase.rpc)
 

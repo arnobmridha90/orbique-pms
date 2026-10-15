@@ -194,6 +194,9 @@ before(async () => {
   channexApi = (await import('../../api/channex.js')).default;
   workerApi = (await import('../../api/channex-worker.js')).default;
   await seed();
+  // the booking feed is polled every 15 minutes (tests/channex/bookings.integration.test.mjs covers it); keep its GET
+  // out of the call counts here
+  await db.query('update public.channex_meta set last_feed_poll_at = now()');
 });
 
 after(async () => {
@@ -605,8 +608,10 @@ test('worker endpoint: bearer secret required; nightly marks day 500 and prunes'
   assert.equal((await posts('/restrictions')).length, 1, 'day 500 sent as a delta');
   item((await posts('/restrictions'))[0].body.values, 'rate_plan_id', rp('RP-TB'), { date: LAST }, { rate: '777.00' });
   assert.equal((await posts('/availability')).length, 0, 'availability on day 500 unchanged: nothing sent');
-  assert.equal(r.json.tick.inbound.skipped, 'M6');
-  assert.equal(r.json.reassign.skipped, 'M2/M6');
+  assert.deepEqual(r.json.tick.inbound, { events: 0, done: 0, failed: 0, acks: 0, acked: 0 });
+  // the seed's unassigned Double bookings in the next 14 days get a unit (availability per type is unchanged: no call)
+  assert.equal(r.json.reassign.orgs, 1);
+  assert.ok(Number.isInteger(r.json.reassign.moved) && r.json.reassign.needsUnit === 0, JSON.stringify(r.json.reassign));
 });
 
 test('disconnect stops sending and clears marks; connecting again requests a full sync', { skip: SKIP }, async () => {

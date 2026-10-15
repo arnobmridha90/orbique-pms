@@ -4,14 +4,14 @@
  * or locally by scripts/dev.mjs --worker. Authorization: "Bearer <CHANNEX_WORKER_SECRET>" (compared in constant time).
  *
  * tick (budget about 15 s):
- *   1. [M6] retry booking events and revisions that were saved but not acknowledged       (hook below)
- *   2. [M6] poll /booking_revisions/feed when 15 minutes have passed                       (hook below)
+ *   1. retry booking events not handled yet, and revisions that were saved but not acknowledged
+ *   2. poll /booking_revisions/feed when 15 minutes have passed (the backup to webhooks)
  *   3. setup queue (edits to buildings, unit types and rate plans of connected buildings)
  *   4. every property with marks or a full-sync request: availability, then rates and restrictions
  * nightly:
  *   mark the day that just came into the 500-day window (a delta, never a full sync), refresh channel lists,
  *   prune the call log and events older than 60 days, raise needs_unit alerts for unassigned arrivals within 48 h,
- *   [M2/M6] re-run unit assignment for the next 14 days (hook below), then a normal tick.
+ *   re-run unit assignment for stays starting in the next 14 days, then a normal tick.
  * Answers {ok, task, ...summary}. Never returns keys or payloads.
  */
 import { send, cors, readJson, bearer } from './_lib/http.js';
@@ -19,24 +19,35 @@ import { requireAdminClient } from './_lib/supabase.js';
 import { channexConfig, safeEqual, channelView } from './_lib/channex.js';
 import { must, tracked, records, addAlert, todayMY, addDays } from './_lib/channex-db.js';
 import { runWorker, markLastDay, CONNECTED } from './_lib/channex-sync.js';
+import { retryInbound, pollFeed, reassignUpcoming } from './_lib/channex-bookings.js';
 
 export const TICK_BUDGET_MS = 15000;
 const PRUNE_DAYS = 60;
 
-/* ---------- [M6] bookings inbound: hooks for the next milestone ---------- */
-// M6 (api/_lib/channex-bookings.js) plugs in here: retry channex_events with status 'new'/'error' and channex_revisions
-// saved but not acked, then poll the feed (channex_meta.last_feed_poll_at older than 15 minutes). Until then both are
-// no-ops, so the tick only sends ARI.
+/* ---------- bookings inbound (api/_lib/channex-bookings.js) ---------- */
+// Replaceable for tests. retryInbound: stored webhook events not handled yet, then revisions saved but not acknowledged.
+// pollFeed: /booking_revisions/feed when 15 minutes have passed. reassignUpcoming: nightly unit assignment for 14 days.
 export const bookingHooks = {
-  async retryInbound(sb, opts) { return { skipped: 'M6' }; }, // eslint-disable-line no-unused-vars
-  async pollFeed(sb, opts) { return { skipped: 'M6' }; }, // eslint-disable-line no-unused-vars
-  async reassignUpcoming(sb, opts) { return { skipped: 'M2/M6' }; } // eslint-disable-line no-unused-vars
+  retryInbound: (sb, opts) => retryInbound(sb, opts),
+  pollFeed: (sb, opts) => pollFeed(sb, opts),
+  reassignUpcoming: (sb, opts) => reassignUpcoming(sb, opts)
 };
+
+/** Run a hook; a failure is logged and reported, never stops the tick (ARI still goes out). */
+async function safely(what, fn) {
+  try { return await fn(); } catch (e) {
+    console.error('[channex] ' + what + ':', e && e.message ? e.message : String(e));
+    return { error: true };
+  }
+}
 
 export async function tick(sb, opts = {}) {
   const cfg = opts.config || channexConfig();
   const start = Date.now();
-  const out = { inbound: await bookingHooks.retryInbound(sb, { config: cfg }), feed: await bookingHooks.pollFeed(sb, { config: cfg }) };
+  const out = {
+    inbound: await safely('retry inbound', () => bookingHooks.retryInbound(sb, { config: cfg, request: opts.request, budgetMs: 5000, olderThanMs: opts.eventsOlderThanMs })),
+    feed: await safely('feed', () => bookingHooks.pollFeed(sb, { config: cfg, request: opts.request, budgetMs: 5000, force: opts.forceFeed }))
+  };
   const budget = Math.max(3000, (opts.budgetMs || TICK_BUDGET_MS) - (Date.now() - start));
   out.ari = summary(await runWorker(sb, { config: cfg, budgetMs: budget, request: opts.request, quietMs: opts.quietMs }));
   return out;
@@ -48,7 +59,7 @@ export async function nightly(sb, opts = {}) {
   const cfg = opts.config || channexConfig();
   const out = {};
   out.marked = await markLastDay(sb, { config: cfg });
-  out.reassign = await bookingHooks.reassignUpcoming(sb, { config: cfg });
+  out.reassign = await safely('reassign', () => bookingHooks.reassignUpcoming(sb, { config: cfg }));
   out.channels = await refreshChannels(sb, cfg, opts);
   out.pruned = await prune(sb);
   out.needsUnit = await flagNeedsUnit(sb, cfg);

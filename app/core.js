@@ -434,7 +434,7 @@
     return '<span class="avatar ' + (size || '') + '" style="background:' + c + '" aria-hidden="true">' + O.esc(O.fmt.initials(name)) + '</span>';
   };
   /* platform badge: monogram marks in each platform's colour (stand-ins until official assets are added) */
-  var PLAT_MARK = { airbnb: 'a', booking: 'B', agoda: 'ag', vrbo: 'V', google: 'G' };
+  var PLAT_MARK = { airbnb: 'a', booking: 'B', agoda: 'ag', vrbo: 'V', google: 'G', expedia: 'E', trip: 'T', other: '•' };
   U.platIcon = function (id, title, size) { /* size: optional pixel size, e.g. 14 inside chips and calendar bars */
     var name = (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id);
     var inner = id === 'direct' ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 11h3v9h5v-6h4v6h5v-9h3z"/></svg>'
@@ -447,6 +447,11 @@
     opts = opts || {};
     var name = (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id);
     return '<span class="plat">' + U.platIcon(id) + (opts.icon ? '' : O.esc(name)) + '</span>';
+  };
+  /* D.channelOrder without the platforms only the channel manager brings (Expedia, Trip.com, other) until a booking uses them */
+  U.channelsInUse = function () {
+    var later = { expedia: 1, trip: 1, other: 1 };
+    return D.channelOrder.filter(function (c) { return !later[c] || D.bookings.some(function (b) { return b.channel === c; }); });
   };
   U.platName = function (id) { return (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id); };
   var ST_LABEL = { confirmed: 'Confirmed', checked_in: 'In-house', pending: 'Pending', checked_out: 'Checked out', cancelled: 'Cancelled', block: 'Blocked' };

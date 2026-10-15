@@ -54,7 +54,7 @@ jobs:
       - name: API functions load
         run: |
           node --input-type=module -e "
-            for (const f of ['health', 'account', 'channex', 'channex-worker']) {
+            for (const f of ['health', 'account', 'channex', 'channex-worker', 'channex-webhook']) {
               const m = await import('./api/' + f + '.js');
               if (typeof m.default !== 'function') throw new Error('api/' + f + '.js has no default export');
             }
