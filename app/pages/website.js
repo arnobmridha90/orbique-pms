@@ -138,7 +138,10 @@
     var ids = {}; list.forEach(function (p) { ids[p.id] = 1; });
     var reviews = (D.reviews || []).filter(function (r) { return r && ids[r.propertyId] && r.stars; });
     var bookings = (D.bookings || []).filter(function (b) { return b && ids[b.propertyId]; });
-    var props = list.map(function (p) {
+    /* units of a unit type ("Deluxe") are one listing: "Building · Type", never the unit's own name or number */
+    var typed = {}, types = [];
+    list.forEach(function (p) { var t = O.typeOf(p); if (t && !t.archived) { if (!typed[t.id]) { typed[t.id] = []; types.push(t); } typed[t.id].push(p); } });
+    function one(p) {
       var rs = reviews.filter(function (r) { return r.propertyId === p.id; }), from = null;
       for (var i = 1; i <= 30; i++) { var v = price(p, d.add(D.TODAY, i)); if (v && (from == null || v < from)) from = v; }
       var beds = p.beds != null ? +p.beds || 0 : (p.bedrooms != null ? +p.bedrooms || 0 : 1);
@@ -153,7 +156,24 @@
         parking: !!p.parking && !/^no parking|^street|^none/i.test(String(p.parking)), parkingText: p.parking ? String(p.parking) : '',
         lockBrand: p.lockBrand || 'Smart', checkIn: hhmm(p.checkInTime) || hhmm(p.checkIn), checkOut: hhmm(p.checkOutTime) || hhmm(p.checkOut)
       };
-    });
+    }
+    var props = list.filter(function (p) { var t = O.typeOf(p); return !(t && typed[t.id]); }).map(one).concat(types.map(function (t) {
+      var us = typed[t.id].sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); }), x = one(us[0]), bd = O.building(t.buildingId) || {};
+      var ids = {}; us.forEach(function (u) { ids[u.id] = 1; });
+      var rs = reviews.filter(function (r) { return ids[r.propertyId]; }), froms = us.map(function (u) { return u === us[0] ? x.from : one(u).from; }).filter(Boolean);
+      x.id = 'type:' + t.id; x.typeId = t.id; x.unitIds = Object.keys(ids);
+      x.name = O.typeTitle(t); x.short = t.name; x.slug = slug(x.name);
+      if (bd.city) x.city = bd.city;
+      x.area = bd.address || x.area;
+      if (t.beds != null) { x.beds = +t.beds || 0; x.type = x.beds ? x.beds + '-bedroom home' : 'Studio'; }
+      if (t.maxGuests) x.sleeps = +t.maxGuests;
+      if (x.parking) x.parkingText = 'Building car park, your bay is in the guest app'; /* a bay number can point to the unit */
+      x.from = froms.length ? Math.min.apply(null, froms) : null;
+      x.rating = rs.length ? rs.reduce(function (sm, r) { return sm + r.stars; }, 0) / rs.length : null; x.nReviews = rs.length;
+      if (bd.checkInTime) x.checkIn = hhmm(bd.checkInTime);
+      if (bd.checkOutTime) x.checkOut = hhmm(bd.checkOutTime);
+      return x;
+    }));
     var byId = {}; props.forEach(function (x) { byId[x.id] = x; });
     var cmap = {};
     props.forEach(function (x) { (cmap[x.city] = cmap[x.city] || []).push(x); });
@@ -182,6 +202,10 @@
   function taken(pid) {
     var F = facts(); if (F.taken[pid]) return F.taken[pid];
     var m = {}, from = d.add(D.TODAY, -1), i, x;
+    if (String(pid).indexOf('type:') === 0) {
+      O.assign.typeAvailability({ unitTypeId: pid.slice(5), units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: d.add(from, 400) }).forEach(function (n) { if (n.availability < 1) m[n.date] = 1; });
+      return (F.taken[pid] = m);
+    }
     (D.bookings || []).forEach(function (b) { if (b.propertyId !== pid || b.status === 'cancelled' || !b.checkIn || !b.checkOut || b.checkOut <= from) return; for (x = b.checkIn < from ? from : b.checkIn, i = 0; x < b.checkOut && i < 400; x = d.add(x, 1), i++) m[x] = 1; });
     (D.blocks || []).forEach(function (k) { if (k.propertyId !== pid || !k.start || !k.end || k.end <= from) return; for (x = k.start < from ? from : k.start, i = 0; x < k.end && i < 400; x = d.add(x, 1), i++) m[x] = 1; });
     return (F.taken[pid] = m);
@@ -731,8 +755,8 @@
 
   /* ---------------- reviews ---------------- */
   function reviewList(X, n, pid) {
-    var top = X.F.top.filter(function (r) { return !pid || r.propertyId === pid; });
-    if (pid && top.length < n) top = top.concat(X.F.reviews.filter(function (r) { return r.propertyId === pid && r.stars >= 4 && top.indexOf(r) < 0; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; }));
+    var top = X.F.top.filter(function (r) { return !pid || inListing(r.propertyId, pid); });
+    if (pid && top.length < n) top = top.concat(X.F.reviews.filter(function (r) { return inListing(r.propertyId, pid) && r.stars >= 4 && top.indexOf(r) < 0; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; }));
     return top.slice(0, n);
   }
   var PH_REVIEWS = [
@@ -740,10 +764,11 @@
     { ph: true, guest: 'Guest name', text: 'Guests read reviews before they book. Recent, specific ones work best.', stars: 5 },
     { ph: true, guest: 'Guest name', text: 'Reply to reviews in the Reviews section and the best ones show up here.', stars: 5 }
   ];
+  function inListing(unitId, pid) { if (unitId === pid) return true; var p = D.propById[unitId]; return String(pid).indexOf('type:') === 0 && !!p && p.unitTypeId === pid.slice(5); }
   function revMeta(r) {
     if (r.ph) return 'Guest · Country · Home';
-    var x = D.propById[r.propertyId];
-    return esc(firstName(r.guest)) + ' · ' + esc((D.countryName && D.countryName[r.country]) || r.country || '') + (x ? ' · ' + esc(x.short || x.name) : '') + (r.date ? ' · ' + esc(d.monthName(r.date) + ' ' + r.date.slice(0, 4)) : '');
+    var x = D.propById[r.propertyId], t = O.typeOf(x);
+    return esc(firstName(r.guest)) + ' · ' + esc((D.countryName && D.countryName[r.country]) || r.country || '') + (x ? ' · ' + esc(t ? t.name : x.short || x.name) : '') + (r.date ? ' · ' + esc(d.monthName(r.date) + ' ' + r.date.slice(0, 4)) : '');
   }
   function revHead(X, center) {
     var w = X.t.words.rev, F = X.F;

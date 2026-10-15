@@ -41,8 +41,11 @@ jobs:
           # api/, scripts/ and the service worker
           while IFS= read -r f; do
             node --check "$f" 2>"$tmp/err" || { echo "::error file=$f::$(grep -m1 -E 'Error' "$tmp/err")"; cat "$tmp/err"; fail=1; }
-          done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' \) | sort; echo public/sw.js)
+          done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort; echo public/sw.js)
           exit $fail
+
+      - name: Unit tests (unit assignment)
+        run: node --test tests/assign.test.mjs
 
       - name: Config files are valid JSON
         run: |

@@ -449,8 +449,9 @@
   function fill(text, b) {
     if (!b) return text;
     var p = prop(b.propertyId), held = !b.idVerified || b.codeStatus === 'held';
-    var wifi = p.wifi || ['', ''];
-    var map = { guest_first: guestFirst(b.guest.name), property: p.name, wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: !canCodes() ? '[door code left out]' : held ? '[sent after the ID check]' : b.doorCode };
+    var gp = O.guestPlace(b), early = gp.typed && !(D.propById[b.propertyId] && D.NOW >= O.assign.unitRevealAt(b, p.checkInTime));
+    var wifi = early ? ['[in the guest app from 30 minutes before check-in]', '[in the guest app]'] : p.wifi || ['', ''];
+    var map = { guest_first: guestFirst(b.guest.name), property: gp.name, wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: !canCodes() ? '[door code left out]' : held ? '[sent after the ID check]' : b.doorCode };
     return text.replace(/\{([a-z_]+)\}/g, function (m0, k) { return map[k] != null ? map[k] : m0; });
   }
 

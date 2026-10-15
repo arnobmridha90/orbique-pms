@@ -3,6 +3,10 @@
    Desktop can show 7, 14 or 30 days (remembered on this device); phones always show 7 days, in portrait and landscape.
    Sticky property column ("name · location"), bars coloured by booking status with the platform mark, hatched blocks.
    Tap a bar to open the booking; tap a free night to add a booking or block dates (calendar.block).
+   Unit types: untagged units come first, as before. Typed units follow under a row per type (building · type) that shows how
+   many units are free each night, labelled by unit number, then "Unassigned" lanes for bookings of the type that have no
+   unit yet. Block dates can close several units at once ("All Deluxe units"); unlocked bookings on them move to another
+   unit of their type (O.reassignUnits).
    Exposes O.blockDates(opts) for other sections. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
@@ -121,6 +125,23 @@
 .blk-sum{font-size:12px; border-radius:8px; padding:8px 10px; line-height:1.45;}
 .blk-sum.ok{background:var(--surface-2); color:var(--text-2); border:1px solid var(--border);}
 .blk-sum.bad{background:var(--bad-soft); color:var(--bad);}
+.blk-sum.warn{background:var(--warn-soft); color:var(--warn);}
+.blk-units{display:flex; flex-direction:column; gap:8px; max-height:38vh; overflow:auto; border:1px solid var(--border); border-radius:10px; padding:8px 10px;}
+.blk-units .bu-g + .bu-g{border-top:1px solid var(--border); padding-top:8px;}
+.blk-units label{display:inline-flex; align-items:center; gap:7px; font-size:13px; cursor:pointer; min-height:30px;}
+.blk-units .bu-all{font-weight:800;}
+.blk-units .bu-all small, .blk-units .bu-h small{font-weight:500; color:var(--muted);}
+.blk-units .bu-h{font-size:12px; font-weight:800; color:var(--muted); min-height:24px; display:flex; align-items:center; gap:6px;}
+.blk-units .bu-us{display:flex; flex-wrap:wrap; gap:2px 14px; padding-left:24px;}
+.blk-units input{width:17px; height:17px; flex:none;}
+.pg-calendar .cal-row.grp, .pg-calendar .cal-row.grp .cal-prop{background:var(--surface-2);}
+.pg-calendar .cal-row.grp .cal-prop .pn{font-size:12px;}
+.pg-calendar .cal-av{position:absolute; top:0; bottom:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--text-2); white-space:nowrap; overflow:hidden; font-variant-numeric:tabular-nums;}
+.pg-calendar .cal-av.full{color:var(--muted); font-weight:600;}
+.pg-calendar .cal-av.over{color:var(--bad); background:var(--bad-soft);}
+.pg-calendar .cal-prop.sub{padding-left:24px;}
+.pg-calendar .cal-row.unas .cal-prop .pn{color:var(--warn);}
+.pg-calendar .cal-bar.unas{outline:2px dashed var(--warn); outline-offset:-2px;}
 
 @media (max-width:1100px){ .pg-calendar{--pc:170px;} }
 
@@ -144,6 +165,7 @@
 .pg-calendar.is-phone .cal-prop .pn{font-size:12px;}
 .pg-calendar.is-phone .cal-prop .pl{font-size:10.5px;}
 .pg-calendar.is-phone.is-port .cal-prop{padding:0 5px 0 10px;}
+.pg-calendar.is-phone .cal-prop.sub{padding-left:16px;}
 .pg-calendar.is-phone.is-port .cal-prop .pn{font-size:11.5px;}
 .pg-calendar.is-phone.is-port .cal-prop .pl{font-size:10px;}
 .pg-calendar.is-phone .cal-corner .cnt{display:none;}
@@ -180,10 +202,27 @@
     return LENGTHS.indexOf(n) >= 0 ? n : 7;
   }
   function shortTime(t) { return fmt.time(t || '15:00').replace(':00 ', ' '); }
+  function typed(p) { var t = p && p.unitTypeId && O.unitType(p.unitTypeId); return !!(t && !t.archived); }
+  function liveTypes() { /* unit types with at least one active unit, building by building */
+    return D.unitTypes.filter(function (t) { return !t.archived && D.properties.some(function (p) { return !isArchived(p) && p.unitTypeId === t.id; }); }).sort(function (a, b) {
+      var x = (O.building(a.buildingId) || {}).name || '', y = (O.building(b.buildingId) || {}).name || '';
+      return x.localeCompare(y) || (a.order || 0) - (b.order || 0) || String(a.name).localeCompare(String(b.name));
+    });
+  }
+  function filterOK(v) {
+    if (!v) return true;
+    if (v.indexOf('area:') === 0) return true;
+    if (v.indexOf('bd:') === 0) { var b = O.building(v.slice(3)); return !!(b && !b.archived); }
+    if (v.indexOf('type:') === 0) { var t = O.unitType(v.slice(5)); return !!(t && !t.archived); }
+    return !!D.propById[v];
+  }
+  function oneProp() { return st.prop && D.propById[st.prop] ? st.prop : undefined; }
   function shownProps() {
     var list = D.properties.filter(function (p) { return !isArchived(p); });
     if (!st.prop) return list;
     if (st.prop.indexOf('area:') === 0) { var a = st.prop.slice(5); return list.filter(function (p) { return region(p) === a; }); }
+    if (st.prop.indexOf('bd:') === 0) { var bd = st.prop.slice(3); return list.filter(function (p) { return p.buildingId === bd; }); }
+    if (st.prop.indexOf('type:') === 0) { var ty = st.prop.slice(5); return list.filter(function (p) { return p.unitTypeId === ty; }); }
     return list.filter(function (p) { return p.id === st.prop; });
   }
   function bookingsOf(pid, from, to) { return D.bookings.filter(function (b) { return b.propertyId === pid && live(b) && b.checkIn <= to && b.checkOut > from; }); }
@@ -195,6 +234,29 @@
   /* the free stretch starting at a free night: [iso, first taken night) */
   function freeUntil(pid, iso) { var z = iso, i = 0; while (i++ < 120 && !nightTaken(pid, z)) z = d.add(z, 1); return { to: z, capped: i >= 120 }; }
   function initials(name) { return fmt.initials(name || '?'); }
+  /* the rows of the timeline: untagged units as before, then per unit type a header row, its units and unassigned lanes */
+  function rowsOf(props, from, to) {
+    var out = [];
+    props.forEach(function (p) { if (!typed(p)) out.push({ k: 'p', p: p }); });
+    var one = st.prop && D.propById[st.prop];
+    liveTypes().forEach(function (t) {
+      var units = props.filter(function (p) { return p.unitTypeId === t.id; }).sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); });
+      if (!units.length) return;
+      out.push({ k: 'g', t: t });
+      units.forEach(function (p) { out.push({ k: 'p', p: p, sub: true }); });
+      if (one) return;
+      var lanes = [];
+      D.bookings.filter(function (b) { return live(b) && b.unitTypeId === t.id && !b.propertyId && b.checkIn <= to && b.checkOut > from; })
+        .sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : 0; })
+        .forEach(function (b) {
+          var ln = lanes.filter(function (l) { return l.end <= b.checkIn; })[0];
+          if (!ln) { ln = { end: '', list: [] }; lanes.push(ln); }
+          ln.list.push(b); ln.end = b.checkOut;
+        });
+      lanes.forEach(function (l, i) { out.push({ k: 'u', t: t, list: l.list, i: i, n: lanes.length }); });
+    });
+    return out;
+  }
 
   /* width of a label in the bar font, so a name is only shown when it really fits */
   var measureCtx = null, measureFamily = null, measureCache = {};
@@ -249,7 +311,10 @@
     if (tools()) tools().open(b); else O.booking.open(b);
   }
 
-  /* ---------------- block dates (new / edit) ---------------- */
+  /* ---------------- block dates (new / edit) ----------------
+     opts = {propertyId, typeId, start, last, type, block}. With unit types, a new block can close several units at once:
+     one block per unit, sharing a groupId. A typed booking that is not locked may sit on a blocked unit: it moves to another
+     unit of its type when the block is saved (O.reassignUnits). Editing a block keeps the single unit. */
   function openBlock(o) {
     o = o || {};
     var T = D.TODAY, bl = o.block || null, canEdit = O.can('calendar.block');
@@ -261,50 +326,106 @@
       U.modal({ title: bl.type === 'owner' ? 'Owner stay' : 'Maintenance', sub: propLabel(bp), size: 'sm', body: '<dl class="kv"><dt>Nights</dt><dd>' + d.fmtY(bl.start) + ' → ' + d.fmtY(d.add(bl.end, -1)) + '</dd><dt>Length</dt><dd>' + fmt.plural(d.diff(bl.start, bl.end), 'night') + '</dd>' + (bl.note ? '<dt>Note</dt><dd>' + esc(bl.note) + '</dd>' : '') + '</dl><div class="xs muted" style="margin-top:10px">Not bookable on any platform. Your access does not include changing blocks.</div>', actions: [{ label: 'Close' }] });
       return;
     }
+    var types = liveTypes(), multi = !bl && types.length > 0;
     var pid0 = bl ? bl.propertyId : (o.propertyId && D.propById[o.propertyId] ? o.propertyId : props[0].id);
+    var picked = {};
+    if (multi) {
+      if (o.typeId) O.unitsOfType(o.typeId).forEach(function (p) { picked[p.id] = 1; });
+      else if (o.propertyId && D.propById[o.propertyId]) picked[o.propertyId] = 1;
+    }
     var first0 = bl ? bl.start : (o.start && o.start >= T ? o.start : T);
     var last0 = bl ? d.add(bl.end, -1) : (o.last && o.last >= first0 ? o.last : first0);
     var type = bl ? bl.type : (o.type || 'maintenance');
-    var body = O.html('<div class="stack">' +
-      '<div class="field"><label>Property</label><select class="select" name="pid">' + props.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === pid0 ? ' selected' : '') + '>' + esc(propLabel(p)) + '</option>'; }).join('') + '</select></div>' +
+    var unitsField;
+    if (multi) {
+      var cb = function (p, lbl) { return '<label><input type="checkbox" name="u" value="' + esc(p.id) + '"' + (p.unitTypeId ? ' data-t="' + esc(p.unitTypeId) + '"' : '') + (picked[p.id] ? ' checked' : '') + '>' + esc(lbl) + '</label>'; };
+      var plain = props.filter(function (p) { return !isArchived(p) && !typed(p); });
+      unitsField = '<div class="field"><label>Units</label><div class="blk-units">' + types.map(function (t) {
+        var us = O.unitsOfType(t.id), bd = O.building(t.buildingId);
+        return '<div class="bu-g"><label class="bu-all"><input type="checkbox" data-all="' + esc(t.id) + '">All ' + esc(t.name) + ' units <small>' + esc((bd ? bd.name + ' · ' : '') + us.length) + '</small></label>' +
+          '<div class="bu-us">' + us.map(function (p) { return cb(p, p.unitNo ? p.unitNo : propName(p)); }).join('') + '</div></div>';
+      }).join('') + (plain.length ? '<div class="bu-g"><div class="bu-h">Other units</div><div class="bu-us">' + plain.map(function (p) { return cb(p, propName(p)); }).join('') + '</div></div>' : '') + '</div></div>';
+    } else {
+      unitsField = '<div class="field"><label>Property</label><select class="select" name="pid">' + props.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === pid0 ? ' selected' : '') + '>' + esc(propLabel(p)) + '</option>'; }).join('') + '</select></div>';
+    }
+    var body = O.html('<div class="stack">' + unitsField +
       '<div class="form-grid"><div class="field"><label>First night</label><input type="date" class="input" name="a" value="' + first0 + '"></div>' +
       '<div class="field"><label>Last night</label><input type="date" class="input" name="z" value="' + last0 + '"></div></div>' +
       '<div class="field"><label>Reason</label>' + U.seg([['maintenance', 'Maintenance'], ['owner', 'Owner stay']], type, 'data-type') + '</div>' +
       '<div class="field"><label>Note</label><input class="input" name="note" maxlength="120" placeholder="For example: aircon service, owner family visit" value="' + esc(bl ? bl.note || '' : '') + '"></div>' +
       '<div class="blk-sum" role="status"></div>' +
       '<div class="xs muted">Blocked nights close the unit for new bookings on your website and every connected platform.</div></div>');
-    function vals() { return { pid: O.$('[name=pid]', body).value, a: O.$('[name=a]', body).value, z: O.$('[name=z]', body).value, note: O.$('[name=note]', body).value.trim() }; }
+    function syncAll() { types.forEach(function (t) { var all = O.$('[data-all="' + t.id + '"]', body), us = O.$$('[name=u][data-t="' + t.id + '"]', body); if (!all) return; var n = us.filter(function (c) { return c.checked; }).length; all.checked = n > 0 && n === us.length; all.indeterminate = n > 0 && n < us.length; }); }
+    function vals() {
+      var pids = multi ? O.$$('[name=u]:checked', body).map(function (c) { return c.value; }) : [O.$('[name=pid]', body).value];
+      return { pids: pids, a: O.$('[name=a]', body).value, z: O.$('[name=z]', body).value, note: O.$('[name=note]', body).value.trim() };
+    }
+    function unitName(p) { return p.unitNo && typed(p) ? p.unitNo : (p.short || p.name); }
+    /* {err: [...], move: [bookings that move], stranded: [bookings left without a unit], newBlocks} */
     function problems(v) {
-      var err = [], now = D.TODAY;
-      if (!v.a || !v.z) { err.push('Choose the first and last night.'); return err; }
-      if (v.z < v.a) { err.push('The last night must be on or after the first night.'); return err; }
+      var err = [], now = D.TODAY, res = { err: err, move: [], stranded: [] };
+      if (!v.pids.length) { err.push('Tick at least one unit.'); return res; }
+      if (!v.a || !v.z) { err.push('Choose the first and last night.'); return res; }
+      if (v.z < v.a) { err.push('The last night must be on or after the first night.'); return res; }
       if (v.a < now && !(bl && v.a === bl.start)) err.push('Blocks can only start today or later.');
       if (d.diff(v.a, v.z) + 1 > 90) err.push('A block can be at most 90 nights.');
-      var end = d.add(v.z, 1), p = D.propById[v.pid];
-      D.bookings.forEach(function (b) { if (b.propertyId === v.pid && live(b) && b.checkIn < end && v.a < b.checkOut) err.push(b.guest.name + ' is booked ' + d.fmtRange(b.checkIn, b.checkOut) + ' (' + U.platName(b.channel) + ').'); });
-      (D.blocks || []).forEach(function (x) { if (x !== bl && x.propertyId === v.pid && x.start < end && v.a < x.end) err.push((p.short || p.name) + ' is already blocked ' + d.fmtRange(x.start, d.add(x.end, -1)) + '.'); });
-      return err;
+      var end = d.add(v.z, 1);
+      v.pids.forEach(function (pid) {
+        var p = D.propById[pid]; if (!p) return;
+        D.bookings.forEach(function (b) {
+          if (b.propertyId !== pid || !live(b) || !(b.checkIn < end && v.a < b.checkOut)) return;
+          if (b.unitTypeId && !O.assign.lockReason(b, D.NOW)) res.move.push(b);
+          else err.push(b.guest.name + ' is booked at ' + unitName(p) + ' ' + d.fmtRange(b.checkIn, b.checkOut) + ' (' + U.platName(b.channel) + ').');
+        });
+        (D.blocks || []).forEach(function (x) { if (x !== bl && x.propertyId === pid && x.start < end && v.a < x.end) err.push(unitName(p) + ' is already blocked ' + d.fmtRange(x.start, d.add(x.end, -1)) + '.'); });
+      });
+      if (!err.length && res.move.length) { /* try the moves on copies: who would be left without a unit? */
+        var copies = D.bookings.filter(function (b) { return live(b) && b.checkOut > now; }).map(function (b) { return JSON.parse(JSON.stringify(b)); });
+        var blocks = (D.blocks || []).filter(function (x) { return x !== bl; }).concat(v.pids.map(function (pid) { return { propertyId: pid, start: v.a, end: end }; }));
+        var moves = O.assign.reassignAll({ bookings: copies, units: D.properties, blocks: blocks, now: D.NOW, from: now });
+        moves.forEach(function (m) { if (!m.to) { var b = D.booking(m.bookingId); if (b) res.stranded.push(b); } });
+      }
+      return res;
     }
     function update() {
-      var v = vals(), err = problems(v), box = O.$('.blk-sum', body), p = D.propById[v.pid];
-      box.className = 'blk-sum ' + (err.length ? 'bad' : 'ok');
-      if (err.length) box.innerHTML = '<b>Cannot block these nights.</b> ' + esc(err[0]) + (err.length > 1 ? ' And ' + (err.length - 1) + ' more.' : '');
-      else {
-        var n = d.diff(v.a, v.z) + 1, lost = d.range(v.a, v.z).reduce(function (s, x) { return s + rateOf(v.pid, x); }, 0);
-        box.innerHTML = '<b>' + fmt.plural(n, 'night') + '</b> at ' + esc(p.short || p.name) + ': ' + esc(d.fmtY(v.a)) + (n > 1 ? ' to ' + esc(d.fmtY(v.z)) : '') + '.' + (O.can('bookings.value') && lost ? ' At your current prices that is about <b>' + fmt.money(lost) + '</b> of nights.' : '');
-      }
+      var v = vals(), r = problems(v), err = r.err, box = O.$('.blk-sum', body);
+      box.className = 'blk-sum ' + (err.length ? 'bad' : r.stranded.length ? 'warn' : 'ok');
+      if (err.length) { box.innerHTML = '<b>Cannot block these nights.</b> ' + esc(err[0]) + (err.length > 1 ? ' And ' + (err.length - 1) + ' more.' : ''); return; }
+      var n = d.diff(v.a, v.z) + 1, lost = 0;
+      v.pids.forEach(function (pid) { lost += d.range(v.a, v.z).reduce(function (s, x) { return s + rateOf(pid, x); }, 0); });
+      var where = v.pids.length === 1 ? esc(unitName(D.propById[v.pids[0]])) : fmt.plural(v.pids.length, 'unit');
+      var html = '<b>' + fmt.plural(n, 'night') + '</b> at ' + where + ': ' + esc(d.fmtY(v.a)) + (n > 1 ? ' to ' + esc(d.fmtY(v.z)) : '') + '.' + (O.can('bookings.value') && lost ? ' At your current prices that is about <b>' + fmt.money(lost) + '</b> of nights.' : '');
+      var movers = r.move.filter(function (b) { return r.stranded.indexOf(b) < 0; });
+      if (movers.length) html += ' ' + esc(fmt.plural(movers.length, 'booking') + ' will move to another unit of the same type.');
+      if (r.stranded.length) html += ' <b>' + esc(r.stranded.map(function (b) { return b.guest.name; }).join(', ') + ' would have' + ' no unit') + '</b>, because every unit of the type is taken. You can still block and move ' + (r.stranded.length === 1 ? 'that guest' : 'those guests') + ' by hand.';
+      box.innerHTML = html;
     }
     body.addEventListener('input', update);
-    body.addEventListener('change', function (e) { if (e.target.name === 'a') { var z = O.$('[name=z]', body); if (!z.value || z.value < e.target.value) z.value = e.target.value; } update(); });
+    body.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t.name === 'a') { var z = O.$('[name=z]', body); if (!z.value || z.value < t.value) z.value = t.value; }
+      if (t.dataset && t.dataset.all) O.$$('[name=u][data-t="' + t.dataset.all + '"]', body).forEach(function (c) { c.checked = t.checked; });
+      syncAll(); update();
+    });
     body.addEventListener('click', function (e) { var b = e.target.closest('[data-type]'); if (!b) return; type = b.dataset.type; O.$$('[data-type]', body).forEach(function (x) { x.classList.toggle('on', x === b); }); });
-    update();
+    syncAll(); update();
     function save() {
-      var v = vals(), err = problems(v);
-      if (err.length) { update(); return false; }
-      var p = D.propById[v.pid], end = d.add(v.z, 1), n = d.diff(v.a, end);
-      if (bl) { bl.propertyId = v.pid; bl.start = v.a; bl.end = end; bl.type = type; bl.note = v.note; bl.updatedBy = O.state.viewer; }
-      else D.blocks.push({ id: O.uid('BL'), propertyId: v.pid, start: v.a, end: end, type: type, note: v.note, createdBy: O.state.viewer, createdAt: D.NOW });
-      U.toast((bl ? 'Block updated: ' : 'Blocked ') + (p.short || p.name) + ' for ' + fmt.plural(n, 'night') + ' (' + (n === 1 ? d.fmt(v.a) : d.fmtRange(v.a, v.z)) + '). All platform calendars are closed for these nights.');
+      var v = vals(), r = problems(v);
+      if (r.err.length) { update(); return false; }
+      var end = d.add(v.z, 1), n = d.diff(v.a, end), when = ' (' + (n === 1 ? d.fmt(v.a) : d.fmtRange(v.a, v.z)) + ')';
+      var label;
+      if (bl) { bl.propertyId = v.pids[0]; bl.start = v.a; bl.end = end; bl.type = type; bl.note = v.note; bl.updatedBy = O.state.viewer; }
+      else {
+        var group = v.pids.length > 1 ? O.uid('BG') : null;
+        v.pids.forEach(function (pid) { var x = { id: O.uid('BL'), propertyId: pid, start: v.a, end: end, type: type, note: v.note, createdBy: O.state.viewer, createdAt: D.NOW }; if (group) x.groupId = group; D.blocks.push(x); });
+      }
+      var ps = v.pids.map(function (pid) { return D.propById[pid]; }), t0 = ps[0] && ps[0].unitTypeId, same = t0 && ps.every(function (p) { return p.unitTypeId === t0; }), tt = same && O.unitType(t0);
+      if (ps.length === 1) label = unitName(ps[0]) + (tt ? ' (' + tt.name + ')' : '');
+      else if (tt) label = (ps.length === O.unitsOfType(t0).length ? 'all ' : '') + ps.length + ' ' + tt.name + ' units';
+      else label = ps.length + ' units';
+      var moves = O.reassignUnits(), lost = moves.filter(function (m) { return !m.to; }).length;
+      U.toast((bl ? 'Block updated: ' : 'Blocked ') + label + ' for ' + fmt.plural(n, 'night') + when + '. All platform calendars are closed for these nights.' +
+        (moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' moved to another unit' + (lost ? ', ' + lost + ' still need' + (lost === 1 ? 's' : '') + ' a unit' : '') + '.' : ''), lost ? 'bad' : undefined);
       O.emit('data', { type: 'block' });
     }
     var actions = [{ label: 'Cancel' }, { label: bl ? 'Save changes' : 'Block dates', kind: 'primary', onClick: save }];
@@ -312,11 +433,12 @@
       label: 'Remove block', kind: 'danger', onClick: function () {
         var i = D.blocks.indexOf(bl); if (i >= 0) D.blocks.splice(i, 1);
         var bp = D.propById[bl.propertyId];
-        U.toast('Block removed. ' + (bp ? bp.short || bp.name : 'The unit') + ' is bookable again for ' + d.fmtRange(bl.start, d.add(bl.end, -1)) + '.');
+        var moves = O.reassignUnits();
+        U.toast('Block removed. ' + (bp ? unitName(bp) : 'The unit') + ' is bookable again for ' + d.fmtRange(bl.start, d.add(bl.end, -1)) + '.' + (moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' now ' + (moves.length === 1 ? 'has' : 'have') + ' a unit.' : ''));
         O.emit('data', { type: 'block' });
       }
     });
-    U.modal({ title: bl ? 'Blocked dates' : 'Block dates', sub: bl ? (bl.type === 'owner' ? 'Owner stay' : 'Maintenance') + ' at ' + propLabel(D.propById[bl.propertyId]) : 'Close a unit for maintenance or an owner stay.', body: body, actions: actions });
+    U.modal({ title: bl ? 'Blocked dates' : 'Block dates', sub: bl ? (bl.type === 'owner' ? 'Owner stay' : 'Maintenance') + ' at ' + propLabel(D.propById[bl.propertyId]) : multi ? 'Close one or more units for maintenance or an owner stay.' : 'Close a unit for maintenance or an owner stay.', body: body, actions: actions });
   }
   O.blockDates = openBlock; /* other sections may reuse it */
 
@@ -338,15 +460,15 @@
         if (pp.bookingId && D.booking(pp.bookingId)) { var fb = D.booking(pp.bookingId); st.flash = fb.id; if (!st.start) st.start = fb.checkIn < T ? fb.checkIn : T; }
       }
       if (!st.start) st.start = T;
-      if (st.prop && st.prop.indexOf('area:') !== 0 && !D.propById[st.prop]) st.prop = '';
+      if (!filterOK(st.prop)) st.prop = '';
       var phone = isPhone(), portrait = phone && window.innerWidth < window.innerHeight;
       var canNew = O.can('bookings.create'), canBlock = O.can('calendar.block');
       var all = D.properties.filter(function (p) { return !isArchived(p); });
 
       ctx.setActions(phone || !all.length ? '' : (canBlock ? '<button type="button" class="btn btn-ghost" data-act="block">' + O.icon('lock') + 'Block dates</button>' : '') + (canNew ? '<button type="button" class="btn btn-primary" data-act="new">' + O.icon('plus') + 'New booking</button>' : ''));
       var ab = O.$('[data-act=block]', ctx.actionsEl), an = O.$('[data-act=new]', ctx.actionsEl);
-      if (ab) ab.onclick = function () { openBlock({ propertyId: st.prop && D.propById[st.prop] ? st.prop : undefined }); };
-      if (an) an.onclick = function () { newBooking(st.prop && D.propById[st.prop] ? st.prop : undefined); };
+      if (ab) ab.onclick = function () { openBlock({ propertyId: oneProp(), typeId: st.prop.indexOf('type:') === 0 ? st.prop.slice(5) : undefined }); };
+      if (an) an.onclick = function () { newBooking(oneProp()); };
 
       /* re-render when a phone turns or a window crosses the phone size */
       try {
@@ -365,11 +487,20 @@
       }
 
       var days = viewDays(), from = st.start, to = d.add(from, days - 1);
+      function buildingOpts(all) {
+        var ts = liveTypes(); if (!ts.length) return '';
+        var bds = []; ts.forEach(function (t) { if (bds.indexOf(t.buildingId) < 0) bds.push(t.buildingId); });
+        return '<optgroup label="Buildings">' + bds.map(function (id) {
+          var bd = O.building(id), n = all.filter(function (p) { return p.buildingId === id; }).length;
+          return (bd ? '<option value="bd:' + esc(id) + '"' + (st.prop === 'bd:' + id ? ' selected' : '') + '>' + esc(bd.name) + ' (' + n + ')</option>' : '') +
+            ts.filter(function (t) { return t.buildingId === id; }).map(function (t) { return '<option value="type:' + esc(t.id) + '"' + (st.prop === 'type:' + t.id ? ' selected' : '') + '>' + esc(O.typeTitle(t)) + ' (' + O.unitsOfType(t.id).length + ')</option>'; }).join('');
+        }).join('') + '</optgroup>';
+      }
       var areas = regions(all);
       var propOpts = '<option value="">All properties</option>' + (areas.length > 1 ? '<optgroup label="Areas">' + areas.map(function (r) {
         var n = all.filter(function (p) { return region(p) === r; }).length;
         return '<option value="area:' + esc(r) + '"' + (st.prop === 'area:' + r ? ' selected' : '') + '>' + esc(r) + ' (' + n + ')</option>';
-      }).join('') + '</optgroup><optgroup label="Properties">' : '') + all.map(function (p) { return '<option value="' + esc(p.id) + '"' + (st.prop === p.id ? ' selected' : '') + '>' + esc(propName(p)) + '</option>'; }).join('') + (areas.length > 1 ? '</optgroup>' : '');
+      }).join('') + '</optgroup>' : '') + buildingOpts(all) + (areas.length > 1 || liveTypes().length ? '<optgroup label="Properties">' : '') + all.map(function (p) { return '<option value="' + esc(p.id) + '"' + (st.prop === p.id ? ' selected' : '') + '>' + esc(propName(p)) + '</option>'; }).join('') + (areas.length > 1 || liveTypes().length ? '</optgroup>' : '');
 
       root.innerHTML = '<div class="pg-calendar' + (phone ? ' is-phone' : '') + (portrait ? ' is-port' : '') + '">' +
         '<div class="cal-tools">' +
@@ -444,7 +575,7 @@
         }
 
         function clip(a, z) { return { a: Math.max(a, 0), z: Math.min(z, lw), cl: a < 0, cr: z > lw }; }
-        function barHTML(b, a, z) {
+        function barHTML(b, a, z, extraCls) {
           var c = clip(a, z), left = c.a + (c.cl ? 0 : 1.5), w = c.z - left - (c.cr ? 0 : 1.5);
           if (w < 6) return '';
           var nm = String(b.guest.name || ''), nts = fmt.plural(b.nights, 'night');
@@ -460,8 +591,8 @@
           else if (fits(ini)) label = ini;
           else if (tight && fits(ini, 10.5)) { label = ini; bfs = 10.5; }
           var sd = sdOn && label ? '<span class="sdm" aria-hidden="true">⚡</span>' : '';
-          var cls = 'cal-bar s-' + b.status + (tight ? ' tight' : '') + (c.cl ? ' clipL' : '') + (c.cr ? ' clipR' : '') + (st.flash === b.id ? ' flash' : '');
-          var aria = nm + ', ' + U.platName(b.channel) + ', ' + U.statusLabel(b.status) + ', ' + d.fmtRange(b.checkIn, b.checkOut) + ', ' + nts;
+          var cls = 'cal-bar s-' + b.status + (extraCls ? ' ' + extraCls : '') + (tight ? ' tight' : '') + (c.cl ? ' clipL' : '') + (c.cr ? ' clipR' : '') + (st.flash === b.id ? ' flash' : '');
+          var aria = (extraCls ? 'No unit yet: ' : '') + nm + ', ' + U.platName(b.channel) + ', ' + U.statusLabel(b.status) + ', ' + d.fmtRange(b.checkIn, b.checkOut) + ', ' + nts;
           return '<button type="button" class="' + cls + '" data-id="' + esc(b.id) + '" aria-label="' + esc(aria) + '" style="left:' + left.toFixed(1) + 'px;width:' + w.toFixed(1) + 'px;top:' + ((rh - bh) / 2 - 0.5).toFixed(1) + 'px;height:' + bh + 'px;--ic:' + icPx + 'px;--fs:' + bfs + 'px">' +
             (showIc ? U.platIcon(b.channel) : '') + (label ? '<span class="cb">' + sd + esc(label) + (extra ? ' <span class="nts">· ' + esc(extra) + '</span>' : '') + '</span>' : '') + '</button>';
         }
@@ -474,19 +605,39 @@
             (w >= 20 ? sizeIcon(O.icon(x.type === 'owner' ? 'home' : 'lock'), 12) : '') + (shown ? '<span class="cb">' + esc(shown) + '</span>' : '') + '</button>';
         }
 
-        var canOpenProp = O.can('bookings'), canAct = canNew || canBlock;
-        var rowsHTML = props.map(function (p) {
+        var canOpenProp = O.can('bookings'), canAct = canNew || canBlock, gh = phone ? 34 : 32;
+        function unitRow(p, sub) {
           var bars = '';
           bookingsOf(p.id, from, to).forEach(function (b) { bars += barHTML(b, X(b.checkIn), X(b.checkOut)); });
           blocksOf(p.id, from, to).forEach(function (x) { bars += blockHTML(x, X(x.start), X(x.end)); });
           var loc = place(p), short = phone && portrait ? (p.short || p.name) : propName(p), locShort = phone && portrait ? String(loc).split(', ')[0] : loc;
+          if (sub) { short = p.unitNo ? 'Unit ' + p.unitNo : short; locShort = phone && portrait ? '' : p.unitNo ? propName(p) : ''; }
           var inner = '<span class="pn">' + esc(short) + '</span>' + (locShort ? '<span class="pl">' + esc(locShort) + '</span>' : '');
           var cell = canOpenProp
-            ? '<button type="button" class="cal-prop" data-prop="' + esc(p.id) + '" title="' + esc(propLabel(p) + '. Click to see its bookings.') + '">' + inner + '</button>'
-            : '<div class="cal-prop" title="' + esc(propLabel(p)) + '">' + inner + '</div>';
+            ? '<button type="button" class="cal-prop' + (sub ? ' sub' : '') + '" data-prop="' + esc(p.id) + '" title="' + esc(propLabel(p) + '. Click to see its bookings.') + '">' + inner + '</button>'
+            : '<div class="cal-prop' + (sub ? ' sub' : '') + '" title="' + esc(propLabel(p)) + '">' + inner + '</div>';
           return '<div class="cal-row" style="height:' + rh + 'px">' + cell +
             '<div class="cal-lane' + (canAct ? '' : ' ro') + '" data-pid="' + esc(p.id) + '" style="width:' + lw.toFixed(2) + 'px">' + bars + '</div></div>';
-        }).join('');
+        }
+        function groupRow(t) {
+          var bd = O.building(t.buildingId), av = O.assign.typeAvailability({ unitTypeId: t.id, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
+          var cells = av.map(function (n, i) {
+            var over = n.raw < 0, txt = over ? (dw >= 64 ? 'Oversold' : '!') : dw >= 76 ? n.availability + ' of ' + n.units + ' free' : dw >= 34 ? n.availability + '/' + n.units : String(n.availability);
+            var tl = d.dowName(n.date) + ' ' + d.fmt(n.date) + ': ' + (over ? 'oversold by ' + fmt.plural(-n.raw, 'booking') : n.availability + ' of ' + n.units + ' ' + t.name + ' units free') + (n.unassigned ? ', ' + n.unassigned + ' without a unit' : '');
+            return '<span class="cal-av' + (over ? ' over' : n.availability === 0 ? ' full' : '') + '" style="left:' + (i * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px" title="' + esc(tl) + '">' + esc(txt) + '</span>';
+          }).join('');
+          var sub = phone && portrait ? '' : (bd ? bd.name : '');
+          return '<div class="cal-row grp" style="height:' + gh + 'px"><div class="cal-prop" title="' + esc(O.typeTitle(t) + ': units free each night') + '"><span class="pn">' + esc(t.name) + '</span>' + (sub ? '<span class="pl">' + esc(sub) + '</span>' : '') + '</div>' +
+            '<div class="cal-lane ro" style="width:' + lw.toFixed(2) + 'px">' + cells + '</div></div>';
+        }
+        function unassignedRow(r) {
+          var bars = r.list.map(function (b) { return barHTML(b, X(b.checkIn), X(b.checkOut), 'unas'); }).join('');
+          var lbl = 'Unassigned' + (r.n > 1 ? ' ' + (r.i + 1) : '');
+          return '<div class="cal-row unas" style="height:' + rh + 'px"><div class="cal-prop sub" title="' + esc(t0(r.t)) + '"><span class="pn">' + esc(lbl) + '</span>' + (phone && portrait ? '' : '<span class="pl">' + esc(r.t.name + ', no unit free') + '</span>') + '</div>' +
+            '<div class="cal-lane ro" style="width:' + lw.toFixed(2) + 'px">' + bars + '</div></div>';
+        }
+        function t0(t) { return t.name + ' bookings that no single unit can take yet. Open one to pick a unit by hand.'; }
+        var rowsHTML = rowsOf(props, from, to).map(function (r) { return r.k === 'g' ? groupRow(r.t) : r.k === 'u' ? unassignedRow(r) : unitRow(r.p, r.sub); }).join('');
 
         scroll.innerHTML = '<div class="cal-track" style="width:' + (pc + lw).toFixed(2) + 'px">' +
           '<div class="cal-hd"><div class="cal-corner"><span class="cnt">' + fmt.plural(props.length, 'property', 'properties') + '</span></div><div class="cal-days" style="width:' + lw.toFixed(2) + 'px">' + months + dayCells + '</div></div>' +
@@ -527,8 +678,8 @@
             go(nv === 0 ? D.TODAY : d.add(st.start, nv * STEP)); return;
           }
           if (t.dataset.len) { O.store.set('calendar.days', +t.dataset.len); st.scroll = null; ctx.rerender(); return; }
-          if (t.dataset.act === 'new') { newBooking(st.prop && D.propById[st.prop] ? st.prop : undefined); return; }
-          if (t.dataset.act === 'block') { openBlock({ propertyId: st.prop && D.propById[st.prop] ? st.prop : undefined }); return; }
+          if (t.dataset.act === 'new') { newBooking(oneProp()); return; }
+          if (t.dataset.act === 'block') { openBlock({ propertyId: oneProp(), typeId: st.prop.indexOf('type:') === 0 ? st.prop.slice(5) : undefined }); return; }
           if (t.dataset.prop) { O.go('bookings', { propertyId: t.dataset.prop, from: G.from, to: G.to }); return; }
           if (t.dataset.block) { tip.style.display = 'none'; var bl = (D.blocks || []).filter(function (x) { return x.id === t.dataset.block; })[0]; if (bl) openBlock({ block: bl }); return; }
           if (t.dataset.id) { tip.style.display = 'none'; openBooking(t.dataset.id); return; }

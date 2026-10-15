@@ -40,3 +40,6 @@ echo "== with stand-ins for Vault, pg_net and pg_cron"
 URL2="$(prepare orbique_channex_ext_test tests/sql/supabase_ext_stub.sql | tail -n 1)"
 ( export CHANNEX_WORKER_SECRET="test-worker-secret-$(date +%s)" APP_URL="http://127.0.0.1:3000/"; unset VERCEL_ENV; migrate_all "$URL2" )
 psqlq "$URL2" -f tests/sql/channex_cron.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
+
+echo "== guest units (0008)"
+psqlq "$URL1" -f tests/sql/guest_units.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'

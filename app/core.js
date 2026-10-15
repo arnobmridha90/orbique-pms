@@ -495,6 +495,71 @@
     opts = opts || {};
     return (opts.all ? '<option value="">' + O.esc(opts.all) + '</option>' : '') + D.properties.filter(function (p) { return !p.archived || p.id === selected || opts.archived; }).map(function (p) { return '<option value="' + p.id + '"' + (p.id === selected ? ' selected' : '') + '>' + O.esc(p.name) + '</option>'; }).join('');
   };
+  /* ---------------- buildings and unit types ----------------
+     D.buildings  {id: 'BD-…', name, address, city, state, zip, country, currency, checkInTime, checkOutTime, archived}
+     D.unitTypes  {id: 'UT-…', buildingId, name: 'Deluxe', maxGuests, beds, description, order, archived}
+     A unit (property) may carry buildingId, unitTypeId, unitNo ('21-1', only the team sees it) and assignPriority.
+     A booking of a typed unit carries unitTypeId (what was sold), propertyId (the unit, null while none is free),
+     assignment {how: 'auto'|'manual', by, at, locked} and needsUnit. Untyped units and their bookings work as before. */
+  D.buildings = D.buildings || [];
+  D.unitTypes = D.unitTypes || [];
+  O.building = function (id) { if (!id) return null; for (var i = 0; i < D.buildings.length; i++) if (D.buildings[i].id === id) return D.buildings[i]; return null; };
+  O.unitType = function (id) { if (!id) return null; for (var i = 0; i < D.unitTypes.length; i++) if (D.unitTypes[i].id === id) return D.unitTypes[i]; return null; };
+  /* the unit type of a unit (property or id), or null for an untyped unit */
+  O.typeOf = function (p) { if (typeof p === 'string') p = D.propById[p]; return p && p.unitTypeId ? O.unitType(p.unitTypeId) : null; };
+  O.unitsOfType = function (typeId, withArchived) { return D.properties.filter(function (p) { return p && p.unitTypeId === typeId && (withArchived || !p.archived); }).sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); }); };
+  O.typesOf = function (buildingId, withArchived) { return D.unitTypes.filter(function (t) { return t.buildingId === buildingId && (withArchived || !t.archived); }).sort(function (a, b) { return (a.order || 0) - (b.order || 0) || String(a.name).localeCompare(String(b.name)); }); };
+  /* "Seri Saujana Residences · Deluxe": what guests, invoices and the website call a typed unit (never its number) */
+  O.typeTitle = function (t) { if (typeof t === 'string') t = O.unitType(t); if (!t) return ''; var bd = O.building(t.buildingId); return (bd && bd.name ? bd.name + ' · ' : '') + t.name; };
+  /* guest-facing place for a unit or a booking: {name, area, address}. Typed units show building + type and the building's address. */
+  O.guestPlace = function (x) {
+    var p = x && x.guest ? D.propById[x.propertyId] : (typeof x === 'string' ? D.propById[x] : x);
+    var t = x && x.guest && x.unitTypeId ? O.unitType(x.unitTypeId) : O.typeOf(p);
+    if (t) { var bd = O.building(t.buildingId) || {}; return { name: O.typeTitle(t), area: (p && p.area) || bd.city || '', address: bd.address || '', typed: true }; }
+    if (!p) return { name: 'the property', area: '', address: '', typed: false };
+    return { name: p.name || 'the property', area: p.area || '', address: p.address || '', typed: false };
+  };
+  /* staff label for where a booking stays: "Saujana 21-1", or "Deluxe, no unit yet" */
+  O.bookingPlace = function (b) {
+    var p = b && D.propById[b.propertyId];
+    if (p) return p.name;
+    var t = b && O.unitType(b.unitTypeId);
+    return t ? t.name + ', no unit yet' : 'Removed property';
+  };
+  function unitTxt(id) { var p = D.propById[id]; return p ? (p.unitNo || p.short || p.name) : 'no unit'; }
+  function ciTimeFor(b) { var p = D.propById[b.propertyId], t = O.unitType(b.unitTypeId), bd = t && O.building(t.buildingId); return (p && p.checkInTime) || (bd && bd.checkInTime) || '15:00'; }
+  function auditMove(b, from, to, how) {
+    if (!Array.isArray(D.auditLog)) D.auditLog = [];
+    D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'bookings', text: (how === 'manual' ? 'Moved ' : 'Assigned ') + b.guest.name + ' (' + b.id + ') ' + (from ? 'from ' + unitTxt(from) + ' ' : '') + 'to ' + (to ? unitTxt(to) : 'no unit (none free for the whole stay)') + (how === 'manual' ? '' : ' automatically') });
+  }
+  /* run unit assignment (O.assign) for one booking with this workspace's data and write the result on it.
+     o = {fresh: ignore the current unit, ignoreLock, dry: only work it out}. Untyped bookings are left as they are. */
+  O.assignBooking = function (b, o) {
+    o = o || {};
+    var res = O.assign.assignUnits({ booking: b, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], now: D.NOW, fresh: o.fresh, ignoreLock: o.ignoreLock, ciTime: b ? ciTimeFor(b) : null });
+    if (o.dry) return res;
+    var from = (b && b.propertyId) || null;
+    if (O.assign.applyResult(b, res, { how: 'auto', by: O.state.viewer, at: D.NOW, force: o.ignoreLock })) auditMove(b, from, res.unitId, 'auto');
+    return res;
+  };
+  /* a person picks the unit: always locks the booking */
+  O.pickUnit = function (b, unitId) {
+    var from = b.propertyId || null, p = D.propById[unitId]; if (!p) return false;
+    b.propertyId = unitId; if (b.needsUnit) delete b.needsUnit;
+    if (!b.unitTypeId && p.unitTypeId) b.unitTypeId = p.unitTypeId;
+    b.assignment = { how: 'manual', by: O.state.viewer, at: D.NOW, locked: true };
+    if (from !== unitId) auditMove(b, from, unitId, 'manual');
+    return true;
+  };
+  /* after blocks, retagging or archiving: move unlocked bookings off units they can no longer use, fill bookings without a unit.
+     o = {unitTypeIds}. Returns the moves [{bookingId, from, to}]; the caller emits 'data'. */
+  O.reassignUnits = function (o) {
+    o = o || {};
+    if (!D.unitTypes.length) return [];
+    var moves = O.assign.reassignAll({ bookings: D.bookings, units: D.properties, blocks: D.blocks || [], now: D.NOW, from: D.TODAY, unitTypeIds: o.unitTypeIds, by: O.state.viewer, at: D.NOW });
+    moves.forEach(function (m) { var b = D.booking(m.bookingId); if (b) auditMove(b, m.from, m.to, 'auto'); });
+    return moves;
+  };
   /* people still on the team (removed people keep their history but leave pickers) */
   O.activeStaff = function () { return D.staff.filter(function (s) { var m = (D.staffMeta || {})[s.id]; return s.status !== 'left' && !(m && m.removed); }); };
   U.staffOptions = function (selected, opts) {
@@ -949,6 +1014,9 @@
   /* arrival readiness for a booking: [{key,label,state:'ok'|'wait'|'todo'|'bad'}] */
   O.readiness = function (b) {
     var due = function (t) { return String(t.due || '').slice(0, 10); };
+    if (!b.propertyId && b.unitTypeId) {
+      return [{ key: 'clean', label: 'No unit yet', state: 'bad' }, { key: 'id', label: b.idVerified ? 'ID verified' : 'ID pending', state: b.idVerified ? 'ok' : 'wait' }];
+    }
     var clean = D.tasks.filter(function (t) { return t.propertyId === b.propertyId && t.type === 'Turnover' && due(t) === b.checkIn; })[0];
     var out = [];
     /* the check-in readiness task counts once the clean is done (or when there is no clean that day) */
@@ -1041,7 +1109,7 @@
   /* ---------------- invoices & receipts ---------------- */
   O.invoice = {};
   O.invoice.lines = function (b) {
-    var p = D.propById[b.propertyId] || { name: 'Stay', area: '' }, rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
+    var p = O.guestPlace(b), rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
     if (b.tourismTax) rows.push(['Tourism tax (foreign guests, RM 10 per night)', b.nights + ' × RM 10', b.tourismTax]);
     return rows;
   };
@@ -1064,7 +1132,7 @@
     var isR = kind === 'receipt', no = isR ? b.receiptNo : b.invoiceNo;
     if (isR && !b.paidAt) { U.toast('No payment recorded yet, so there is no receipt', 'bad'); return Promise.resolve(false); }
     return O.pdf.start(isR ? 'Payment receipt' : 'Invoice', no + ' · ' + d.fmtY(isR ? b.paidAt : b.invoiceDate)).then(function (r) {
-      var doc = r.doc, y = r.y, p = D.propById[b.propertyId] || { name: 'the property', area: '' }, ct = O.contact(b);
+      var doc = r.doc, y = r.y, p = O.guestPlace(b), ct = O.contact(b);
       y = O.pdf.text(doc, y, 'Billed to', { muted: true, size: 8 });
       y = O.pdf.text(doc, y, b.guest.name, { bold: true, size: 11 });
       y = O.pdf.text(doc, y, [ct.email, ct.phone, b.guest.countryName].filter(Boolean).join('  ·  '), { size: 9 });
@@ -1087,7 +1155,7 @@
   O.invoice.preview = function (b, kind) {
     var isR = kind === 'receipt';
     var m = U.modal({
-      title: (isR ? 'Payment receipt ' + (b.receiptNo || '') : 'Invoice ' + b.invoiceNo), sub: b.guest.name + ' · ' + D.propById[b.propertyId].name, size: 'wide',
+      title: (isR ? 'Payment receipt ' + (b.receiptNo || '') : 'Invoice ' + b.invoiceNo), sub: b.guest.name + ' · ' + O.bookingPlace(b), size: 'wide',
       body: isR && !b.paidAt ? '<div class="note warn">No payment has been recorded for this booking yet. The receipt is created automatically when payment arrives, or you can record it now.</div><div class="row-flex" style="margin-top:12px"><select class="select" style="max-width:240px" name="pm">' + ['FPX online banking', 'Card (Visa)', 'DuitNow QR', 'Bank transfer', 'Cash'].map(function (x) { return '<option>' + x + '</option>'; }).join('') + '</select><button type="button" class="btn btn-primary btn-sm mark-paid">Record payment</button></div>' : O.invoice.html(b, kind),
       actions: isR && !b.paidAt ? [{ label: 'Close' }] : [{ label: 'Download PDF', onClick: function () { O.invoice.pdf(b, kind); return false; } }, { label: 'Send to guest', kind: 'primary', onClick: function () { O.invoice.send(b, [kind]); } }],
       onOpen: function (el, close) { var mp = O.$('.mark-paid', el); if (mp) mp.onclick = function () { O.invoice.markPaid(b, O.$('[name=pm]', el).value); close(); U.toast('Payment recorded. Receipt ' + b.receiptNo + ' created.'); O.invoice.preview(b, 'receipt'); }; }
@@ -1111,7 +1179,7 @@
       O.$('.snd-to', body).value = via === 'WhatsApp' ? b.guest.phone : b.guest.email;
     }
     O.$('.snd-via', body).onclick = function (e) { var x = e.target.closest('button'); if (!x) return; via = x.dataset.v; paint(); };
-    O.$('.snd-msg', body).value = 'Hi ' + b.guest.name.split(' ')[0] + ', thank you for booking ' + D.propById[b.propertyId].name + ' (' + d.fmtRange(b.checkIn, b.checkOut) + '). Your ' + (kinds.length > 1 ? 'invoice and payment receipt are' : kinds[0] === 'receipt' ? 'payment receipt is' : 'invoice is') + ' attached. — ' + ws.name;
+    O.$('.snd-msg', body).value = 'Hi ' + b.guest.name.split(' ')[0] + ', thank you for booking ' + O.guestPlace(b).name + ' (' + d.fmtRange(b.checkIn, b.checkOut) + '). Your ' + (kinds.length > 1 ? 'invoice and payment receipt are' : kinds[0] === 'receipt' ? 'payment receipt is' : 'invoice is') + ' attached. — ' + ws.name;
     paint();
     U.modal({
       title: 'Send to ' + b.guest.name, sub: 'Booking ' + b.id + ' · total ' + O.fmt.money(b.total), body: body,
@@ -1140,8 +1208,10 @@
   O.booking.actions = [];
   O.booking.open = function (id) {
     var b = typeof id === 'string' ? D.booking(id) : id; if (!b) return;
-    var p = D.propById[b.propertyId] || { id: b.propertyId, name: 'Removed property', short: 'Removed' };
+    function place() { return D.propById[b.propertyId] || { id: b.propertyId, name: O.bookingPlace(b), short: 'Removed' }; }
+    var p = place();
     function render() {
+      p = place();
       var conv = D.conversations.filter(function (c) { return c.bookingId === b.id; })[0];
       var canMoney = O.can('bookings.value'), canCodes = O.can('guestapp.doorCodes'), canEdit = O.can('bookings.edit'), canContacts = O.can('bookings.contacts');
       var canInv = O.can('invoices'), canSend = O.can('invoices.send'), canPay = O.can('invoices.payments');
@@ -1150,7 +1220,7 @@
       return '<div class="stack">' +
         '<div class="row-flex wrap">' + U.status(b.status) + U.plat(b.channel) + (b.sameDay ? '<span class="pill accent">⚡ Same-day booking</span>' : '') + '<span class="muted small">Booked ' + O.fmt.dateTime(b.createdAt) + '</span></div>' +
         (extra.length ? '<div class="row-flex wrap">' + extra.map(function (x, i) { return '<button class="btn btn-' + (x.kind || 'ghost') + ' btn-sm" data-extra="' + i + '">' + (x.icon ? O.icon(x.icon) : '') + O.esc(x.label) + '</button>'; }).join('') + '</div>' : '') +
-        '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(O.propLabel(p)) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
+        '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(p.area || p.location || p.city ? O.propLabel(p) : p.name) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
         (b.status !== 'cancelled' && b.checkOut > D.TODAY ? '<div><div class="section-title" style="margin-top:0">Arrival readiness</div>' + O.readinessHTML(b) + '<div class="row-flex wrap" style="margin-top:8px">' + (!b.idVerified && canEdit ? '<button class="btn btn-ghost btn-sm" data-act="verify">Mark ID verified</button>' : '') + (canCodes ? '<button class="btn btn-ghost btn-sm" data-act="lock">' + O.icon('key') + 'Change door code</button><span class="small muted">Guest code <span class="kbd">' + O.esc(b.doorCode || '') + '</span></span>' : '') + '</div></div>' : '') +
         '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (conv && O.can('inbox') ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
         (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly) + '</dt><dd>' + O.fmt.money(b.accommodation) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total) + '</dd>' +
@@ -1353,7 +1423,7 @@
     last: { records: {}, blobs: {} },
     pending: false, pendingRemote: false, _timer: null, _writing: null, _demo: null
   };
-  ['bookings', 'blocks', 'tasks', 'reviews', 'conversations', 'quickReplies', 'expenses', 'staff', 'properties', 'invMoves', 'guestRequests', 'damageReports', 'staffInvites', 'ownerMessages'].forEach(function (k) { S.records(k, 'demo'); });
+  ['bookings', 'blocks', 'tasks', 'reviews', 'conversations', 'quickReplies', 'expenses', 'staff', 'properties', 'buildings', 'unitTypes', 'invMoves', 'guestRequests', 'damageReports', 'staffInvites', 'ownerMessages'].forEach(function (k) { S.records(k, 'demo'); });
   ['invItems', 'checklists'].forEach(function (k) { S.records(k, 'config'); });
   ['lockLog', 'sentLog', 'auditLog', 'priceLog'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo', cap: 500 }; });
   ['priceOverrides', 'priceOverrideMeta', 'pricingRules', 'ownerPayouts', 'staffMeta'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo' }; });

@@ -17,8 +17,8 @@
         text: 'Hi {guest_first}, Malaysian law asks us to verify every guest. Please upload your IC or passport here: {id_link}. Your door code is sent once this is done.' },
       { id: 'j3', name: 'Pre-arrival guide', icon: 'map', channels: ['WhatsApp', 'Email'], when: '3 days before check-in', on: true,
         text: 'Your guide for {property} is ready: directions, parking ({parking}) and Wi-Fi. Open the guest app here: {guest_app_link}' },
-      { id: 'j4', name: 'Door code', icon: 'key', channels: ['Smart lock', 'WhatsApp'], when: '24 hours before check-in · only after ID is verified and house rules are accepted', on: true,
-        text: 'Your door code for {property} is {door_code}. It works from {checkin_time} on your arrival day. Please do not share it.' },
+      { id: 'j4', name: 'Door code', icon: 'key', channels: ['Smart lock', 'WhatsApp'], when: '30 minutes before check-in, with the unit number · only after ID is verified and house rules are accepted', on: true,
+        text: 'Your door code for {property} is {door_code}. It works from 30 minutes before {checkin_time} on your arrival day. Please do not share it.' },
       { id: 'j5', name: 'Check-in day', icon: 'home', channels: ['WhatsApp'], when: 'Arrival day at 9:00 AM', on: true,
         text: 'Today is the day, {guest_first}! Check-in is from {checkin_time}. Wi-Fi: {wifi_name}, password {wifi_password}. Message us here if you need anything.' },
       { id: 'j6', name: 'Mid-stay check', icon: 'chat', channels: ['WhatsApp'], when: 'Morning after the first night · stays of 3 nights or more', on: true,
@@ -178,9 +178,11 @@
   /* ---------- template preview ---------- */
   function samples() { return D.bookings.filter(function (b) { return live(b) && b.checkIn >= D.TODAY && b.checkIn <= d.add(D.TODAY, 7); }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : a.checkInTime < b.checkInTime ? -1 : 1; }).slice(0, 12); }
   function vars(b) {
-    var p = D.propById[b.propertyId] || {}, wifi = p.wifi || [];
+    /* typed units: guests see "Building · Type"; the unit's own Wi-Fi only once the unit number shows (30 minutes before check-in) */
+    var p = D.propById[b.propertyId] || {}, gp = O.guestPlace(b), early = gp.typed && !(p.id && D.NOW >= O.assign.unitRevealAt(b, p.checkInTime));
+    var wifi = early ? ['[in the guest app from 30 minutes before check-in]', '[in the guest app]'] : p.wifi || [];
     return {
-      property: p.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
+      property: gp.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
       door_code: b.doorCode, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking,
       id_link: O.ws().domain + '/id/' + b.id.toLowerCase(), guest_app_link: O.ws().domain + '/stay/' + b.id.toLowerCase()
     };
@@ -381,8 +383,8 @@
         ['Booking confirmed', 'Invoice and welcome message go out'],
         ['ID verified', 'Guest uploads IC or passport from the link'],
         ['House rules accepted', rulesOn ? 'Ticked and signed in the guest app' : 'Paused: guests can skip the house rules'],
-        ['Code sent 24 hours before', codeOn ? 'By WhatsApp and set on the smart lock' : 'Paused: send codes by hand'],
-        ['Code works from check-in time', 'Expires at check-out time']
+        ['Code sent 30 minutes before check-in', codeOn ? 'By WhatsApp and set on the smart lock' : 'Paused: send codes by hand'],
+        ['Code works from 30 minutes before check-in', 'Expires at check-out time']
       ];
       if (st.group === 'new') st.group = 'all';
       var canAdd = O.allowed('properties') && O.can('properties.create');

@@ -7,10 +7,12 @@
        city ('Penang'), address, mapUrl, checkInTime / checkOutTime ('HH:MM', defaults 15:00 / 11:00), maxGuests, notes,
        ownerPhone, ownerEmail, photos ([JPEG data URL, ...] max 4, first = cover, each about 150 KB or less),
        archived (true), archivedAt, archivedBy, createdAt, createdBy
+     unit types (optional, see core.js): buildingId, unitTypeId, unitNo ('21-1', only the team sees it), assignPriority
+   The "Buildings & unit types" tab groups units into buildings and types (D.buildings, D.unitTypes) and tags units.
    Open from anywhere: O.go('properties', {propertyId: 'bf3b'}) shows that unit; O.go('properties', {add: true}) opens the new-property form. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, C = O.color, esc = O.esc, fmt = O.fmt;
-  var st = { q: '', show: 'active', city: '', view: O.store.get('properties:view', 'cards') };
+  var st = { q: '', show: 'active', city: '', view: O.store.get('properties:view', 'cards'), tab: O.store.get('properties:tab', 'units') };
   var DR = null; /* the open drawer: {dr, mode: 'view'|'edit', id, draft, dirty, pic, busy, off} */
   var MAX_PHOTOS = 4, PHOTO_LIMIT = 150 * 1024;
   var KINDS = ['Apartment', 'Condo', 'Loft', 'Suite', 'Flat', 'Studio', 'Townhouse', 'House', 'Villa', 'Bungalow', 'Chalet', 'Shophouse'];
@@ -63,6 +65,51 @@
 .pg-props .pp-none .btn{margin-top:10px;}
 .pg-props .view-seg{flex:none;}
 .pg-props .pp-meta .st-sm{display:none;}
+.pg-props .pp-tab{margin-bottom:14px;}
+.pg-props .pp-typ{font-size:11.5px; font-weight:700; color:var(--brand-strong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
+/* buildings and unit types */
+.pg-props .bt-list{display:flex; flex-direction:column; gap:16px;}
+.pg-props .bt-bd{padding:0; overflow:hidden;}
+.pg-props .bt-hd{display:flex; gap:12px; align-items:flex-start; padding:14px 16px; border-bottom:1px solid var(--border);}
+.pg-props .bt-hd .grow{min-width:0;}
+.pg-props .bt-hd h3{font-size:16px; margin:0 0 2px;}
+.pg-props .bt-hd .small{overflow-wrap:anywhere;}
+.pg-props .bt-hd .acts{display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;}
+.pg-props .bt-sec{padding:12px 16px 14px;}
+.pg-props .bt-sec + .bt-sec{border-top:1px solid var(--border);}
+.pg-props .bt-sec h4{font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 8px; font-family:var(--font-body);}
+.pg-props .bt-types{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px;}
+.pg-props .bt-type{display:flex; flex-direction:column; gap:2px; text-align:left; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); font:inherit; color:inherit; min-width:0;}
+.pg-props button.bt-type:hover{border-color:var(--border-strong);}
+.pg-props .bt-type .tn{font-weight:800; font-size:14px;}
+.pg-props .bt-type .tm{font-size:12px; color:var(--text-2); overflow-wrap:anywhere;}
+.pg-props .bt-type .tf{font-size:11.5px; color:var(--muted);}
+.pg-props .bt-type.add{border-style:dashed; align-items:center; justify-content:center; flex-direction:row; gap:6px; color:var(--brand-strong); font-weight:700; font-size:13px; min-height:64px;}
+.pg-props .bt-type.add svg{width:16px; height:16px;}
+.pg-props .bt-rows{display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+.pg-props .bt-row{display:grid; grid-template-columns:28px minmax(0,1fr) 110px minmax(140px,200px); gap:10px; align-items:center; padding:8px 10px; border-top:1px solid var(--border);}
+.pg-props .bt-row:first-child{border-top:none;}
+.pg-props .bt-row.head{background:var(--surface-2); font-size:11.5px; font-weight:700; color:var(--muted); padding-top:6px; padding-bottom:6px;}
+.pg-props .bt-row .u{min-width:0;}
+.pg-props .bt-row .u b{display:block; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.pg-props .bt-row .u span{font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;}
+.pg-props .bt-row .input, .pg-props .bt-row .select{min-height:34px; padding-top:5px; padding-bottom:5px;}
+.pg-props .bt-row .ro{font-size:13px; font-weight:600;}
+.pg-props .bt-row input[type=checkbox]{width:18px; height:18px;}
+.pg-props .bt-bulk{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px;}
+.pg-props .bt-bulk .n{font-size:12.5px; font-weight:700; color:var(--text-2); margin-right:4px;}
+.pg-props .bt-bulk .select{width:auto; max-width:220px; min-height:34px; padding-top:5px; padding-bottom:5px;}
+.pg-props .bt-none{font-size:13px; color:var(--muted); padding:4px 0 2px;}
+.pg-props .bt-arch{display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; color:var(--muted);}
+.bt-form .bt-err{font-size:11.5px; color:var(--bad); font-weight:600;}
+.bt-form .bt-err:empty{display:none;}
+.bt-form .input.bad, .bt-form .select.bad{border-color:var(--bad); box-shadow:0 0 0 1px var(--bad) inset;}
+.bt-pick{display:flex; flex-direction:column; gap:2px; max-height:46vh; overflow:auto; border:1px solid var(--border); border-radius:10px; padding:4px;}
+.bt-pick label{display:flex; gap:10px; align-items:center; padding:8px; border-radius:8px; font-size:13px; cursor:pointer;}
+.bt-pick label:hover{background:var(--surface-2);}
+.bt-pick label span{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bt-pick label small{color:var(--muted); margin-left:auto; flex:none;}
 
 /* drawer: view */
 .pp-dr .modal-body{padding:0;}
@@ -140,6 +187,14 @@
   .pp-dr .pp-pt .bar button{width:40px; height:40px;}
   .pp-dr .modal-foot .btn{min-height:42px;}
   .pp-dr .pp-quick .btn{min-height:40px;}
+  .pg-props .bt-hd{flex-direction:column;}
+  .pg-props .bt-hd .acts{justify-content:flex-start;}
+  .pg-props .bt-types{grid-template-columns:minmax(0,1fr);}
+  .pg-props .bt-row{grid-template-columns:28px minmax(0,1fr) 92px; grid-template-areas:"c u n" "c t t";}
+  .pg-props .bt-row > :nth-child(1){grid-area:c;} .pg-props .bt-row > :nth-child(2){grid-area:u;} .pg-props .bt-row > :nth-child(3){grid-area:n;} .pg-props .bt-row > :nth-child(4){grid-area:t;}
+  .pg-props .bt-row.head{display:none;}
+  .pg-props .bt-row .input, .pg-props .bt-row .select, .pg-props .bt-bulk .select{font-size:16px; min-height:40px;}
+  .pg-props .bt-bulk .btn{min-height:40px;}
 }
 `);
 
@@ -276,7 +331,8 @@
       if ((st.show === 'archived') !== !!p.archived) return false;
       if (st.city && cityOf(p) !== st.city) return false;
       if (!q) return true;
-      return [p.name, p.short, p.area, p.address, p.type, p.owner, staffName(p.housekeeper)].some(function (x) { return x && String(x).toLowerCase().indexOf(q) >= 0; });
+      var t = O.typeOf(p), bd = O.building(p.buildingId);
+      return [p.name, p.short, p.area, p.address, p.type, p.owner, staffName(p.housekeeper), p.unitNo, t && t.name, bd && bd.name].some(function (x) { return x && String(x).toLowerCase().indexOf(q) >= 0; });
     });
   }
   function cardHTML(p) {
@@ -284,7 +340,7 @@
     var hk = staffName(p.housekeeper);
     return '<button type="button" class="pp-card' + (p.archived ? ' arch' : '') + '" data-open="' + esc(p.id) + '" aria-label="' + esc(p.name + ', ' + s.t) + '">' +
       '<span class="pp-ph">' + cover(p) + U.pill(s.t, s.kind) + (photos > 1 ? '<span class="pp-cnt">' + O.icon('image') + photos + '</span>' : '') + '</span>' +
-      '<span class="pp-b"><span class="pp-nm">' + esc(p.name) + '</span>' +
+      '<span class="pp-b"><span class="pp-nm">' + esc(p.name) + '</span>' + typeLineHTML(p) +
       '<span class="pp-loc">' + O.icon('pin') + '<span>' + esc(p.area || 'Location not set') + '</span></span>' +
       '<span class="pp-meta"><span>' + esc(p.type || bedsText(p)) + (p.maxGuests ? ' · sleeps ' + esc(p.maxGuests) : '') + '</span><span class="st-sm">' + U.pill(s.t, s.kind) + '</span></span>' +
       (miss.length ? '<span class="pp-warn">' + O.icon('alert') + '<span>Add the ' + esc(miss.join(', ')) + '</span></span>' : '') +
@@ -292,13 +348,18 @@
       (canSeePrice() ? '<span class="pp-price">' + fmt.money(+p.base || 0) + '<small> / night</small></span>' : '') + '</span>' +
       '</span></button>';
   }
+  function typeLineHTML(p) { /* "Deluxe · unit 21-1" under the name of a typed unit */
+    var t = O.typeOf(p), bd = !t && O.building(p.buildingId);
+    if (!t && !bd) return '';
+    return '<span class="pp-typ">' + esc(t ? t.name : bd.name) + (p.unitNo ? ' · unit ' + esc(p.unitNo) : '') + '</span>';
+  }
   function tableHTML(list) {
     var price = canSeePrice(), own = canSeeOwner();
     return '<div class="card"><div class="table-wrap"><table class="table pp-tbl"><thead><tr><th></th><th>Property</th><th>Location</th><th>Type</th>' + (price ? '<th class="num">Base / night</th>' : '') + '<th>Housekeeper</th>' + (own ? '<th>Owner</th>' : '') + '<th>Today</th></tr></thead><tbody>' +
       list.map(function (p) {
         var s = statusOf(p), hk = staffName(p.housekeeper);
         return '<tr class="click' + (p.archived ? ' arch' : '') + '" data-open="' + esc(p.id) + '" tabindex="0"><td><span class="th">' + cover(p) + '</span></td>' +
-          '<td><div class="t1">' + esc(p.name) + '</div><div class="t2">' + esc(p.short || '') + '</div></td>' +
+          '<td><div class="t1">' + esc(p.name) + '</div><div class="t2">' + esc(O.typeOf(p) ? O.typeOf(p).name + (p.unitNo ? ' · unit ' + p.unitNo : '') : p.short || '') + '</div></td>' +
           '<td><div>' + esc(hoodOf(p) || cityOf(p)) + '</div><div class="t2">' + esc(hoodOf(p) ? cityOf(p) : '') + '</div></td>' +
           '<td>' + esc(p.type || '') + '</td>' + (price ? '<td class="num">' + fmt.money(+p.base || 0) + '</td>' : '') +
           '<td>' + (hk ? esc(hk) : '<span class="faint">Not set</span>') + '</td>' + (own ? '<td>' + esc(p.owner || '') + '</td>' : '') +
@@ -312,8 +373,12 @@
       (canCreate ? '<button type="button" class="btn btn-primary" data-act="add">' + O.icon('plus') + 'Add your first property</button>' : '<p class="small">An account owner or ops manager can add properties.</p>') + '</div>';
   }
 
+  function tabHTML() { return '<div class="pp-tab">' + U.seg([['units', 'Units'], ['types', 'Buildings & unit types']], st.tab, 'data-tab') + '</div>'; }
   function render(root, ctx) {
     var canCreate = O.can('properties.create');
+    var P0 = ctx.params || {};
+    if (P0.tab) { st.tab = P0.tab; P0.tab = null; }
+    if (st.tab === 'types' && D.properties.length) { renderTypes(root, ctx); deepLinks(ctx, canCreate); return; }
     ctx.setActions(canCreate && D.properties.length ? '<button type="button" class="btn btn-primary" data-act="add">' + O.icon('plus') + 'Add property</button>' : '');
     var addBtn = O.$('[data-act=add]', ctx.actionsEl); if (addBtn) addBtn.onclick = function () { openDrawer('edit', null); };
 
@@ -323,7 +388,7 @@
     } else {
       var nArch = D.properties.filter(function (p) { return p && p.archived; }).length, nAct = D.properties.length - nArch;
       if (!nArch) st.show = 'active';
-      root.innerHTML = '<div class="pg-props">' +
+      root.innerHTML = '<div class="pg-props">' + tabHTML() +
         '<div class="pp-tools"><label class="search">' + O.icon('search') + '<input type="search" data-q placeholder="Search name, area, owner or housekeeper" aria-label="Search properties" value="' + esc(st.q) + '"></label>' +
         (nArch ? U.seg([['active', 'Active ' + nAct], ['archived', 'Archived ' + nArch]], st.show, 'data-show') : '') +
         '<span class="spacer"></span><span class="view-seg">' + U.seg([['cards', 'Cards'], ['list', 'List']], st.view, 'data-view') + '</span></div>' +
@@ -349,6 +414,7 @@
       qIn.addEventListener('input', function () { st.q = qIn.value; paint(); });
       wrap.addEventListener('click', function (e) {
         var o = e.target.closest('[data-open]'); if (o) { openDrawer('view', o.dataset.open); return; }
+        var tb = e.target.closest('[data-tab]'); if (tb) { st.tab = tb.dataset.tab; O.store.set('properties:tab', st.tab); ctx.rerender(); return; }
         var sh = e.target.closest('[data-show]'); if (sh) { st.show = sh.dataset.show; st.city = ''; ctx.rerender(); return; }
         var v = e.target.closest('[data-view]'); if (v) { st.view = v.dataset.view; O.store.set('properties:view', st.view); ctx.rerender(); return; }
         var c = e.target.closest('[data-city]'); if (c) { st.city = c.dataset.city; paint(); return; }
@@ -357,10 +423,304 @@
       wrap.addEventListener('keydown', function (e) { var o = e.target.closest('tr[data-open]'); if (o && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDrawer('view', o.dataset.open); } });
     }
 
-    /* deep links: {propertyId} opens a unit, {add: true} opens the form */
+    deepLinks(ctx, canCreate);
+  }
+  /* deep links: {propertyId} opens a unit, {add: true} opens the form, {tab: 'types'} shows buildings and unit types */
+  function deepLinks(ctx, canCreate) {
     var P = ctx.params || {};
     if (P.propertyId && D.propById[P.propertyId]) { var pid = P.propertyId; P.propertyId = null; setTimeout(function () { openDrawer('view', pid); }, 0); }
     else if (P.add) { P.add = false; if (canCreate) setTimeout(function () { openDrawer('edit', null); }, 0); }
+  }
+
+  /* ------------------------------------------------------------------ buildings and unit types
+     A building groups units at one address. A unit type ("Deluxe") is what the channels sell: Orbique picks the unit for each
+     booking (O.assign). Guests, invoices and the website see "Building · Type", and the unit number only from 30 minutes
+     before check-in. Units without a type keep working exactly as before. */
+  var BT = { sel: {} }; /* ticked unit ids in the tagging lists */
+  var CURRENCIES = ['MYR', 'SGD', 'THB', 'IDR', 'PHP', 'VND', 'USD', 'EUR', 'GBP', 'AUD'];
+  function canTag() { return O.can('properties.edit'); }
+  function liveBuildings() { return D.buildings.filter(function (b) { return b && !b.archived; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); }); }
+  function bdUnits(bdId) { return D.properties.filter(function (p) { return p && !p.archived && p.buildingId === bdId; }).sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); }); }
+  function unitNos(us) { return us.map(function (u) { return u.unitNo || u.short || u.name; }).join(', '); }
+  function guessNo(p) { var w = String(p.name || '').trim().split(/\s+/), last = w[w.length - 1] || ''; return w.length > 1 && /\d/.test(last) && last.length <= 8 ? last : ''; }
+  function upcomingOfType(t) { var T = D.TODAY; return D.bookings.filter(function (b) { return b.unitTypeId === t.id && b.status !== 'cancelled' && b.checkOut > T; }); }
+  /* put a unit into a type, or take it out (typeId null). Its upcoming bookings made before it had a type join the type but
+     stay on this unit (held by hand), so no guest is moved by surprise. Bookings sold as its old type move to another unit
+     of that type unless they are locked; the caller runs O.reassignUnits. Returns true when something changed. */
+  function tagUnit(p, typeId) {
+    var t = typeId ? O.unitType(typeId) : null;
+    if ((p.unitTypeId || null) === (t ? t.id : null)) return false;
+    if (t) { p.unitTypeId = t.id; p.buildingId = t.buildingId; } else delete p.unitTypeId;
+    if (t) D.bookings.forEach(function (b) {
+      if (b.propertyId === p.id && !b.unitTypeId && b.status !== 'cancelled' && b.checkOut > D.TODAY) { b.unitTypeId = t.id; b.assignment = { how: 'manual', by: O.state.viewer, at: D.NOW, locked: true }; }
+    });
+    return true;
+  }
+  function afterTagging(text) {
+    O.reindex();
+    var moves = O.reassignUnits();
+    audit(text);
+    O.emit('data');
+    var lost = moves.filter(function (m) { return !m.to; }).length;
+    return moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' moved to another unit' + (lost ? ', ' + lost + ' still need a unit' : '') + '.' : '';
+  }
+  function freeTonight(t) {
+    var n = O.assign.typeAvailability({ unitTypeId: t.id, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: D.TODAY, to: D.TODAY })[0];
+    return n ? n.availability + ' of ' + n.units + ' free tonight' : '';
+  }
+
+  function renderTypes(root, ctx) {
+    var canCreate = O.can('properties.create'), edit = canTag(), bds = liveBuildings();
+    ctx.setActions(canCreate && bds.length ? '<button type="button" class="btn btn-primary" data-act="addbd">' + O.icon('plus') + 'Add building</button>' : '');
+    var ab = O.$('[data-act=addbd]', ctx.actionsEl); if (ab) ab.onclick = function () { buildingModal(null); };
+    var html = '<div class="pg-props">' + tabHTML();
+    if (!bds.length) {
+      html += '<div class="card pp-empty"><h3>Group your units by building and type</h3>' +
+        '<p>When a building has several units of the same kind, for example three Deluxe two-bedroom flats, list them once as a unit type. Channels sell the type, Orbique picks the unit for each booking, and guests see their unit number from 30 minutes before check-in.</p>' +
+        '<p>Units you leave out keep working exactly as they do now.</p>' +
+        (canCreate ? '<button type="button" class="btn btn-primary" data-bt="addbd">' + O.icon('plus') + 'Add a building</button>' : '<p class="small">An account owner or ops manager can add buildings.</p>') + '</div>';
+    } else {
+      html += '<div class="bt-list">' + bds.map(function (bd) { return buildingHTML(bd, edit); }).join('') + '</div>';
+      var loose = D.properties.filter(function (p) { return p && !p.archived && !p.buildingId; }).length;
+      if (loose) html += '<p class="small muted" style="margin:14px 2px 0">' + fmt.plural(loose, 'unit is', 'units are') + ' not in a building. ' + (loose === 1 ? 'It keeps' : 'They keep') + ' working as before, each with its own calendar and listing.</p>';
+    }
+    var arch = D.buildings.filter(function (b) { return b && b.archived; });
+    if (arch.length) html += '<div class="bt-arch" style="margin-top:14px"><span>Archived:</span>' + arch.map(function (b) { return '<span>' + esc(b.name) + (canCreate ? ' <button type="button" class="btn btn-quiet btn-xs" data-bt="restorebd" data-id="' + esc(b.id) + '">Restore</button>' : '') + '</span>'; }).join('') + '</div>';
+    root.innerHTML = html + '</div>';
+    var wrap = O.$('.pg-props', root);
+    paintBulk(wrap);
+    wrap.addEventListener('click', function (e) {
+      var tb = e.target.closest('[data-tab]'); if (tb) { st.tab = tb.dataset.tab; O.store.set('properties:tab', st.tab); ctx.rerender(); return; }
+      var x = e.target.closest('[data-bt]'); if (!x) return;
+      var a = x.dataset.bt, id = x.dataset.id, bd = O.building(id);
+      if (a === 'addbd') buildingModal(null);
+      if (a === 'editbd' && bd) buildingModal(bd);
+      if (a === 'restorebd' && bd) { delete bd.archived; delete bd.archivedAt; audit('Restored building ' + bd.name); O.emit('data'); U.toast(bd.name + ' is active again'); }
+      if (a === 'addtype' && bd) typeModal(bd, null);
+      if (a === 'edittype') { var t = O.unitType(id); if (t) typeModal(O.building(t.buildingId), t); }
+      if (a === 'addunits' && bd) addUnitsModal(bd);
+      if (a === 'open') openDrawer('view', id);
+      if (a === 'tagsel' && bd) bulkTag(bd, O.$('[data-bulkty="' + bd.id + '"]', wrap).value);
+      if (a === 'untagsel' && bd) bulkRemove(bd);
+    });
+    wrap.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t.matches('[data-sel]')) { if (t.checked) BT.sel[t.dataset.sel] = 1; else delete BT.sel[t.dataset.sel]; paintBulk(wrap); return; }
+      if (t.matches('[data-selall]')) { bdUnits(t.dataset.selall).forEach(function (p) { if (t.checked) BT.sel[p.id] = 1; else delete BT.sel[p.id]; }); O.$$('[data-sel]', t.closest('.bt-bd')).forEach(function (c) { c.checked = t.checked; }); paintBulk(wrap); return; }
+      if (t.matches('[data-ty]')) {
+        var p = D.propById[t.dataset.ty]; if (!p) return;
+        var nt = O.unitType(t.value);
+        if (tagUnit(p, t.value || null)) { var m = afterTagging((nt ? 'Tagged ' + p.name + ' as ' + nt.name : 'Took ' + p.name + ' out of its unit type')); U.toast((nt ? (p.unitNo || p.name) + ' is now ' + nt.name + '.' : (p.unitNo || p.name) + ' has no unit type now. It takes its own bookings.') + m); }
+        return;
+      }
+      if (t.matches('[data-no]')) {
+        var q = D.propById[t.dataset.no]; if (!q) return;
+        var no = String(t.value || '').trim();
+        if (no.length > 12) { U.toast('Keep the unit number to 12 characters, for example 21-1.', 'bad'); t.value = q.unitNo || ''; return; }
+        var dup = no && bdUnits(q.buildingId).filter(function (x) { return x !== q && String(x.unitNo || '').toLowerCase() === no.toLowerCase(); })[0];
+        if (dup) { U.toast(dup.name + ' already has unit number ' + no + '.', 'bad'); t.value = q.unitNo || ''; return; }
+        if (no === (q.unitNo || '')) return;
+        if (no) q.unitNo = no; else delete q.unitNo;
+        audit('Set the unit number of ' + q.name + ' to ' + (no || 'none'));
+        O.emit('data');
+        U.toast(no ? 'Saved unit number ' + no + ' for ' + q.name : 'Removed the unit number of ' + q.name);
+      }
+    });
+  }
+  function buildingHTML(bd, edit) {
+    var types = O.typesOf(bd.id), units = bdUnits(bd.id), canCreate = O.can('properties.create');
+    var times = 'Check-in from ' + fmt.time(bd.checkInTime || '15:00') + ', out by ' + fmt.time(bd.checkOutTime || '11:00');
+    var has = function (x) { return x && String(bd.address || '').toLowerCase().indexOf(String(x).toLowerCase()) >= 0; };
+    var addr = [bd.address, has(bd.city) ? '' : [bd.zip, bd.city].filter(Boolean).join(' '), has(bd.state) ? '' : bd.state].filter(Boolean).join(', ');
+    var h = '<section class="card bt-bd" data-bd="' + esc(bd.id) + '"><div class="bt-hd"><div class="grow"><h3>' + esc(bd.name) + '</h3><div class="small muted">' + esc(addr || 'No address yet') + '</div><div class="small muted">' + esc(times) + (bd.currency ? ' · ' + esc(bd.currency) : '') + '</div></div>' +
+      (edit ? '<div class="acts"><button type="button" class="btn btn-ghost btn-sm" data-bt="editbd" data-id="' + esc(bd.id) + '">' + O.icon('edit') + 'Edit building</button></div>' : '') + '</div>';
+    h += '<div class="bt-sec"><h4>Unit types</h4><div class="bt-types">' + types.map(function (t) {
+      var us = O.unitsOfType(t.id), facts = [t.maxGuests ? 'Sleeps ' + t.maxGuests : '', t.beds != null && t.beds !== '' ? (+t.beds ? fmt.plural(+t.beds, 'bedroom') : 'Studio') : '', us.length ? freeTonight(t) : ''].filter(Boolean).join(' · ');
+      var inner = '<span class="tn">' + esc(t.name) + '</span><span class="tm">' + esc(fmt.plural(us.length, 'unit') + (us.length ? ' (' + unitNos(us) + ')' : '')) + '</span>' + (facts ? '<span class="tf">' + esc(facts) + '</span>' : '');
+      return edit ? '<button type="button" class="bt-type" data-bt="edittype" data-id="' + esc(t.id) + '" aria-label="Edit unit type ' + esc(t.name) + '">' + inner + '</button>' : '<div class="bt-type">' + inner + '</div>';
+    }).join('') + (edit ? '<button type="button" class="bt-type add" data-bt="addtype" data-id="' + esc(bd.id) + '">' + O.icon('plus') + 'Add a unit type</button>' : '') + '</div>' +
+      (!types.length && !edit ? '<div class="bt-none">No unit types yet.</div>' : '') + '</div>';
+    h += '<div class="bt-sec"><h4>Units in this building</h4>';
+    if (!units.length) h += '<div class="bt-none">No units here yet.' + (edit ? ' Add the units that are in ' + esc(bd.name) + ', then tag each with its type.' : '') + '</div>';
+    else {
+      var allOn = units.every(function (p) { return BT.sel[p.id]; });
+      h += '<div class="bt-rows"><div class="bt-row head">' + (edit ? '<input type="checkbox" data-selall="' + esc(bd.id) + '" aria-label="Select all units in ' + esc(bd.name) + '"' + (allOn ? ' checked' : '') + '>' : '<span></span>') + '<span>Unit</span><span>Unit no.</span><span>Unit type</span></div>' +
+        units.map(function (p) {
+          var s = statusOf(p), t = O.typeOf(p);
+          var tyOpts = '<option value="">No type yet</option>' + types.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === p.unitTypeId ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
+            (t && t.buildingId !== bd.id ? '<option value="' + esc(t.id) + '" selected>' + esc(O.typeTitle(t)) + '</option>' : '');
+          return '<div class="bt-row">' + (edit ? '<input type="checkbox" data-sel="' + esc(p.id) + '" aria-label="Select ' + esc(p.name) + '"' + (BT.sel[p.id] ? ' checked' : '') + '>' : '<span></span>') +
+            '<button type="button" class="u" data-bt="open" data-id="' + esc(p.id) + '" style="text-align:left;background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer"><b>' + esc(p.name) + '</b><span>' + esc(s.t + (s.s ? ' · ' + s.s : '')) + '</span></button>' +
+            (edit ? '<input class="input" data-no="' + esc(p.id) + '" value="' + esc(p.unitNo || '') + '" maxlength="12" placeholder="e.g. 21-1" aria-label="Unit number of ' + esc(p.name) + '">' : '<span class="ro">' + esc(p.unitNo || '') + '</span>') +
+            (edit ? '<select class="select" data-ty="' + esc(p.id) + '" aria-label="Unit type of ' + esc(p.name) + '">' + tyOpts + '</select>' : '<span class="ro">' + esc(t ? t.name : 'No type') + '</span>') + '</div>';
+        }).join('') + '</div>';
+      if (edit) h += '<div class="bt-bulk" data-bulk="' + esc(bd.id) + '"><span class="n" data-bulkn></span>' +
+        '<select class="select" data-bulkty="' + esc(bd.id) + '" aria-label="Unit type for the selected units"><option value="">Choose a type</option>' + types.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>'; }).join('') + '<option value="-">No type</option></select>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-bt="tagsel" data-id="' + esc(bd.id) + '">Tag selected</button>' +
+        '<button type="button" class="btn btn-quiet btn-sm" data-bt="untagsel" data-id="' + esc(bd.id) + '">Remove from building</button></div>';
+    }
+    if (edit) h += '<div style="margin-top:10px"><button type="button" class="btn btn-ghost btn-sm" data-bt="addunits" data-id="' + esc(bd.id) + '">' + O.icon('plus') + 'Add units to this building</button></div>';
+    return h + '</div></section>';
+  }
+  function paintBulk(wrap) {
+    O.$$('[data-bulk]', wrap).forEach(function (bar) {
+      var n = bdUnits(bar.dataset.bulk).filter(function (p) { return BT.sel[p.id]; }).length;
+      O.$('[data-bulkn]', bar).textContent = n ? fmt.plural(n, 'unit') + ' selected' : 'Tick units to tag several at once';
+      O.$$('button, select', bar).forEach(function (b) { b.disabled = !n; });
+    });
+  }
+  function bulkTag(bd, typeId) {
+    var sel = bdUnits(bd.id).filter(function (p) { return BT.sel[p.id]; }), t = O.unitType(typeId), n = 0;
+    if (!sel.length) return;
+    if (!typeId) { U.toast('Choose the type to tag them with.', 'bad'); return; }
+    if (typeId === '-') typeId = null;
+    sel.forEach(function (p) { if (tagUnit(p, typeId)) n++; });
+    BT.sel = {};
+    if (!n) { O.emit('data'); U.toast(t ? 'Those units are already ' + t.name + '.' : 'Those units have no type already.'); return; }
+    var m = afterTagging((t ? 'Tagged ' + fmt.plural(n, 'unit') + ' as ' + t.name : 'Took ' + fmt.plural(n, 'unit') + ' out of their unit type') + ' in ' + bd.name);
+    U.toast((t ? 'Tagged ' + fmt.plural(n, 'unit') + ' as ' + t.name + '.' : fmt.plural(n, 'unit') + ' now take their own bookings.') + m);
+  }
+  function bulkRemove(bd) {
+    var sel = bdUnits(bd.id).filter(function (p) { return BT.sel[p.id]; });
+    if (!sel.length) return;
+    U.confirm(fmt.plural(sel.length, 'unit') + ' leave ' + bd.name + ' and their unit type. Their bookings stay, and bookings sold as the type move to another unit of that type where one is free.', 'Remove', 'danger', 'Remove ' + fmt.plural(sel.length, 'unit') + ' from ' + bd.name + '?').then(function (ok) {
+      if (!ok) return;
+      sel.forEach(function (p) { tagUnit(p, null); delete p.buildingId; delete p.unitNo; delete p.assignPriority; });
+      BT.sel = {};
+      var m = afterTagging('Removed ' + unitNos(sel) + ' from ' + bd.name);
+      U.toast('Removed ' + fmt.plural(sel.length, 'unit') + ' from ' + bd.name + '.' + m);
+    });
+  }
+
+  /* small form helpers for the building and type dialogs */
+  function mf(name, label, input, o) {
+    o = o || {};
+    return '<div class="field' + (o.full ? ' full' : '') + '"><label for="bt-' + name + '">' + esc(label) + (o.opt ? ' <span class="faint" style="font-weight:600">(optional)</span>' : '') + '</label>' + input + (o.hint ? '<div class="hint">' + esc(o.hint) + '</div>' : '') + '<div class="bt-err" data-err="' + name + '"></div></div>';
+  }
+  function mi(name, val, attrs) { return '<input class="input" id="bt-' + name + '" name="' + name + '" value="' + esc(val == null ? '' : val) + '"' + (attrs || '') + '>'; }
+  function mval(el, name) { var x = O.$('[name="' + name + '"]', el); return x ? String(x.value).trim() : ''; }
+  function mErrors(el, E) {
+    O.$$('.bt-err', el).forEach(function (x) { x.textContent = ''; });
+    O.$$('.bad', el).forEach(function (x) { x.classList.remove('bad'); });
+    var first = null;
+    Object.keys(E).forEach(function (k) { var b = O.$('[data-err="' + k + '"]', el); if (b) b.textContent = E[k]; var i = O.$('[name="' + k + '"]', el); if (i) { i.classList.add('bad'); if (!first) first = i; } });
+    if (first) try { first.focus(); } catch (e) { /* ignore */ }
+    return !Object.keys(E).length;
+  }
+  function low(s) { return String(s || '').trim().toLowerCase(); }
+
+  function buildingModal(bd) {
+    var isNew = !bd, f = bd || { checkInTime: '15:00', checkOutTime: '11:00', currency: 'MYR' };
+    if (isNew ? !O.can('properties.create') : !canTag()) { U.toast('Your access does not include ' + (isNew ? 'adding' : 'editing') + ' buildings.', 'bad'); return; }
+    var cur = CURRENCIES.indexOf(f.currency || 'MYR') >= 0 ? CURRENCIES : CURRENCIES.concat([f.currency]);
+    var body = '<form class="form-grid bt-form" novalidate autocomplete="off">' +
+      mf('name', 'Building name', mi('name', f.name, ' maxlength="60" placeholder="e.g. Seri Saujana Residences"'), { full: true, hint: 'Guests see this with the unit type, for example "' + (f.name || 'Seri Saujana Residences') + ' · Deluxe".' }) +
+      mf('address', 'Street address', mi('address', f.address, ' maxlength="160" placeholder="e.g. 2 Jalan Saujana Indah, Bukit Jalil"'), { full: true, hint: 'Guests see the building address before they get their unit number.' }) +
+      mf('city', 'City', mi('city', f.city, ' maxlength="40" placeholder="e.g. Kuala Lumpur"')) +
+      mf('state', 'State', mi('state', f.state, ' maxlength="40" placeholder="e.g. Wilayah Persekutuan"'), { opt: true }) +
+      mf('zip', 'Postcode', mi('zip', f.zip, ' maxlength="12" inputmode="numeric" placeholder="57000"'), { opt: true }) +
+      mf('currency', 'Currency', '<select class="select" id="bt-currency" name="currency">' + cur.map(function (c) { return '<option' + (c === (f.currency || 'MYR') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>') +
+      mf('checkInTime', 'Check-in from', mi('checkInTime', f.checkInTime || '15:00', ' type="time" step="900"')) +
+      mf('checkOutTime', 'Check-out by', mi('checkOutTime', f.checkOutTime || '11:00', ' type="time" step="900"')) +
+      '</form>';
+    var actions = [{ label: 'Cancel' }];
+    if (!isNew && O.can('properties.archive')) actions.push({ label: 'Archive', onClick: function (close) { archiveBuilding(bd, close); return false; } });
+    actions.push({ label: isNew ? 'Add building' : 'Save changes', kind: 'primary', onClick: function (close, el) {
+      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: mval(el, 'city'), state: mval(el, 'state'), zip: mval(el, 'zip'), currency: mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
+      if (!v.name) E.name = 'Give the building a name.';
+      else if (D.buildings.some(function (x) { return x !== bd && low(x.name) === low(v.name); })) E.name = 'Another building is already called "' + v.name + '".';
+      if (!v.address) E.address = 'Add the street address. Guests see it before their unit number.';
+      if (!v.city) E.city = 'Add the city.';
+      if (!/^\d{2}:\d{2}$/.test(v.checkInTime)) E.checkInTime = 'Choose a check-in time.';
+      if (!/^\d{2}:\d{2}$/.test(v.checkOutTime)) E.checkOutTime = 'Choose a check-out time.';
+      else if (!E.checkInTime && v.checkOutTime >= v.checkInTime) E.checkOutTime = 'Check-out should be earlier than check-in.';
+      if (!mErrors(el, E)) return false;
+      var b = bd || { id: O.uid('BD'), createdAt: D.NOW, createdBy: O.state.viewer };
+      Object.keys(v).forEach(function (k) { if (v[k]) b[k] = v[k]; else delete b[k]; });
+      if (isNew) D.buildings.push(b);
+      audit((isNew ? 'Added building ' : 'Updated building ') + b.name);
+      O.emit('data');
+      U.toast(isNew ? b.name + ' added. Add its unit types next.' : 'Saved ' + b.name);
+      if (isNew) setTimeout(function () { typeModal(b, null); }, 60);
+    } });
+    U.modal({ title: isNew ? 'Add a building' : 'Edit ' + bd.name, sub: isNew ? 'A building holds units that share an address.' : 'Changes show to guests straight away', body: body, actions: actions });
+  }
+  function archiveBuilding(bd, close) {
+    var us = bdUnits(bd.id);
+    if (us.length) { U.toast('Remove its ' + fmt.plural(us.length, 'unit') + ' from the building first.', 'bad'); return; }
+    U.confirm(bd.name + ' and its unit types leave the lists. You can restore it any time.', 'Archive', 'primary', 'Archive ' + bd.name + '?').then(function (ok) {
+      if (!ok) return;
+      bd.archived = true; bd.archivedAt = D.NOW;
+      O.typesOf(bd.id).forEach(function (t) { t.archived = true; t.archivedAt = D.NOW; });
+      audit('Archived building ' + bd.name);
+      close(); O.emit('data');
+      U.toast(bd.name + ' archived');
+    });
+  }
+  function typeModal(bd, t) {
+    if (!bd || !canTag()) { U.toast('Your access does not include editing unit types.', 'bad'); return; }
+    var isNew = !t, f = t || { maxGuests: '', beds: '' };
+    var body = '<form class="form-grid bt-form" novalidate autocomplete="off">' +
+      mf('name', 'Type name', mi('name', f.name, ' maxlength="40" placeholder="e.g. Deluxe"'), { full: true, hint: 'Guests and channels see "' + bd.name + ' · ' + (f.name || 'Deluxe') + '".' }) +
+      mf('maxGuests', 'Sleeps up to', mi('maxGuests', f.maxGuests, ' type="number" min="1" max="50" step="1" inputmode="numeric" placeholder="e.g. 4"')) +
+      mf('beds', 'Bedrooms', mi('beds', f.beds, ' type="number" min="0" max="30" step="1" inputmode="numeric" placeholder="e.g. 2"'), { hint: '0 for a studio' }) +
+      mf('description', 'Description', '<textarea class="textarea" id="bt-description" name="description" rows="3" maxlength="600" placeholder="e.g. Two bedrooms, city view, pool and gym access">' + esc(f.description || '') + '</textarea>', { full: true, opt: true }) +
+      '</form>';
+    var actions = [{ label: 'Cancel' }];
+    if (!isNew) actions.push({ label: 'Archive', onClick: function (close) { archiveType(t, close); return false; } });
+    actions.push({ label: isNew ? 'Add unit type' : 'Save changes', kind: 'primary', onClick: function (close, el) {
+      var v = { name: mval(el, 'name'), maxGuests: mval(el, 'maxGuests'), beds: mval(el, 'beds'), description: mval(el, 'description') }, E = {};
+      if (!v.name) E.name = 'Give the type a name, for example Deluxe.';
+      else if (D.unitTypes.some(function (x) { return x !== t && !x.archived && x.buildingId === bd.id && low(x.name) === low(v.name); })) E.name = bd.name + ' already has a type called "' + v.name + '".';
+      var g = Number(v.maxGuests); if (!(g >= 1 && g <= 50 && Math.floor(g) === g)) E.maxGuests = 'Enter how many guests can stay, from 1 to 50.';
+      var b = v.beds === '' ? NaN : Number(v.beds); if (!(b >= 0 && b <= 30 && Math.floor(b) === b)) E.beds = 'Enter the number of bedrooms, 0 for a studio.';
+      if (!mErrors(el, E)) return false;
+      var x = t || { id: O.uid('UT'), buildingId: bd.id, order: O.typesOf(bd.id, true).length + 1, createdAt: D.NOW };
+      x.name = v.name; x.maxGuests = g; x.beds = b;
+      if (v.description) x.description = v.description; else delete x.description;
+      if (isNew) D.unitTypes.push(x);
+      audit((isNew ? 'Added unit type ' : 'Updated unit type ') + O.typeTitle(x));
+      O.emit('data');
+      U.toast(isNew ? x.name + ' added. Tag its units in the list below.' : 'Saved ' + x.name);
+    } });
+    U.modal({ title: isNew ? 'Add a unit type' : 'Edit ' + t.name, sub: bd.name, body: body, actions: actions });
+  }
+  function archiveType(t, close) {
+    var us = O.unitsOfType(t.id), up = upcomingOfType(t);
+    if (us.length) { U.toast('Untag its ' + fmt.plural(us.length, 'unit') + ' first (' + unitNos(us) + ').', 'bad'); return; }
+    if (up.length) { U.toast(fmt.plural(up.length, 'upcoming booking') + ' were sold as ' + t.name + '. Move ' + (up.length === 1 ? 'it' : 'them') + ' to a unit first.', 'bad'); return; }
+    U.confirm(t.name + ' leaves the lists. Past bookings keep it.', 'Archive', 'primary', 'Archive ' + t.name + '?').then(function (ok) {
+      if (!ok) return;
+      t.archived = true; t.archivedAt = D.NOW;
+      audit('Archived unit type ' + O.typeTitle(t));
+      close(); O.emit('data');
+      U.toast(t.name + ' archived');
+    });
+  }
+  function addUnitsModal(bd) {
+    var free = D.properties.filter(function (p) { return p && !p.archived && !p.buildingId; }).sort(function (a, b) { return O.assign.naturalCompare(a.name, b.name); });
+    if (!free.length) { U.toast('Every unit is already in a building. Add a new property first.', 'bad'); return; }
+    var types = O.typesOf(bd.id);
+    var body = '<form class="bt-form" novalidate><div class="bt-pick">' + free.map(function (p) {
+      return '<label><input type="checkbox" name="u" value="' + esc(p.id) + '"><span>' + esc(p.name) + '</span><small>' + esc(p.area || '') + '</small></label>';
+    }).join('') + '</div>' +
+      (types.length ? '<div class="field" style="margin-top:12px"><label for="bt-ty">Tag them as</label><select class="select" id="bt-ty" name="ty"><option value="">No type yet</option>' + types.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>'; }).join('') + '</select></div>' : '') +
+      '<p class="small muted" style="margin:10px 0 0">We guess each unit number from the end of its name. Check them in the list afterwards.</p></form>';
+    U.modal({ title: 'Add units to ' + bd.name, sub: 'Units that are not in a building yet', body: body, actions: [{ label: 'Cancel' }, { label: 'Add units', kind: 'primary', onClick: function (close, el) {
+      var ids = O.$$('[name=u]:checked', el).map(function (c) { return c.value; }), ty = mval(el, 'ty');
+      if (!ids.length) { U.toast('Tick the units to add.', 'bad'); return false; }
+      var taken = {}; bdUnits(bd.id).forEach(function (x) { if (x.unitNo) taken[low(x.unitNo)] = 1; });
+      ids.forEach(function (id) {
+        var p = D.propById[id]; if (!p) return;
+        p.buildingId = bd.id;
+        var g = p.unitNo || guessNo(p);
+        if (g && !taken[low(g)]) { p.unitNo = g; taken[low(g)] = 1; }
+        if (ty) tagUnit(p, ty);
+      });
+      var t = O.unitType(ty);
+      var m = afterTagging('Added ' + fmt.plural(ids.length, 'unit') + ' to ' + bd.name + (t ? ' as ' + t.name : ''));
+      U.toast('Added ' + fmt.plural(ids.length, 'unit') + ' to ' + bd.name + (t ? ' as ' + t.name : '') + '.' + m);
+    } }] });
   }
 
   /* ------------------------------------------------------------------ drawer */
@@ -408,6 +768,7 @@
     var mapHref = p.mapUrl || (p.address ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.address) : '');
     var others = p.owner ? D.properties.filter(function (x) { return x !== p && x.owner === p.owner && !x.archived; }) : [];
     var miss = canEdit() && !p.archived ? missing(p) : [];
+    var typeOfP = O.typeOf(p), bdOfP = O.building(p.buildingId);
     var html = galleryHTML(p) + '<div class="pp-vbody">' +
       '<div class="pp-now">' + U.pill(s.t, s.kind) + '<span>' + esc(s.s) + '</span></div>' +
       (miss.length ? '<div class="note warn pp-miss">' + O.icon('alert').replace('<svg ', '<svg style="width:15px;height:15px;flex:none;margin-top:1px" ') + '<span>Add the ' + esc(miss.join(', ')) + ' so cleaning tasks and the guest app have what they need.</span></div>' : '') +
@@ -418,6 +779,8 @@
       (mapHref ? '<a class="btn btn-ghost btn-sm" href="' + esc(mapHref) + '" target="_blank" rel="noopener">' + O.icon('map') + 'Directions</a>' : '') +
       '</div>' +
       '<section class="pp-vs"><h4>Stay</h4>' + kv([
+        typeOfP ? ['Unit type', esc(O.typeTitle(typeOfP))] : bdOfP ? ['Building', esc(bdOfP.name)] : null,
+        p.unitNo ? ['Unit number', esc(p.unitNo) + ' <span class="xs muted">only your team sees this</span>'] : null,
         ['Type', esc(p.type || '') + (p.type && /BR|Studio/i.test(p.type) ? '' : ' · ' + esc(bedsText(p)))],
         p.maxGuests ? ['Sleeps', esc(fmt.plural(+p.maxGuests, 'guest'))] : null,
         canSeePrice() ? ['Base price', '<span class="pp-price">' + fmt.money(+p.base || 0) + '</span> <span class="xs muted">per night</span>'] : null,
@@ -488,11 +851,12 @@
       checkInTime: p.checkInTime || '15:00', checkOutTime: p.checkOutTime || '11:00', notes: p.notes || '',
       hood: hoodOf(p), city: cityOf(p), address: p.address || '', mapUrl: p.mapUrl || '',
       lockBrand: p.lockBrand || '', lockCode: p.lockCode || '', wifiName: (p.wifi && p.wifi[0]) || '', wifiPw: (p.wifi && p.wifi[1]) || '', parking: p.parking || '',
-      photos: Array.isArray(p.photos) ? p.photos.slice(0, MAX_PHOTOS) : [], owner: p.owner || '', ownerPhone: p.ownerPhone || '', ownerEmail: p.ownerEmail || '', housekeeper: p.housekeeper || ''
+      photos: Array.isArray(p.photos) ? p.photos.slice(0, MAX_PHOTOS) : [], owner: p.owner || '', ownerPhone: p.ownerPhone || '', ownerEmail: p.ownerEmail || '', housekeeper: p.housekeeper || '',
+      buildingId: p.buildingId || '', unitTypeId: p.unitTypeId || '', unitNo: p.unitNo || '', assignPriority: p.assignPriority == null ? '' : p.assignPriority
     } : {
       name: '', short: '', kind: 'Apartment', beds: 1, base: '', maxGuests: '', checkInTime: '15:00', checkOutTime: '11:00', notes: '',
       hood: '', city: '', address: '', mapUrl: '', lockBrand: lockDefault, lockCode: '', wifiName: '', wifiPw: '', parking: '',
-      photos: [], owner: '', ownerPhone: '', ownerEmail: '', housekeeper: hkDefault
+      photos: [], owner: '', ownerPhone: '', ownerEmail: '', housekeeper: hkDefault, buildingId: '', unitTypeId: '', unitNo: '', assignPriority: ''
     };
     var X = parts();
     X.h.textContent = p ? 'Edit ' + p.name : 'Add a property';
@@ -531,6 +895,7 @@
       fld('beds', 'Bedrooms', inp('beds', f.beds, ' type="number" min="0" max="30" step="1" inputmode="numeric"'), { hint: '0 for a studio' }) +
       fld('base', 'Base nightly price', '<div class="pp-money"><span>RM</span>' + inp('base', f.base, ' type="number" min="0" step="5" inputmode="decimal" placeholder="220"') + '</div>', { hint: 'Pricing starts from this and adjusts by day.' }) +
       '</div></div>' +
+      buildingSecHTML(f) +
 
       '<div class="pp-sec"><h4>Location</h4><div class="sd">Shown to guests and used for local events in pricing.</div><div class="form-grid">' +
       fld('hood', 'Area or neighbourhood', inp('hood', f.hood, ' maxlength="60" placeholder="e.g. Gurney Drive"'), { opt: true }) +
@@ -566,6 +931,20 @@
       fld('housekeeper', 'Housekeeper', '<select class="select" id="pp-housekeeper" name="housekeeper">' + hkOpts + '</select>', { full: true, hint: staff.length < 2 ? 'Invite your team in Staff Access to assign a housekeeper.' : '' }) +
       '</div></div>' +
       '</form>';
+  }
+  function typeOptsHTML(bdId, sel) {
+    return '<option value="">No type, it takes its own bookings</option>' + (bdId ? O.typesOf(bdId) : []).map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === sel ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('');
+  }
+  function buildingSecHTML(f) { /* only when the workspace has buildings, or this unit is in one */
+    var bds = liveBuildings();
+    if (f.buildingId && !bds.some(function (b) { return b.id === f.buildingId; }) && O.building(f.buildingId)) bds = bds.concat([O.building(f.buildingId)]);
+    if (!bds.length) return '';
+    return '<div class="pp-sec"><h4>Building and unit type</h4><div class="sd">Units of one type share a listing on the channels, and Orbique picks the unit for each booking.</div><div class="form-grid">' +
+      fld('buildingId', 'Building', '<select class="select" id="pp-buildingId" name="buildingId"><option value="">Not in a building</option>' + bds.map(function (b) { return '<option value="' + esc(b.id) + '"' + (b.id === f.buildingId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select>', { opt: true }) +
+      fld('unitTypeId', 'Unit type', '<select class="select" id="pp-unitTypeId" name="unitTypeId">' + typeOptsHTML(f.buildingId, f.unitTypeId) + '</select>', { opt: true }) +
+      fld('unitNo', 'Unit number', inp('unitNo', f.unitNo, ' maxlength="12" placeholder="e.g. 21-1"'), { hint: 'Only your team sees this. Guests get it 30 minutes before check-in.' }) +
+      fld('assignPriority', 'Fill order', inp('assignPriority', f.assignPriority, ' type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="e.g. 1"'), { opt: true, hint: 'Lower numbers get bookings first when two units fit equally well.' }) +
+      '</div></div>';
   }
   function photosHTML() {
     var f = DR.draft, n = f.photos.length;
@@ -612,6 +991,14 @@
     if (sel && box) box.hidden = sel.value !== NEW_OWNER;
     var sh = O.$('[name=short]', el), nm = O.$('[name=name]', el);
     if (sh && nm) sh.placeholder = suggestShort(nm.value) || 'e.g. Bayfront 3B';
+    var bdSel = O.$('[name=buildingId]', el), tySel = O.$('[name=unitTypeId]', el), no = O.$('[name=unitNo]', el), pr = O.$('[name=assignPriority]', el);
+    if (bdSel && tySel) {
+      if (tySel.dataset.bd !== bdSel.value) {
+        var keep = tySel.value; tySel.innerHTML = typeOptsHTML(bdSel.value, keep); tySel.dataset.bd = bdSel.value;
+        if (no && bdSel.value && !no.value && nm) no.value = guessNo({ name: nm.value });
+      }
+      tySel.disabled = !bdSel.value; if (no) no.disabled = !bdSel.value; if (pr) pr.disabled = !tySel.value;
+    }
   }
   function onFormInput(e) {
     var t = e.target; if (!t) return;
@@ -634,7 +1021,8 @@
       hood: (val('hood') || '').replace(/,\s*$/, ''), city: val('city') || '', address: val('address') || '', mapUrl: val('mapUrl') || '',
       lockBrand: val('lockBrand'), lockCode: val('lockCode'), wifiName: val('wifiName'), wifiPw: val('wifiPw'), parking: val('parking'),
       ownerName: sel === NEW_OWNER ? (val('ownerName') || '') : (sel || ''), ownerNew: sel === NEW_OWNER, ownerPhone: val('ownerPhone') || '', ownerEmail: val('ownerEmail') || '',
-      housekeeper: val('housekeeper') || ''
+      housekeeper: val('housekeeper') || '',
+      buildingId: val('buildingId'), unitTypeId: val('unitTypeId') || '', unitNo: val('unitNo') || '', assignPriority: val('assignPriority') || ''
     };
   }
   function validate(v, p) {
@@ -661,6 +1049,11 @@
     if (!v.ownerName) E[v.ownerNew ? 'ownerName' : 'owner'] = v.ownerNew ? 'Type the new owner\'s name.' : 'Choose who owns this property, or add a new owner.';
     if (v.ownerPhone && !/^\+?[\d\s()-]{7,20}$/.test(v.ownerPhone)) E.ownerPhone = 'Check the phone number. Use digits, spaces and +.';
     if (v.ownerEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.ownerEmail)) E.ownerEmail = 'Check the email address.';
+    if (v.buildingId) {
+      if (!v.unitNo) E.unitNo = 'Add the unit number, for example 21-1.';
+      else if (others.some(function (x) { return !x.archived && x.buildingId === v.buildingId && low(x.unitNo) === low(v.unitNo); })) E.unitNo = 'Another unit in this building already has number ' + v.unitNo + '.';
+      if (v.assignPriority !== '') { var ap = Number(v.assignPriority); if (!(ap >= 0 && ap <= 999 && Math.floor(ap) === ap)) E.assignPriority = 'Use a whole number from 0 to 999, or leave it empty.'; }
+    }
     return E;
   }
   function showErrors(E) {
@@ -696,8 +1089,17 @@
     if (v.ownerPhone || v.ownerEmail) D.properties.forEach(function (x) { if (x !== p && x.owner === p.owner) { if (v.ownerPhone) x.ownerPhone = v.ownerPhone; if (v.ownerEmail) x.ownerEmail = v.ownerEmail; } });
     p.housekeeper = v.housekeeper || null;
     if (DR.draft.photos.length) p.photos = DR.draft.photos.slice(0, MAX_PHOTOS); else delete p.photos;
+    var retag = false;
+    if (v.buildingId !== null) { /* the building section was on the form */
+      var tid = v.buildingId && v.unitTypeId && O.unitType(v.unitTypeId) && O.unitType(v.unitTypeId).buildingId === v.buildingId ? v.unitTypeId : '';
+      if (v.buildingId) { p.buildingId = v.buildingId; p.unitNo = v.unitNo; } else { delete p.buildingId; delete p.unitNo; }
+      setOpt(p, 'assignPriority', tid && v.assignPriority !== '' ? Number(v.assignPriority) : null);
+      if (isNew) { if (tid) p.unitTypeId = tid; } else retag = tagUnit(p, tid || null);
+    }
     if (isNew) { p.createdAt = D.NOW; p.createdBy = O.state.viewer; D.properties.push(p); }
     O.reindex();
+    var moved = retag ? O.reassignUnits() : [];
+    if (retag) audit((p.unitTypeId ? 'Tagged ' + p.name + ' as ' + O.typeOf(p).name : 'Took ' + p.name + ' out of its unit type') + (moved.length ? ', ' + fmt.plural(moved.length, 'booking') + ' moved' : ''));
     if (access && !isNew && p.lockCode && p.lockCode !== oldCode) {
       if (Array.isArray(D.lockLog)) D.lockLog.unshift({ at: D.NOW, propertyId: p.id, bookingId: null, by: O.state.viewer, what: 'Master code changed', code: p.lockCode });
       audit('Changed the master code for ' + p.name);
