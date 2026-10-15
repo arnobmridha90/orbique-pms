@@ -6,7 +6,8 @@
  *   node scripts/build.mjs --mobile               -> mobile/www (the phone app's files for Capacitor; see docs/MOBILE.md)
  *
  * The page is assembled from app/shell.html: core.css and app/pages/*.css are inlined, then one <script> per file
- * (data.js, core.js, app/pages/*.js, app/server/*.js) so a mistake in one page cannot break the others.
+ * (data.js, core.js, the shared api/_lib/shared/*.cjs modules, app/pages/*.js, app/server/*.js) so a mistake in one page
+ * cannot break the others.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,6 +23,8 @@ const outArg = args.indexOf('--out') >= 0 ? args[args.indexOf('--out') + 1] : nu
 const read = (p) => fs.readFileSync(p, 'utf8');
 const list = (dir, ext) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).sort().map((f) => path.join(dir, f)) : []);
 const jsSafe = (code) => code.replace(/<\/(script)/gi, '<\\/$1');
+/* CommonJS files the page and the api/ functions both use: [file, name under O] */
+const SHARED = [['api/_lib/shared/assign.cjs', 'assign']];
 
 function page() {
   let shell = read(path.join(APP, 'shell.html'));
@@ -33,6 +36,8 @@ function page() {
     .concat(local ? [] : list(path.join(APP, 'server'), '.js'))
     .concat(mobile ? list(path.join(APP, 'native'), '.js') : []);
   const scripts = files.map((p) => `<script>\n/* ${path.relative(APP, p)} */\n${jsSafe(read(p))}\n</script>`);
+  /* modules shared with the server (api/_lib/shared/*.cjs) go in right after core.js, wrapped as O.<name> */
+  scripts.splice(2, 0, ...SHARED.map(([file, name]) => `<script>\n/* ${file} (shared with the server) */\n(function () {\nvar module = { exports: {} }, exports = module.exports;\n${jsSafe(read(path.join(ROOT, file)))}\nwindow.O = window.O || {}; window.O.${name} = module.exports;\n})();\n</script>`));
   let head = '';
   if (mobile) {
     /* the phone app loads everything from its own files (relative paths); Capacitor's runtime and plugins come first */
