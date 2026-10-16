@@ -38,6 +38,23 @@ test('compressValues: a half year of one value is one item (certification test 8
   assert.equal(out[0].date_to, '2027-05-01');
 });
 
+test('diffValues: fields a person set go out even when Channex has them, once (certification tests 7 and 8)', () => {
+  const v = { rate: '241.00', min_stay_arrival: 1, max_stay: 4, closed_to_arrival: true, closed_to_departure: false, stop_sell: false };
+  const old = { rate: '241.00', min_stay_arrival: 1, max_stay: 0, closed_to_arrival: false, closed_to_departure: false, stop_sell: false };
+  const sent = { at: '2026-10-16T12:00:00.000Z', f: ['min_stay_arrival', 'max_stay', 'closed_to_arrival', 'closed_to_departure'] };
+  const state = new Map([['A|2026-11-01', old], ['A|2026-11-02', v]]);
+  const computed = [{ ...row('A', '2026-11-01', v), sent }, { ...row('A', '2026-11-02', v), sent }];
+  // never sent after the person's change: every field they set, also the unchanged min stay and CTD
+  const before = new Map([['A|2026-11-01', '2026-10-16T09:00:00.000Z'], ['A|2026-11-02', '2026-10-16T09:00:00.000Z']]);
+  assert.deepEqual(diffValues(computed, state, { sentAt: before }), [
+    row('A', '2026-11-01', { min_stay_arrival: 1, max_stay: 4, closed_to_arrival: true, closed_to_departure: false }),
+    row('A', '2026-11-02', { min_stay_arrival: 1, max_stay: 4, closed_to_arrival: true, closed_to_departure: false })
+  ]);
+  // Channex accepted them after the change: back to only what differs
+  const after = new Map([['A|2026-11-01', '2026-10-16T12:00:05.000Z'], ['A|2026-11-02', '2026-10-16T12:00:05.000Z']]);
+  assert.deepEqual(diffValues(computed, state, { sentAt: after }), [row('A', '2026-11-01', { max_stay: 4, closed_to_arrival: true })]);
+});
+
 test('diffValues: field by field against what Channex has; unknown dates go whole; full sends all', () => {
   const state = new Map([
     ['A|2026-11-22', { rate: '100.00', min_stay_arrival: 1, stop_sell: false }],

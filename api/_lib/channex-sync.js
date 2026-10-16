@@ -83,14 +83,20 @@ export function compressValues(rows) {
  * state was invalidated) is sent whole; full: send everything; whole: a changed date keeps all its fields. The sender
  * sends only the changed fields (certification test 13: only changed values), so a range edit is one item whenever
  * the change is the same over the range. Rows with nothing changed are left out.
+ * A row's `sent` {at, f: [fields]} names the fields a person set on that date (the calendar's Send): when it is newer
+ * than what Channex last accepted (sentAt: Map `${target_id}|${date}` -> ISO time), those fields go out even when equal
+ * (certification tests 7 and 8 expect every field the person entered, over the whole range they entered).
  */
-export function diffValues(computed, state, { full = false, whole = false } = {}) {
+export function diffValues(computed, state, { full = false, whole = false, sentAt } = {}) {
   const out = [];
   for (const r of computed || []) {
-    const old = full ? undefined : state && state.get(r.target_id + '|' + r.date);
+    const key = r.target_id + '|' + r.date;
+    const old = full ? undefined : state && state.get(key);
     if (!old || typeof old !== 'object') { out.push({ target_id: r.target_id, date: r.date, value: Object.assign({}, r.value) }); continue; }
     const delta = {};
-    for (const [k, v] of Object.entries(r.value || {})) if (stableKey(old[k]) !== stableKey(v)) delta[k] = v;
+    const last = sentAt && sentAt.get(key);
+    const keep = r.sent && Array.isArray(r.sent.f) && (!last || String(r.sent.at || '') > String(last)) ? r.sent.f : [];
+    for (const [k, v] of Object.entries(r.value || {})) if (keep.includes(k) || stableKey(old[k]) !== stableKey(v)) delta[k] = v;
     if (Object.keys(delta).length) out.push({ target_id: r.target_id, date: r.date, value: whole ? Object.assign({}, r.value) : delta });
   }
   return out;
@@ -292,7 +298,10 @@ export async function computeRestrictions(sb, prop, dates, ctx) {
     const own = days.get(planId) || {};
     for (const d of [...dates.get(planId)].sort()) {
       const c = { plans: ctx.plans, dayOf: (pid) => (days.get(pid) || {})[d] };
-      rows.push({ target_id: planId, date: d, value: restrictionValue(plan || {}, own[d], { retired, ctx: c }) });
+      const row = { target_id: planId, date: d, value: restrictionValue(plan || {}, own[d], { retired, ctx: c }) };
+      const sent = own[d] && own[d].sent;
+      if (sent && typeof sent === 'object' && Array.isArray(sent.f)) row.sent = { at: String(sent.at || ''), f: sent.f.filter((k) => k in row.value) };
+      rows.push(row);
     }
   }
   return { rows };
@@ -323,13 +332,18 @@ export async function deleteMarks(sb, ids) {
   for (const part of chunks(ids, 300)) must(await sb.from('channex_outbox').delete().in('id', part), 'clear marks');
 }
 
-/** What Channex last accepted: Map `${target}|${date}` -> value. */
+/** What Channex last accepted: Map `${target}|${date}` -> value, with out.sentAt: Map of the same keys -> when. */
 async function loadState(sb, pid, kind, targets, from, to) {
   const out = new Map();
+  out.sentAt = new Map();
   if (!targets.length) return out;
-  const rows = await selectAll(() => sb.from('channex_state').select('target_id, date, value').eq('channex_property_id', pid).eq('kind', kind)
+  const rows = await selectAll(() => sb.from('channex_state').select('target_id, date, value, sent_at').eq('channex_property_id', pid).eq('kind', kind)
     .in('target_id', targets).gte('date', from).lte('date', to).order('target_id').order('date'), 'load state');
-  for (const r of rows) out.set(r.target_id + '|' + String(r.date).slice(0, 10), r.value);
+  for (const r of rows) {
+    const k = r.target_id + '|' + String(r.date).slice(0, 10);
+    out.set(k, r.value);
+    if (r.sent_at) out.sentAt.set(k, new Date(r.sent_at).toISOString());
+  }
   return out;
 }
 
@@ -400,7 +414,7 @@ export async function sendProperty(sb, prop, opts) {
       const state = await loadState(sb, pid, kind, targets, from, to);
       // forced marks: Channex may no longer hold what it last accepted from Orbique, so these dates go out whole
       for (const [t, set] of markDates(marks.filter((m) => m.force), t0, last)) for (const d of set) state.delete(t + '|' + d);
-      delta = diffValues(rows, state);
+      delta = diffValues(rows, state, { sentAt: state.sentAt });
     }
     const runs = compressValues(delta);
     const idMap = new Map([...mapping].map(([k, v]) => [k, kind === 'availability' ? v.room_type_id : v.rate_plan_id]));

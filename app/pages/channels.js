@@ -163,13 +163,15 @@
 
   /* ---------------- setDays: rates and restrictions ----------------
      changes: [{planId, from, to, dates?, weekdays?: [0..6] (0 = Sunday), set: {rate, minStay, maxStay, cta, ctd, stopSell}}]
-     A field left undefined stays as it is; null clears it (rate: back to the model or the default). A rate on a main plan
+     A field left undefined stays as it is; null clears it (rate: back to the model or the default). Each changed day keeps
+     sent: {at, f: [Channex fields]} so the worker sends every field the person set, even where Channex already has it. A rate on a main plan
      is also the price of every unit of the type (Pricing). One O.emit('data') for the whole list, so one save and one send.
      opts: {emit: false, audit: false, why} */
+  var SENT_FIELD = { rate: 'rate', minStay: 'min_stay_arrival', maxStay: 'max_stay', cta: 'closed_to_arrival', ctd: 'closed_to_departure', stopSell: 'stop_sell' };
   function setDays(changes, opts) {
     opts = opts || {};
     if (!Array.isArray(changes) || !changes.length) return 0;
-    var map = crMap(), types = {}, n = 0, T = D.TODAY, last = d.add(T, DAYS - 1);
+    var map = crMap(), types = {}, n = 0, T = D.TODAY, last = d.add(T, DAYS - 1), sentAt = new Date().toISOString();
     D.priceOverrides = D.priceOverrides || {}; D.priceOverrideMeta = D.priceOverrideMeta || {};
     changes.forEach(function (c) {
       var plan = planById(c.planId); if (!plan || !c.set) return;
@@ -180,6 +182,8 @@
       types[plan.unitTypeId] = 1;
       var units = plan.primary ? O.unitsOfType(plan.unitTypeId).filter(function (u) { return !isArchived(u); }) : [];
       var s = c.set;
+      // the Channex fields this change sets: they go out on every date even where Channex already has the value
+      var sentF = Object.keys(SENT_FIELD).filter(function (k) { return s[k] !== undefined; }).map(function (k) { return SENT_FIELD[k]; });
       dates.forEach(function (iso) {
         var r = crGet(map, plan, iso.slice(0, 7), true), day = r.days[iso] || {};
         if (s.rate !== undefined) {
@@ -195,6 +199,7 @@
         if (s.minStay !== undefined) { var mn = posInt(s.minStay); if (mn) day.minStay = mn; else delete day.minStay; }
         if (s.maxStay !== undefined) { var mx = num(s.maxStay); if (mx !== null && mx >= 1) day.maxStay = Math.floor(mx); else delete day.maxStay; }
         ['cta', 'ctd', 'stopSell'].forEach(function (k) { if (s[k] === undefined) return; if (s[k]) day[k] = true; else delete day[k]; });
+        if (sentF.length) day.sent = { at: sentAt, f: sentF };
         if (Object.keys(day).length) r.days[iso] = day; else delete r.days[iso];
         n++;
       });
