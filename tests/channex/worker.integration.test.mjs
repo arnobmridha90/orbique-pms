@@ -307,7 +307,7 @@ test('reconnect is idempotent: no new Channex objects, no second full sync', { s
   assert.equal((await db.query('select count(*)::int n from public.channex_room_types')).rows[0].n, 2);
 });
 
-test('full-sync is refused within 24 hours of the last one', { skip: SKIP }, async () => {
+test('full-sync is refused within 5 minutes of the last one', { skip: SKIP }, async () => {
   const r = await channex(owner, { action: 'full-sync', orgId: ORG_A, buildingId: 'BD-1', confirm: true });
   assert.equal(r.status, 429); assert.equal(r.json.error, 'full-sync-recent');
   assert.equal((await channex(owner, { action: 'full-sync', orgId: ORG_A, buildingId: 'BD-1' })).status, 400, 'needs confirm');

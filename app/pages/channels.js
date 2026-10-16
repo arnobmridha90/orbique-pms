@@ -597,8 +597,8 @@
   function fullUpdate(bid, btn) {
     var b = O.building(bid), c = conn(bid);
     var since = c.fullSyncAt ? (c.live ? Date.now() - Date.parse(c.fullSyncRaw) : Date.parse(D.NOW + ':00Z') - Date.parse(c.fullSyncAt + ':00Z')) : Infinity;
-    if (since < 24 * 3600e3) { U.toast('A full update was sent less than 24 hours ago (' + when(c.fullSyncAt) + '). Changes still go out on their own.', 'bad'); return; }
-    U.confirm('This sends all 500 days of availability, rates and restrictions for ' + (b ? b.name : 'this building') + ' again. Changes already go out on their own, so you only need this after a problem. Possible once every 24 hours.', 'Send full update', 'primary', 'Send everything again?').then(function (ok) {
+    if (since < 5 * 60e3) { U.toast('A full update was sent less than 5 minutes ago (' + when(c.fullSyncAt) + '). Changes still go out on their own.', 'bad'); return; }
+    U.confirm('This sends all 500 days of availability, rates and restrictions for ' + (b ? b.name : 'this building') + ' again. Changes already go out on their own, so you only need this after a problem. Possible once every 5 minutes.', 'Send full update', 'primary', 'Send everything again?').then(function (ok) {
       if (!ok) return;
       if (!c.live) {
         var s = SIMB()[bid]; if (s) s.fullSyncAt = D.NOW;

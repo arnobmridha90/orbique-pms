@@ -3,7 +3,7 @@
  *   config                     member        {configured, env, allowed, demo}: live or practice (simulated) mode
  *   connect     {buildingId}   owner, ops    group -> property -> room types -> rate plans, then the first full sync
  *   iframe      {buildingId}   owner, ops    {url, expiresAt}: the Channex channel screen, signed in with a one-time token
- *   full-sync   {buildingId, confirm: true}  owner, ops   500 days again; at most once a day
+ *   full-sync   {buildingId, confirm: true}  owner, ops   500 days again; at most once every 5 minutes
  *   flush                      member        send this workspace's pending changes now: {sent, pending, waitingUntil}
  *   channels    {buildingId}   member        the building's channels (Booking.com, Agoda, ...), also cached
  *   pause / resume / disconnect {buildingId}  owner
@@ -24,7 +24,7 @@ import { runWorker, forceMarks, resendRejected, CONNECTED } from './_lib/channex
 
 export const IFRAME_CHANNELS = 'BDC,AGO,ABB,EXP,CTP';
 export const WEBHOOK_EVENTS = 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;new_channel;updated_channel;disconnect_channel;disconnect_listing';
-const FULL_SYNC_GAP_MS = 24 * 3600 * 1000;
+const FULL_SYNC_GAP_MS = 5 * 60 * 1000; // a guard against double clicks: Channex asks that a full sync be possible at any time
 const FLUSH_GAP_MS = 2000;
 const TOKEN_LIFE_MS = 15 * 60 * 1000;
 
@@ -112,7 +112,7 @@ async function connect(sb, body, me) {
   const p = setup.property;
   const patch = { updated_at: new Date().toISOString(), last_error: null, paused_until: null, backoff_level: 0 };
   if (['paused', 'error'].includes(p.status) && p.full_sync_at) {
-    // still connected, only stopped: queued changes go out with complete values, no new full sync (the 24-hour rule)
+    // still connected, only stopped: queued changes go out with complete values, no new full sync (Full update is the button for that)
     patch.status = 'live';
     await forceMarks(sb, p.channex_property_id);
   } else if (!['syncing', 'live'].includes(p.status)) {
@@ -165,7 +165,7 @@ async function fullSyncAction(sb, body, me) {
   if (!['syncing', 'live'].includes(p.status)) throw conflict('not-live', p.status === 'paused' ? 'Sending is paused for this building. Resume it first.' : 'Sending has stopped for this building. Press Retry first.');
   if (p.status !== 'syncing' && p.full_sync_at && Date.now() - Date.parse(p.full_sync_at) < FULL_SYNC_GAP_MS) {
     const next = new Date(Date.parse(p.full_sync_at) + FULL_SYNC_GAP_MS).toISOString();
-    const e = tooMany('A full update was sent less than 24 hours ago. Changes still go out on their own; a full update is possible again after ' + next + '.');
+    const e = tooMany('A full update was sent less than 5 minutes ago. Changes still go out on their own; a full update is possible again after ' + next + '.');
     e.code = 'full-sync-recent';
     throw e;
   }
