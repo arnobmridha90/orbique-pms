@@ -12,6 +12,8 @@
  *   revisionToBookings(rev, ctx)                   one Orbique booking per rooms[] item (shared groupRef for several rooms)
  *   mergeBooking(existing, incoming)               a modification overwrites only the keys the channel owns
  *   detectConflicts(booking, ctx)                  double booking: same unit, or more bookings than units of the type
+ *   revisionNights(before, after, units, typeIds)  room types and nights a revision touched (their availability is
+ *                                                  invalidated and sent again in full, see ingestRevision)
  *   channelOf(rev), stripRevision(rev), newBookingId(), newDoorCode(), newGuestToken()
  *
  * Card data: the revision's `guarantee` (masked card number, card holder, expiry) is removed before anything is stored
@@ -293,6 +295,39 @@ export function detectConflicts(b, ctx = {}) {
   return out;
 }
 
+/**
+ * The room types and nights a revision touched: every night of each booking before it (old) and after it (new), for the
+ * type sold and the assigned unit's type, kept to the types this property maps (typeIds). Channex lowers availability
+ * by itself when a new booking arrives, so what Orbique last sent for these nights may no longer be what Channex has.
+ *   before, after  [booking]; units  [unit records]; typeIds  Set of mapped unit type ids
+ * -> [{target_id, date_from, date_to}], consecutive and overlapping nights merged per type
+ */
+export function revisionNights(before, after, units, typeIds) {
+  const unitType = new Map((units || []).map((u) => [u.id, u.unitTypeId]));
+  const nights = new Map();
+  for (const b of [...(before || []), ...(after || [])]) {
+    if (!b || !isIso(b.checkIn) || !isIso(b.checkOut) || b.checkOut <= b.checkIn) continue;
+    const last = addDays(b.checkOut, -1);
+    for (const t of new Set([b.unitTypeId, b.propertyId && unitType.get(b.propertyId)])) {
+      if (!t || !typeIds.has(t)) continue;
+      const list = nights.get(t) || [];
+      list.push([b.checkIn, last]);
+      nights.set(t, list);
+    }
+  }
+  const out = [];
+  for (const [t, list] of [...nights].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    list.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    let cur = null;
+    for (const [a, z] of list) {
+      if (cur && a <= addDays(cur.date_to, 1)) { if (z > cur.date_to) cur.date_to = z; continue; }
+      cur = { target_id: t, date_from: a, date_to: z };
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
 /* ---------- database: context, saving, alerts ---------- */
 
 /** The connected (or once connected) building for a Channex property id: {org_id, building_id, channex_property_id, status, env}. */
@@ -433,8 +468,11 @@ export async function ingestRevision(sb, input, opts = {}) {
 
   const prop = await propertyRow(sb, cfg, rev.property_id);
   if (!prop) {
-    // not one of ours (or not in this environment): leave it unacknowledged
+    // not one of ours (or not in this environment): leave it unacknowledged, and tell the platform admins (no workspace
+    // owns it; one open alert per property, however often Channex sends it again)
     console.error('[channex] revision', rev.id, 'for an unknown property', rev.property_id);
+    const pid = clean(rev.property_id, 64) || 'none';
+    if (await addAlert(sb, { orgId: null, kind: 'unknown_property', message: `Channex sent ${rev.ota_name || 'a'} booking ${clean(rev.ota_reservation_code || rev.unique_id || rev.id, 60)} for property ${pid}, which no Orbique building is connected to. It stays unacknowledged in Channex.`, ref: { key: 'unknown_property:' + pid, propertyId: pid, revisionId: rev.id } })) out.alerts.push('unknown_property');
     out.status = 'unknown_property';
     return out;
   }
@@ -526,6 +564,14 @@ export async function ingestRevision(sb, input, opts = {}) {
   }
 
   await saveRecords(sb, prop.org_id, saved);
+  // Channex changed availability on its own for a new booking (and a cancellation or modification may follow before
+  // the next send): forget what Orbique last sent for these nights, old and new, so the next send states Orbique's
+  // value even when it equals the old one. Before the ack: if this fails, the revision is fetched again.
+  if (CONNECTED.includes(prop.status)) {
+    for (const r of revisionNights(existingList, saved, ctx.units, new Set(maps.roomTypes.values()))) {
+      must(await sb.rpc('channex_invalidate', { p_org: prop.org_id, p_prop: prop.channex_property_id, p_kind: 'availability', p_target: r.target_id, p_from: r.date_from, p_to: r.date_to, p_reason: 'revision' }), 'invalidate availability');
+    }
+  }
   must(await sb.from('channex_bookings').update({ record_ids: recordIds, last_revision_id: rev.id, last_inserted_at: insertedAt, updated_at: new Date().toISOString() }).eq('booking_id', bookingId), 'save booking link');
   must(await sb.from('channex_revisions').upsert({ revision_id: rev.id, booking_id: bookingId, org_id: prop.org_id, status: rev.status || null, inserted_at: insertedAt, saved_at: new Date().toISOString(), raw: stripped }, { onConflict: 'revision_id' }), 'save revision');
   out.recordIds = recordIds.slice(0, Math.max(incoming.length, recordIds.length));

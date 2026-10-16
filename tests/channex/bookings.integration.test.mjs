@@ -114,7 +114,7 @@ before(async () => {
   await db.query('insert into public.members (org_id, user_id, staff_id, role) values ($1, $2, $3, $4)', [ORG, owner.id, 's1', 'owner']);
   await put('staff', 's1', { id: 's1', name: 'Olivia Owner', role: 'owner' });
   await db.query(`insert into public.blobs (org_id, key, data) values ($1, 'workspaceMeta', $2)`, [ORG, { v: { demo: false } }]);
-  await put('buildings', 'BD-1', { id: 'BD-1', name: 'Seri Test Residences', address: '2 Jalan Ujian', city: 'Kuala Lumpur', state: 'WP Kuala Lumpur', zip: '50450', country: 'MY', currency: 'MYR', propertyType: 'apartment', checkInTime: '15:00', checkOutTime: '11:00' });
+  await put('buildings', 'BD-1', { id: 'BD-1', name: 'Seri Test Residences', address: '2 Jalan Ujian', city: 'Kuala Lumpur', state: 'WP Kuala Lumpur', zip: '50450', country: 'MY', currency: 'MYR', propertyType: 'apartment', email: 'stay@example.test', phone: '+60 3-1234 5678', checkInTime: '15:00', checkOutTime: '11:00' });
   await put('unitTypes', 'UT-T', { id: 'UT-T', buildingId: 'BD-1', name: 'Twin Room', maxGuests: 2, beds: 2, order: 1 });
   await put('unitTypes', 'UT-D', { id: 'UT-D', buildingId: 'BD-1', name: 'Double Room', maxGuests: 2, beds: 1, order: 2 });
   for (let i = 1; i <= 3; i++) await put('properties', `T-0${i}`, { id: `T-0${i}`, name: `Twin ${i}`, buildingId: 'BD-1', unitTypeId: 'UT-T', unitNo: `21-${i}` });
@@ -360,6 +360,43 @@ test('feed polling picks up a revision that never had a webhook (every 15 minute
   t = await tick();
   assert.equal(t.feed.polled, false);
   assert.deepEqual(await channexAvail('UT-T', '2026-12-10', '2026-12-11'), [2, 2]);
+});
+
+/* ---------- availability after Channex's own decrement (audit finding 1) ---------- */
+
+test('a new booking and its cancellation before the next send: Channex is put back to Orbique\'s value', { skip: SKIP }, async () => {
+  await tick();
+  await control('calls', null, 'DELETE');
+  assert.deepEqual(await channexAvail('UT-T', '2027-01-05', '2027-01-06'), [3, 3], 'before');
+  const r = await channelBooking(T({ status: 'new', checkin_date: '2027-01-05', checkout_date: '2027-01-07' }));
+  assert.deepEqual(await channexAvail('UT-T', '2027-01-05', '2027-01-06'), [2, 2], 'Channex lowered it by itself');
+  await channelBooking({ booking_id: r.revision.attributes.booking_id, status: 'cancelled' });
+  // both ingested before the worker ran: Orbique computes 3 again, which equals what it last sent, yet it goes out
+  const forced = await q(`select date_from::text, date_to::text from public.channex_outbox where org_id = $1 and kind = 'availability' and target_id = 'UT-T' and force order by id`, [ORG]);
+  assert.ok(forced.length >= 1 && forced.every((m) => m.date_from === '2027-01-05' && m.date_to === '2027-01-06'), JSON.stringify(forced));
+  assert.equal((await q(`select count(*)::int n from public.channex_state where org_id = $1 and kind = 'availability' and target_id = 'UT-T' and date between '2027-01-05' and '2027-01-06' and value is null`, [ORG]))[0].n, 2, 'last-sent values forgotten');
+  await tick();
+  const items = await availabilityItems();
+  assert.deepEqual(items.map((i) => [i.room_type_id, i.date || i.date_from, i.date_to || i.date, i.availability]), [[ids.rt['UT-T'], '2027-01-05', '2027-01-06', 3]]);
+  assert.deepEqual(await channexAvail('UT-T', '2027-01-05', '2027-01-06'), [3, 3], 'no room lost');
+  assert.equal((await q(`select count(*)::int n from public.channex_outbox where org_id = $1`, [ORG]))[0].n, 0);
+});
+
+test('a revision for a property no building is connected to stays unacknowledged and raises one platform alert', { skip: SKIP }, async () => {
+  const { ingestRevision } = await import('../../api/_lib/channex-bookings.js');
+  const { requireAdminClient } = await import('../../api/_lib/supabase.js');
+  const sb = requireAdminClient();
+  const rev = { id: 'bbbbbbbb-0000-4000-8000-000000000001', booking_id: 'bbbbbbbb-0000-4000-8000-000000000002', property_id: 'bbbbbbbb-0000-4000-8000-000000000003', status: 'new', ota_name: 'Booking.com', ota_reservation_code: '4099', arrival_date: '2027-01-10', departure_date: '2027-01-11', rooms: [] };
+  for (const id of [rev.id, 'bbbbbbbb-0000-4000-8000-000000000009']) {
+    const out = await ingestRevision(sb, Object.assign({}, rev, { id }));
+    assert.equal(out.status, 'unknown_property'); assert.equal(out.acked, false);
+  }
+  assert.equal((await calls()).filter((c) => c.path.endsWith('/ack')).length, 0, 'not acknowledged');
+  const a = await q(`select org_id, message, ref from public.channex_alerts where kind = 'unknown_property' and resolved_at is null`);
+  assert.equal(a.length, 1, 'one alert per property, however often it comes');
+  assert.equal(a[0].org_id, null);
+  assert.match(a[0].message, /Booking\.com booking 4099 for property bbbbbbbb-0000-4000-8000-000000000003, which no Orbique building is connected to/);
+  assert.equal((await q(`select count(*)::int n from public.channex_alerts where org_id = $1 and kind = 'unknown_property'`, [ORG]))[0].n, 0, 'no workspace sees it');
 });
 
 test('Orbique never lists bookings: no GET /bookings in the whole run, and no card data stored', { skip: SKIP }, async () => {

@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   revisionToBookings, mergeBooking, detectConflicts, channelOf, stripRevision, revisionAttrs, newBookingFields,
-  newBookingId, newDoorCode, newGuestToken, utcIso, myt, CHANNEL_KEYS
+  newBookingId, newDoorCode, newGuestToken, utcIso, myt, CHANNEL_KEYS, revisionNights
 } from '../../api/_lib/channex-bookings.js';
 import { authentic, eventRow } from '../../api/channex-webhook.js';
 import { signature } from '../../api/_lib/channex.js';
@@ -204,4 +204,21 @@ test('webhook: signature, token fallback, nothing configured', () => {
   assert.equal(authentic(req({}), raw, { webhookSecret: '', webhookToken: '' }, now), false);
   const row = eventRow({ event: 'booking', property_id: 'not-a-uuid', payload: { revision_id: rev().id, booking_id: rev().booking_id, property_id: rev().property_id } }, 'h');
   assert.deepEqual([row.event, row.channex_property_id, row.revision_id, row.booking_id], ['booking', rev().property_id, rev().id, rev().booking_id]);
+});
+
+test('revisionNights: old and new nights of the type sold and the unit\'s type, mapped types only, merged', () => {
+  const units = [{ id: 'T-01', unitTypeId: 'UT-T' }, { id: 'D-01', unitTypeId: 'UT-D' }, { id: 'X-01', unitTypeId: 'UT-X' }];
+  const mapped = new Set(['UT-T', 'UT-D']);
+  // a new booking: its nights (check-out exclusive)
+  assert.deepEqual(revisionNights([], [{ unitTypeId: 'UT-T', propertyId: 'T-01', checkIn: '2026-11-21', checkOut: '2026-11-23' }], units, mapped),
+    [{ target_id: 'UT-T', date_from: '2026-11-21', date_to: '2026-11-22' }]);
+  // a modification that moves the stay: old and new nights, joined when they touch
+  assert.deepEqual(revisionNights([{ unitTypeId: 'UT-T', checkIn: '2026-11-21', checkOut: '2026-11-23' }], [{ unitTypeId: 'UT-T', checkIn: '2026-11-23', checkOut: '2026-11-25' }], units, mapped),
+    [{ target_id: 'UT-T', date_from: '2026-11-21', date_to: '2026-11-24' }]);
+  // apart: two ranges; a cancellation still frees (and so invalidates) the old nights
+  assert.deepEqual(revisionNights([{ unitTypeId: 'UT-T', checkIn: '2026-11-01', checkOut: '2026-11-02' }], [{ unitTypeId: 'UT-T', status: 'cancelled', checkIn: '2026-11-10', checkOut: '2026-11-11' }], units, mapped),
+    [{ target_id: 'UT-T', date_from: '2026-11-01', date_to: '2026-11-01' }, { target_id: 'UT-T', date_from: '2026-11-10', date_to: '2026-11-10' }]);
+  // a booking of one type placed on a unit of another counts for both; unmapped types and bad dates are left out
+  assert.deepEqual(revisionNights([], [{ unitTypeId: 'UT-T', propertyId: 'D-01', checkIn: '2026-11-05', checkOut: '2026-11-06' }, { unitTypeId: 'UT-X', propertyId: 'X-01', checkIn: '2026-11-05', checkOut: '2026-11-06' }, { unitTypeId: 'UT-T', checkIn: '2026-11-06', checkOut: '2026-11-06' }], units, mapped),
+    [{ target_id: 'UT-D', date_from: '2026-11-05', date_to: '2026-11-05' }, { target_id: 'UT-T', date_from: '2026-11-05', date_to: '2026-11-05' }]);
 });

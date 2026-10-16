@@ -625,7 +625,7 @@
      Platforms sell the type; Orbique picks the unit (O.assign). Unit numbers are for the team only.
      Generated after everything else, with their own random streams, so the rest of the demo stays exactly as it was. */
   var buildings = [
-    { id: 'BD-saujana', name: 'Seri Saujana Residences', address: '2 Jalan Saujana Indah, Bukit Jalil, 57000 Kuala Lumpur', city: 'Kuala Lumpur', state: 'Wilayah Persekutuan', zip: '57000', country: 'MY', currency: 'MYR', propertyType: 'apartment', checkInTime: '15:00', checkOutTime: '11:00', createdAt: '2026-07-20T10:00' }
+    { id: 'BD-saujana', name: 'Seri Saujana Residences', address: '2 Jalan Saujana Indah, Bukit Jalil, 57000 Kuala Lumpur', city: 'Kuala Lumpur', state: 'Wilayah Persekutuan', zip: '57000', country: 'MY', currency: 'MYR', propertyType: 'apartment', email: 'stays@orbique.site', phone: '+60 3-2785 1100', checkInTime: '15:00', checkOutTime: '11:00', createdAt: '2026-07-20T10:00' }
   ];
   var unitTypes = [
     { id: 'UT-deluxe', buildingId: 'BD-saujana', name: 'Deluxe', maxGuests: 4, beds: 2, description: 'Two bedrooms, city view, on the middle floors.', order: 1, createdAt: '2026-07-20T10:05' },

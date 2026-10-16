@@ -20,7 +20,8 @@
  *   POST /__mock/booking {property_id, room_type_id, rate_plan_id?, status: new|modified|cancelled, booking_id?, checkin_date,
  *        checkout_date, amount?, currency?, customer?, ota_name?, deliver?}
  *        creates a booking revision and sends a signed `booking` webhook to every active webhook that wants it, else to
- *        MOCK_WEBHOOK_URL, else APP_URL + /api/channex-webhook. Answers {revision, deliveries}.
+ *        MOCK_WEBHOOK_URL, else APP_URL + /api/channex-webhook. Answers {revision, deliveries}. A new booking lowers
+ *        the room type's availability by one for its nights, as Channex does on its own.
  *   POST /__mock/channel {property_id, channel: 'BDC', title?}   adds a channel to the property
  *   POST /__mock/config {every429, every5xx, latencyMs, rateLimits}   change the controls below while running
  *   POST /__mock/reset   empties everything;  GET /__mock/state   everything stored
@@ -343,6 +344,10 @@ export function createMock(options = {}) {
       inserted_at: nowIso(), acked: false
     };
     db.revisions[rev.id] = rev;
+    // like Channex (allow_availability_autoupdate_on_confirmation is always true): a new booking lowers availability
+    // by itself; modifications and cancellations do not (Orbique sets those two to false)
+    const rt = rev.rooms[0].room_type_id;
+    if (status === 'new' && rt && db.availability[rt]) for (const d of Object.keys(days)) if (Number.isInteger(db.availability[rt][d])) db.availability[rt][d] = Math.max(0, db.availability[rt][d] - 1);
     const deliveries = b.deliver === false ? [] : await deliver(rev);
     return [200, { revision: revisionView(rev), deliveries }];
   }

@@ -284,6 +284,7 @@ select t.ok(t.as_role(r, :U1, f) = 'denied', r || ' cannot run ' || left(f, 40))
                     $q$select public.channex_claim('11111111-1111-1111-1111-111111111111', 30)$q$,
                     $q$select public.channex__live_property('aaaaaaaa-0000-0000-0000-000000000001', 'BD-1')$q$,
                     $q$select public.channex__mark('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'availability', 'x', '2026-11-01', '2026-11-01', null)$q$,
+                    $q$select public.channex_invalidate('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'availability', 'x', '2026-11-01', '2026-11-01', null)$q$,
                     $q$select public.channex_set_worker('https://example.test/api/channex-worker', 'xxxxxxxxxxxxxxxxxxxx')$q$,
                     $q$select public.channex_tick('tick')$q$]) f;
 select t.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -303,8 +304,9 @@ select t.ok(t.as_role('service_role', null, $q$select count(public.channex_take_
 select t.ok(t.as_role('service_role', null, $q$select public.channex_take_slot('11111111-1111-1111-1111-111111111111', '/availability')$q$) = 'null', 'the tenth is refused');
 select t.ok(t.as_role('service_role', null, $q$select public.channex_take_slot('11111111-1111-1111-1111-111111111111', '/restrictions') is not null$q$) = 'true', 'restrictions have their own per-property budget');
 insert into public.channex_calls (channex_property_id, endpoint, at) select gen_random_uuid(), '/restrictions', now() from generate_series(1, 9);
-select t.ok(t.as_role('service_role', null, $q$select public.channex_take_slot('99999999-9999-9999-9999-999999999999', '/availability')$q$) = 'null', 'account-wide: 19 ARI calls a minute');
-select t.ok(t.as_role('service_role', null, $q$select public.channex_take_slot('99999999-9999-9999-9999-999999999999', '/room_types') is not null$q$) = 'true', 'non-ARI endpoints are not held by the ARI cap');
+insert into public.channex_calls (channex_property_id, endpoint, at) select gen_random_uuid(), '/availability', now() from generate_series(1, 20);
+select t.ok(t.as_role('service_role', null, $q$select public.channex_take_slot('99999999-9999-9999-9999-999999999999', '/availability') is not null$q$) = 'true', '0009: no account-wide cap; other properties'' ARI calls do not hold one back');
+select t.ok(t.as_role('service_role', null, $q$select public.channex_take_slot('99999999-9999-9999-9999-999999999999', '/room_types') is not null$q$) = 'true', 'non-ARI endpoints have their own budget');
 update public.channex_calls set at = now() - interval '61 seconds';
 select t.ok(t.as_role('service_role', null, $q$select public.channex_take_slot('11111111-1111-1111-1111-111111111111', '/availability') is not null$q$) = 'true', 'slots free up after a minute');
 select t.ok((select org_id from public.channex_calls order by id desc limit 1) = :A, 'the reservation row carries the org');
@@ -313,6 +315,30 @@ select t.ok(t.as_role('service_role', null, $q$select public.channex_claim('1111
 select t.ok(t.as_role('service_role', null, $q$select public.channex_claim('11111111-1111-1111-1111-111111111111', 0)$q$) = 'true', 'claim: release');
 select t.ok(t.as_role('service_role', null, $q$select public.channex_claim('11111111-1111-1111-1111-111111111111', 30)$q$) = 'true', 'claim: free again after release');
 select t.ok(t.as_role('service_role', null, $q$select public.channex_tick('tick')$q$) = 'null', 'tick does nothing without pg_net / Vault / a stored worker');
+
+-- ---------- 0009: forced marks, forgetting what was last sent, platform alerts ----------
+delete from public.channex_outbox;
+insert into public.channex_state (org_id, channex_property_id, kind, target_id, date, value)
+  select :A, :PROP, 'availability', 'UT-Z', d::date, '{"availability": 3}' from generate_series('2026-11-21'::date, '2026-11-23'::date, interval '1 day') d;
+select t.ok(t.as_role('service_role', null, $q$select public.channex_invalidate('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'availability', 'UT-Z', '2026-11-21', '2026-11-22', 'revision')$q$) = '2', 'invalidate: two days');
+select t.ok((select string_agg(date || '=' || coalesce(value::text, 'null'), ' ' order by date) from public.channex_state where target_id = 'UT-Z')
+            = '2026-11-21=null 2026-11-22=null 2026-11-23={"availability": 3}', 'invalidate: the last-sent values of those days are forgotten, others kept');
+select t.ok((select count(*) from public.channex_outbox where target_id = 'UT-Z' and force and reason = 'revision' and date_from = '2026-11-21' and date_to = '2026-11-22') = 1, 'invalidate: one forced mark');
+select t.ok((select count(*) from public.channex_outbox where not force) = 0, 'marks are not forced by default (the column defaults to false)');
+select t.ok(t.as_role('service_role', null, $q$select public.channex_invalidate('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'availability', 'UT-Z', '2020-01-01', '2020-01-05', null)$q$) = '0', 'invalidate: past dates do nothing');
+select t.ok(t.as_role('service_role', null, $q$select public.channex_invalidate('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'nonsense', 'UT-Z', '2026-11-21', '2026-11-21', null)$q$) = '0', 'invalidate: unknown kinds do nothing');
+select t.ok((select count(*) from public.channex_outbox) = 1, 'still one mark');
+delete from public.channex_outbox;
+delete from public.channex_state where target_id = 'UT-Z';
+insert into public.channex_alerts (org_id, kind, message, ref) values (null, 'unknown_property', 'for platform admins', '{"key": "unknown_property:x"}');
+select t.ok(t.as_role('authenticated', :U1, $q$select count(*) from public.channex_alerts where org_id is null$q$) = '0', 'members never see platform alerts');
+insert into public.channex_alerts (org_id, kind, message) values (:A, 'currency_changed', 'currency');
+select t.ok((select count(*) from public.channex_alerts where kind in ('unknown_property', 'currency_changed')) = 2, 'the 0009 alert kinds are allowed');
+do $$ begin
+  begin insert into public.channex_alerts (org_id, kind) values (null, 'nonsense'); raise exception 'FAILED: an unknown alert kind was accepted';
+  exception when check_violation then raise notice 'ok: unknown alert kinds are still refused'; end;
+end $$;
+delete from public.channex_alerts where kind in ('unknown_property', 'currency_changed');
 
 -- ---------- reset_org guard ----------
 select t.ok(t.as_role('authenticated', :U1, $q$select public.reset_org('aaaaaaaa-0000-0000-0000-000000000001')::text$q$) like 'error: Disconnect channels in Channels first%', 'reset_org refuses while connected');

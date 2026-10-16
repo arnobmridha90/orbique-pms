@@ -1,8 +1,8 @@
 /* Pure parts of the ARI sender and setup (api/_lib/channex-sync.js, channex-setup.js, api/channex.js helpers). */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compressValues, diffValues, backoffMs, restrictionValue, planRate, toItems, markDates, stableKey, BACKOFF_MAX_MS } from '../../api/_lib/channex-sync.js';
-import { propertyBody, roomTypeBody, ratePlanBody, occupancy, groupTitle, buildingProblems, PROPERTY_SETTINGS } from '../../api/_lib/channex-setup.js';
+import { compressValues, diffValues, backoffMs, restrictionValue, planRate, toItems, markDates, stableKey, rejectedItems, datesText, BACKOFF_MAX_MS } from '../../api/_lib/channex-sync.js';
+import { propertyBody, roomTypeBody, ratePlanBody, occupancy, groupTitle, buildingProblems, propertyType, PROPERTY_TYPES, PROPERTY_SETTINGS } from '../../api/_lib/channex-setup.js';
 import { allowedOrg, webhookBody, appUrl, IFRAME_CHANNELS } from '../../api/channex.js';
 import { todayMY, addDays } from '../../api/_lib/channex-db.js';
 
@@ -138,7 +138,7 @@ test('setup bodies follow the mapping table (plan section 5)', () => {
 });
 
 test('buildingProblems: untagged units, empty types, missing plans and address', () => {
-  const b = { id: 'BD', name: 'B', address: 'A', city: 'C' };
+  const b = { id: 'BD', name: 'B', address: 'A', city: 'C', email: 'b@example.test', phone: '+60 3-1234 5678' };
   const types = [{ id: 'T1', buildingId: 'BD', name: 'Twin' }, { id: 'T2', buildingId: 'BD', name: 'Double' }];
   const units = [{ id: 'u1', buildingId: 'BD', unitTypeId: 'T1' }, { id: 'u2', buildingId: 'BD', unitNo: '9-9' }, { id: 'u3', buildingId: 'BD', unitTypeId: 'T2', archived: true }];
   const plans = [{ id: 'P1', unitTypeId: 'T1', name: 'BAR' }];
@@ -149,6 +149,77 @@ test('buildingProblems: untagged units, empty types, missing plans and address',
   assert.deepEqual(buildingProblems(b, types.slice(0, 1), units.slice(0, 1), plans), []);
   assert.ok(buildingProblems({ id: 'BD', name: 'B' }, types.slice(0, 1), units.slice(0, 1), plans).some((x) => /address/.test(x)));
   assert.deepEqual(buildingProblems(null, [], [], []), ['That building was not found.']);
+});
+
+test('buildingProblems: Channex needs an email and a phone before channels connect (building, else Brand)', () => {
+  const types = [{ id: 'T1', buildingId: 'BD', name: 'Twin' }];
+  const units = [{ id: 'u1', buildingId: 'BD', unitTypeId: 'T1' }];
+  const plans = [{ id: 'P1', unitTypeId: 'T1', name: 'BAR' }];
+  const b = { id: 'BD', name: 'B', address: 'A', city: 'C' };
+  const p = buildingProblems(b, types, units, plans);
+  assert.ok(p.some((x) => /^Add an email address for the building/.test(x)), p.join('\n'));
+  assert.ok(p.some((x) => /^Add a phone number for the building/.test(x)), p.join('\n'));
+  assert.deepEqual(buildingProblems(b, types, units, plans, { email: 'brand@example.test', phone: '+60 3-1234 5678' }), [], 'the Brand details count');
+  assert.deepEqual(buildingProblems(Object.assign({}, b, { email: 'b@example.test', phone: '0312345678' }), types, units, plans, {}), []);
+  const bad = buildingProblems(Object.assign({}, b, { email: 'nope', phone: 'call me' }), types, units, plans);
+  assert.ok(bad.some((x) => /Check the building email address \(nope\)/.test(x)) && bad.some((x) => /Check the building phone number/.test(x)), bad.join('\n'));
+});
+
+test('propertyType: only values Channex accepts; ours map to the nearest; default apartment', () => {
+  assert.equal(propertyType('hotel'), 'hotel');
+  assert.equal(propertyType('aparthotel'), 'apart_hotel');
+  assert.equal(propertyType('serviced_apartment'), 'apart_hotel');
+  assert.equal(propertyType('Serviced apartment'), 'apart_hotel');
+  assert.equal(propertyType('bed_and_breakfast'), 'guest_house');
+  assert.equal(propertyType('boutique_hotel'), 'hotel');
+  assert.equal(propertyType(''), 'apartment');
+  assert.equal(propertyType('castle'), 'apartment');
+  for (const k of ['aparthotel', 'serviced_apartment', 'bed_and_breakfast', 'boutique_hotel', 'x', undefined]) assert.ok(PROPERTY_TYPES.includes(propertyType(k)), k);
+  assert.equal(PROPERTY_TYPES.length, 22);
+  assert.equal(propertyBody({ name: 'X', propertyType: 'aparthotel' }).property_type, 'apart_hotel');
+});
+
+test('rejectedItems: a warning echoes the item it refused; only those dates are left out of the state', () => {
+  const ids = new Map([['rp-tb', 'TB'], ['rp-db', 'DB']]);
+  const items = [
+    { property_id: 'p', rate_plan_id: 'rp-tb', date: '2026-11-21', rate: '333.00' },
+    { property_id: 'p', rate_plan_id: 'rp-db', date_from: '2026-11-10', date_to: '2026-11-12', rate: '0.00' }
+  ];
+  // the documented shape: the item's fields (null when not sent) and a warning map
+  const warns = [{ property_id: 'p', rate_plan_id: 'rp-db', date: null, date_from: '2026-11-10', date_to: '2026-11-12', rate: '0.00', stop_sell: null, warning: { rate: ['must be greater than 0'] } }];
+  const r = rejectedItems(warns, items, ids);
+  assert.equal(r.unmatched, 0);
+  assert.deepEqual(r.rejected, [{ target_id: 'DB', date_from: '2026-11-10', date_to: '2026-11-12', why: 'rate must be greater than 0' }]);
+  assert.deepEqual([...r.keys].sort(), ['DB|2026-11-10', 'DB|2026-11-11', 'DB|2026-11-12']);
+  // one date inside a ranged item
+  const one = rejectedItems([{ rate_plan_id: 'rp-db', date: '2026-11-11', warning: { min_stay_arrival: 'bad' } }], items, ids);
+  assert.deepEqual([...one.keys], ['DB|2026-11-11']);
+  // availability items
+  const av = rejectedItems([{ room_type_id: 'rt', date: '2026-11-21', availability: -1, warning: { availability: ['must be greater than or equal to 0'] } }], [{ room_type_id: 'rt', date: '2026-11-21', availability: -1 }], new Map([['rt', 'UT-T']]));
+  assert.deepEqual([...av.keys], ['UT-T|2026-11-21']);
+  // a warning we cannot match: nothing of the call may be taken as accepted
+  assert.equal(rejectedItems([{ warning: { values: ['invalid'] } }], items, ids).unmatched, 1);
+  assert.equal(rejectedItems([{ rate_plan_id: 'rp-zz', date: '2026-11-21' }], items, ids).unmatched, 1);
+  assert.equal(rejectedItems([], items, ids).rejected.length, 0);
+  assert.equal(datesText('2026-11-21', '2026-11-21'), '21 Nov 2026');
+  assert.equal(datesText('2026-11-01', '2026-11-10'), '1 Nov 2026 to 10 Nov 2026');
+});
+
+test('changed fields only: certification tests 4 and 7 come out as one item per row of the sheet', () => {
+  const day = (rate, extra) => Object.assign({ rate, min_stay_arrival: 1, max_stay: 0, closed_to_arrival: false, closed_to_departure: false, stop_sell: false }, extra);
+  const state = new Map();
+  const rows = [];
+  // Double B&B 1-20 Nov: rates vary by day, 15 Nov has min stay 5 and 20 Nov stop sell (tests 5 and 6)
+  for (let d = '2026-11-01'; d <= '2026-11-20'; d = addDays(d, 1)) {
+    const n = Number(d.slice(8));
+    const old = day((100 + n).toFixed(2), d === '2026-11-15' ? { min_stay_arrival: 5 } : d === '2026-11-20' ? { stop_sell: true } : {});
+    state.set('DBB|' + d, old);
+    rows.push(row('DBB', d, Object.assign({}, old, { min_stay_arrival: 10 })));
+  }
+  const runs = compressValues(diffValues(rows, state));
+  assert.deepEqual(runs, [{ target_id: 'DBB', date_from: '2026-11-01', date_to: '2026-11-20', value: { min_stay_arrival: 10 } }]);
+  // whole values would have split it per night
+  assert.equal(compressValues(diffValues(rows, state, { whole: true })).length, 20);
 });
 
 test('allowlist: listed orgs only; empty list allows none in staging and all in production; no key, nobody', () => {
@@ -163,7 +234,7 @@ test('allowlist: listed orgs only; empty list allows none in staging and all in 
 test('webhook body per plan: global, active, data, token header, signing key when set', () => {
   const w = webhookBody({ webhookToken: 'tok' }, 'https://orbique.example', { CHANNEX_SIGNING_KEY_ID: 'sk-1' });
   assert.equal(w.callback_url, 'https://orbique.example/api/channex-webhook');
-  assert.equal(w.event_mask, 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;new_channel;updated_channel;disconnect_channel');
+  assert.equal(w.event_mask, 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;new_channel;updated_channel;disconnect_channel;disconnect_listing');
   assert.equal(w.is_global, true); assert.equal(w.is_active, true); assert.equal(w.send_data, true); assert.equal(w.property_id, null);
   assert.deepEqual(w.headers, { 'X-Orbique-Webhook-Token': 'tok' });
   assert.equal(w.is_signed, true); assert.equal(w.signing_key_id, 'sk-1');

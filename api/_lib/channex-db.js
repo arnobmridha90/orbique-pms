@@ -144,16 +144,18 @@ async function saveCall(sb, callId, row) {
 
 /**
  * Add an alert unless an open one of the same kind with the same ref.key exists.
- *   row {orgId, kind, message, ref: {key, ...}}
+ *   row {orgId, kind, message, ref: {key, ...}}   orgId null: an alert for platform admins (no workspace owns it)
  */
 export async function addAlert(sb, row) {
   try {
     const key = row.ref && row.ref.key;
     if (key) {
-      const open = await sb.from('channex_alerts').select('id').eq('org_id', row.orgId).eq('kind', row.kind).is('resolved_at', null).eq('ref->>key', String(key)).limit(1);
+      let q = sb.from('channex_alerts').select('id');
+      q = row.orgId ? q.eq('org_id', row.orgId) : q.is('org_id', null);
+      const open = await q.eq('kind', row.kind).is('resolved_at', null).eq('ref->>key', String(key)).limit(1);
       if (!open.error && open.data && open.data.length) return false;
     }
-    const res = await sb.from('channex_alerts').insert({ org_id: row.orgId, kind: row.kind, message: String(row.message || '').slice(0, 1000), ref: row.ref || null });
+    const res = await sb.from('channex_alerts').insert({ org_id: row.orgId || null, kind: row.kind, message: String(row.message || '').slice(0, 1000), ref: row.ref || null });
     if (res.error) { console.error('[channex] alert:', res.error.message); return false; }
     return true;
   } catch (e) {
