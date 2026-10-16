@@ -245,7 +245,9 @@
       '<button type="button" class="btn btn-primary btn-sm" data-act="chx-run"' + (chx.busy ? ' disabled' : '') + '>' + O.icon('refresh') + (chx.busy ? 'Checking…' : r ? 'Check again' : 'Check and set up') + '</button></div><div class="card-body stack">' +
       (chx.err ? '<div class="note warn">' + esc(chx.err) + '</div>' : '') +
       (r ? '<dl class="kv">' + rows.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + x[1] + '</dd>'; }).join('') + '<dt>Webhook</dt><dd>' + (w ? U.pill({ ok: 'Already right', updated: 'Updated', created: 'Created' }[w.state] || w.state, 'ok') + ' <span class="xs muted">' + esc(w.callbackUrl || '') + (w.signed ? ' · signed' : '') + '</span>' : U.pill('Not set up', 'warn')) + '</dd></dl>' +
-        (r.message ? '<div class="note warn">' + esc(r.message) + '</div>' : '') : '<div class="small muted">Nothing checked yet. The check calls Channex, so run it after changing the server settings.</div>') + '</div></div>';
+        (r.message ? '<div class="note warn">' + esc(r.message) + '</div>' : '') +
+        (r.unknownProperties && r.unknownProperties.length ? '<div class="note warn" data-unknown-props><b>Bookings for properties no building is connected to.</b> Orbique leaves them unacknowledged, so Channex keeps sending them and emails a warning. Connect the building, or remove the property in Channex.<ul style="margin:6px 0 0;padding-left:18px">' +
+          r.unknownProperties.map(function (u) { return '<li>' + esc(u.message || u.propertyId || '') + '</li>'; }).join('') + '</ul></div>' : '') : '<div class="small muted">Nothing checked yet. The check calls Channex, so run it after changing the server settings.</div>') + '</div></div>';
     var b = O.$('[data-act="chx-run"]', body);
     if (b) b.onclick = function () {
       chx.busy = true; chx.err = null; paintChannex(body);

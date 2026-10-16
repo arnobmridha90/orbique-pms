@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Database tests on a local Postgres (14+). Creates two throwaway databases, applies a Supabase stand-in and every
-# migration with scripts/migrate.mjs, re-applies 0006 and 0007 twice (they must be re-runnable), then runs the SQL tests.
+# migration with scripts/migrate.mjs, re-applies 0006, 0007 and 0009 twice (they must be re-runnable), then runs the SQL
+# tests.
 #
 #   PGURL=postgres://postgres@127.0.0.1:5432/postgres tests/sql/run.sh
 #
@@ -25,7 +26,8 @@ migrate_all() { # url
   local url="$1"
   DATABASE_URL="$url" node scripts/migrate.mjs
   DATABASE_URL="$url" node scripts/migrate.mjs                     # nothing left to apply
-  for f in 0006_channex.sql 0007_channex_cron.sql; do
+  # 0009 replaces functions from 0006, so it is re-run after it (in production each file runs once, in order)
+  for f in 0006_channex.sql 0007_channex_cron.sql 0009_channex_fixes.sql; do
     DATABASE_URL="$url" node scripts/migrate.mjs --reapply "$f"   # re-run through the runner
     psqlq "$url" -f "supabase/migrations/$f" >/dev/null 2>&1 || { echo "re-running $f with psql failed"; psqlq "$url" -f "supabase/migrations/$f"; exit 1; }
   done

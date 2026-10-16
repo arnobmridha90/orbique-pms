@@ -19,11 +19,11 @@ import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, confl
 import { requireAdminClient, caller, isPlatformAdmin, getOrg, membership } from './_lib/supabase.js';
 import { channexConfig, ChannexError, channelView } from './_lib/channex.js';
 import { must, record, blob, tracked } from './_lib/channex-db.js';
-import { setupBuilding, loadBuilding, buildingProblems } from './_lib/channex-setup.js';
-import { runWorker, CONNECTED } from './_lib/channex-sync.js';
+import { setupBuilding, loadBuilding, buildingProblems, brandContact } from './_lib/channex-setup.js';
+import { runWorker, forceMarks, resendRejected, CONNECTED } from './_lib/channex-sync.js';
 
 export const IFRAME_CHANNELS = 'BDC,AGO,ABB,EXP,CTP';
-export const WEBHOOK_EVENTS = 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;new_channel;updated_channel;disconnect_channel';
+export const WEBHOOK_EVENTS = 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;new_channel;updated_channel;disconnect_channel;disconnect_listing';
 const FULL_SYNC_GAP_MS = 24 * 3600 * 1000;
 const FLUSH_GAP_MS = 2000;
 const TOKEN_LIFE_MS = 15 * 60 * 1000;
@@ -97,7 +97,7 @@ async function connect(sb, body, me) {
   await requireLive(sb, ws);
   const buildingId = idField(body.buildingId, 'Building');
   const data = await loadBuilding(sb, ws.org.id, buildingId);
-  const problems = buildingProblems(data.building, data.unitTypes, data.units, data.plans);
+  const problems = buildingProblems(data.building, data.unitTypes, data.units, data.plans, await brandContact(sb, ws.org.id));
   if (problems.length) {
     const e = bad('not-ready', problems.length === 1 ? problems[0] : 'Before connecting: ' + problems.join(' '));
     e.problems = problems;
@@ -112,8 +112,9 @@ async function connect(sb, body, me) {
   const p = setup.property;
   const patch = { updated_at: new Date().toISOString(), last_error: null, paused_until: null, backoff_level: 0 };
   if (['paused', 'error'].includes(p.status) && p.full_sync_at) {
-    // still connected, only stopped: queued changes go out, no new full sync (the 24-hour rule)
+    // still connected, only stopped: queued changes go out with complete values, no new full sync (the 24-hour rule)
     patch.status = 'live';
+    await forceMarks(sb, p.channex_property_id);
   } else if (!['syncing', 'live'].includes(p.status)) {
     // first connect, or back after a disconnect: everything goes again
     Object.assign(patch, { status: 'syncing', full_sync_requested_at: new Date().toISOString(), full_sync_task_ids: null });
@@ -149,6 +150,8 @@ async function iframe(sb, body, me) {
   const q = new URLSearchParams({ oauth_session_key: token, app_mode: 'headless', redirect_to: '/channels', property_id: p.channex_property_id });
   if (g) q.set('group_id', g.group_id);
   q.set('channels', IFRAME_CHANNELS);
+  // availability is only ever set from Orbique: the Channex inventory screen shows it but cannot change it
+  q.set('read_only_availability', 'true');
   q.set('lng', 'en');
   return { url: ws.cfg.appUrl + '/auth/exchange?' + q.toString().replace(/%2F/g, '/').replace(/%2C/g, ','), expiresAt: new Date(Date.now() + TOKEN_LIFE_MS).toISOString() };
 }
@@ -241,6 +244,9 @@ async function setStatus(sb, body, me, action) {
     // nothing is sent any more; Channex keeps the property so a later connect can reuse it
     must(await sb.from('channex_outbox').delete().eq('channex_property_id', p.channex_property_id), 'clear marks');
   }
+  // resume: what queued up while paused goes out with complete values; retry (Send again): dates Channex dropped too
+  if (action === 'resume') await forceMarks(sb, p.channex_property_id);
+  if (action === 'retry') await resendRejected(sb, p, { byUser: me.id });
   if (action === 'retry' || action === 'resume') {
     must(await sb.from('channex_alerts').update({ resolved_at: now, resolved_by: me.id }).eq('org_id', ws.org.id).eq('kind', 'sync_error').eq('ref->>propertyId', p.channex_property_id).is('resolved_at', null), 'resolve alerts');
     await runWorker(sb, { config: ws.cfg, orgId: ws.org.id, propertyIds: [p.channex_property_id], budgetMs: 8000, quietMs: 0, setup: false });
@@ -286,9 +292,12 @@ async function adminSetup(sb, body, me) {
   // pg_cron cannot be read through the API; the worker's call log shows whether ticks arrive
   const recent = await sb.from('channex_calls').select('at').order('at', { ascending: false }).limit(1);
   settings.lastCallAt = recent && !recent.error && recent.data && recent.data[0] ? recent.data[0].at : null;
-  if (!cfg.key) return { settings, webhook: null, message: 'Set CHANNEX_API_KEY first.' };
-  if (!url) return { settings, webhook: null, message: 'Set APP_URL (or deploy to production) so Channex knows where to send bookings.' };
-  if (!cfg.webhookSecret && !cfg.webhookToken) return { settings, webhook: null, message: 'Set CHANNEX_WEBHOOK_SECRET (with CHANNEX_SIGNING_KEY_ID) or CHANNEX_WEBHOOK_TOKEN first, so Orbique can tell real booking messages from fake ones.' };
+  // bookings Channex sent for properties no building is connected to (left unacknowledged, so Channex keeps sending them)
+  const unknown = await sb.from('channex_alerts').select('id, message, ref, created_at').is('org_id', null).eq('kind', 'unknown_property').is('resolved_at', null).order('created_at', { ascending: false }).limit(20);
+  const unknownProperties = unknown && !unknown.error ? (unknown.data || []).map((a) => ({ propertyId: (a.ref && a.ref.propertyId) || null, message: a.message, at: a.created_at })) : [];
+  if (!cfg.key) return { settings, unknownProperties, webhook: null, message: 'Set CHANNEX_API_KEY first.' };
+  if (!url) return { settings, unknownProperties, webhook: null, message: 'Set APP_URL (or deploy to production) so Channex knows where to send bookings.' };
+  if (!cfg.webhookSecret && !cfg.webhookToken) return { settings, unknownProperties, webhook: null, message: 'Set CHANNEX_WEBHOOK_SECRET (with CHANNEX_SIGNING_KEY_ID) or CHANNEX_WEBHOOK_TOKEN first, so Orbique can tell real booking messages from fake ones.' };
   const want = webhookBody(cfg, url);
   const call = { orgId: null, source: 'setup', byUser: me.id };
   try {
@@ -311,7 +320,7 @@ async function adminSetup(sb, body, me) {
       state = 'created'; id = res.data && res.data.id;
     }
     if (id) must(await sb.from('channex_meta').upsert({ id: 1, webhook_id: id }, { onConflict: 'id' }), 'save webhook');
-    return { settings, webhook: { id: id || null, state, callbackUrl: want.callback_url, signed: !!want.is_signed } };
+    return { settings, unknownProperties, webhook: { id: id || null, state, callbackUrl: want.callback_url, signed: !!want.is_signed } };
   } catch (e) {
     throw channexFailure(e, 'Could not set up the Channex webhook');
   }

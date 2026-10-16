@@ -28,7 +28,17 @@ export const PROPERTY_SETTINGS = Object.freeze({
   state_length: STATE_DAYS
 });
 const MEALS = ['none', 'room_only', 'breakfast', 'half_board', 'full_board', 'all_inclusive', 'dinner', 'lunch', 'breakfast_and_lunch', 'lunch_and_dinner'];
-const PROPERTY_TYPES = ['apartment', 'hotel', 'guest_house', 'homestay', 'hostel', 'resort', 'villa', 'bed_and_breakfast', 'boutique_hotel', 'motel', 'serviced_apartment', 'holiday_home', 'aparthotel'];
+// The property_type values Channex accepts (Create Property; any other value is refused with a 422). It affects
+// billing: apartment is a vacation rental, hotel a hotel.
+export const PROPERTY_TYPES = ['apart_hotel', 'apartment', 'boat', 'camping', 'capsule_hotel', 'chalet', 'country_house', 'farm_stay', 'guest_house',
+  'holiday_home', 'holiday_park', 'homestay', 'hostel', 'hotel', 'inn', 'lodge', 'motel', 'resort', 'riad', 'ryokan', 'tent', 'villa'];
+// Orbique names Channex does not have -> the nearest Channex type
+const PROPERTY_TYPE_ALIASES = { aparthotel: 'apart_hotel', serviced_apartment: 'apart_hotel', bed_and_breakfast: 'guest_house', boutique_hotel: 'hotel' };
+/** The Channex property_type for an Orbique building type; apartment when it has none or one Channex does not know. */
+export function propertyType(v) {
+  const k = String(v || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return PROPERTY_TYPES.includes(k) ? k : PROPERTY_TYPE_ALIASES[k] || 'apartment';
+}
 
 const str = (v, max = 255) => (v === undefined || v === null ? '' : String(v)).replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const hash = (obj) => createHash('sha256').update(JSON.stringify(obj)).digest('hex').slice(0, 32);
@@ -55,7 +65,7 @@ export function propertyBody(building, contact = {}) {
     email: str(b.email || contact.email, 255),
     phone: str(b.phone || contact.phone, 32),
     timezone: TIMEZONE,
-    property_type: PROPERTY_TYPES.includes(b.propertyType) ? b.propertyType : 'apartment',
+    property_type: propertyType(b.propertyType),
     settings: Object.assign({}, PROPERTY_SETTINGS)
   };
   for (const k of ['address', 'city', 'state', 'zip_code', 'email', 'phone']) if (!out[k]) delete out[k];
@@ -112,14 +122,27 @@ export function ratePlanBody(plan, { propertyId, roomTypeId, occAdults, currency
 const roomTypeUpdate = (body) => { const b = Object.assign({}, body); delete b.property_id; return b; };
 const ratePlanUpdate = (body) => { const b = Object.assign({}, body); for (const k of ['property_id', 'room_type_id', 'currency', 'sell_mode']) delete b[k]; return b; };
 
-/** Why a building cannot be connected yet ([] when it can). units: every unit (properties record) of the workspace. */
-export function buildingProblems(building, unitTypes, units, plans) {
+export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+export const PHONE_RE = /^\+?[\d\s()-]{7,20}$/;
+
+/**
+ * Why a building cannot be connected yet ([] when it can). units: every unit (properties record) of the workspace.
+ * contact: the workspace brand's {email, phone}, used when the building has none. Channex needs an email and a phone
+ * before a booking site can be connected to the property.
+ */
+export function buildingProblems(building, unitTypes, units, plans, contact = {}) {
   const out = [];
   if (!building) return ['That building was not found.'];
   if (archived(building)) out.push('This building is archived.');
   if (!str(building.name)) out.push('Give the building a name (it is the name guests see on booking sites).');
   if (!str(building.address)) out.push('Add the building address.');
   if (!str(building.city)) out.push('Add the city.');
+  const email = str(building.email || (contact && contact.email));
+  const phone = str(building.phone || (contact && contact.phone));
+  if (!email) out.push('Add an email address for the building (or the business email in Brand). Booking sites need it.');
+  else if (!EMAIL_RE.test(email)) out.push(`Check the building email address (${email}).`);
+  if (!phone) out.push('Add a phone number for the building (or the business phone in Brand). Booking sites need it.');
+  else if (!PHONE_RE.test(phone)) out.push(`Check the building phone number (${phone}). Use digits, spaces and +.`);
   if (!/^[A-Za-z]{2}$/.test(str(building.country || 'MY'))) out.push('The country should be a two-letter code such as MY.');
   if (!/^[A-Za-z]{3}$/.test(str(building.currency || 'MYR'))) out.push('The currency should be a three-letter code such as MYR.');
   const types = unitTypes.filter((t) => !archived(t));
@@ -198,10 +221,16 @@ export async function ensureGroup(sb, org, opts = {}) {
   return again ? again.group_id : groupId;
 }
 
+/** The workspace brand's business email and phone (Brand page): {email, phone}. */
+export async function brandContact(sb, orgId) {
+  const brand = await blob(sb, orgId, 'workspaceBrand');
+  const b = brand && typeof brand === 'object' ? brand : {};
+  return { email: str(b.email, 255), phone: str(b.phone, 32) };
+}
+
 /** Contact fallbacks for the property: the workspace brand, then the person connecting. */
 async function contactFor(sb, org, opts) {
-  const brand = await blob(sb, org.id, 'workspaceBrand');
-  const b = brand && typeof brand === 'object' ? brand : {};
+  const b = await brandContact(sb, org.id);
   return { email: b.email || opts.email || '', phone: b.phone || '' };
 }
 
@@ -432,6 +461,12 @@ async function setupOne(sb, org, q, opts) {
     const prop = await connectedProperty(sb, org, cfg, q.ref);
     const b = prop && await record(sb, org.id, 'buildings', q.ref);
     if (b) await ensureProperty(sb, org, b, Object.assign({}, opts, { update: true }));
+    // Channex keeps the currency its rate plans were created with; the Properties page locks it while connected, so
+    // a change can only come from elsewhere: say so instead of letting the prices change meaning
+    const cur = b && str(b.currency || 'MYR', 3).toUpperCase();
+    if (b && prop.currency && cur !== prop.currency) {
+      await addAlert(sb, { orgId: org.id, kind: 'currency_changed', message: `${str(b.name) || 'A building'} now uses ${cur}, but its channels still get prices in ${prop.currency}. Channex cannot change the currency of rate plans it already has, so change the building back to ${prop.currency}, or contact Orbique to move it to ${cur}.`, ref: { key: 'currency:' + prop.channex_property_id + ':' + cur, propertyId: prop.channex_property_id, buildingId: b.id, from: prop.currency, to: cur } });
+    }
     return;
   }
   let typeId = q.ref;

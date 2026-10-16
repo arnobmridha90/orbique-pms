@@ -4,6 +4,7 @@
  * Pure (unit-tested):
  *   compressValues(rows)                   consecutive dates with equal values -> date_from/date_to runs
  *   diffValues(computed, state, {full})    only what changed since Channex last accepted it, field by field
+ *   rejectedItems(warnings, items, ids)    which items of a call Channex dropped (meta.warnings), as target dates
  *   restrictionValue(plan, day, opts)      what one date of a rate plan means for Channex
  *   backoffMs(level)                       429 pause: 60 s x 2^level, at most 16 minutes
  *   toItems(kind, propertyId, runs, ids)   runs -> Channex `values` items
@@ -13,12 +14,19 @@
  *   fullSync(sb, prop, opts)                    500 days: one availability call + one restrictions call
  *   runWorker(sb, opts)                         setup queue, then every property with marks or a full-sync request
  *   markLastDay(sb, opts)                       nightly: the day that just came into the 500-day window
+ *   forceMarks(sb, propertyId)                  resume: pending marks go out with complete values
+ *   resendRejected(sb, prop, opts)              Send again: dates Channex dropped (rate_warning alerts) are marked again
  *
  * Outbox protocol (0006): claim marks (claimed_at) -> compute values -> send -> delete the claimed marks on success,
  * release them (claimed_at = null) on any failure, so no change is ever lost. A change made after the claim gets its
  * own new mark (the triggers never coalesce into a claimed mark).
  * Failures (plan 4): 429 -> paused_until = now + backoffMs(backoff_level), level + 1; 5xx / network -> pause 60 s;
- * other 4xx -> status 'error' + sync_error alert (marks kept for Retry). meta.warnings -> rate_warning alert.
+ * other 4xx -> status 'error' + sync_error alert (marks kept for Retry).
+ * meta.warnings (Channex drops an invalid item but still answers 200): the dropped dates are not saved as accepted and a
+ * rate_warning alert names them. Their marks are cleared (the same value would only be refused again); Send again
+ * (Retry) or the next change to those dates sends them again.
+ * A forced mark (0009: after a booking revision, the nightly new day, resume, Send again) sends the complete value for
+ * its dates even when it equals what Channex last accepted.
  */
 import { channexConfig, ChannexError, taskIds as taskIdsOf, warnings as warningsOf } from './channex.js';
 import { must, selectAll, records, archived, tracked, addAlert, todayMY, addDays, dateRange, isIso, STATE_DAYS } from './channex-db.js';
@@ -71,9 +79,10 @@ export function compressValues(rows) {
 
 /**
  * What changed: for each computed {target_id, date, value} (value: an object of fields), the fields that differ from
- * what Channex last accepted (state: Map `${target_id}|${date}` -> value object). A date Channex never got is sent whole;
- * full: send everything; whole: a changed date keeps all its fields (what the sender uses, so every item states the
- * complete value for its dates and a range edit stays one item). Rows with nothing changed are left out.
+ * what Channex last accepted (state: Map `${target_id}|${date}` -> value object). A date Channex never got (or whose
+ * state was invalidated) is sent whole; full: send everything; whole: a changed date keeps all its fields. The sender
+ * sends only the changed fields (certification test 13: only changed values), so a range edit is one item whenever
+ * the change is the same over the range. Rows with nothing changed are left out.
  */
 export function diffValues(computed, state, { full = false, whole = false } = {}) {
   const out = [];
@@ -141,6 +150,44 @@ export function toItems(kind, propertyId, runs, ids) {
   }
   return out;
 }
+
+/**
+ * The items of a call that Channex dropped. Each warning echoes the item it refused (rate_plan_id or room_type_id,
+ * date or date_from/date_to; fields that were not sent are null) with a `warning` map of field -> messages.
+ *   warns  meta.warnings; items  the `values` sent; ids  Map Channex id -> Orbique target id
+ * -> {rejected: [{target_id, date_from, date_to, why}], keys: Set `${target_id}|${date}`,
+ *     unmatched: warnings that match no item (then nothing in the call can be taken as accepted)}
+ */
+export function rejectedItems(warns, items, ids) {
+  const out = { rejected: [], keys: new Set(), unmatched: 0 };
+  const why = (w) => (w.warning && typeof w.warning === 'object' ? Object.entries(w.warning).map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(', ') : v}`).join('; ') : '');
+  for (const w of warns || []) {
+    const key = w && typeof w === 'object' ? (w.rate_plan_id ? 'rate_plan_id' : w.room_type_id ? 'room_type_id' : null) : null;
+    const hits = key ? (items || []).filter((it) => {
+      if (it[key] !== w[key]) return false;
+      const a = it.date || it.date_from;
+      const b = it.date || it.date_to;
+      if (w.date) return a <= w.date && w.date <= b;
+      if (w.date_from || w.date_to) return a === (w.date_from || w.date_to) && b === (w.date_to || w.date_from);
+      return true;
+    }) : [];
+    const mapped = hits.filter((it) => ids.has(it[key]));
+    if (!mapped.length) { out.unmatched++; continue; }
+    for (const it of mapped) {
+      const target = ids.get(it[key]);
+      const a = w.date || it.date || it.date_from;
+      const b = w.date || it.date || it.date_to;
+      out.rejected.push({ target_id: target, date_from: a, date_to: b, why: why(w) });
+      for (const d of dateRange(a, b)) out.keys.add(target + '|' + d);
+    }
+  }
+  return out;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayText = (iso) => Number(iso.slice(8, 10)) + ' ' + MONTHS[Number(iso.slice(5, 7)) - 1] + ' ' + iso.slice(0, 4);
+/** "21 Nov 2026", or "1 Nov 2026 to 10 Nov 2026". */
+export const datesText = (a, b) => (a === b ? dayText(a) : dayText(a) + ' to ' + dayText(b));
 
 /** Marks -> Map target_id -> Set of dates (clipped to the window). */
 export function markDates(marks, from, to) {
@@ -265,7 +312,7 @@ export async function claimMarks(sb, pid, kind, { quietMs = 5000, all = false } 
   let q = sb.from('channex_outbox').update({ claimed_at: new Date(now).toISOString() })
     .eq('channex_property_id', pid).eq('kind', kind).is('claimed_at', null);
   if (!all && quietMs > 0) q = q.lt('created_at', new Date(now - quietMs).toISOString());
-  return must(await q.select('id, target_id, date_from, date_to'), 'claim marks') || [];
+  return must(await q.select('id, target_id, date_from, date_to, force'), 'claim marks') || [];
 }
 
 export async function releaseMarks(sb, ids) {
@@ -350,7 +397,10 @@ export async function sendProperty(sb, prop, opts) {
       const targets = [...new Set(rows.map((r) => r.target_id))];
       const from = rows.reduce((m, r) => (r.date < m ? r.date : m), rows[0].date);
       const to = rows.reduce((m, r) => (r.date > m ? r.date : m), rows[0].date);
-      delta = diffValues(rows, await loadState(sb, pid, kind, targets, from, to), { whole: true });
+      const state = await loadState(sb, pid, kind, targets, from, to);
+      // forced marks: Channex may no longer hold what it last accepted from Orbique, so these dates go out whole
+      for (const [t, set] of markDates(marks.filter((m) => m.force), t0, last)) for (const d of set) state.delete(t + '|' + d);
+      delta = diffValues(rows, state);
     }
     const runs = compressValues(delta);
     const idMap = new Map([...mapping].map(([k, v]) => [k, kind === 'availability' ? v.room_type_id : v.rate_plan_id]));
@@ -370,24 +420,53 @@ export async function sendProperty(sb, prop, opts) {
       await releaseMarks(sb, ids);
       return await failed(sb, prop, e);
     }
-    const changed = new Set(delta.map((r) => r.target_id + '|' + r.date));
-    await saveState(sb, prop, kind, rows.filter((r) => changed.has(r.target_id + '|' + r.date)), slot);
-    await deleteMarks(sb, ids);
     const tids = taskIdsOf(res);
     const warns = warningsOf(res);
+    // what Channex dropped is not what it holds: those dates stay out of the state (a warning that matches no item
+    // keeps the whole call out), so Send again or the next change sends them again
+    const byChannexId = new Map([...idMap].map(([k, v]) => [v, k]));
+    const rej = rejectedItems(warns, items, byChannexId);
+    const changed = new Set(delta.map((r) => r.target_id + '|' + r.date));
+    const accepted = rej.unmatched ? [] : rows.filter((r) => changed.has(r.target_id + '|' + r.date) && !rej.keys.has(r.target_id + '|' + r.date));
+    await saveState(sb, prop, kind, accepted, slot);
+    await deleteMarks(sb, ids);
     const patch = { backoff_level: 0, paused_until: null, last_error: null };
     await updateProperty(sb, pid, patch);
     Object.assign(prop, patch);
-    if (warns.length) {
-      const first = warns[0] && warns[0].warning ? Object.entries(warns[0].warning).map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(', ') : v}`).join('; ') : '';
-      await addAlert(sb, { orgId: prop.org_id, kind: 'rate_warning', message: `Channex did not accept ${warns.length} of the ${items.length} ${kind === 'availability' ? 'availability' : 'rate'} updates${first ? ' (' + first + ')' : ''}.`, ref: { key: 'warn:' + pid + ':' + kind, callId: slot, count: warns.length } });
-    }
-    return { status: 'sent', items, taskIds: tids, warnings: warns, callId: slot };
+    if (warns.length) await warnAlert(sb, prop, kind, ctx, { rej, warns, items, byChannexId, callId: slot });
+    return { status: 'sent', items, taskIds: tids, warnings: warns, rejected: rej.rejected, callId: slot };
   } catch (e) {
     // anything unexpected (database, compute): give the marks back
     try { await releaseMarks(sb, ids); } catch (e2) { /* the claim lease frees them */ }
     throw e;
   }
+}
+
+/**
+ * The rate_warning alert for a call with meta.warnings: which dates Channex did not take, and why. ref.items is what
+ * Send again (the retry action) marks again; a warning that matches no item puts every item of the call there.
+ */
+async function warnAlert(sb, prop, kind, ctx, { rej, warns, items, byChannexId, callId }) {
+  const nameOf = (target) => {
+    if (kind === 'availability') { const t = ctx.unitTypes.get(target); return (t && t.name) || 'A unit type'; }
+    const p = ctx.plans.get(target);
+    const t = p && ctx.unitTypes.get(p.unitTypeId);
+    return [t && t.name, p && p.name].filter(Boolean).join(' · ') || 'A rate plan';
+  };
+  const what = kind === 'availability' ? 'availability' : 'rate and restriction';
+  const idKey = kind === 'availability' ? 'room_type_id' : 'rate_plan_id';
+  let message;
+  let list;
+  if (rej.unmatched) {
+    message = `Channex did not accept ${warns.length} of the ${items.length} ${what} updates and did not say which. Booking sites may still show the old values. Press Send again to send this update again.`;
+    list = items.filter((it) => byChannexId.has(it[idKey])).map((it) => ({ target_id: byChannexId.get(it[idKey]), date_from: it.date || it.date_from, date_to: it.date || it.date_to }));
+  } else {
+    const parts = rej.rejected.slice(0, 6).map((r) => `${nameOf(r.target_id)}, ${datesText(r.date_from, r.date_to)}${r.why ? ' (' + r.why + ')' : ''}`);
+    const more = rej.rejected.length > 6 ? ` and ${rej.rejected.length - 6} more` : '';
+    message = `Channex did not accept ${rej.rejected.length} of the ${items.length} ${what} updates: ${parts.join('; ')}${more}. Booking sites keep their old values for these dates. Fix the value, then press Send again.`;
+    list = rej.rejected.map((r) => ({ target_id: r.target_id, date_from: r.date_from, date_to: r.date_to }));
+  }
+  await addAlert(sb, { orgId: prop.org_id, kind: 'rate_warning', message, ref: { key: 'warn:' + callId, callId, propertyId: prop.channex_property_id, buildingId: prop.building_id || null, kind, count: warns.length, items: list.slice(0, 200) } });
 }
 
 /** A failed send: 429 back off, 5xx / network pause a minute, other 4xx stop with an alert. */
@@ -532,7 +611,8 @@ function tally(out, r) {
 
 /**
  * Nightly: mark the day that just came into the 500-day window for every mapped room type and rate plan of every
- * connected property (a delta, not a full sync). Resolves the number of marks added.
+ * connected property (a delta, not a full sync). The marks are forced, so the new day always goes out complete.
+ * Resolves the number of marks added.
  */
 export async function markLastDay(sb, opts = {}) {
   const cfg = opts.config || channexConfig();
@@ -544,10 +624,35 @@ export async function markLastDay(sb, opts = {}) {
     const typeIds = rts.map((r) => r.unit_type_id);
     const rps = typeIds.length ? must(await sb.from('channex_rate_plans').select('plan_id').eq('org_id', p.org_id).eq('env', cfg.env).eq('retired', false).in('unit_type_id', typeIds), 'load rate plans') || [] : [];
     const rows = [
-      ...typeIds.map((t) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'availability', target_id: t, date_from: day, date_to: day, reason: 'nightly' })),
-      ...rps.map((r) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'restrictions', target_id: r.plan_id, date_from: day, date_to: day, reason: 'nightly' }))
+      ...typeIds.map((t) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'availability', target_id: t, date_from: day, date_to: day, reason: 'nightly', force: true })),
+      ...rps.map((r) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'restrictions', target_id: r.plan_id, date_from: day, date_to: day, reason: 'nightly', force: true }))
     ];
     if (rows.length) { must(await sb.from('channex_outbox').insert(rows), 'mark last day'); n += rows.length; }
+  }
+  return n;
+}
+
+/** Resume: every pending mark of a property goes out with complete values, not only what differs from the state. */
+export async function forceMarks(sb, propertyId) {
+  must(await sb.from('channex_outbox').update({ force: true }).eq('channex_property_id', propertyId), 'force marks');
+}
+
+/**
+ * Send again (the retry action): the items of a property's open rate_warning alerts get forced marks, and those alerts
+ * are resolved. Resolves the number of days marked.
+ */
+export async function resendRejected(sb, prop, { byUser = null } = {}) {
+  const open = must(await sb.from('channex_alerts').select('id, ref').eq('org_id', prop.org_id).eq('kind', 'rate_warning')
+    .eq('ref->>propertyId', prop.channex_property_id).is('resolved_at', null), 'load warnings') || [];
+  let n = 0;
+  for (const a of open) {
+    const ref = a.ref || {};
+    const items = KINDS.includes(ref.kind) && Array.isArray(ref.items) ? ref.items : [];
+    for (const it of items) {
+      if (!it || !it.target_id || !isIso(it.date_from) || !isIso(it.date_to)) continue;
+      n += Number(must(await sb.rpc('channex_invalidate', { p_org: prop.org_id, p_prop: prop.channex_property_id, p_kind: ref.kind, p_target: String(it.target_id), p_from: it.date_from, p_to: it.date_to, p_reason: 'resend' }), 'mark again')) || 0;
+    }
+    must(await sb.from('channex_alerts').update({ resolved_at: new Date().toISOString(), resolved_by: byUser }).eq('id', a.id), 'resolve warning');
   }
   return n;
 }

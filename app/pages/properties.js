@@ -613,20 +613,26 @@
     var isNew = !bd, f = bd || { checkInTime: '15:00', checkOutTime: '11:00', currency: 'MYR' };
     if (isNew ? !O.can('properties.create') : !canTag()) { U.toast('Your access does not include ' + (isNew ? 'adding' : 'editing') + ' buildings.', 'bad'); return; }
     var cur = CURRENCIES.indexOf(f.currency || 'MYR') >= 0 ? CURRENCIES : CURRENCIES.concat([f.currency]);
+    /* connected to channels: the channel manager keeps the currency it was connected with, so it cannot change here */
+    var curLocked = !isNew && !!(O.channel && O.channel.connected && O.channel.connected(bd.id));
     var body = '<form class="form-grid bt-form" novalidate autocomplete="off">' +
       mf('name', 'Building name', mi('name', f.name, ' maxlength="60" placeholder="e.g. Seri Saujana Residences"'), { full: true, hint: 'Guests see this with the unit type, for example "' + (f.name || 'Seri Saujana Residences') + ' · Deluxe".' }) +
       mf('address', 'Street address', mi('address', f.address, ' maxlength="160" placeholder="e.g. 2 Jalan Saujana Indah, Bukit Jalil"'), { full: true, hint: 'Guests see the building address before they get their unit number.' }) +
       mf('city', 'City', mi('city', f.city, ' maxlength="40" placeholder="e.g. Kuala Lumpur"')) +
       mf('state', 'State', mi('state', f.state, ' maxlength="40" placeholder="e.g. Wilayah Persekutuan"'), { opt: true }) +
       mf('zip', 'Postcode', mi('zip', f.zip, ' maxlength="12" inputmode="numeric" placeholder="57000"'), { opt: true }) +
-      mf('currency', 'Currency', '<select class="select" id="bt-currency" name="currency">' + cur.map(function (c) { return '<option' + (c === (f.currency || 'MYR') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>') +
+      mf('email', 'Email for booking sites', mi('email', f.email, ' type="email" inputmode="email" maxlength="80" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.email) || 'e.g. stay@example.com') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business email in Brand.' }) +
+      mf('phone', 'Phone for booking sites', mi('phone', f.phone, ' type="tel" inputmode="tel" maxlength="24" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.phone) || '+60 3-1234 5678') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business phone in Brand.' }) +
+      mf('currency', 'Currency', '<select class="select" id="bt-currency" name="currency"' + (curLocked ? ' disabled' : '') + '>' + cur.map(function (c) { return '<option' + (c === (f.currency || 'MYR') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>', curLocked ? { hint: 'Fixed while this building is connected to channels: booking sites keep the currency it was connected with.' } : null) +
       mf('checkInTime', 'Check-in from', mi('checkInTime', f.checkInTime || '15:00', ' type="time" step="900"')) +
       mf('checkOutTime', 'Check-out by', mi('checkOutTime', f.checkOutTime || '11:00', ' type="time" step="900"')) +
       '</form>';
     var actions = [{ label: 'Cancel' }];
     if (!isNew && O.can('properties.archive')) actions.push({ label: 'Archive', onClick: function (close) { archiveBuilding(bd, close); return false; } });
     actions.push({ label: isNew ? 'Add building' : 'Save changes', kind: 'primary', onClick: function (close, el) {
-      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: mval(el, 'city'), state: mval(el, 'state'), zip: mval(el, 'zip'), currency: mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
+      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: mval(el, 'city'), state: mval(el, 'state'), zip: mval(el, 'zip'), email: mval(el, 'email'), phone: mval(el, 'phone'), currency: curLocked ? (bd.currency || 'MYR') : mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
+      if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) E.email = 'Check the email address.';
+      if (v.phone && !/^\+?[\d\s()-]{7,20}$/.test(v.phone)) E.phone = 'Check the phone number. Use digits, spaces and +.';
       if (!v.name) E.name = 'Give the building a name.';
       else if (D.buildings.some(function (x) { return x !== bd && low(x.name) === low(v.name); })) E.name = 'Another building is already called "' + v.name + '".';
       if (!v.address) E.address = 'Add the street address. Guests see it before their unit number.';

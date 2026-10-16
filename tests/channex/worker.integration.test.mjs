@@ -106,6 +106,18 @@ function item(items, idKey, id, when, fields) {
   assert.equal(hit[0].property_id, ids.property);
   return hit[0];
 }
+/**
+ * Exactly the items of the certification sheet: one per row [planId, when, fields], each with exactly those fields
+ * (only what changed goes out), and nothing else in the call.
+ */
+function sheet(items, rows) {
+  assert.equal(items.length, rows.length, `${rows.length} items expected: ${JSON.stringify(items)}`);
+  for (const [planId, when, fields] of rows) {
+    const hit = item(items, 'rate_plan_id', rp(planId), when, fields);
+    const extra = Object.keys(hit).filter((k) => !['property_id', 'rate_plan_id', 'date', 'date_from', 'date_to'].includes(k) && !(k in fields));
+    assert.deepEqual(extra, [], `${planId} ${JSON.stringify(when)} sends only the changed fields: ${JSON.stringify(hit)}`);
+  }
+}
 const rp = (planId) => ids.rp[planId];
 const rt = (typeId) => ids.rt[typeId];
 
@@ -146,7 +158,7 @@ async function seed() {
     [ORG_A, { v: { demo: false } }, ORG_C, { v: { demo: true } }]);
 
   for (const org of [ORG_A, ORG_B, ORG_C]) {
-    await put(org, 'buildings', 'BD-1', { id: 'BD-1', name: 'Test Property - Orbique', address: '1 Jalan Ujian', city: 'Kuala Lumpur', state: 'WP Kuala Lumpur', zip: '50450', country: 'MY', currency: 'USD', propertyType: 'apartment', email: 'ops@example.test', checkInTime: '15:00', checkOutTime: '11:00' });
+    await put(org, 'buildings', 'BD-1', { id: 'BD-1', name: 'Test Property - Orbique', address: '1 Jalan Ujian', city: 'Kuala Lumpur', state: 'WP Kuala Lumpur', zip: '50450', country: 'MY', currency: 'USD', propertyType: 'apartment', email: 'ops@example.test', phone: '+60 3-1234 5678', checkInTime: '15:00', checkOutTime: '11:00' });
     await put(org, 'unitTypes', 'UT-T', { id: 'UT-T', buildingId: 'BD-1', name: 'Twin Room', maxGuests: 2, beds: 2, order: 1 });
     await put(org, 'unitTypes', 'UT-D', { id: 'UT-D', buildingId: 'BD-1', name: 'Double Room', maxGuests: 2, beds: 1, order: 2 });
     for (let i = 1; i <= 8; i++) await put(org, 'properties', `T-0${i}`, { id: `T-0${i}`, name: `Twin ${i}`, buildingId: 'BD-1', unitTypeId: 'UT-T', unitNo: `21-${i}` });
@@ -229,6 +241,13 @@ test('connect is refused for a demo workspace, a workspace not on the allowlist,
   assert.equal(b.status, 403); assert.match(b.json.message, /not switched on/);
   const h = await channex(hkUser, { action: 'connect', orgId: ORG_A, buildingId: 'BD-1' });
   assert.equal(h.status, 403);
+  // Channex needs an email and a phone before booking sites connect: the building's, else the Brand's
+  const bd = (await db.query(`select data from public.records where org_id = $1 and coll = 'buildings' and id = 'BD-1'`, [ORG_A])).rows[0].data;
+  await put(ORG_A, 'buildings', 'BD-1', Object.assign({}, bd, { phone: undefined }));
+  const n = await channex(opsUser, { action: 'connect', orgId: ORG_A, buildingId: 'BD-1' });
+  assert.equal(n.status, 400); assert.equal(n.json.error, 'not-ready');
+  assert.deepEqual(n.json.problems, ['Add a phone number for the building (or the business phone in Brand). Booking sites need it.']);
+  await put(ORG_A, 'buildings', 'BD-1', bd);
   assert.equal((await writes()).length, 0, 'nothing reached Channex');
 });
 
@@ -304,6 +323,7 @@ test('iframe: one-time token URL for the channel screen; the API key is never re
   assert.equal(u.searchParams.get('app_mode'), 'headless'); assert.equal(u.searchParams.get('redirect_to'), '/channels');
   assert.equal(u.searchParams.get('property_id'), ids.property); assert.equal(u.searchParams.get('group_id'), ids.group);
   assert.equal(u.searchParams.get('channels'), 'BDC,AGO,ABB,EXP,CTP'); assert.equal(u.searchParams.get('lng'), 'en');
+  assert.equal(u.searchParams.get('read_only_availability'), 'true', 'availability is only ever set from Orbique');
   const tok = (await posts('/auth/one_time_token'))[0].body.one_time_token;
   assert.deepEqual(tok, { property_id: ids.property, username: 'Olivia Owner', group_id: ids.group });
   const page = await fetch(r.json.url);
@@ -334,8 +354,8 @@ test('certification 2: single date, single rate (Twin/BAR 22 Nov -> 333)', { ski
   const out = await flush();
   assert.equal(out.sent, 1); assert.equal(out.pending, 0);
   const items = await onlyCall('/restrictions');
-  assert.deepEqual(items, [Object.assign({ property_id: ids.property, rate_plan_id: rp('RP-TB'), date: '2026-11-22', rate: '333.00' }, DEFAULTS)]);
-  assert.equal((await channexRestriction('RP-TB', '2026-11-22')).rate, '333.00');
+  assert.deepEqual(items, [{ property_id: ids.property, rate_plan_id: rp('RP-TB'), date: '2026-11-22', rate: '333.00' }], 'only the rate: nothing else changed');
+  assert.deepEqual(await channexRestriction('RP-TB', '2026-11-22'), Object.assign({ rate: '333.00' }, DEFAULTS), 'Channex keeps the rest');
 });
 
 test('certification 3: single date, multiple rates batched into one call', { skip: SKIP }, async () => {
@@ -343,11 +363,11 @@ test('certification 3: single date, multiple rates batched into one call', { ski
   await setDays('RP-DB', { '2026-11-25': { rate: 444 } });
   await setDays('RP-DBB', { '2026-11-29': { rate: 456.23 } });
   await flush();
-  const items = await onlyCall('/restrictions');
-  assert.equal(items.length, 3);
-  item(items, 'rate_plan_id', rp('RP-TB'), { date: '2026-11-21' }, { rate: '333.00' });
-  item(items, 'rate_plan_id', rp('RP-DB'), { date: '2026-11-25' }, { rate: '444.00' });
-  item(items, 'rate_plan_id', rp('RP-DBB'), { date: '2026-11-29' }, { rate: '456.23' });
+  sheet(await onlyCall('/restrictions'), [
+    ['RP-TB', { date: '2026-11-21' }, { rate: '333.00' }],
+    ['RP-DB', { date: '2026-11-25' }, { rate: '444.00' }],
+    ['RP-DBB', { date: '2026-11-29' }, { rate: '456.23' }]
+  ]);
 });
 
 test('certification 4: multiple dates, multiple rates (one ranged item each)', { skip: SKIP }, async () => {
@@ -355,11 +375,11 @@ test('certification 4: multiple dates, multiple rates (one ranged item each)', {
   await setDays('RP-DB', range('2026-11-10', '2026-11-16', { rate: 312.66 }));
   await setDays('RP-DBB', range('2026-11-01', '2026-11-20', { rate: 111 }));
   await flush();
-  const items = await onlyCall('/restrictions');
-  assert.equal(items.length, 3, JSON.stringify(items));
-  item(items, 'rate_plan_id', rp('RP-TB'), { from: '2026-11-01', to: '2026-11-10' }, Object.assign({ rate: '241.00' }, DEFAULTS));
-  item(items, 'rate_plan_id', rp('RP-DB'), { from: '2026-11-10', to: '2026-11-16' }, { rate: '312.66' });
-  item(items, 'rate_plan_id', rp('RP-DBB'), { from: '2026-11-01', to: '2026-11-20' }, { rate: '111.00' });
+  sheet(await onlyCall('/restrictions'), [
+    ['RP-TB', { from: '2026-11-01', to: '2026-11-10' }, { rate: '241.00' }],
+    ['RP-DB', { from: '2026-11-10', to: '2026-11-16' }, { rate: '312.66' }],
+    ['RP-DBB', { from: '2026-11-01', to: '2026-11-20' }, { rate: '111.00' }]
+  ]);
 });
 
 test('certification 5: min stay on three plans', { skip: SKIP }, async () => {
@@ -367,11 +387,12 @@ test('certification 5: min stay on three plans', { skip: SKIP }, async () => {
   await setDays('RP-DB', { '2026-11-25': { minStay: 2 } });
   await setDays('RP-DBB', { '2026-11-15': { minStay: 5 } });
   await flush();
-  const items = await onlyCall('/restrictions');
-  assert.equal(items.length, 3);
-  item(items, 'rate_plan_id', rp('RP-TB'), { date: '2026-11-23' }, { min_stay_arrival: 3 });
-  item(items, 'rate_plan_id', rp('RP-DB'), { date: '2026-11-25' }, { min_stay_arrival: 2, rate: '444.00' });
-  item(items, 'rate_plan_id', rp('RP-DBB'), { date: '2026-11-15' }, { min_stay_arrival: 5, rate: '111.00' });
+  sheet(await onlyCall('/restrictions'), [
+    ['RP-TB', { date: '2026-11-23' }, { min_stay_arrival: 3 }],
+    ['RP-DB', { date: '2026-11-25' }, { min_stay_arrival: 2 }],
+    ['RP-DBB', { date: '2026-11-15' }, { min_stay_arrival: 5 }]
+  ]);
+  assert.equal((await channexRestriction('RP-DB', '2026-11-25')).rate, '444.00', 'the rate from test 3 stays');
 });
 
 test('certification 6: stop sell on three plans', { skip: SKIP }, async () => {
@@ -379,11 +400,11 @@ test('certification 6: stop sell on three plans', { skip: SKIP }, async () => {
   await setDays('RP-DB', { '2026-11-16': { stopSell: true } });
   await setDays('RP-DBB', { '2026-11-20': { stopSell: true } });
   await flush();
-  const items = await onlyCall('/restrictions');
-  assert.equal(items.length, 3);
-  item(items, 'rate_plan_id', rp('RP-TB'), { date: '2026-11-14' }, { stop_sell: true });
-  item(items, 'rate_plan_id', rp('RP-DB'), { date: '2026-11-16' }, { stop_sell: true, rate: '312.66' });
-  item(items, 'rate_plan_id', rp('RP-DBB'), { date: '2026-11-20' }, { stop_sell: true });
+  sheet(await onlyCall('/restrictions'), [
+    ['RP-TB', { date: '2026-11-14' }, { stop_sell: true }],
+    ['RP-DB', { date: '2026-11-16' }, { stop_sell: true }],
+    ['RP-DBB', { date: '2026-11-20' }, { stop_sell: true }]
+  ]);
 });
 
 test('certification 7: multiple restrictions in one call', { skip: SKIP }, async () => {
@@ -393,7 +414,18 @@ test('certification 7: multiple restrictions in one call', { skip: SKIP }, async
   await setDays('RP-DBB', range('2026-11-01', '2026-11-20', { minStay: 10 }));
   await flush();
   const items = await onlyCall('/restrictions');
-  item(items, 'rate_plan_id', rp('RP-TB'), { from: '2026-11-01', to: '2026-11-10' }, { rate: '241.00', closed_to_arrival: true, closed_to_departure: false, max_stay: 4, min_stay_arrival: 1 });
+  // four rows, four items; closed_to_departure false and min stay 1 on Twin/BAR are what Channex already has, so only
+  // the fields that change go out (test 13: only changed values)
+  sheet(items, [
+    ['RP-TB', { from: '2026-11-01', to: '2026-11-10' }, { closed_to_arrival: true, max_stay: 4 }],
+    ['RP-TBB', { from: '2026-11-12', to: '2026-11-16' }, { closed_to_departure: true, min_stay_arrival: 6 }],
+    ['RP-DB', { from: '2026-11-10', to: '2026-11-16' }, { closed_to_arrival: true, min_stay_arrival: 2 }],
+    ['RP-DBB', { from: '2026-11-01', to: '2026-11-20' }, { min_stay_arrival: 10 }]
+  ]);
+  for (const iso of dates('2026-11-01', '2026-11-10')) {
+    const v = await channexRestriction('RP-TB', iso);
+    assert.equal(v.closed_to_arrival, true); assert.equal(v.closed_to_departure, false); assert.equal(v.max_stay, 4); assert.equal(v.min_stay_arrival, 1);
+  }
   for (const iso of dates('2026-11-12', '2026-11-16')) {
     const v = await channexRestriction('RP-TBB', iso);
     assert.equal(v.closed_to_arrival, false); assert.equal(v.closed_to_departure, true); assert.equal(v.min_stay_arrival, 6);
@@ -402,8 +434,7 @@ test('certification 7: multiple restrictions in one call', { skip: SKIP }, async
     const v = await channexRestriction('RP-DB', iso);
     assert.equal(v.closed_to_arrival, true); assert.equal(v.min_stay_arrival, 2);
   }
-  item(items, 'rate_plan_id', rp('RP-DB'), { from: '2026-11-10', to: '2026-11-15' }, { rate: '312.66', closed_to_arrival: true, min_stay_arrival: 2, stop_sell: false });
-  item(items, 'rate_plan_id', rp('RP-DB'), { date: '2026-11-16' }, { closed_to_arrival: true, stop_sell: true }); // test 6's stop sell stays
+  assert.equal((await channexRestriction('RP-DB', '2026-11-16')).stop_sell, true, 'test 6\'s stop sell stays');
   for (const iso of dates('2026-11-01', '2026-11-20')) assert.equal((await channexRestriction('RP-DBB', iso)).min_stay_arrival, 10);
   // only what changed was sent: Twin/B&B outside 12-16 Nov untouched
   assert.ok(!items.some((i) => i.rate_plan_id === rp('RP-TBB') && (i.date || i.date_from) < '2026-11-12'));
@@ -415,10 +446,11 @@ test('certification 8: half-year update is one call, one item per plan', { skip:
   const marks = (await db.query('select count(*)::int n from public.channex_outbox where org_id = $1', [ORG_A])).rows[0].n;
   assert.ok(marks >= 12, 'one write per month record, each marked: ' + marks);
   await flush();
-  const items = await onlyCall('/restrictions');
-  assert.equal(items.length, 2, JSON.stringify(items.map((i) => [i.rate_plan_id, i.date_from, i.date_to])));
-  item(items, 'rate_plan_id', rp('RP-TB'), { from: '2026-12-01', to: '2027-05-01' }, Object.assign({}, DEFAULTS, { rate: '432.00', min_stay_arrival: 2 }));
-  item(items, 'rate_plan_id', rp('RP-DB'), { from: '2026-12-01', to: '2027-05-01' }, Object.assign({}, DEFAULTS, { rate: '342.00', min_stay_arrival: 3 }));
+  sheet(await onlyCall('/restrictions'), [
+    ['RP-TB', { from: '2026-12-01', to: '2027-05-01' }, { rate: '432.00', min_stay_arrival: 2 }],
+    ['RP-DB', { from: '2026-12-01', to: '2027-05-01' }, { rate: '342.00', min_stay_arrival: 3 }]
+  ]);
+  assert.deepEqual(await channexRestriction('RP-TB', '2027-01-15'), Object.assign({}, DEFAULTS, { rate: '432.00', min_stay_arrival: 2 }));
 });
 
 test('certification 9: single date availability (Twin 21 Nov -> 7, Double 25 Nov -> 0) in one call', { skip: SKIP }, async () => {
@@ -465,6 +497,13 @@ test('rate limiter: no slot -> nothing sent, marks kept, sent when a slot frees 
   out = await flush();
   assert.equal(out.sent, 1); assert.equal(out.pending, 0);
   item(await onlyCall('/restrictions'), 'rate_plan_id', rp('RP-TBB'), { date: '2026-12-24' }, { rate: '199.00' });
+  // the limit is per property (Channex's rate-limits page): other properties' calls do not hold this one back
+  await control('calls', null, 'DELETE');
+  await db.query(`insert into public.channex_calls (org_id, channex_property_id, endpoint, method, source, at) select null, gen_random_uuid(), e, 'POST', 'delta', now() from generate_series(1, 15), unnest(array['/availability', '/restrictions']) e`);
+  await setDays('RP-TBB', { '2026-12-25': { rate: 201 } });
+  out = await flush();
+  assert.equal(out.sent, 1, 'sent although 30 ARI calls went to other properties this minute');
+  await db.query(`delete from public.channex_calls where org_id is null`);
 });
 
 test('MOCK_429_EVERY=2: backoff 60 s x 2^n, nothing sent while paused, no change lost', { skip: SKIP }, async () => {
@@ -542,7 +581,29 @@ test('5xx pauses a minute and keeps the marks; warnings become an alert; a 4xx s
   assert.equal(out.sent, 1);
   const alerts = (await db.query(`select kind, message from public.channex_alerts where org_id = $1 and kind = 'rate_warning'`, [ORG_A])).rows;
   assert.equal(alerts.length, 1); assert.match(alerts[0].message, /rate must be greater than 0/);
+  assert.match(alerts[0].message, /Double Room · Bed & Breakfast, 2 Feb 2027/, 'the alert names the plan and the date');
   assert.equal((await channexRestriction('RP-DBB', '2027-02-01')).rate, '250.00', 'the 5xx change arrived after all');
+  const stateOf = async (iso) => (await db.query(`select value from public.channex_state where org_id = $1 and kind = 'restrictions' and target_id = 'RP-DBB' and date = $2`, [ORG_A, iso])).rows[0];
+  assert.notEqual((await stateOf('2027-02-02')).value.rate, '0.00', 'the rejected rate is not recorded as accepted');
+  assert.equal((await stateOf('2027-02-01')).value.rate, '250.00', 'the accepted one is');
+  // no resend loop: the marks are gone and the next run sends nothing
+  assert.equal((await db.query('select count(*)::int n from public.channex_outbox where org_id = $1', [ORG_A])).rows[0].n, 0);
+  await control('calls', null, 'DELETE');
+  assert.equal((await flush()).sent, 0);
+  // Send again (the alert's button: the retry action) marks the dates again and sends the complete value once
+  const again = await channex(opsUser, { action: 'retry', orgId: ORG_A, buildingId: 'BD-1' });
+  assert.equal(again.status, 200, JSON.stringify(again.json));
+  const resent = await onlyCall('/restrictions');
+  item(resent, 'rate_plan_id', rp('RP-DBB'), { date: '2027-02-02' }, Object.assign({ rate: '0.00' }, DEFAULTS));
+  assert.equal((await db.query(`select count(*)::int n from public.channex_alerts where org_id = $1 and kind = 'rate_warning' and resolved_at is not null`, [ORG_A])).rows[0].n, 1, 'Send again resolves the alert (a new one says it was refused again)');
+  assert.equal((await db.query('select count(*)::int n from public.channex_outbox where org_id = $1', [ORG_A])).rows[0].n, 0, 'still no loop');
+  // fixed in Orbique: the next change goes out and is recorded
+  await control('calls', null, 'DELETE');
+  await setDays('RP-DBB', { '2027-02-02': { rate: 255 } });
+  await flush();
+  item(await onlyCall('/restrictions'), 'rate_plan_id', rp('RP-DBB'), { date: '2027-02-02' }, { rate: '255.00' });
+  assert.equal((await stateOf('2027-02-02')).value.rate, '255.00');
+  await db.query(`update public.channex_alerts set resolved_at = now() where org_id = $1 and kind = 'rate_warning'`, [ORG_A]);
 
   // a real 4xx: Channex refuses the call itself (simulate with an unknown key)
   mock.ctl.apiKey = 'another-key';
@@ -570,7 +631,10 @@ test('pause keeps marks building up; resume sends them', { skip: SKIP }, async (
   assert.equal((await db.query('select count(*)::int n from public.channex_outbox where org_id = $1', [ORG_A])).rows[0].n, 1);
   const r = await channex(owner, { action: 'resume', orgId: ORG_A, buildingId: 'BD-1' });
   assert.equal(r.json.property.status, 'live');
-  item(await onlyCall('/restrictions'), 'rate_plan_id', rp('RP-TBB'), { date: '2027-03-01' }, { rate: '180.00' });
+  // what queued up while paused goes out complete, not only the changed rate
+  const items = await onlyCall('/restrictions');
+  assert.equal(items.length, 1);
+  item(items, 'rate_plan_id', rp('RP-TBB'), { date: '2027-03-01' }, Object.assign({ rate: '180.00' }, DEFAULTS));
 });
 
 test('setup queue: renaming a unit type and retagging a unit update Channex through the worker', { skip: SKIP }, async () => {
@@ -592,6 +656,23 @@ test('setup queue: renaming a unit type and retagging a unit update Channex thro
   assert.equal(s.availability[rt('UT-D')]['2026-12-30'], (await db.query(`select availability from public.channex_type_availability($1, 'UT-D', '2026-12-30', '2026-12-30')`, [ORG_A])).rows[0].availability);
 });
 
+test('a currency change after connecting is not sent to Channex and raises an alert', { skip: SKIP }, async () => {
+  const bd = (await db.query(`select data from public.records where org_id = $1 and coll = 'buildings' and id = 'BD-1'`, [ORG_A])).rows[0].data;
+  await control('calls', null, 'DELETE');
+  await put(ORG_A, 'buildings', 'BD-1', Object.assign({}, bd, { currency: 'MYR' }));
+  const r = await api(workerApi, WORKER_SECRET, { task: 'tick' });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const upd = (await calls()).filter((c) => c.method === 'PUT' && c.path.startsWith('/properties/'));
+  assert.equal(upd.length, 1);
+  assert.equal('currency' in upd[0].body.property, false, 'Channex keeps USD');
+  const a = (await db.query(`select message from public.channex_alerts where org_id = $1 and kind = 'currency_changed' and resolved_at is null`, [ORG_A])).rows;
+  assert.equal(a.length, 1);
+  assert.match(a[0].message, /now uses MYR, but its channels still get prices in USD/);
+  await put(ORG_A, 'buildings', 'BD-1', bd);
+  await api(workerApi, WORKER_SECRET, { task: 'tick' });
+  await db.query(`update public.channex_alerts set resolved_at = now() where org_id = $1 and kind = 'currency_changed'`, [ORG_A]);
+});
+
 test('worker endpoint: bearer secret required; nightly marks day 500 and prunes', { skip: SKIP }, async () => {
   assert.equal((await api(workerApi, null, { task: 'tick' })).status, 401);
   assert.equal((await api(workerApi, 'wrong-secret-wrong-secret-wrong', { task: 'tick' })).status, 401);
@@ -605,9 +686,17 @@ test('worker endpoint: bearer secret required; nightly marks day 500 and prunes'
   assert.equal(r.status, 200, JSON.stringify(r.json));
   assert.equal(r.json.marked, 6, '2 room types + 4 rate plans');
   assert.equal(r.json.pruned.calls, 1, JSON.stringify(r.json));
-  assert.equal((await posts('/restrictions')).length, 1, 'day 500 sent as a delta');
-  item((await posts('/restrictions'))[0].body.values, 'rate_plan_id', rp('RP-TB'), { date: LAST }, { rate: '777.00' });
-  assert.equal((await posts('/availability')).length, 0, 'availability on day 500 unchanged: nothing sent');
+  // day 500 only (not a full sync), but complete: every plan and room type states its value for the new day
+  assert.equal((await posts('/restrictions')).length, 1, 'one restrictions call for day 500');
+  const rs = (await posts('/restrictions'))[0].body.values;
+  assert.equal(rs.length, 4, JSON.stringify(rs));
+  item(rs, 'rate_plan_id', rp('RP-TB'), { date: LAST }, Object.assign({ rate: '777.00' }, DEFAULTS));
+  for (const p of ['RP-TBB', 'RP-DB', 'RP-DBB']) assert.deepEqual(Object.keys(item(rs, 'rate_plan_id', rp(p), { date: LAST }, DEFAULTS)).sort(), ['closed_to_arrival', 'closed_to_departure', 'date', 'max_stay', 'min_stay_arrival', 'property_id', 'rate', 'rate_plan_id', 'stop_sell']);
+  assert.equal((await posts('/availability')).length, 1, 'one availability call for day 500');
+  const av = (await posts('/availability'))[0].body.values;
+  assert.equal(av.length, 2);
+  item(av, 'room_type_id', rt('UT-T'), { date: LAST }, { availability: 7 }); // T-08 was retagged to Double above
+  item(av, 'room_type_id', rt('UT-D'), { date: LAST }, { availability: 5 });
   assert.deepEqual(r.json.tick.inbound, { events: 0, done: 0, failed: 0, acks: 0, acked: 0 });
   // the seed's unassigned Double bookings in the next 14 days get a unit (availability per type is unchanged: no call)
   assert.equal(r.json.reassign.orgs, 1);

@@ -227,6 +227,18 @@ def item(items, key, cid, when, fields):
     return hit[0]
 
 
+ID_KEYS = ('property_id', 'rate_plan_id', 'room_type_id', 'date', 'date_from', 'date_to')
+
+
+def sheet(items, rows):
+    """exactly the certification sheet: one item per row (rate_plan_id, when, fields), each carrying only those fields"""
+    check(len(items) == len(rows), '%d items expected, got %d: %s' % (len(rows), len(items), json.dumps(items)[:800]))
+    for cid, when, fields in rows:
+        hit = item(items, 'rate_plan_id', cid, when, fields)
+        extra = sorted(k for k in hit if k not in ID_KEYS and k not in fields)
+        check(not extra, '%s %s sends only the changed fields, also got %s: %s' % (cid, when, extra, json.dumps(hit)))
+
+
 def run_live(browser):
     if not (os.environ.get('CHANNEX_TEST_PGURL') and os.environ.get('POSTGREST_BIN') and os.path.exists(os.environ.get('POSTGREST_BIN', ''))):
         print('SKIP  live part: set CHANNEX_TEST_PGURL and POSTGREST_BIN (see the top of this file)')
@@ -268,8 +280,27 @@ def run_live(browser):
             check('Test environment' in pg.inner_text('.pg-channels'), 'staging banner')
             txt = pg.inner_text('.ch-card[data-building="BD-1"]')
             check('needs a rate plan' in txt, 'the card lists what is missing before connecting: ' + txt)
+            check('Add a phone number for the building' in txt, 'Channex needs a phone before connecting: ' + txt)
             shot(pg, 'live-01-channels-before')
         t_signin()
+
+        @step('live: setup: the building phone in Properties, Edit building (Channex needs it before Connect)')
+        def t_phone():
+            go(pg, 'properties', {'tab': 'types'})
+            pg.click('[data-bt=editbd][data-id="BD-1"]')
+            modal(pg, '.modal [name=phone]')
+            check(not pg.is_disabled('.modal [name=currency]'), 'currency can change before connecting')
+            pg.fill('.modal [name=phone]', 'call us')
+            pg.click('.modal-foot .btn-primary')
+            pg.wait_for_selector('.modal [data-err=phone]:has-text("Check the phone number")')
+            pg.fill('.modal [name=phone]', '+60 3-2142 0000')
+            pg.click('.modal-foot .btn-primary')
+            wait_toast(pg, 'Saved Test Property - Orbique')
+            saved(pg)
+            go(pg, 'channels', {'tab': 'buildings'})
+            txt = pg.inner_text('.ch-card[data-building="BD-1"]')
+            check('phone number' not in txt and 'email address' not in txt, 'contact details complete: ' + txt)
+        t_phone()
 
         @step('live: setup: rate plans BAR (100) and Bed & Breakfast (120, breakfast) for each type, in the UI')
         def t_plans():
@@ -304,6 +335,8 @@ def run_live(browser):
             av = wait_calls(stack, '/availability', settle=3)
             rs = posts(stack, '/restrictions')
             check(len(av) == 1 and len(rs) == 1, 'one availability and one restrictions call, got %d and %d' % (len(av), len(rs)))
+            prop = [c for c in stack.get('/calls')['calls'] if c['method'] == 'POST' and c['path'] == '/properties'][0]['body']['property']
+            check(prop.get('phone') == '+60 3-2142 0000' and prop.get('email') == 'ops@cert.test' and prop.get('property_type') == 'apartment', 'property contact and type: %s' % prop)
             d = ids()
             check(len(RP) == 4 and len(RT) == 2, 'mapped: %s' % d)
             for c, key in ((av[0], 'room_type_id'), (rs[0], 'rate_plan_id')):
@@ -329,9 +362,7 @@ def run_live(browser):
             pg.click('#rr-add-btn')
             shot(pg, 'live-04-tray-one')
             send_tray(pg, 1)
-            items = one_call(stack, '/restrictions')
-            check(len(items) == 1, 'one item: %s' % items)
-            item(items, 'rate_plan_id', RP[P['TB']], '2026-11-22', {'rate': '333.00', 'min_stay_arrival': 1, 'stop_sell': False})
+            sheet(one_call(stack, '/restrictions'), [(RP[P['TB']], '2026-11-22', {'rate': '333.00'})])
         t_cert2()
 
         @step('cert 3: three single-date rates in the tray -> Send 3 changes: 1 call')
@@ -342,11 +373,10 @@ def run_live(browser):
             add_change(pg, P['DBB'], '2026-11-29', '2026-11-29', rate='456.23')
             shot(pg, 'live-05-tray-three')
             send_tray(pg, 3)
-            items = one_call(stack, '/restrictions')
-            check(len(items) == 3, '3 items: %s' % items)
-            item(items, 'rate_plan_id', RP[P['TB']], '2026-11-21', {'rate': '333.00'})
-            item(items, 'rate_plan_id', RP[P['DB']], '2026-11-25', {'rate': '444.00'})
-            item(items, 'rate_plan_id', RP[P['DBB']], '2026-11-29', {'rate': '456.23'})
+            sheet(one_call(stack, '/restrictions'), [
+                (RP[P['TB']], '2026-11-21', {'rate': '333.00'}),
+                (RP[P['DB']], '2026-11-25', {'rate': '444.00'}),
+                (RP[P['DBB']], '2026-11-29', {'rate': '456.23'})])
         t_cert3()
 
         @step('cert 4: three From-To ranges -> 1 call, one ranged item each')
@@ -356,11 +386,10 @@ def run_live(browser):
             add_change(pg, P['DB'], '2026-11-10', '2026-11-16', rate='312.66')
             add_change(pg, P['DBB'], '2026-11-01', '2026-11-20', rate=111)
             send_tray(pg, 3)
-            items = one_call(stack, '/restrictions')
-            check(len(items) == 3, '3 items: %s' % json.dumps(items)[:400])
-            item(items, 'rate_plan_id', RP[P['TB']], ('2026-11-01', '2026-11-10'), {'rate': '241.00'})
-            item(items, 'rate_plan_id', RP[P['DB']], ('2026-11-10', '2026-11-16'), {'rate': '312.66'})
-            item(items, 'rate_plan_id', RP[P['DBB']], ('2026-11-01', '2026-11-20'), {'rate': '111.00'})
+            sheet(one_call(stack, '/restrictions'), [
+                (RP[P['TB']], ('2026-11-01', '2026-11-10'), {'rate': '241.00'}),
+                (RP[P['DB']], ('2026-11-10', '2026-11-16'), {'rate': '312.66'}),
+                (RP[P['DBB']], ('2026-11-01', '2026-11-20'), {'rate': '111.00'})])
         t_cert4()
 
         @step('cert 5: minimum stay on three plans -> 1 call')
@@ -370,11 +399,11 @@ def run_live(browser):
             add_change(pg, P['DB'], '2026-11-25', '2026-11-25', min_stay=2)
             add_change(pg, P['DBB'], '2026-11-15', '2026-11-15', min_stay=5)
             send_tray(pg, 3)
-            items = one_call(stack, '/restrictions')
-            check(len(items) == 3, '3 items')
-            item(items, 'rate_plan_id', RP[P['TB']], '2026-11-23', {'min_stay_arrival': 3})
-            item(items, 'rate_plan_id', RP[P['DB']], '2026-11-25', {'min_stay_arrival': 2, 'rate': '444.00'})
-            item(items, 'rate_plan_id', RP[P['DBB']], '2026-11-15', {'min_stay_arrival': 5, 'rate': '111.00'})
+            sheet(one_call(stack, '/restrictions'), [
+                (RP[P['TB']], '2026-11-23', {'min_stay_arrival': 3}),
+                (RP[P['DB']], '2026-11-25', {'min_stay_arrival': 2}),
+                (RP[P['DBB']], '2026-11-15', {'min_stay_arrival': 5})])
+            check(state_r('DB', '2026-11-25').get('rate') == '444.00', 'Channex keeps the rate from test 3')
         t_cert5()
 
         @step('cert 6: stop sell on three plans -> 1 call')
@@ -384,11 +413,10 @@ def run_live(browser):
             add_change(pg, P['DB'], '2026-11-16', '2026-11-16', stop=True)
             add_change(pg, P['DBB'], '2026-11-20', '2026-11-20', stop=True)
             send_tray(pg, 3)
-            items = one_call(stack, '/restrictions')
-            check(len(items) == 3, '3 items')
-            item(items, 'rate_plan_id', RP[P['TB']], '2026-11-14', {'stop_sell': True})
-            item(items, 'rate_plan_id', RP[P['DB']], '2026-11-16', {'stop_sell': True, 'rate': '312.66'})
-            item(items, 'rate_plan_id', RP[P['DBB']], '2026-11-20', {'stop_sell': True})
+            sheet(one_call(stack, '/restrictions'), [
+                (RP[P['TB']], '2026-11-14', {'stop_sell': True}),
+                (RP[P['DB']], '2026-11-16', {'stop_sell': True}),
+                (RP[P['DBB']], '2026-11-20', {'stop_sell': True})])
             rates_view(pg, '2026-11-14')
             check(js(pg, '(p) => document.querySelector(`.rr-c[data-rr="${p}"][data-date="2026-11-14"]`).classList.contains("stop")', P['TB']), 'the cell shows stop sell')
             shot(pg, 'live-06-rates-stop-sell')
@@ -402,8 +430,16 @@ def run_live(browser):
             add_change(pg, P['DB'], '2026-11-10', '2026-11-16', cta=True, min_stay=2)
             add_change(pg, P['DBB'], '2026-11-01', '2026-11-20', min_stay=10)
             send_tray(pg, 4)
-            items = one_call(stack, '/restrictions')
-            item(items, 'rate_plan_id', RP[P['TB']], ('2026-11-01', '2026-11-10'), {'rate': '241.00', 'closed_to_arrival': True, 'closed_to_departure': False, 'max_stay': 4, 'min_stay_arrival': 1})
+            # four rows, four items. Twin/BAR's closed to departure (false) and min stay (1) are what Channex already
+            # has, so only the fields that change go out (test 13: only changed values)
+            sheet(one_call(stack, '/restrictions'), [
+                (RP[P['TB']], ('2026-11-01', '2026-11-10'), {'closed_to_arrival': True, 'max_stay': 4}),
+                (RP[P['TBB']], ('2026-11-12', '2026-11-16'), {'closed_to_departure': True, 'min_stay_arrival': 6}),
+                (RP[P['DB']], ('2026-11-10', '2026-11-16'), {'closed_to_arrival': True, 'min_stay_arrival': 2}),
+                (RP[P['DBB']], ('2026-11-01', '2026-11-20'), {'min_stay_arrival': 10})])
+            for iso in ['2026-11-%02d' % i for i in range(1, 11)]:
+                v = state_r('TB', iso)
+                check(v.get('closed_to_arrival') is True and v.get('closed_to_departure') is False and v.get('max_stay') == 4 and v.get('min_stay_arrival') == 1, 'Twin BAR %s: %s' % (iso, v))
             for iso in ['2026-11-%02d' % i for i in range(12, 17)]:
                 v = state_r('TBB', iso)
                 check(v.get('closed_to_arrival') is False and v.get('closed_to_departure') is True and v.get('min_stay_arrival') == 6, 'Twin B&B %s: %s' % (iso, v))
@@ -420,10 +456,11 @@ def run_live(browser):
             add_change(pg, P['TB'], '2026-12-01', '2027-05-01', rate=432, cta=False, ctd=False, min_stay=2)
             add_change(pg, P['DB'], '2026-12-01', '2027-05-01', rate=342, min_stay=3)
             send_tray(pg, 2)
-            items = one_call(stack, '/restrictions')
-            check(len(items) == 2, 'one item per plan: %s' % [(i['rate_plan_id'], i.get('date_from'), i.get('date_to')) for i in items])
-            item(items, 'rate_plan_id', RP[P['TB']], ('2026-12-01', '2027-05-01'), {'rate': '432.00', 'min_stay_arrival': 2, 'closed_to_arrival': False, 'closed_to_departure': False})
-            item(items, 'rate_plan_id', RP[P['DB']], ('2026-12-01', '2027-05-01'), {'rate': '342.00', 'min_stay_arrival': 3})
+            sheet(one_call(stack, '/restrictions'), [
+                (RP[P['TB']], ('2026-12-01', '2027-05-01'), {'rate': '432.00', 'min_stay_arrival': 2}),
+                (RP[P['DB']], ('2026-12-01', '2027-05-01'), {'rate': '342.00', 'min_stay_arrival': 3})])
+            v = state_r('TB', '2027-02-10')
+            check(v.get('closed_to_arrival') is False and v.get('closed_to_departure') is False and v.get('rate') == '432.00', 'Twin BAR in the half year: %s' % v)
         t_cert8()
 
         @step('cert 9: new direct booking (Twin, 21 Nov) + block all 4 Double units on 25 Nov in one dialog -> Twin 7, Double 0')
@@ -504,6 +541,17 @@ def run_live(browser):
             RESULTS.append(('INFO', 'pricing page apply button present: %s' % ok, 0))
         t_pricing()
 
+        @step('live: the building currency is fixed while connected (Edit building)')
+        def t_currency():
+            go(pg, 'properties', {'tab': 'types'})
+            pg.click('[data-bt=editbd][data-id="BD-1"]')
+            modal(pg, '.modal [name=currency]')
+            check(pg.is_disabled('.modal [name=currency]'), 'currency select is locked')
+            check('Fixed while this building is connected to channels' in pg.inner_text('.modal'), 'the reason is shown')
+            shot(pg, 'live-08a-currency-locked')
+            pg.click('.modal-foot .btn:has-text("Cancel")')
+        t_currency()
+
         @step('live: Manage channels opens the Channex screen in a full-size window; Sync log has task ids; Alerts resolve')
         def t_frame_log_alerts():
             go(pg, 'channels', {'tab': 'buildings'})
@@ -511,6 +559,7 @@ def run_live(browser):
             modal(pg, '.modal.ch-frame iframe', timeout=20000)
             src = js(pg, '() => document.querySelector(".modal.ch-frame iframe").src')
             check('/auth/exchange?' in src and 'oauth_session_key=' in src, 'iframe url: ' + src)
+            check('read_only_availability=true' in src, 'availability is read-only in the Channex screen: ' + src)
             box = pg.locator('.modal.ch-frame').bounding_box()
             check(box['width'] > 1300 and box['height'] > 800, 'full size: %s' % box)
             pg.wait_for_timeout(1200)

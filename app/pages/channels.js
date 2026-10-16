@@ -23,7 +23,8 @@
   };
   var ALERT_KIND = {
     double_booking: 'Double booking', needs_unit: 'Needs a unit', unmapped_room: 'Unknown room type', unmapped_rate: 'Unknown rate plan',
-    sync_error: 'Sending stopped', rate_warning: 'Update not accepted', non_acked: 'Booking not confirmed', channel_disconnected: 'Channel disconnected'
+    sync_error: 'Sending stopped', rate_warning: 'Update not accepted', non_acked: 'Booking not confirmed', channel_disconnected: 'Channel disconnected',
+    currency_changed: 'Currency changed'
   };
   var st = { tab: 'buildings', logOpen: null };
 
@@ -294,6 +295,12 @@
     if (!String(b.name || '').trim()) out.push('Give the building a name (it is the name guests see on booking sites).');
     if (!String(b.address || '').trim()) out.push('Add the building address.');
     if (!String(b.city || '').trim()) out.push('Add the city.');
+    var wb = D.workspaceBrand && typeof D.workspaceBrand === 'object' ? D.workspaceBrand : {};
+    var email = String(b.email || wb.email || '').trim(), phone = String(b.phone || wb.phone || '').trim();
+    if (!email) out.push('Add an email address for the building (or the business email in Brand). Booking sites need it.');
+    else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) out.push('Check the building email address (' + email + ').');
+    if (!phone) out.push('Add a phone number for the building (or the business phone in Brand). Booking sites need it.');
+    else if (!/^\+?[\d\s()-]{7,20}$/.test(phone)) out.push('Check the building phone number (' + phone + '). Use digits, spaces and +.');
     if (!/^[A-Za-z]{2}$/.test(String(b.country || 'MY').trim())) out.push('The country should be a two-letter code such as MY.');
     if (!/^[A-Za-z]{3}$/.test(String(b.currency || 'MYR').trim())) out.push('The currency should be a three-letter code such as MYR.');
     var types = typesOf(bid);
@@ -747,7 +754,8 @@
     var a1 = server.map(function (a) {
       var ref = a.ref || {};
       return '<div class="ch-alert" data-alert="' + esc(a.id) + '"><div><div class="t">' + U.pill(ALERT_KIND[a.kind] || 'Channel issue', a.kind === 'rate_warning' || a.kind === 'non_acked' ? 'warn' : 'bad') + '</div><div class="s">' + esc(a.message || '') + '</div><div class="w">' + esc(when(myTime(a.created_at))) + '</div></div>' +
-        '<div class="a">' + (ref.bookingId && D.booking(ref.bookingId) ? '<button type="button" class="btn btn-ghost btn-sm" data-open-b="' + esc(ref.bookingId) + '">Open booking</button>' : '') + (canResolve ? '<button type="button" class="btn btn-ghost btn-sm" data-resolve="' + esc(a.id) + '">' + O.icon('check') + 'Resolve</button>' : '') + '</div></div>';
+        '<div class="a">' + (a.kind === 'rate_warning' && ref.buildingId && Array.isArray(ref.items) && ref.items.length && O.can('channels.connect') ? '<button type="button" class="btn btn-ghost btn-sm" data-act="retry" data-b="' + esc(ref.buildingId) + '">' + O.icon('refresh') + 'Send again</button>' : '') +
+        (ref.bookingId && D.booking(ref.bookingId) ? '<button type="button" class="btn btn-ghost btn-sm" data-open-b="' + esc(ref.bookingId) + '">Open booking</button>' : '') + (canResolve ? '<button type="button" class="btn btn-ghost btn-sm" data-resolve="' + esc(a.id) + '">' + O.icon('check') + 'Resolve</button>' : '') + '</div></div>';
     }).join('');
     var a2 = local.map(function (c) {
       return '<div class="ch-alert"><div><div class="t">' + U.pill(c.kind === 'double_booking' ? 'Double booking' : c.kind === 'needs_unit' ? 'Needs a unit' : 'Oversold', c.tone) + esc(c.t.replace(/^[^:]*: /, '')) + '</div><div class="s">' + esc(c.s) + '</div></div>' +
