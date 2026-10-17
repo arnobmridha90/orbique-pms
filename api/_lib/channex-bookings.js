@@ -25,6 +25,7 @@ import G from './shared/guestmsg.cjs';
 import { channexConfig, channelView, ChannexError } from './channex.js';
 import { must, records, tracked, addAlert, todayMY, addDays, daysBetween, isIso } from './channex-db.js';
 import { CONNECTED } from './channex-sync.js';
+import { MESSAGE_EVENTS, receiveChannex } from './inbox.js';
 
 export const FEED_EVERY_MS = 15 * 60 * 1000;
 export const EVENT_RETRY_AFTER_MS = 60 * 1000;   // the webhook handles an event inline; the worker picks up what is left
@@ -676,7 +677,8 @@ async function markEvent(sb, id, status, error) {
 /**
  * Handle one stored event (a channex_events row: {id, event, channex_property_id, revision_id, payload}).
  * Booking events ingest their revision; sync errors and disconnected channels become alerts; channel changes refresh the
- * cached channel list. -> {status: 'done'|'error'|'ignored', result?, error?}
+ * cached channel list; guest messages (message, inquiry, reservation_request, message_thread_booking_assigned) go to
+ * the booking's conversation in the inbox. -> {status: 'done'|'error'|'ignored', result?, error?}
  */
 export async function processEvent(sb, ev, opts = {}) {
   const cfg = opts.config || channexConfig();
@@ -708,6 +710,14 @@ export async function processEvent(sb, ev, opts = {}) {
           const res = await tracked(sb, cfg, { method: 'GET', path: '/channels', query: { 'filter[property_id]': prop.channex_property_id, 'pagination[limit]': 100 }, orgId: prop.org_id, propertyId: prop.channex_property_id, source: 'channels', request: opts.request });
           must(await sb.from('channex_properties').update({ channels: (Array.isArray(res.data) ? res.data : []).map(channelView) }).eq('channex_property_id', prop.channex_property_id), 'save channels');
         } catch (e) { console.error('[channex] channels after', ev.event + ':', e && e.message); }
+      }
+    } else if (MESSAGE_EVENTS.includes(ev.event)) {
+      // guest messages from the booking sites (the Messages app in Channex): into the booking's conversation
+      const prop = await propertyRow(sb, cfg, propertyId);
+      if (!prop) status = 'ignored';
+      else {
+        result = await receiveChannex(sb, prop, ev.event, p, { now: opts.now });
+        if (result.status === 'ignored') status = 'ignored';
       }
     } else status = 'ignored';
     await markEvent(sb, ev.id, status, null);

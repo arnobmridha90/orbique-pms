@@ -77,6 +77,11 @@
     if (!S.org) return Promise.reject(new Error('Open a workspace first.'));
     return A.call('/api/channex', Object.assign({ action: action, orgId: S.org.id }, body || {}));
   };
+  /* POST /api/messages {action, orgId, ...}: the live guest inbox (WhatsApp, booking site messages, translation) */
+  A.inbox = function (action, body) {
+    if (!S.org) return Promise.reject(new Error('Open a workspace first.'));
+    return A.call('/api/messages', Object.assign({ action: action, orgId: S.org.id }, body || {}));
+  };
   /* live changes to the open workspace's channel manager rows (connections, alerts, waiting changes): cb(table, payload).
      Returns a function that stops listening. */
   A.channexRealtime = function (cb) {

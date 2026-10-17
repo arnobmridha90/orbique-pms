@@ -197,6 +197,59 @@ Start Orbique with `CHANNEX_BASE_URL=http://127.0.0.1:8899/api/v1` and any `CHAN
 `scripts/channex-mock.mjs` lists what it can do (including simulated rate limits and errors). `node scripts/dev.mjs --worker` also
 runs the sending job every 20 seconds (needs `CHANNEX_WORKER_SECRET`), standing in for the database timer.
 
+## Guest inbox: WhatsApp and translation
+
+The Guest inbox collects every guest conversation in one place: WhatsApp messages to your business number, and messages
+from Booking.com, Airbnb and Expedia through Channex. Guest messages can be shown in your language, and a reply can be
+checked in the guest's language before it goes. Without these settings nothing changes: the inbox works as before and
+nothing is sent to guests.
+
+**WhatsApp** uses Meta's WhatsApp Business Platform (the Cloud API), not the WhatsApp Business phone app. You need:
+
+1. A Meta Business account (business.facebook.com), verified for your company.
+2. An app at developers.facebook.com of type **Business**, with the **WhatsApp** product added, linked to a WhatsApp
+   Business account.
+3. Your business number added to that WhatsApp Business account (WhatsApp, **API Setup**, **Add phone number**). A number
+   that is still registered in the WhatsApp or WhatsApp Business phone app must be moved off it first, unless Meta offers
+   your account the "coexistence" option that keeps both.
+4. A permanent access token: Business settings, **Users**, **System users**, add an admin system user, give it the app and
+   the WhatsApp account with full control, then **Generate new token** with the `whatsapp_business_messaging` and
+   `whatsapp_business_management` permissions.
+5. The webhook: in the app, WhatsApp, **Configuration**, callback URL `https://<your-site>/api/whatsapp-webhook`, verify
+   token = the `WHATSAPP_VERIFY_TOKEN` below (add the Vercel variables and redeploy first, so the check succeeds), then
+   **Manage** and subscribe to **messages**.
+
+| Name | What it is | Where it comes from |
+|---|---|---|
+| `WHATSAPP_TOKEN` | The system user's permanent access token. Treat it like the Supabase secret key | Step 4 above |
+| `WHATSAPP_APP_SECRET` | The app secret, which Meta uses to sign every webhook delivery. Orbique refuses deliveries without a correct signature | The app, **App settings**, **Basic**, **App secret** |
+| `WHATSAPP_VERIFY_TOKEN` | A long random password Meta sends once when you set up the webhook | Make one up (for example 40 random letters and digits) |
+| `WHATSAPP_GRAPH_VERSION` | Optional. The Graph API version, `v23.0` when left out | Only change it when Meta retires that version |
+
+Redeploy, then in Orbique open the **Guest inbox**, **Settings** (bottom of the chat list) as the account owner, enter the
+**Phone number ID** (WhatsApp, API Setup, under your number) and press **Connect WhatsApp**. Orbique checks the number with
+Meta before saving it. From then on guests' WhatsApp messages land in the chat of their booking (matched by the phone
+number on the booking); messages from numbers that match no booking wait at the top of the chat list to be linked.
+
+WhatsApp only allows a free-form reply within 24 hours of the guest's last message to you. Outside that window the inbox
+says so and offers the booking site's chat instead. Photos, files and voice notes from guests open in the inbox; sending
+them to guests is not supported yet.
+
+**Booking.com, Airbnb and Expedia messages** come through Channex once the **Messages** app is switched on for each
+property in Channex (ask Channex whether it is part of your plan). After deploying this version, a platform admin runs
+**Channel manager setup** once more so the Channex webhook also sends message events. Agoda, Trip.com and Vrbo do not
+offer messages through the channel manager.
+
+**Translation** uses Claude (Anthropic):
+
+| Name | What it is | Where it comes from |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | An API key for translations. Treat it like the Supabase secret key | console.anthropic.com, **API keys** |
+| `ANTHROPIC_MODEL` | Optional. The model, `claude-haiku-5-5` when left out | Only change it if you want a different model |
+
+`/api/health` then shows `"whatsapp":true` and `"translate":true` (that the settings are present, not that they work).
+If a token or key ever leaks, revoke it where it came from, create a new one and update it in Vercel.
+
 ## Updating Orbique later
 
 Every change merged into the main branch on GitHub deploys automatically. Database changes are applied during that
