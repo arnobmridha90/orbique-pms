@@ -525,12 +525,10 @@
      =================================================================== */
   function canEditB(b) { return b.status !== 'cancelled' && b.status !== 'checked_out'; }
   function canCancelB(b) { return b.status === 'confirmed' || b.status === 'pending'; }
-  /* a platform booking that came through the channel manager (or sits on a connected unit type in live mode): its dates,
-     price and cancellation belong to the platform, and changes made there arrive here automatically */
+  /* a platform booking that came through the channel manager: its dates, price and cancellation belong to the platform,
+     and changes made there arrive here automatically. A platform booking typed in by hand never syncs back, so it stays editable here. */
   function otaLocked(b) {
-    if (!b || !b.channel || b.channel === 'direct') return false;
-    if (b.channex) return true;
-    return !!(O.channel && b.unitTypeId && O.channel.mode() === 'live' && O.channel.typeConnected(b.unitTypeId));
+    return !!(b && b.channel && b.channel !== 'direct' && b.channex);
   }
   function otaWhy(b, what) { return (what || 'Change') + ' this on ' + U.platName(b.channel) + '; changes arrive here automatically.'; }
   function canLink() { return O.can('bookings', 'edit'); }
