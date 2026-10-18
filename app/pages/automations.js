@@ -421,6 +421,7 @@
           { label: 'Time saved, 30 days', value: '≈ ' + Math.round(hours) + ' h', sub: 'Including ' + fmt.plural(tasks, 'task') + ' created', title: 'At 2 to 4 minutes per step someone would otherwise do by hand' }
         ]) +
         accessNote +
+        (O.alertsUI ? O.alertsUI.card() : '') +
         '<div class="grid g-2-1" style="align-items:start"><div class="stack">' + journeyHTML(tog, edit) +
         '<div class="row-flex wrap" style="justify-content:space-between"><div class="section-title" style="margin:6px 0 0">Rules</div>' + U.seg([['all', 'All rules'], ['guest', 'Guests'], ['money', 'Money'], ['ops', 'Operations']], st.group, 'data-grp') + '</div>' +
         rulesHTML(tog, edit) + '</div>' +

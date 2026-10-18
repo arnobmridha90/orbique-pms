@@ -68,7 +68,8 @@ const NATIVE_VENDORS = [
   ['node_modules/@capacitor/filesystem/dist/plugin.js', 'vendor/cap-filesystem.js'],
   ['node_modules/@capacitor/share/dist/plugin.js', 'vendor/cap-share.js'],
   ['node_modules/@capacitor/splash-screen/dist/plugin.js', 'vendor/cap-splash.js'],
-  ['node_modules/@capacitor-community/text-to-speech/dist/plugin.js', 'vendor/cap-tts.js']
+  ['node_modules/@capacitor-community/text-to-speech/dist/plugin.js', 'vendor/cap-tts.js'],
+  ['node_modules/@capacitor/push-notifications/dist/plugin.js', 'vendor/cap-push.js']
 ];
 
 function copy(from, to) { fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to); }

@@ -248,6 +248,35 @@ reached on WhatsApp. The code for it is in place but switched off (`CHANNEX_MESS
 `/api/health` then shows `"whatsapp":true` and `"translate":true` (that the settings are present, not that they work).
 If a token or key ever leaks, revoke it where it came from, create a new one and update it in Vercel.
 
+## Booking alerts: email, WhatsApp and the phone app
+
+When a booking site (through Channex) or the guest website sends a new booking, a cancellation or new dates, Orbique
+alerts the team. Bookings you or your team enter in Orbique send no alert. Choose who gets them in Orbique, **Automations**,
+**Booking alerts**, **Edit**, then press **Send a test**. Each channel you have not set up is simply skipped.
+
+| Name | What it is | Where it comes from |
+|---|---|---|
+| `RESEND_API_KEY` | Sends alert emails. Treat it like the Supabase secret key | resend.com, **API Keys**, **Create API key** (Sending access) |
+| `ALERT_EMAIL_FROM` | Optional. The sender, for example `Orbique <alerts@yourdomain.com>`. Left out, Resend's test sender is used, which only delivers to the address you signed up to Resend with | A domain verified in Resend: **Domains**, **Add domain**, then add the DNS records it shows at your domain provider |
+| `FIREBASE_SERVICE_ACCOUNT` | Sends phone app notifications: the whole service account key file (JSON, or the same base64-encoded). Treat it like the Supabase secret key | console.firebase.google.com, your project, **Project settings**, **Service accounts**, **Generate new private key** |
+| `WHATSAPP_ALERT_TEMPLATE` | Optional. The approved WhatsApp message template for alerts, `booking_alert` when left out | See below |
+| `WHATSAPP_ALERT_LANG` | Optional. That template's language code, `en` when left out | |
+
+**Phone app:** the Android app is built with the Firebase project's `android/app/google-services.json` (package
+`com.orbique.app`; the file is not secret, every copy of the app contains it). Install the new build, sign in as the owner
+or an ops manager and allow notifications when asked (or press **Turn on alerts on this phone** on Automations).
+
+**WhatsApp** needs the guest inbox's WhatsApp setup above (a connected number), plus a message template, because WhatsApp
+only lets a business write first with an approved template. In WhatsApp Manager, **Message templates**, **Create
+template**: category **Utility**, name `booking_alert`, language English, body
+
+    Orbique: {{1}}
+    {{2}}
+    Open Orbique for the details.
+
+(WhatsApp does not accept a template that starts or ends with a value.) Use samples such as `New booking · Airbnb` and `Ana, 2 guests · 2 Nov to 5 Nov (3 nights) · Vortex KLCC 43-6`. Alerts go
+out by WhatsApp once Meta approves it.
+
 ## Updating Orbique later
 
 Every change merged into the main branch on GitHub deploys automatically. Database changes are applied during that
