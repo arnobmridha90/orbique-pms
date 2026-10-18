@@ -232,13 +232,11 @@ Meta before saving it. From then on guests' WhatsApp messages land in the chat o
 number on the booking); messages from numbers that match no booking wait at the top of the chat list to be linked.
 
 WhatsApp only allows a free-form reply within 24 hours of the guest's last message to you. Outside that window the inbox
-says so and offers the booking site's chat instead. Photos, files and voice notes from guests open in the inbox; sending
+says so. Photos, files and voice notes from guests open in the inbox; sending
 them to guests is not supported yet.
 
-**Booking.com, Airbnb and Expedia messages** come through Channex once the **Messages** app is switched on for each
-property in Channex (ask Channex whether it is part of your plan). After deploying this version, a platform admin runs
-**Channel manager setup** once more so the Channex webhook also sends message events. Agoda, Trip.com and Vrbo do not
-offer messages through the channel manager.
+**Booking.com, Airbnb and Expedia messages** would need Channex's paid **Messages** app, which is not used: guests are
+reached on WhatsApp. The code for it is in place but switched off (`CHANNEX_MESSAGES` in `api/messages.js`).
 
 **Translation** uses Claude (Anthropic):
 

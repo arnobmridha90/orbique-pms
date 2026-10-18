@@ -14,8 +14,8 @@
    with the chips and the search. Permissions: inbox.send (reply to guests, new chats), inbox.notes (internal notes),
    inbox.quickReplies (manage quick replies), inbox edit level (assign, pin, mark unread), bookings.contacts (guest phone,
    masked otherwise), guestapp.doorCodes (door codes in quick replies and the lock button), invoices.send. Times use D.NOW.
-   Live (server mode, api/messages.js): guest messages from WhatsApp and from Booking.com, Airbnb and Expedia (Channex) arrive
-   in the booking's chat; replies go back the way the guest wrote (route picker in the composer), WhatsApp only within 24 hours
+   Live (server mode, api/messages.js): guest messages from WhatsApp arrive in the booking's chat (booking-site chat through
+   Channex is built but switched off: CHANNEX_MESSAGES); replies go back the way the guest wrote, WhatsApp only within 24 hours
    of the guest's last WhatsApp message. Guest messages show in the team's language (inboxSettings.lang) with the original a tap
    away; "Translate" on a reply shows it in the guest's language to check before it goes. Chats from numbers or booking-site
    threads that match no booking wait at the top of the list to be linked. Photos, files and voice notes still go out only as
@@ -1237,7 +1237,7 @@
           : '<div class="note">Translation is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).</div>';
         var body = O.html('<div class="stack"><div class="section-title" style="margin-top:0">WhatsApp</div>' + waHTML +
           '<div class="section-title">Translation</div>' + trHTML +
-          '<div class="section-title">Booking sites</div><div class="small">' + (cfg.channex ? 'Messages from Booking.com, Airbnb and Expedia arrive here once the Messages app is switched on for the building in Channex. Agoda and Trip.com do not offer messages through the channel manager.' : 'Booking.com, Airbnb and Expedia messages arrive here once channels are live for this workspace.') + '</div></div>');
+          (cfg.channex ? '<div class="section-title">Booking sites</div><div class="small">Messages from Booking.com, Airbnb and Expedia arrive here once the Messages app is switched on for the building in Channex. Agoda and Trip.com do not offer messages through the channel manager.</div>' : '') + '</div>');
         var mod = U.modal({ title: 'Inbox settings', body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
         function reload() { live.cfg = null; live.org = null; loadLive(function () { repaintLive(); }); }
         body.addEventListener('click', function (e) {

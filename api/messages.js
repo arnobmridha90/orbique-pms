@@ -23,6 +23,11 @@ import { allowedOrg } from './channex.js';
 
 export const MEDIA_MAX = 3 * 1024 * 1024; // base64 grows it by a third; Vercel answers at most 4.5 MB
 
+// Booking-site chat needs Channex's paid Messages app, which is not used: guests are reached on WhatsApp.
+// Switch it back on here (and add the message events to WEBHOOK_EVENTS in channex.js) if that changes.
+export const CHANNEX_MESSAGES = false;
+function channexMessages(cx, orgId) { return CHANNEX_MESSAGES && allowedOrg(cx, orgId); }
+
 async function workspace(sb, body, me, need) {
   const orgId = uuidField(body.orgId);
   const m = await membership(sb, orgId, me.id);
@@ -67,7 +72,7 @@ async function config(sb, body, me) {
   const settings = await inboxSettings(sb, ws.org.id);
   return {
     whatsapp: { configured: wa.configured, number: num ? { phone: num.display_phone || null, name: num.verified_name || null } : null },
-    channex: allowedOrg(cx, ws.org.id),
+    channex: channexMessages(cx, ws.org.id),
     translate: translateConfig().configured,
     lang: settings.lang, autoTranslate: settings.autoTranslate,
     demo: await isDemo(sb, ws.org.id)
@@ -82,7 +87,7 @@ async function sendAction(sb, body, me) {
   const via = body.via === 'whatsapp' || body.via === 'channex' ? body.via : null;
   if (!via) throw bad('bad-via', 'Choose how to send it.');
   const cx = channexConfig();
-  if (via === 'channex' && !allowedOrg(cx, ws.org.id)) throw forbidden('Booking site messages are not switched on for this workspace yet.');
+  if (via === 'channex' && !channexMessages(cx, ws.org.id)) throw forbidden('Booking site messages are not switched on for this workspace yet.');
   const data = await sendReply(sb, {
     orgId: ws.org.id, conv, booking, via, text: typeof body.text === 'string' ? body.text : '',
     orig: typeof body.orig === 'string' ? body.orig.slice(0, 4096) : null, origLang: body.origLang, lang: body.lang,

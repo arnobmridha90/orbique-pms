@@ -109,8 +109,9 @@ the last), else to a conversation with no booking (`contact`, linked later in th
 Delivery ticks update the message's `status`. A database failure answers 500 so Meta sends it again. Everything is
 refused until WHATSAPP_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN are set.
 
-Channex message events (`message`, `inquiry`, `reservation_request`, `message_thread_booking_assigned`) arrive on
-`/api/channex-webhook` like booking events and go to the booking's conversation the same way (`xid` `cx:<id>`, the
+Booking-site chat through Channex (its paid Messages app) is built but switched off (`CHANNEX_MESSAGES` in
+`api/messages.js`; the webhook does not subscribe to message events). If switched on, Channex message events (`message`,
+`inquiry`, `reservation_request`, `message_thread_booking_assigned`) arrive on `/api/channex-webhook` like booking events and go to the booking's conversation the same way (`xid` `cx:<id>`, the
 thread in `cx`). Conversation and message fields are described at the top of `supabase/migrations/0010_inbox.sql`.
 
 ## Database functions the browser calls (supabase.rpc)
