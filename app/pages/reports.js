@@ -1057,7 +1057,7 @@
     if (D.properties.length) return '';
     var canAdd = O.allowed('properties') && O.can('properties.create');
     return '<div class="card"><div class="card-body rl-start"><div class="tx"><b>Reports fill in as bookings, reviews, expenses and stock records come in.</b><div class="small muted" style="margin-top:2px">Start by adding your first property.</div></div>' +
-      (canAdd ? '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add a property</button>' : '') + '</div></div>';
+      (canAdd ? '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add a unit</button>' : '') + '</div></div>';
   }
   function renderLibrary(root, ctx) {
     ctx.setActions('');
@@ -1102,7 +1102,7 @@
       html += '<div class="card"><div class="card-body">' + U.locked(rep.name + ' report', { reason: 'permission' }) + '</div></div>';
     } else if (!D.properties.length) {
       var canAdd = O.allowed('properties') && O.can('properties.create');
-      html += '<div class="card"><div class="empty"><div class="e-icon">' + O.icon(rep.icon) + '</div><p style="margin:0 0 12px">This report fills in once you have properties and bookings.</p>' + (canAdd ? '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add a property</button>' : '') + '</div></div>';
+      html += '<div class="card"><div class="empty"><div class="e-icon">' + O.icon(rep.icon) + '</div><p style="margin:0 0 12px">This report fills in once you have properties and bookings.</p>' + (canAdd ? '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add a unit</button>' : '') + '</div></div>';
     } else if (NEEDS[rep.need] && !NEEDS[rep.need].has()) {
       var nd = NEEDS[rep.need];
       html += '<div class="card"><div class="empty"><div class="e-icon">' + O.icon(rep.icon) + '</div><p style="margin:0 0 12px">' + esc(nd.text) + '</p>' + (O.allowed(nd.page) ? '<button type="button" class="btn btn-primary" data-go="' + nd.page + '">' + esc(nd.label) + '</button>' : '') + '</div></div>';

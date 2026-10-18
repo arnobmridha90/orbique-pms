@@ -361,7 +361,7 @@
     var T = D.TODAY, bl = o.block || null, canEdit = O.can('calendar.block');
     var props = D.properties.filter(function (p) { return !isArchived(p) || (bl && p.id === bl.propertyId); });
     if (!bl && !canEdit) { U.toast(O.viewer().name + '\'s access does not include blocking dates.', 'bad'); return; }
-    if (!props.length) { U.toast('Add a property first.', 'bad'); return; }
+    if (!props.length) { U.toast('Add a unit first.', 'bad'); return; }
     if (bl && !canEdit) { /* read only */
       var bp = D.propById[bl.propertyId];
       U.modal({ title: bl.type === 'owner' ? 'Owner stay' : 'Maintenance', sub: propLabel(bp), size: 'sm', body: '<dl class="kv"><dt>Nights</dt><dd>' + d.fmtY(bl.start) + ' → ' + d.fmtY(d.add(bl.end, -1)) + '</dd><dt>Length</dt><dd>' + fmt.plural(d.diff(bl.start, bl.end), 'night') + '</dd>' + (bl.note ? '<dt>Note</dt><dd>' + esc(bl.note) + '</dd>' : '') + '</dl><div class="xs muted" style="margin-top:10px">Not bookable on any platform. Your access does not include changing blocks.</div>', actions: [{ label: 'Close' }] });

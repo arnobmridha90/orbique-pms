@@ -57,13 +57,15 @@
   O.curOf = function (x) {
     if (x == null || x === '') return O.viewCur();
     if (typeof x === 'string' && /^[A-Za-z]{3}$/.test(x) && !D.propById[x] && !O.building(x) && !O.unitType(x)) return x.toUpperCase();
-    var bd = O.buildingOf(x);
-    return bd ? bdCur(bd) : O.baseCur();
+    var pl = O.placeOf(x);
+    if (!pl) return O.baseCur();
+    return isBuilding(pl) || pl.currency ? bdCur(pl) : O.baseCur();
   };
   /* the currencies in use (buildings with units), most used first; MYR when there are none */
   O.currencies = function () {
     var n = {};
     (D.buildings || []).forEach(function (bd) { if (!bd.archived) { var c = bdCur(bd); n[c] = (n[c] || 0) + 1; } });
+    (D.properties || []).forEach(function (p) { if (p && !p.archived && !p.buildingId && p.currency) { var c = bdCur(p); n[c] = (n[c] || 0) + 1; } });
     var list = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a === 'MYR' ? -1 : b === 'MYR' ? 1 : a.localeCompare(b)); });
     return list.length ? list : ['MYR'];
   };
@@ -89,7 +91,17 @@
     if (!bid && x.propertyId && D.propById[x.propertyId]) return O.buildingOf(D.propById[x.propertyId]);
     return bid ? O.building(bid) : null;
   };
-  O.tourismTaxApplies = function (x) { var bd = O.buildingOf(x); if (bd && bd.country) return String(bd.country).toUpperCase() === 'MY'; return O.curOf(x) === 'MYR'; };
+  /* where x is: its building, or the unit itself when it is not in a building (such a unit can carry its own country and currency) */
+  function isBuilding(x) { return (O.raw('buildings') || []).indexOf(x) >= 0; }
+  function unitOf(x) {
+    if (!x) return null; if (typeof x === 'string') x = D.propById[x] || null; if (!x) return null;
+    if (x.id && D.propById[x.id] === x) return x;
+    if (x.propertyId && D.propById[x.propertyId]) return D.propById[x.propertyId];
+    if (x.bookingId && D.booking) { var b = D.booking(x.bookingId); if (b && b.propertyId) return D.propById[b.propertyId] || null; }
+    return null;
+  }
+  O.placeOf = function (x) { return O.buildingOf(x) || unitOf(x); };
+  O.tourismTaxApplies = function (x) { var pl = O.placeOf(x); if (pl && pl.country) return String(pl.country).toUpperCase() === 'MY'; return O.curOf(x) === 'MYR'; };
 
   O.fmt = {
     money: function (n, opt) {
@@ -572,7 +584,13 @@
   O.raw = function (k) { return RAW[k] || D[k]; };
   O.unscoped = function (fn) { SC.off++; try { return fn(); } finally { SC.off--; } };
   O.unscopedFn = function (fn) { return function () { var a = arguments, t = this; return O.unscoped(function () { return fn.apply(t, a); }); }; };
-  O.countryOf = function (bd) { return bd ? String(bd.country || '').trim().toUpperCase() || CUR_COUNTRY[bdCur(bd)] || 'MY' : O.mainCountry(); };
+  /* the country of a building or a unit outside buildings (a unit with neither country nor currency follows the main country) */
+  O.countryOf = function (pl) {
+    if (!pl) return O.mainCountry();
+    var c = String(pl.country || '').trim().toUpperCase(); if (c) return c;
+    if (!isBuilding(pl) && !pl.currency) return O.mainCountry();
+    return CUR_COUNTRY[bdCur(pl)] || 'MY';
+  };
   O.countryLabel = function (c) { return (D.countryName && D.countryName[c]) || c; };
   O.defaultCurrencyFor = function (c) { var hit = 'MYR'; Object.keys(CUR_COUNTRY).some(function (k) { if (CUR_COUNTRY[k] === c) { hit = k; return true; } return false; }); return ['FR', 'IT', 'ES', 'IE', 'DE'].indexOf(c) >= 0 ? 'EUR' : hit; };
   /* the countries in use (buildings that are not archived), most buildings first */
@@ -580,6 +598,7 @@
     if (SC.list && SC.listVer === SC.ver) return SC.list;
     var n = {};
     (RAW.buildings || []).forEach(function (bd) { if (!bd.archived) { var c = O.countryOf(bd); n[c] = (n[c] || 0) + 1; } });
+    (RAW.properties || []).forEach(function (p) { if (p && !p.archived && !p.buildingId && (p.country || p.currency)) { var c = O.countryOf(p); n[c] = (n[c] || 0) + 1; } });
     var list = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a === 'MY' ? -1 : b === 'MY' ? 1 : a.localeCompare(b)); });
     SC.list = list.length ? list : ['MY']; SC.listVer = SC.ver; return SC.list;
   };
@@ -591,13 +610,13 @@
     var c = O.store.get(countryKey(), ''); return O.countries().indexOf(c) >= 0 ? c : '';
   };
   /* true when x (unit, booking, record or id) is in the country on screen; always true with all countries */
-  O.inView = function (x) { var c = O.viewCountry(); if (!c || x == null || x === '') return true; var bd = O.buildingOf(x); return bd ? O.countryOf(bd) === c : c === O.mainCountry(); };
+  O.inView = function (x) { var c = O.viewCountry(); if (!c || x == null || x === '') return true; var pl = O.placeOf(x); return pl ? O.countryOf(pl) === c : c === O.mainCountry(); };
   O.setCountry = function (c) { O.store.set(countryKey(), String(c || '').toUpperCase()); SC.ver++; O.emit('country'); };
   function belongs(k, x, c) {
     if (k === 'buildings') return O.countryOf(x) === c;
-    var bd = O.buildingOf(x);
-    if (!bd && x.bookingId && D.booking) bd = O.buildingOf(D.booking(x.bookingId));
-    if (bd) return O.countryOf(bd) === c;
+    var pl = O.placeOf(x);
+    if (!pl && x.bookingId && D.booking) pl = O.placeOf(D.booking(x.bookingId));
+    if (pl) return O.countryOf(pl) === c;
     return EVERYWHERE[k] ? true : c === O.mainCountry();
   }
   function scopedView(k) {
@@ -1183,7 +1202,7 @@
     if (O.can && !O.can('guestapp.doorCodes')) { U.toast(O.viewer().name + '\'s access does not include changing door codes. An account owner can allow it in Staff Access.', 'bad'); return; }
     var b = o.bookingId ? D.booking(o.bookingId) : null;
     var firstProp = O.activeProperties()[0];
-    if (!b && !firstProp) { U.toast('Add a property first, then you can set its door codes.', 'bad'); return; }
+    if (!b && !firstProp) { U.toast('Add a unit first, then you can set its door codes.', 'bad'); return; }
     var pid = o.propertyId || (b && b.propertyId) || firstProp.id;
     var body = O.html('<div class="stack">' +
       '<div class="field"><label for="lk-pid">Property</label><select class="select" name="pid" id="lk-pid">' + U.propOptions(pid) + '</select></div>' +

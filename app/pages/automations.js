@@ -412,7 +412,7 @@
       if (st.group === 'new') st.group = 'all';
       var canAdd = O.allowed('properties') && O.can('properties.create');
       var startNote = !D.properties.length ? '<div class="card"><div class="card-body au-start"><div class="grow"><b>These automations start working once you add a property and take bookings.</b><div class="small muted" style="margin-top:2px">Check the messages below now so they are ready for your first guest.</div></div>' +
-        (canAdd ? '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add a property</button>' : '') + '</div></div>' : '';
+        (canAdd ? '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add a unit</button>' : '') + '</div></div>' : '';
       var accessNote = tog && edit ? '' : '<div class="note">' + O.icon('lock') + ' ' + esc(!tog && !edit ? 'You can see the automations. An account owner can let you turn them on or off, or edit them, in Staff access.' : !tog ? 'You can edit messages and rules. ' + WHY_TOGGLE : 'You can turn automations on or off. ' + WHY_EDIT) + '</div>';
       root.innerHTML = '<div class="pg-automations stack">' + startNote +
         U.kpis([
