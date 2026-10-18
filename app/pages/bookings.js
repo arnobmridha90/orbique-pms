@@ -279,7 +279,7 @@
       '<div class="c-stay"><div class="l1">' + d.fmtRange(b.checkIn, b.checkOut) + ' <span class="nts">· ' + fmt.plural(b.nights, 'night') + '</span></div><div class="l2' + (sub[0] ? ' soon' : '') + '">' + esc(sub[1]) + '</div></div>' +
       '<div class="c-plat">' + U.plat(b.channel) + '</div>' +
       '<div class="c-status">' + U.status(b.status) + '</div>' +
-      (showValue ? '<div class="c-total">' + fmt.money(b.total) + '</div>' : '') +
+      (showValue ? '<div class="c-total">' + fmt.money(b.total, { cur: b }) + '</div>' : '') +
       readyCell(b) + '</div>';
   }
 
@@ -323,7 +323,7 @@
         var fb0 = O.$('[data-act=first]', root); if (fb0) fb0.onclick = function () { openNew({}); };
         return;
       }
-      if (st.prop && !D.propById[st.prop]) st.prop = '';
+      if (st.prop && (!D.propById[st.prop] || !O.inView(st.prop))) st.prop = '';
 
       var plats = D.channelOrder.map(function (c) { return '<option value="' + c + '"' + (st.plat === c ? ' selected' : '') + '>' + esc(U.platName(c)) + '</option>'; }).join('');
       root.innerHTML = '<div class="pg-bookings' + (st.filtersOpen ? ' f-open' : '') + '">' +
@@ -503,7 +503,7 @@
     var head = ['Booking ID', 'Property', 'Location', 'Unit type', 'Unit no.', 'Guest', 'Country'];
     if (contacts) head = head.concat(['Phone', 'Email']);
     head = head.concat(['Check-in', 'Check-out', 'Nights', 'Guests', 'Platform', 'Reservation code', 'Status', 'Booked at']);
-    if (money) head = head.concat(['Total (RM)', 'Tourism tax (RM)', 'Revenue (RM)', 'Platform fee (RM)', 'Payout (RM)']);
+    if (money) head = head.concat(['Currency', 'Total', 'Tourism tax', 'Revenue', 'Platform fee', 'Payout']);
     head = head.concat(['Invoice no.', 'Invoice sent', 'Receipt no.', 'Paid on', 'Receipt sent', 'ID verified', 'Cancelled on']);
     var out = [head].concat(rows.map(function (b) {
       var p = D.propById[b.propertyId];
@@ -511,7 +511,7 @@
       var r = [b.id, p ? propName(p) : O.bookingPlace(b), place(p), ut ? O.typeTitle(ut) : '', (p && p.unitNo) || '', b.guest.name, b.guest.countryName || ''];
       if (contacts) r = r.concat([b.guest.phone || '', b.guest.email || '']);
       r = r.concat([b.checkIn, b.checkOut, b.nights, b.guests, U.platName(b.channel), b.reservationCode || '', U.statusLabel(b.status), String(b.createdAt || '').replace('T', ' ')]);
-      if (money) r = r.concat([b.total, b.tourismTax, b.revenue, b.platformFee, b.payout]);
+      if (money) r = r.concat([O.curOf(b), b.total, b.tourismTax, b.revenue, b.platformFee, b.payout]);
       return r.concat([b.invoiceNo || '', b.invoiceSent ? b.invoiceSent.via + ' ' + (b.invoiceSent.at || '') : 'No', b.receiptNo || '', b.paidAt || '', b.receiptSent ? b.receiptSent.via + ' ' + (b.receiptSent.at || '') : 'No', b.idVerified ? 'Yes' : 'No', b.cancelledAt || '']);
     }));
     O.downloadCSV('bookings-' + st.match + '-' + st.range.from + '-to-' + st.range.to + '.csv', out);
@@ -700,7 +700,7 @@
     if (!canCancelB(b)) { U.toast('Only upcoming bookings can be cancelled', 'bad'); return; }
     if (otaLocked(b)) { U.toast(otaWhy(b, 'Cancel'), 'bad'); return; }
     var p = D.propById[b.propertyId];
-    var paidNote = b.paidAt && canValue() ? ' The guest paid ' + fmt.money(b.total) + ': arrange any refund with them' + (b.channel === 'direct' ? '' : ' on ' + U.platName(b.channel)) + '.' : '';
+    var paidNote = b.paidAt && canValue() ? ' The guest paid ' + fmt.money(b.total, { cur: b }) + ': arrange any refund with them' + (b.channel === 'direct' ? '' : ' on ' + U.platName(b.channel)) + '.' : '';
     U.modal({
       title: 'Cancel this booking?', sub: b.id + ' · ' + b.guest.name, size: 'sm',
       body: '<p style="margin:0;line-height:1.5">' + esc(b.guest.name + ' at ' + (p ? propName(p) : O.bookingPlace(b)) + ', ' + d.fmtRange(b.checkIn, b.checkOut) + '. The nights open again on every platform and the door code stops working.' + paidNote) + '</p>',
@@ -739,7 +739,7 @@
   function reprice(b, p) { /* money follows nights and unit; the nightly price stays what the guest agreed */
     b.accommodation = Math.round((b.nightly || 0) * b.nights);
     b.cleaningFee = b.cleaningFee != null && p.id === b.propertyId ? b.cleaningFee : cleaningFor(p);
-    b.tourismTax = b.guest.foreign ? 10 * b.nights : 0;
+    b.tourismTax = b.guest.foreign && O.tourismTaxApplies(p) ? 10 * b.nights : 0;
     b.total = b.accommodation + b.cleaningFee + b.tourismTax;
     b.platformFee = Math.round(b.accommodation * feePct(b.channel));
     b.payout = b.total - b.platformFee;
@@ -817,10 +817,10 @@
           : r.auto ? (r.unitId === b.propertyId ? '<b>Available.</b> The guest keeps ' + esc(unitWord(p)) + '.' : '<b>Available.</b> Orbique puts the guest in ' + esc(unitWord(p)) + ', the best fit.')
             : changed ? '<b>Available</b> for all ' + fmt.plural(nights, 'night') + ' at ' + esc(p.short || p.name) + '.' : 'Same dates and unit as now.';
       }
-      var acc = Math.round((b.nightly || 0) * nights), clean = v.pid === b.propertyId ? b.cleaningFee : cleaningFor(p), tax = b.guest.foreign ? 10 * nights : 0, tot = acc + clean + tax;
+      var acc = Math.round((b.nightly || 0) * nights), clean = v.pid === b.propertyId ? b.cleaningFee : cleaningFor(p), tax = b.guest.foreign && O.tourismTaxApplies(p) ? 10 * nights : 0, tot = acc + clean + tax, mc = { cur: p };
       $('.nb-sum').innerHTML = '<h4>' + esc(propName(p)) + '</h4><div class="muted small">' + esc(place(p)) + '</div><div class="muted small">' + (ok ? d.fmtY(v.ci) + ' → ' + d.fmtY(v.co) + ' · ' + fmt.plural(nights, 'night') : 'Choose dates') + '</div>' +
-        (money ? '<dl class="kv"><dt>' + nights + ' × ' + fmt.money(b.nightly) + '</dt><dd>' + fmt.money(acc) + '</dd><dt>Cleaning fee</dt><dd>' + fmt.money(clean) + '</dd>' + (tax ? '<dt>Tourism tax</dt><dd>' + fmt.money(tax) + '</dd>' : '') +
-          '<dt class="tot">New total</dt><dd class="tot">' + fmt.money(tot) + '</dd></dl>' + (ok && tot !== b.total ? '<div class="nb-docs" style="margin-top:8px">Was ' + fmt.money(b.total) + '.' + (b.paidAt ? ' The guest has paid, so settle the difference of ' + fmt.money(Math.abs(tot - b.total)) + (tot > b.total ? ' with them.' : ' back to them.') : '') + '</div>' : '') : '');
+        (money ? '<dl class="kv"><dt>' + nights + ' × ' + fmt.money(b.nightly, mc) + '</dt><dd>' + fmt.money(acc, mc) + '</dd><dt>Cleaning fee</dt><dd>' + fmt.money(clean, mc) + '</dd>' + (tax ? '<dt>Tourism tax</dt><dd>' + fmt.money(tax, mc) + '</dd>' : '') +
+          '<dt class="tot">New total</dt><dd class="tot">' + fmt.money(tot, mc) + '</dd></dl>' + (ok && tot !== b.total ? '<div class="nb-docs" style="margin-top:8px">Was ' + fmt.money(b.total, { cur: b }) + '.' + (b.paidAt ? ' The guest has paid, so settle the difference of ' + fmt.money(Math.abs(tot - b.total), mc) + (tot > b.total ? ' with them.' : ' back to them.') : '') + '</div>' : '') : '');
     }
     body.addEventListener('input', function () { $('.nb-err').innerHTML = ''; update(); });
     body.addEventListener('change', function (e) {
@@ -875,7 +875,7 @@
      New booking (direct), shared form: O.newBooking({propertyId, checkIn, checkOut, onCreated(b)})
      =================================================================== */
   function nextNo(field, prefix) {
-    var max = D.bookings.reduce(function (m, b) { var v = b[field]; return v ? Math.max(m, +String(v).split('-').pop() || 0) : m; }, 1000);
+    var max = O.raw('bookings').reduce(function (m, b) { var v = b[field]; return v ? Math.max(m, +String(v).split('-').pop() || 0) : m; }, 1000);
     return prefix + (max + 1);
   }
   /* invoices for platform bookings that the channel manager created on the server (they arrive without a number):
@@ -891,10 +891,10 @@
   }
   O.automation.register('channel-invoices', function () { if (channelInvoices()) O.emit('data', { type: 'invoices' }); });
   var invT = null;
-  O.on('remote', function () {
+  O.on('remote', O.unscopedFn(function () {
     if (!D.bookings.some(function (b) { return b && b.channex && !b.invoiceNo && b.status !== 'cancelled'; })) return;
-    clearTimeout(invT); invT = setTimeout(function () { if (O.sync.canWrite() && channelInvoices()) O.emit('data', { type: 'invoices' }); }, 1500);
-  });
+    clearTimeout(invT); invT = setTimeout(O.unscopedFn(function () { if (O.sync.canWrite() && channelInvoices()) O.emit('data', { type: 'invoices' }); }), 1500);
+  }));
 
   O.newBooking = function (o) {
     o = o || {};
@@ -927,7 +927,7 @@
       f('Check-out', '<input type="date" class="input" name="co" min="' + d.add(T, 1) + '" value="' + co0 + '">') +
       f('Guests', '<input type="number" class="input" name="guests" min="1" value="2">', '', '<div class="hint nb-maxg"></div>') +
       f('Arrival time', '<input type="time" class="input" name="time" value="15:00">', '', '<div class="hint">Standard check-in is 3:00 PM</div>') +
-      f('Nightly price (RM)', '<input type="number" class="input" name="price" min="1" step="5">', 'full', '<div class="hint nb-sugg"></div>') +
+      f('Nightly price (<span class="nb-cur">' + esc(fmt.cur(pid0)) + '</span>)', '<input type="number" class="input" name="price" min="1" step="5">', 'full', '<div class="hint nb-sugg"></div>') +
       '</div>' +
       '<div class="nb-sec">Guest</div>' +
       '<div class="form-grid">' +
@@ -962,20 +962,21 @@
       var sg = suggestion(p.id, v.ci, v.co);
       if (sg && !priceDirty) $('[name=price]').value = sg.avg;
       v = vals();
-      $('.nb-sugg').innerHTML = sg ? '<span>Suggested <b>' + fmt.money(sg.avg) + '</b> a night from your pricing' + (sg.wk && sg.we ? ' (weekdays ' + fmt.money(sg.wk) + ', Fri–Sat nights ' + fmt.money(sg.we) + ')' : '') + '.</span>' + (priceDirty && v.price !== sg.avg ? '<button type="button" class="btn btn-quiet btn-xs" data-use>Use suggested</button>' : '') : 'Enter the nightly price for this stay.';
-      var foreign = v.country !== 'MY';
-      $('.nb-tax').textContent = foreign ? 'Tourism tax RM 10 per night applies' : 'No tourism tax for Malaysian guests';
+      var mc = { cur: p }; $('.nb-cur').textContent = fmt.cur(p);
+      $('.nb-sugg').innerHTML = sg ? '<span>Suggested <b>' + fmt.money(sg.avg, mc) + '</b> a night from your pricing' + (sg.wk && sg.we ? ' (weekdays ' + fmt.money(sg.wk, mc) + ', Fri–Sat nights ' + fmt.money(sg.we, mc) + ')' : '') + '.</span>' + (priceDirty && v.price !== sg.avg ? '<button type="button" class="btn btn-quiet btn-xs" data-use>Use suggested</button>' : '') : 'Enter the nightly price for this stay.';
+      var foreign = v.country !== 'MY', ttax = O.tourismTaxApplies(p);
+      $('.nb-tax').textContent = !ttax ? '' : foreign ? 'Tourism tax ' + fmt.money(10, mc) + ' per night applies' : 'No tourism tax for Malaysian guests';
       var ok = v.ci && v.co && v.co > v.ci, nights = ok ? d.diff(v.ci, v.co) : 0;
       var cf = !ok ? [] : r.auto ? (r.unitId ? [] : ['No single ' + r.t.name + ' unit is free for all of these nights']) : conflictsFor(v.pid, v.ci, v.co);
       var av = $('.nb-avail');
       av.className = 'nb-avail ' + (!ok ? 'bad' : cf.length ? 'bad' : 'ok');
       av.innerHTML = !ok ? 'Check-out must be after check-in.' : cf.length ? '<b>Not available.</b> ' + esc(cf[0]) + (cf.length > 1 ? ' and ' + (cf.length - 1) + ' more.' : '.')
         : r.auto ? '<b>Available</b> for all ' + fmt.plural(nights, 'night') + '. Orbique puts the guest in ' + esc(unitWord(p)) + ', the best fit.' : '<b>Available</b> for all ' + fmt.plural(nights, 'night') + ' at ' + esc(p.short || p.name) + '.';
-      var acc = nights * v.price, clean = cleaningFor(p), tax = foreign ? 10 * nights : 0;
+      var acc = nights * v.price, clean = cleaningFor(p), tax = foreign && ttax ? 10 * nights : 0;
       var invNo = nextNo('invoiceNo', 'INV-' + T.slice(0, 4) + '-');
       $('.nb-sum').innerHTML = '<h4>' + esc(propName(p)) + '</h4><div class="muted small">' + esc(place(p)) + '</div><div class="muted small">' + (ok ? d.fmtY(v.ci) + ' → ' + d.fmtY(v.co) + ' · ' + fmt.plural(nights, 'night') : 'Choose dates') + '</div>' +
-        '<dl class="kv"><dt>' + nights + ' × ' + fmt.money(v.price) + '</dt><dd>' + fmt.money(acc) + '</dd><dt>Cleaning fee</dt><dd>' + fmt.money(clean) + '</dd>' + (tax ? '<dt>Tourism tax</dt><dd>' + fmt.money(tax) + '</dd>' : '') +
-        '<dt class="tot">Guest pays</dt><dd class="tot">' + fmt.money(acc + clean + tax) + '</dd></dl>' +
+        '<dl class="kv"><dt>' + nights + ' × ' + fmt.money(v.price, mc) + '</dt><dd>' + fmt.money(acc, mc) + '</dd><dt>Cleaning fee</dt><dd>' + fmt.money(clean, mc) + '</dd>' + (tax ? '<dt>Tourism tax</dt><dd>' + fmt.money(tax, mc) + '</dd>' : '') +
+        '<dt class="tot">Guest pays</dt><dd class="tot">' + fmt.money(acc + clean + tax, mc) + '</dd></dl>' +
         '<div class="nb-docs" style="margin-top:10px">Invoice <b>' + esc(invNo) + '</b> is created automatically when you save.' +
         (paid ? ' Receipt <b>' + esc(nextNo('receiptNo', 'RCP-' + T.slice(0, 4) + '-')) + '</b> is created too.' : ' The receipt is created when payment arrives.') + '</div>';
     }

@@ -988,7 +988,7 @@
       stopPlayer();
       var pr = ctx.params || {};
       if (st.prop === null) st.prop = O.store.get('inbox:prop', '') || '';
-      if (st.prop && !D.propById[st.prop]) { st.prop = ''; O.store.set('inbox:prop', ''); }
+      if (st.prop && (!D.propById[st.prop] || !O.inView(st.prop))) { st.prop = ''; O.store.set('inbox:prop', ''); }
       if (ctx.fresh && pr.bookingId) {
         var c0 = D.conversations.filter(function (c) { return c.bookingId === pr.bookingId; })[0], b0 = D.booking(pr.bookingId);
         if (!c0 && b0 && canSend()) { c0 = { id: O.uid('C'), bookingId: pr.bookingId, unread: 0, messages: [], createdAt: nowISO(), assigneeId: O.state.viewer }; D.conversations.push(c0); }

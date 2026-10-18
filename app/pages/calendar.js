@@ -253,9 +253,9 @@
   function filterOK(v) {
     if (!v) return true;
     if (v.indexOf('area:') === 0) return true;
-    if (v.indexOf('bd:') === 0) { var b = O.building(v.slice(3)); return !!(b && !b.archived); }
-    if (v.indexOf('type:') === 0) { var t = O.unitType(v.slice(5)); return !!(t && !t.archived); }
-    return !!D.propById[v];
+    if (v.indexOf('bd:') === 0) { var b = O.building(v.slice(3)); return !!(b && !b.archived && O.inView(b)); }
+    if (v.indexOf('type:') === 0) { var t = O.unitType(v.slice(5)); return !!(t && !t.archived && O.inView(t)); }
+    return !!D.propById[v] && O.inView(v);
   }
   function oneProp() { return st.prop && D.propById[st.prop] ? st.prop : undefined; }
   function shownProps() {
@@ -332,7 +332,7 @@
       '<div class="ct-r">' + U.status(b.status) + U.plat(b.channel) + '</div>' +
       '<dl class="kv"><dt>Stay</dt><dd>' + d.fmtRange(b.checkIn, b.checkOut) + ' · ' + fmt.plural(b.nights, 'night') + '</dd>' +
       '<dt>Check-in / out</dt><dd>' + shortTime(b.checkInTime) + ' / ' + shortTime(b.checkOutTime || '11:00') + '</dd>' +
-      '<dt>Guests</dt><dd>' + b.guests + '</dd>' + (O.can('bookings.value') ? '<dt>Total</dt><dd>' + fmt.money(b.total) + '</dd>' : '') +
+      '<dt>Guests</dt><dd>' + b.guests + '</dd>' + (O.can('bookings.value') ? '<dt>Total</dt><dd>' + fmt.money(b.total, { cur: b }) + '</dd>' : '') +
       '<dt>Booking</dt><dd>' + esc(b.id) + '</dd></dl>' + chips +
       '<div class="ct-f">Click to open the booking</div>';
   }
@@ -432,10 +432,11 @@
       var v = vals(), r = problems(v), err = r.err, box = O.$('.blk-sum', body);
       box.className = 'blk-sum ' + (err.length ? 'bad' : r.stranded.length ? 'warn' : 'ok');
       if (err.length) { box.innerHTML = '<b>Cannot block these nights.</b> ' + esc(err[0]) + (err.length > 1 ? ' And ' + (err.length - 1) + ' more.' : ''); return; }
-      var n = d.diff(v.a, v.z) + 1, lost = 0;
-      v.pids.forEach(function (pid) { lost += d.range(v.a, v.z).reduce(function (s, x) { return s + rateOf(pid, x); }, 0); });
+      var n = d.diff(v.a, v.z) + 1, lostBy = {}; /* per currency: units can sit in buildings with different currencies */
+      v.pids.forEach(function (pid) { var c = O.curOf(pid); lostBy[c] = (lostBy[c] || 0) + d.range(v.a, v.z).reduce(function (s, x) { return s + rateOf(pid, x); }, 0); });
+      var lost = Object.keys(lostBy).filter(function (c) { return lostBy[c]; }).map(function (c) { return fmt.money(lostBy[c], { cur: c }); }).join(' + ');
       var where = v.pids.length === 1 ? esc(unitName(D.propById[v.pids[0]])) : fmt.plural(v.pids.length, 'unit');
-      var html = '<b>' + fmt.plural(n, 'night') + '</b> at ' + where + ': ' + esc(d.fmtY(v.a)) + (n > 1 ? ' to ' + esc(d.fmtY(v.z)) : '') + '.' + (O.can('bookings.value') && lost ? ' At your current prices that is about <b>' + fmt.money(lost) + '</b> of nights.' : '');
+      var html = '<b>' + fmt.plural(n, 'night') + '</b> at ' + where + ': ' + esc(d.fmtY(v.a)) + (n > 1 ? ' to ' + esc(d.fmtY(v.z)) : '') + '.' + (O.can('bookings.value') && lost ? ' At your current prices that is about <b>' + lost + '</b> of nights.' : '');
       var movers = r.move.filter(function (b) { return r.stranded.indexOf(b) < 0; });
       if (movers.length) html += ' ' + esc(fmt.plural(movers.length, 'booking') + ' will move to another unit of the same type.');
       if (r.stranded.length) html += ' <b>' + esc(r.stranded.map(function (b) { return b.guest.name; }).join(', ') + ' would have' + ' no unit') + '</b>, because every unit of the type is taken. You can still block and move ' + (r.stranded.length === 1 ? 'that guest' : 'those guests') + ' by hand.';
@@ -979,7 +980,7 @@
         closeMenu();
         var now = D.TODAY, past = iso < now, span = freeUntil(p.id, iso), freeN = d.diff(iso, span.to);
         var head = '<div class="cm-h"><b>' + esc(propName(p)) + '</b><div class="s">' + esc(d.dowName(iso) + ' ' + d.fmtY(iso)) + (past ? ' · past night' : ' · free night') + '</div>' +
-          (!past ? '<div class="s">' + (span.capped ? 'Free for 120+ nights' : 'Free for ' + fmt.plural(freeN, 'night') + ' (until ' + esc(d.fmt(span.to)) + ')') + (O.can('bookings.value') ? ' · your price ' + fmt.money(rateOf(p.id, iso)) : '') + '</div>' : '') + '</div>';
+          (!past ? '<div class="s">' + (span.capped ? 'Free for 120+ nights' : 'Free for ' + fmt.plural(freeN, 'night') + ' (until ' + esc(d.fmt(span.to)) + ')') + (O.can('bookings.value') ? ' · your price ' + fmt.money(rateOf(p.id, iso), { cur: p }) : '') + '</div>' : '') + '</div>';
         menu = O.html('<div class="cal-menu" role="menu">' + head +
           (canNew ? '<button type="button" class="cm-o" role="menuitem" data-m="new"' + (past ? ' disabled' : '') + '>' + O.icon('plus') + '<span>New booking<span class="s">Direct booking from ' + esc(d.fmt(iso)) + '</span></span></button>' : '') +
           (canBlock ? '<button type="button" class="cm-o" role="menuitem" data-m="block"' + (past ? ' disabled' : '') + '>' + O.icon('lock') + '<span>Block dates<span class="s">Maintenance or owner stay</span></span></button>' : '') +

@@ -1,7 +1,7 @@
 /* Properties — the operator's units: add, edit, archive (never delete), photos compressed in the browser.
    A property record in D.properties (records collection 'properties'):
      v3 fields every page reads (names and formats unchanged):
-       id, name, short, type ('2BR loft' | 'Studio'), beds, area ('Gurney Drive, Penang'), base (RM per night), owner (owner's name),
+       id, name, short, type ('2BR loft' | 'Studio'), beds, area ('Gurney Drive, Penang'), base (per night, in the building's currency), owner (owner's name),
        housekeeper (staff id | null), lockCode ('4827'), lockBrand ('Yale'), wifi ([name, password]), parking (text)
      v4 optional fields (old records work without them):
        city ('Penang'), address, mapUrl, checkInTime / checkOutTime ('HH:MM', defaults 15:00 / 11:00), maxGuests, notes,
@@ -345,7 +345,7 @@
       '<span class="pp-meta"><span>' + esc(p.type || bedsText(p)) + (p.maxGuests ? ' · sleeps ' + esc(p.maxGuests) : '') + '</span><span class="st-sm">' + U.pill(s.t, s.kind) + '</span></span>' +
       (miss.length ? '<span class="pp-warn">' + O.icon('alert') + '<span>Add the ' + esc(miss.join(', ')) + '</span></span>' : '') +
       '<span class="pp-ft"><span class="who' + (hk ? '' : ' none') + '">' + (hk ? U.avatar(hk, 'sm') + ' ' + esc(hk) : 'No housekeeper yet') + '</span>' +
-      (canSeePrice() ? '<span class="pp-price">' + fmt.money(+p.base || 0) + '<small> / night</small></span>' : '') + '</span>' +
+      (canSeePrice() ? '<span class="pp-price">' + fmt.money(+p.base || 0, { cur: p }) + '<small> / night</small></span>' : '') + '</span>' +
       '</span></button>';
   }
   function typeLineHTML(p) { /* "Deluxe · unit 21-1" under the name of a typed unit */
@@ -361,7 +361,7 @@
         return '<tr class="click' + (p.archived ? ' arch' : '') + '" data-open="' + esc(p.id) + '" tabindex="0"><td><span class="th">' + cover(p) + '</span></td>' +
           '<td><div class="t1">' + esc(p.name) + '</div><div class="t2">' + esc(O.typeOf(p) ? O.typeOf(p).name + (p.unitNo ? ' · unit ' + p.unitNo : '') : p.short || '') + '</div></td>' +
           '<td><div>' + esc(hoodOf(p) || cityOf(p)) + '</div><div class="t2">' + esc(hoodOf(p) ? cityOf(p) : '') + '</div></td>' +
-          '<td>' + esc(p.type || '') + '</td>' + (price ? '<td class="num">' + fmt.money(+p.base || 0) + '</td>' : '') +
+          '<td>' + esc(p.type || '') + '</td>' + (price ? '<td class="num">' + fmt.money(+p.base || 0, { cur: p }) + '</td>' : '') +
           '<td>' + (hk ? esc(hk) : '<span class="faint">Not set</span>') + '</td>' + (own ? '<td>' + esc(p.owner || '') + '</td>' : '') +
           '<td>' + U.pill(s.t, s.kind) + '<div class="t2">' + esc(s.s) + '</div></td></tr>';
       }).join('') + '</tbody></table></div></div>';
@@ -438,6 +438,12 @@
      before check-in. Units without a type keep working exactly as before. */
   var BT = { sel: {} }; /* ticked unit ids in the tagging lists */
   var CURRENCIES = ['MYR', 'SGD', 'THB', 'IDR', 'PHP', 'VND', 'USD', 'EUR', 'GBP', 'AUD'];
+  /* countries for the building form: the ones in use first, then the rest by name */
+  function countryList(sel) {
+    var names = D.countryName || {}, used = O.countries().slice();
+    if (sel && used.indexOf(sel) < 0) used.push(sel);
+    return used.concat(Object.keys(names).filter(function (c) { return used.indexOf(c) < 0; }).sort(function (a, b) { return String(names[a]).localeCompare(String(names[b])); }));
+  }
   function canTag() { return O.can('properties.edit'); }
   function liveBuildings() { return D.buildings.filter(function (b) { return b && !b.archived; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); }); }
   function bdUnits(bdId) { return D.properties.filter(function (p) { return p && !p.archived && p.buildingId === bdId; }).sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); }); }
@@ -532,7 +538,7 @@
     var times = 'Check-in from ' + fmt.time(bd.checkInTime || '15:00') + ', out by ' + fmt.time(bd.checkOutTime || '11:00');
     var has = function (x) { return x && String(bd.address || '').toLowerCase().indexOf(String(x).toLowerCase()) >= 0; };
     var addr = [bd.address, has(bd.city) ? '' : [bd.zip, bd.city].filter(Boolean).join(' '), has(bd.state) ? '' : bd.state].filter(Boolean).join(', ');
-    var h = '<section class="card bt-bd" data-bd="' + esc(bd.id) + '"><div class="bt-hd"><div class="grow"><h3>' + esc(bd.name) + '</h3><div class="small muted">' + esc(addr || 'No address yet') + '</div><div class="small muted">' + esc(times) + (bd.currency ? ' · ' + esc(bd.currency) : '') + '</div></div>' +
+    var h = '<section class="card bt-bd" data-bd="' + esc(bd.id) + '"><div class="bt-hd"><div class="grow"><h3>' + esc(bd.name) + '</h3><div class="small muted">' + esc(addr || 'No address yet') + '</div><div class="small muted">' + esc(times) + (O.multiCountry() ? ' · ' + esc(O.countryLabel(O.countryOf(bd))) : '') + (bd.currency ? ' · ' + esc(bd.currency) : '') + '</div></div>' +
       (edit ? '<div class="acts"><button type="button" class="btn btn-ghost btn-sm" data-bt="editbd" data-id="' + esc(bd.id) + '">' + O.icon('edit') + 'Edit building</button></div>' : '') + '</div>';
     h += '<div class="bt-sec"><h4>Unit types</h4><div class="bt-types">' + types.map(function (t) {
       var us = O.unitsOfType(t.id), facts = [t.maxGuests ? 'Sleeps ' + t.maxGuests : '', t.beds != null && t.beds !== '' ? (+t.beds ? fmt.plural(+t.beds, 'bedroom') : 'Studio') : '', us.length ? freeTonight(t) : ''].filter(Boolean).join(' · ');
@@ -615,6 +621,7 @@
     var cur = CURRENCIES.indexOf(f.currency || 'MYR') >= 0 ? CURRENCIES : CURRENCIES.concat([f.currency]);
     /* connected to channels: the channel manager keeps the currency it was connected with, so it cannot change here */
     var curLocked = !isNew && !!(O.channel && O.channel.connected && O.channel.connected(bd.id));
+    var fCountry = O.countryOf(bd || { currency: f.currency, country: O.viewCountry() || O.mainCountry() });
     var body = '<form class="form-grid bt-form" novalidate autocomplete="off">' +
       mf('name', 'Building name', mi('name', f.name, ' maxlength="60" placeholder="e.g. Seri Saujana Residences"'), { full: true, hint: 'Guests see this with the unit type, for example "' + (f.name || 'Seri Saujana Residences') + ' · Deluxe".' }) +
       mf('address', 'Street address', mi('address', f.address, ' maxlength="160" placeholder="e.g. 2 Jalan Saujana Indah, Bukit Jalil"'), { full: true, hint: 'Guests see the building address before they get their unit number.' }) +
@@ -623,6 +630,7 @@
       mf('zip', 'Postcode', mi('zip', f.zip, ' maxlength="12" inputmode="numeric" placeholder="57000"'), { opt: true }) +
       mf('email', 'Email for booking sites', mi('email', f.email, ' type="email" inputmode="email" maxlength="80" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.email) || 'e.g. stay@example.com') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business email in Brand.' }) +
       mf('phone', 'Phone for booking sites', mi('phone', f.phone, ' type="tel" inputmode="tel" maxlength="24" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.phone) || '+60 3-1234 5678') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business phone in Brand.' }) +
+      mf('country', 'Country', '<select class="select" id="bt-country" name="country">' + countryList(fCountry).map(function (c) { return '<option value="' + esc(c) + '"' + (c === fCountry ? ' selected' : '') + '>' + esc(O.countryLabel(c)) + '</option>'; }).join('') + '</select>', { hint: 'With buildings in more than one country, the top bar can show one country at a time.' }) +
       mf('currency', 'Currency', '<select class="select" id="bt-currency" name="currency"' + (curLocked ? ' disabled' : '') + '>' + cur.map(function (c) { return '<option' + (c === (f.currency || 'MYR') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>', curLocked ? { hint: 'Fixed while this building is connected to channels: booking sites keep the currency it was connected with.' } : null) +
       mf('checkInTime', 'Check-in from', mi('checkInTime', f.checkInTime || '15:00', ' type="time" step="900"')) +
       mf('checkOutTime', 'Check-out by', mi('checkOutTime', f.checkOutTime || '11:00', ' type="time" step="900"')) +
@@ -630,11 +638,11 @@
     var actions = [{ label: 'Cancel' }];
     if (!isNew && O.can('properties.archive')) actions.push({ label: 'Archive', onClick: function (close) { archiveBuilding(bd, close); return false; } });
     actions.push({ label: isNew ? 'Add building' : 'Save changes', kind: 'primary', onClick: function (close, el) {
-      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: mval(el, 'city'), state: mval(el, 'state'), zip: mval(el, 'zip'), email: mval(el, 'email'), phone: mval(el, 'phone'), currency: curLocked ? (bd.currency || 'MYR') : mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
+      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: mval(el, 'city'), state: mval(el, 'state'), zip: mval(el, 'zip'), email: mval(el, 'email'), phone: mval(el, 'phone'), country: mval(el, 'country') || fCountry, currency: curLocked ? (bd.currency || 'MYR') : mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
       if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) E.email = 'Check the email address.';
       if (v.phone && !/^\+?[\d\s()-]{7,20}$/.test(v.phone)) E.phone = 'Check the phone number. Use digits, spaces and +.';
       if (!v.name) E.name = 'Give the building a name.';
-      else if (D.buildings.some(function (x) { return x !== bd && low(x.name) === low(v.name); })) E.name = 'Another building is already called "' + v.name + '".';
+      else if (O.raw('buildings').some(function (x) { return x !== bd && low(x.name) === low(v.name); })) E.name = 'Another building is already called "' + v.name + '".';
       if (!v.address) E.address = 'Add the street address. Guests see it before their unit number.';
       if (!v.city) E.city = 'Add the city.';
       if (!/^\d{2}:\d{2}$/.test(v.checkInTime)) E.checkInTime = 'Choose a check-in time.';
@@ -650,6 +658,11 @@
       if (isNew) setTimeout(function () { typeModal(b, null); }, 60);
     } });
     U.modal({ title: isNew ? 'Add a building' : 'Edit ' + bd.name, sub: isNew ? 'A building holds units that share an address.' : 'Changes show to guests straight away', body: body, actions: actions });
+    /* a new country suggests its currency (still changeable) */
+    setTimeout(function () {
+      var c = document.getElementById('bt-country'), u = document.getElementById('bt-currency'); if (!c || !u || curLocked) return;
+      c.onchange = function () { var k = O.defaultCurrencyFor(c.value); if (![].some.call(u.options, function (o) { return o.value === k; })) u.add(new Option(k, k)); u.value = k; };
+    }, 0);
   }
   function archiveBuilding(bd, close) {
     var us = bdUnits(bd.id);
@@ -789,7 +802,7 @@
         p.unitNo ? ['Unit number', esc(p.unitNo) + ' <span class="xs muted">only your team sees this</span>'] : null,
         ['Type', esc(p.type || '') + (p.type && /BR|Studio/i.test(p.type) ? '' : ' · ' + esc(bedsText(p)))],
         p.maxGuests ? ['Sleeps', esc(fmt.plural(+p.maxGuests, 'guest'))] : null,
-        canSeePrice() ? ['Base price', '<span class="pp-price">' + fmt.money(+p.base || 0) + '</span> <span class="xs muted">per night</span>'] : null,
+        canSeePrice() ? ['Base price', '<span class="pp-price">' + fmt.money(+p.base || 0, { cur: p }) + '</span> <span class="xs muted">per night</span>'] : null,
         ['Check-in', 'From ' + esc(fmt.time(p.checkInTime || '15:00'))],
         ['Check-out', 'By ' + esc(fmt.time(p.checkOutTime || '11:00'))],
         p.notes ? ['Team notes', esc(p.notes)] : null
@@ -899,7 +912,7 @@
       fld('short', 'Short name', inp('short', f.short, ' maxlength="20" placeholder="' + esc(suggestShort(f.name) || 'e.g. Bayfront 3B') + '"'), { opt: true, hint: 'For the calendar and phone screens. Left empty, we shorten the name.' }) +
       fld('kind', 'Kind of home', '<select class="select" id="pp-kind" name="kind">' + kinds.map(function (k) { return '<option' + (k === f.kind ? ' selected' : '') + '>' + esc(k) + '</option>'; }).join('') + '</select>') +
       fld('beds', 'Bedrooms', inp('beds', f.beds, ' type="number" min="0" max="30" step="1" inputmode="numeric"'), { hint: '0 for a studio' }) +
-      fld('base', 'Base nightly price', '<div class="pp-money"><span>RM</span>' + inp('base', f.base, ' type="number" min="0" step="5" inputmode="decimal" placeholder="220"') + '</div>', { hint: 'Pricing starts from this and adjusts by day.' }) +
+      fld('base', 'Base nightly price', '<div class="pp-money"><span data-cur>' + esc(fmt.cur(formCur(f))) + '</span>' + inp('base', f.base, ' type="number" min="0" step="5" inputmode="decimal" placeholder="220"') + '</div>', { hint: 'Pricing starts from this and adjusts by day.' }) +
       '</div></div>' +
       buildingSecHTML(f) +
 
@@ -1006,12 +1019,15 @@
       tySel.disabled = !bdSel.value; if (no) no.disabled = !bdSel.value; if (pr) pr.disabled = !tySel.value;
     }
   }
+  /* the currency of the unit being edited: its building's (or its unit type's building's) */
+  function formCur(v) { return O.curOf(v.unitTypeId || v.buildingId || O.baseCur()); }
   function onFormInput(e) {
     var t = e.target; if (!t) return;
     if (t.matches('[data-phfile]')) { if (e.type === 'change') { addPhotos(t.files); t.value = ''; } return; }
     if (!t.name) return;
     var err = O.$('[data-err="' + (t.name === 'ownerSel' ? 'owner' : t.name) + '"]', DR.dr.el); if (err) err.textContent = '';
     t.classList.remove('bad');
+    if (t.name === 'buildingId' || t.name === 'unitTypeId') { var cs = O.$('[data-cur]', DR.dr.el); if (cs) cs.textContent = fmt.cur(formCur({ buildingId: (O.$('[name=buildingId]', DR.dr.el) || {}).value, unitTypeId: (O.$('[name=unitTypeId]', DR.dr.el) || {}).value })); }
     if (t.name === 'ownerSel' && e.type === 'change') {
       var o = owners().filter(function (x) { return x.name === t.value; })[0], ph = O.$('[name=ownerPhone]', DR.dr.el), em = O.$('[name=ownerEmail]', DR.dr.el);
       if (o) { if (ph && !ph.value) ph.value = o.phone; if (em && !em.value) em.value = o.email; }
@@ -1033,7 +1049,7 @@
   }
   function validate(v, p) {
     var E = {}, low = function (s) { return String(s || '').trim().toLowerCase(); };
-    var others = D.properties.filter(function (x) { return x !== p; });
+    var others = O.raw('properties').filter(function (x) { return x !== p; });
     if (!v.name) E.name = 'Give the property a name, for example "Bayfront Loft 3B".';
     else if (others.some(function (x) { return low(x.name) === low(v.name); })) E.name = 'Another property is already called "' + v.name + '". Add a unit number to tell them apart.';
     var short = v.short || suggestShort(v.name);
@@ -1042,8 +1058,9 @@
     var beds = v.beds === '' || v.beds == null ? NaN : Number(v.beds);
     if (!(beds >= 0 && beds <= 30 && Math.floor(beds) === beds)) E.beds = 'Enter the number of bedrooms, 0 for a studio.';
     var base = v.base === '' || v.base == null ? NaN : Number(v.base);
-    if (!(base > 0)) E.base = 'Enter the usual price for one night in RM, for example 220.';
-    else if (base < 20 || base > 50000) E.base = 'That looks unusual. Enter a nightly price between RM 20 and RM 50,000.';
+    var cur = formCur(v), mc = { cur: cur };
+    if (!(base > 0)) E.base = 'Enter the usual price for one night in ' + fmt.cur(cur) + ', for example 220.';
+    else if (cur === 'MYR' && (base < 20 || base > 50000)) E.base = 'That looks unusual. Enter a nightly price between ' + fmt.money(20, mc) + ' and ' + fmt.money(50000, mc) + '.';
     if (!v.city) E.city = 'Add the city or state, for example Penang.';
     if (v.mapUrl && !/^https?:\/\/\S+$/i.test(v.mapUrl)) E.mapUrl = 'Paste the full link, starting with https://';
     if (!/^\d{2}:\d{2}$/.test(v.checkInTime)) E.checkInTime = 'Choose a check-in time.';

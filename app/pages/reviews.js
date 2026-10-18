@@ -531,7 +531,7 @@
       var pr = ctx.params || {};
       syncDates();
       relink();
-      if (st.prop && !D.propById[st.prop]) st.prop = '';
+      if (st.prop && (!D.propById[st.prop] || !O.inView(st.prop))) st.prop = '';
       /* low reviews waiting for a reply get linked to an open task that already covers the problem */
       D.reviews.forEach(function (r) { if (!r.taskId && !r.reply && r.stars <= 3) { var c = coveringTask(r); if (c) r.taskId = c.id; } });
       if (ctx.fresh && (pr.needsReply || pr.platform || pr.propertyId || pr.stars)) {

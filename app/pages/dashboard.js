@@ -260,9 +260,11 @@
   function moneyLine(t) {
     var ms = d.monthStart(t), day = d.day(t), pms = d.addMonths(ms, -1), pme = d.monthEnd(pms);
     var pto = d.add(pms, Math.min(day, d.day(pme)) - 1);
-    var cur = M.revenue(ms, t), prev = M.revenue(pms, pto);
+    var cur = revIn(ms, t), prev = revIn(pms, pto);
     return { cur: cur, prev: prev, from: ms, to: t, pfrom: pms, pto: pto, mon: d.monthName(t, true), pmon: d.monthName(pms, true), change: prev ? (cur - prev) / prev : null };
   }
+  /* with several currencies the money line covers the units in the view currency (picked next to it) */
+  function revIn(a, z) { return O.multiCur() ? D.properties.filter(O.inCur).reduce(function (s, p) { return s + M.revenue(a, z, { propertyId: p.id }); }, 0) : M.revenue(a, z); }
   function moneyPhrase(mm) {
     if (mm.change == null) return '';
     var p = pctWord(mm.change);
@@ -362,6 +364,7 @@
   function speakable(s) {
     var t = String(s).trim()
       .replace(/RM\s?([\d,]+(?:\.\d+)?)/g, '$1 ringgit')
+      .replace(new RegExp(fmt.cur().replace(/[$.]/g, '\\$&') + '\\s?([\\d,]+(?:\\.\\d+)?)', 'g'), '$1 ' + O.viewCur())
       .replace(/(\d)\.(\d)/g, '$1 point $2')
       .replace(/\bvs\.?(?=\s)/g, 'versus')
       .replace(/[–—]/g, ', ');
@@ -456,8 +459,8 @@
     var foot = '';
     if (m.money) {
       var mm = m.money, ph = moneyPhrase(mm);
-      foot += '<div class="dsh-money" title="Revenue earned on nights from ' + esc(d.fmtRange(mm.from, mm.to)) + ', compared with ' + esc(d.fmtRange(mm.pfrom, mm.pto)) + ' (' + esc(fmt.money(mm.prev)) + ')"><span>' + esc(mm.mon) + ' so far</span><b>' + fmt.money(mm.cur) + '</b>' +
-        (ph ? '<span class="delta ' + (pctWord(mm.change) === 0 ? 'flat' : mm.change > 0 ? 'good' : 'bad') + '">' + (pctWord(mm.change) === 0 ? '± ' : mm.change > 0 ? '▲ ' : '▼ ') + esc(ph) + '</span>' : '') + '</div>';
+      foot += '<div class="dsh-money" title="Revenue earned on nights from ' + esc(d.fmtRange(mm.from, mm.to)) + ', compared with ' + esc(d.fmtRange(mm.pfrom, mm.pto)) + ' (' + esc(fmt.money(mm.prev)) + ')' + (O.multiCur() ? ', units in ' + esc(O.viewCur()) + ' only' : '') + '"><span>' + esc(mm.mon) + ' so far</span><b>' + fmt.money(mm.cur) + '</b>' +
+        (ph ? '<span class="delta ' + (pctWord(mm.change) === 0 ? 'flat' : mm.change > 0 ? 'good' : 'bad') + '">' + (pctWord(mm.change) === 0 ? '± ' : mm.change > 0 ? '▲ ' : '▼ ') + esc(ph) + '</span>' : '') + O.curSwitchHTML() + '</div>';
     }
     var links = (p.stays || p.tasks ? '<button type="button" class="btn btn-quiet btn-sm" data-act="runsheet" title="Download today\'s run sheet (PDF): arrivals, departures and open tasks">' + O.icon('printer') + 'Run sheet</button>' : '') +
       (p.stats ? '<button type="button" class="btn btn-quiet btn-sm" data-go="statistics">' + O.icon('statistics') + 'See statistics</button>' : '');
@@ -689,6 +692,7 @@
       }
       root.innerHTML = '<div class="pg-dashboard">' + html + '</div>';
       var page = B.page = O.$('.pg-dashboard', root);
+      O.curSwitchWire(page);
 
       ctx.onLeave(function () {
         stopVoice();

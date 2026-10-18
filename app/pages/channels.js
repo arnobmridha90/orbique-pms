@@ -415,15 +415,17 @@
       });
     }, delay == null ? 2500 : delay);
   }
-  O.on('synced', function (p) {
+  /* the channel manager sends every country, whatever country is on screen */
+  snapshot = O.unscopedFn(snapshot); simDiff = O.unscopedFn(simDiff);
+  O.on('synced', O.unscopedFn(function (p) {
     var colls = (p && p.colls) || [];
     if (!colls.some(function (c) { return WATCH.indexOf(c) >= 0; })) return;
     var m = mode();
     if (m === 'live' && p.adapter === 'server') { if (Object.keys(L.props).some(function (bid) { return connected(bid); }) || !L.loaded) kick(); return; }
-    if (m === 'simulated') { clearTimeout(SIM.t); SIM.t = setTimeout(function () { if (simDiff()) O.emit('data', { type: 'channel-log' }); }, 600); }
-  });
+    if (m === 'simulated') { clearTimeout(SIM.t); SIM.t = setTimeout(O.unscopedFn(function () { if (simDiff()) O.emit('data', { type: 'channel-log' }); }), 600); }
+  }));
   /* another device saved: it logs its own changes, so only move the baseline */
-  O.on('remote', function () { if (mode() === 'simulated' && O.sync.status !== 'saving') SIM.snap = null; setTimeout(function () { if (!SIM.snap && mode() === 'simulated') SIM.snap = snapshot(); }, 50); });
+  O.on('remote', function () { if (mode() === 'simulated' && O.sync.status !== 'saving') SIM.snap = null; setTimeout(O.unscopedFn(function () { if (!SIM.snap && mode() === 'simulated') SIM.snap = snapshot(); }), 50); });
   O.on('day', function () { SIM.snap = null; });
 
   /* ---------------- conflicts and issues ---------------- */

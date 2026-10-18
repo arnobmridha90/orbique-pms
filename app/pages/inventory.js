@@ -4,7 +4,7 @@
    turnover) and is ADJUSTED by stock counts and write-offs. Stock on hand = the sum of every move:
    in lines add, out lines subtract, adjust lines carry a signed qty. A move (D.invMoves, records 'demo'):
      {id: O.uid('MV'), date, at, dir: 'in'|'out'|'adjust', kind, lines: [{itemId, qty}], propertyId?, usedBy?, bookingId?,
-      supplier?, cost? (RM total of a purchase), note, by}
+      supplier?, cost? (total of a purchase, in the workspace's main currency O.baseCur()), note, by}
      kind: in -> 'purchase' (or 'count' for the opening count), out -> 'turnover'|'repair'|'other', adjust -> 'count'|'writeoff'.
      Count lines also keep `counted` (what was on the shelf); their qty is the difference from the records.
    Settings (D.inventorySettings, blob 'config'): {basis: 'stay'|'total', threshold: 0.4, minQty: 5}.
@@ -25,14 +25,14 @@
            30 days. A pair is flagged when recentQty >= minQty and recent > baseline * (1 + threshold), or when there was no
            use before at all (ratio null). basis is per entry: a 'stay' pair falls back to 'total' when the unit had no
            check-outs in one of the windows. change = ratio - 1. extraQty = how much more than usual was used in the last
-           30 days (in the item's units), extraCost = extraQty x item cost (RM). Sorted by extraCost, biggest first.
+           30 days (in the item's units), extraCost = extraQty x item cost (main currency). Sorted by extraCost, biggest first.
            text explains itself, no trailing full stop: "Highland Villa 2 used 5.7 rolls of toilet paper per stay in the
            last 30 days vs 3.2 on average over the previous three months".
            opts (all optional): {basis, threshold, minQty, propertyId, itemId, to: 'YYYY-MM-DD' (default D.TODAY)};
            missing values come from D.inventorySettings. Returns [] with less than 30 days of history before the last 30 days.
      O.inventory.usage(from, to, {propertyId, itemId})
         -> [{propertyId, itemId, qty, cost}]   stock OUT between from and to (dates, inclusive), summed per unit and item.
-           cost = qty x the item's current unit cost (RM, 2 dp). propertyId may be null (use not tied to a unit) or point to a
+           cost = qty x the item's current unit cost (main currency, 2 dp). propertyId may be null (use not tied to a unit) or point to a
            removed unit (D.propById[x] undefined). Sorted by propertyId, then qty descending. from/to may be null (no limit).
      O.inventory.itemName(id) -> 'Toilet paper' ('Removed item' when unknown)
      O.inventory.noun(id, n)  -> 'rolls of toilet paper' / 'roll of toilet paper' (n === 1) for sentences
@@ -263,7 +263,7 @@
   function kindLabel(m) { return m.dir === 'in' && m.kind === 'count' ? 'Opening count' : KIND[m.kind] || (DIR[m.dir] || ['Move'])[0]; }
   function typePill(m) { var dd = DIR[m.dir] || ['Move', 'neutral']; return '<span class="pill ' + dd[1] + '">' + esc(kindLabel(m)) + '</span>'; }
   function moveValue(m) { return round2((m.lines || []).reduce(function (s, l) { var it = item(l.itemId); return s + Math.abs(num(l.qty, 0)) * num(it && it.cost, 0); }, 0)); }
-  function money(n) { return fmt.money(n, { dp: Math.abs(n - Math.round(n)) > 0.004 ? 2 : 0 }); }
+  function money(n) { return fmt.money(n, { cur: O.baseCur(), dp: Math.abs(n - Math.round(n)) > 0.004 ? 2 : 0 }); } /* one central store: costs are in the main currency */
   function iconBtn(ic, label, attrs, kind) { return '<button type="button" class="btn ' + (kind || 'btn-ghost') + ' btn-sm" ' + attrs + '>' + O.icon(ic) + esc(label) + '</button>'; }
 
   function tabs() {
@@ -403,7 +403,7 @@
   function movesCSV() {
     var list = mvFiltered(), mon = canMoney(), r = mvRange();
     var head = ['Date', 'Time', 'Direction', 'Type', 'Item', 'Category', 'Quantity (+ in, − out)', 'Unit of measure', 'Property', 'Used by', 'Booking', 'Supplier'];
-    if (mon) head.push('Purchase total (RM)', 'Line value at item cost (RM)');
+    if (mon) head.push('Purchase total (' + fmt.cur(O.baseCur()) + ')', 'Line value at item cost (' + fmt.cur(O.baseCur()) + ')');
     head.push('Note', 'Recorded by', 'Move ID');
     var rows = [head];
     list.forEach(function (m) {
@@ -526,7 +526,7 @@
       '<div class="field"><label>Category</label><select class="select" data-f="cat">' + cs.map(function (c) { return '<option' + (c === v.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '<option value="__new">New category…</option></select></div>' +
       '<div class="field" data-newcat hidden><label>New category name</label><input class="input" data-f="newcat" maxlength="40"></div>' +
       '<div class="field"><label>Counted in <span class="req">*</span></label><input class="input" data-f="unit" maxlength="20" value="' + esc(v.unit || '') + '" placeholder="roll, bottle, piece"><div class="hint">One of what you count, in the singular.</div></div>' +
-      '<div class="field"><label>Cost each</label><div class="money-in"><span>RM</span><input class="input" type="number" inputmode="decimal" min="0" step="0.01" data-f="cost" value="' + esc(v.cost) + '"></div></div>' +
+      '<div class="field"><label>Cost each</label><div class="money-in"><span>' + esc(fmt.cur(O.baseCur())) + '</span><input class="input" type="number" inputmode="decimal" min="0" step="0.01" data-f="cost" value="' + esc(v.cost) + '"></div></div>' +
       '<div class="field"><label>Reorder level <span class="req">*</span></label><input class="input" type="number" inputmode="numeric" min="0" step="1" data-f="reorder" value="' + esc(v.reorder) + '"><div class="hint">Show a reorder alert at or below this.</div></div>' +
       '<div class="field full"><label>Usual use (optional)</label><div class="row-flex wrap">' +
       ['per stay', 'per night', 'per guest'].map(function (l, i) { return '<label class="row-flex small" style="gap:6px"><input class="input" style="width:84px" type="number" inputmode="decimal" min="0" step="0.05" data-use="' + i + '" value="' + esc(v.use[i] || 0) + '">' + l + '</label>'; }).join('') +
@@ -691,7 +691,7 @@
       html += '<div class="form-grid">' +
         '<div class="field"><label for="inv-date">Date</label><input id="inv-date" class="input" type="date" data-f="date" max="' + T + '" value="' + T + '"></div>' +
         '<div class="field"><label for="inv-sup">Supplier</label><input id="inv-sup" class="input" data-f="supplier" list="inv-sups" maxlength="60" placeholder="Shop or distributor" value="' + esc(f.supplier) + '"><datalist id="inv-sups">' + Object.keys(sups).sort().map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist></div>' +
-        '<div class="field"><label for="inv-cost">Total cost</label><div class="money-in"><span>RM</span><input id="inv-cost" class="input" type="number" inputmode="decimal" min="0" step="0.01" data-f="cost" value="' + esc(f.cost) + '"></div><div class="hint" data-cost-hint></div></div>' +
+        '<div class="field"><label for="inv-cost">Total cost</label><div class="money-in"><span>' + esc(fmt.cur(O.baseCur())) + '</span><input id="inv-cost" class="input" type="number" inputmode="decimal" min="0" step="0.01" data-f="cost" value="' + esc(f.cost) + '"></div><div class="hint" data-cost-hint></div></div>' +
         '<div class="field"><label for="inv-note">Note</label><input id="inv-note" class="input" data-f="note" maxlength="140" placeholder="Invoice number or anything to remember" value="' + esc(f.note) + '"></div></div>';
     } else {
       html += '<div class="field">' + U.seg([['count', 'Stock count'], ['writeoff', 'Write off']], f.mode, 'data-mode') + '<div class="mode-hint" data-mode-hint></div></div>' +

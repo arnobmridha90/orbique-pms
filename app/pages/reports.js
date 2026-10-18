@@ -157,7 +157,7 @@
   }
   function rangeText(r) { return U.rangeLabel(r.from, r.to); }
   function compName() { return st.compare === 'lastMonth' ? 'same period last month' : 'previous period'; }
-  function moneyAxis(v, ax) { if (!ax || v < 10000) return fmt.money(v); var k = v / 1000; return 'RM ' + (k % 1 === 0 ? k : (k * 10) % 1 === 0 ? k.toFixed(1) : k.toFixed(2)) + 'k'; }
+  function moneyAxis(v, ax) { if (!ax || v < 10000) return fmt.money(v); var k = v / 1000; return fmt.cur() + ' ' + (k % 1 === 0 ? k : (k * 10) % 1 === 0 ? k.toFixed(1) : k.toFixed(2)) + 'k'; }
   function countAxis(v, ax) { return v % 1 ? (ax ? '' : v.toFixed(1)) : String(v); }
   /* what a report needs before it can say anything: shown as an empty state when the workspace has none at all */
   var NEEDS = {
@@ -172,13 +172,25 @@
   function cmpPhrase(cur, prev) { return prev > 0 ? chgWords(chg(cur, prev)) + ' on the ' + compName() : 'nothing to compare in the ' + compName(); }
   function chgWords(c) { if (c == null || isNaN(c)) return 'no change'; if (Math.abs(c) < 0.0005) return 'level'; return (c > 0 ? 'up ' : 'down ') + fmt.changeText(c).replace(/^[+−±]/, ''); }
   function f(pid) { return pid ? { propertyId: pid } : null; }
-  function props() { return st.pid ? (D.propById[st.pid] ? [D.propById[st.pid]] : []) : D.properties.slice(); }
+  /* with several currencies a report covers the units in the view currency (O.curSwitchHTML); M's all-unit totals mix
+     currencies, so they are summed unit by unit here. One currency: these are M's own functions. */
+  function inPid(x, pid) { return pid ? x.propertyId === pid : O.inCur(x); }
+  function perUnit(pid) { return !pid && O.multiCur(); }
+  function curIds() { return D.properties.filter(O.inCur).map(function (p) { return p.id; }); }
+  function mRev(a, z, ff) { ff = ff || {}; return perUnit(ff.propertyId) ? sum(curIds(), function (id) { return M.revenue(a, z, { propertyId: id, channel: ff.channel }); }) : M.revenue(a, z, ff); }
+  function mSold(a, z, ff) { ff = ff || {}; return perUnit(ff.propertyId) ? sum(curIds(), function (id) { return M.nightsSold(a, z, { propertyId: id, channel: ff.channel }); }) : M.nightsSold(a, z, ff); }
+  function mAvail(a, z, pid) { return perUnit(pid) ? sum(curIds(), function (id) { return M.availableNights(a, z, id); }) : M.availableNights(a, z, pid); }
+  function mBlocked(a, z, pid) { return perUnit(pid) ? sum(curIds(), function (id) { return M.blockedNights(a, z, id); }) : M.blockedNights(a, z, pid); }
+  function mOcc(a, z, pid) { if (!perUnit(pid)) return M.occupancy(a, z, pid); var n = mAvail(a, z); return n ? mSold(a, z) / n : 0; }
+  function mAdr(a, z, ff) { var n = mSold(a, z, ff); return n ? mRev(a, z, ff) / n : 0; }
+  function mRevpar(a, z, pid) { if (!perUnit(pid)) return M.revpar(a, z, pid); var n = mAvail(a, z); return n ? mRev(a, z) / n : 0; }
+  function props() { return st.pid ? (D.propById[st.pid] ? [D.propById[st.pid]] : []) : D.properties.filter(O.inCur); }
   function placeOf(p) { return (p && (p.area || p.location)) || ''; }
   function propLabel(p) { if (!p) return 'Unknown unit'; var l = placeOf(p); return p.name + (l ? ' · ' + l : ''); }
   function propCell(p) { return '<span title="' + esc(propLabel(p)) + '"><span class="prop-dot" style="background:' + U.propColor(p.id) + '"></span>' + esc(p.name) + '</span>'; }
   function sum(arr, fn) { return arr.reduce(function (s, x) { return s + (fn ? fn(x) : x); }, 0); }
   function live(b) { return M.live(b); }
-  function pidOk(b) { return !st.pid || b.propertyId === st.pid; }
+  function pidOk(b) { return inPid(b, st.pid); }
   function isCapex(e) { return (e.costClass || 'opex') === 'capex'; }
   function goBtn(page, label) { return O.allowed(page) ? '<button type="button" class="btn btn-ghost btn-sm rp-sfoot" data-go="' + page + '">' + esc(label) + '</button>' : ''; }
   function ptsText(c) { if (c == null || isNaN(c)) return '–'; var v = (c * 100).toFixed(1); return (c > 0 ? '+' : c < 0 ? '−' : '±') + v.replace('-', '') + ' pts'; }
@@ -307,27 +319,27 @@
 
   function weekendOcc(r, pid) {
     var sold = 0, avail = 0;
-    d.range(r.from, r.to).forEach(function (x) { if (!d.isWeekend(x)) return; sold += M.nightsSold(x, x, f(pid)); avail += M.availableNights(x, x, pid || undefined); });
+    d.range(r.from, r.to).forEach(function (x) { if (!d.isWeekend(x)) return; sold += mSold(x, x, f(pid)); avail += mAvail(x, x, pid || undefined); });
     return avail ? sold / avail : 0;
   }
-  function staysStarting(r, pid) { return D.bookings.filter(function (b) { return live(b) && (!pid || b.propertyId === pid) && b.checkIn >= r.from && b.checkIn <= r.to; }); }
+  function staysStarting(r, pid) { return D.bookings.filter(function (b) { return live(b) && inPid(b, pid) && b.checkIn >= r.from && b.checkIn <= r.to; }); }
   function fees(r, pid, ch) {
-    return D.bookings.reduce(function (s, b) { if (!live(b) || (pid && b.propertyId !== pid) || (ch && b.channel !== ch)) return s; var n = M.nightsIn(b, r.from, r.to); return s + (n ? b.platformFee / b.nights * n : 0); }, 0);
+    return D.bookings.reduce(function (s, b) { if (!live(b) || !inPid(b, pid) || (ch && b.channel !== ch)) return s; var n = M.nightsIn(b, r.from, r.to); return s + (n ? b.platformFee / b.nights * n : 0); }, 0);
   }
   function taxIn(r, pid) {
-    return D.bookings.reduce(function (s, b) { if (!live(b) || !b.guest || !b.guest.foreign || (pid && b.propertyId !== pid)) return s; return s + M.nightsIn(b, r.from, r.to) * TAX_PER_NIGHT; }, 0);
+    return D.bookings.reduce(function (s, b) { if (!live(b) || !b.guest || !b.guest.foreign || !inPid(b, pid) || !O.tourismTaxApplies(b)) return s; return s + M.nightsIn(b, r.from, r.to) * TAX_PER_NIGHT; }, 0);
   }
   function foreignNights(r, pid) {
-    return D.bookings.reduce(function (s, b) { if (!live(b) || !b.guest || !b.guest.foreign || (pid && b.propertyId !== pid)) return s; return s + M.nightsIn(b, r.from, r.to); }, 0);
+    return D.bookings.reduce(function (s, b) { if (!live(b) || !b.guest || !b.guest.foreign || !inPid(b, pid) || !O.tourismTaxApplies(b)) return s; return s + M.nightsIn(b, r.from, r.to); }, 0);
   }
   function created(r, pid, incCancelled) {
-    return D.bookings.filter(function (b) { var c = String(b.createdAt || '').slice(0, 10); return c >= r.from && c <= r.to && (!pid || b.propertyId === pid) && (incCancelled || live(b)); });
+    return D.bookings.filter(function (b) { var c = String(b.createdAt || '').slice(0, 10); return c >= r.from && c <= r.to && inPid(b, pid) && (incCancelled || live(b)); });
   }
   function leadDays(b) { return Math.max(0, d.diff(String(b.createdAt || b.checkIn).slice(0, 10), b.checkIn)); }
-  function reviewsIn(r, pid) { return D.reviews.filter(function (x) { return x.date >= r.from && x.date <= r.to && (!pid || x.propertyId === pid); }); }
-  function expensesIn(r, pid) { return M.expenses(r.from, r.to).filter(function (e) { return !pid || e.propertyId === pid; }); }
+  function reviewsIn(r, pid) { return D.reviews.filter(function (x) { return x.date >= r.from && x.date <= r.to && inPid(x, pid); }); }
+  function expensesIn(r, pid) { return M.expenses(r.from, r.to).filter(function (e) { return inPid(e, pid); }); }
   function avg(arr, fn) { return arr.length ? sum(arr, fn) / arr.length : null; }
-  function turnoversIn(r, pid) { return D.bookings.filter(function (b) { return live(b) && (!pid || b.propertyId === pid) && b.checkOut >= r.from && b.checkOut <= r.to; }); }
+  function turnoversIn(r, pid) { return D.bookings.filter(function (b) { return live(b) && inPid(b, pid) && b.checkOut >= r.from && b.checkOut <= r.to; }); }
   function backToBack(r, pid) {
     return turnoversIn(r, pid).filter(function (b) { return D.bookings.some(function (x) { return live(x) && x.propertyId === b.propertyId && x.checkIn === b.checkOut && x.id !== b.id; }); });
   }
@@ -337,12 +349,12 @@
   var BUILD = {};
 
   BUILD.occupancy = function (r, c) {
-    var pid = st.pid, occ = M.occupancy(r.from, r.to, pid || undefined), occP = c ? M.occupancy(c.from, c.to, pid || undefined) : null;
-    var sold = M.nightsSold(r.from, r.to, f(pid)), soldP = c ? M.nightsSold(c.from, c.to, f(pid)) : null;
-    var avail = M.availableNights(r.from, r.to, pid || undefined), blocked = M.blockedNights(r.from, r.to, pid || undefined);
+    var pid = st.pid, occ = mOcc(r.from, r.to, pid || undefined), occP = c ? mOcc(c.from, c.to, pid || undefined) : null;
+    var sold = mSold(r.from, r.to, f(pid)), soldP = c ? mSold(c.from, c.to, f(pid)) : null;
+    var avail = mAvail(r.from, r.to, pid || undefined), blocked = mBlocked(r.from, r.to, pid || undefined);
     var we = weekendOcc(r, pid), weP = c ? weekendOcc(c, pid) : null;
     var ss = staysStarting(r, pid), los = avg(ss, function (b) { return b.nights; }), ssP = c ? staysStarting(c, pid) : [], losP = c ? avg(ssP, function (b) { return b.nights; }) : null;
-    var weekday = (function () { var s = 0, a = 0; d.range(r.from, r.to).forEach(function (x) { if (d.isWeekend(x)) return; s += M.nightsSold(x, x, f(pid)); a += M.availableNights(x, x, pid || undefined); }); return a ? s / a : 0; })();
+    var weekday = (function () { var s = 0, a = 0; d.range(r.from, r.to).forEach(function (x) { if (d.isWeekend(x)) return; s += mSold(x, x, f(pid)); a += mAvail(x, x, pid || undefined); }); return a ? s / a : 0; })();
     var kpis = [
       { label: 'Occupancy', value: fmt.pct(occ, 1), sub: c ? ptsHTML(occ - occP) + ' vs ' + fmt.pct(occP, 1) : null, hl: true },
       { label: 'Nights sold', value: fmt.num(sold), delta: c ? chg(sold, soldP) : null, sub: c ? 'vs ' + fmt.num(soldP) : null },
@@ -351,19 +363,19 @@
       { label: 'Weekday occupancy', value: fmt.pct(weekday), sub: 'Sun to Thu nights' },
       { label: 'Avg length of stay', value: los ? los.toFixed(1) + ' nights' : '–', delta: c && los && losP ? chg(los, losP) : null, sub: fmt.plural(ss.length, 'arrival') }
     ];
-    var chart = seriesChart('line', r, c, function (a, b) { return M.occupancy(a, b, pid || undefined) * 100; }, { yFormat: function (v) { return Math.round(v) + '%'; }, aria: 'Occupancy over time', yMin: 0 });
+    var chart = seriesChart('line', r, c, function (a, b) { return mOcc(a, b, pid || undefined) * 100; }, { yFormat: function (v) { return Math.round(v) + '%'; }, aria: 'Occupancy over time', yMin: 0 });
     var rows = props().map(function (p) {
-      var o = M.occupancy(r.from, r.to, p.id), oP = c ? M.occupancy(c.from, c.to, p.id) : null;
+      var o = mOcc(r.from, r.to, p.id), oP = c ? mOcc(c.from, c.to, p.id) : null;
       var sl = staysStarting(r, p.id);
-      return { pid: p.id, v: [p.name, M.nightsSold(r.from, r.to, { propertyId: p.id }), M.availableNights(r.from, r.to, p.id), o, oP, c ? o - oP : null, weekendOcc(r, p.id), avg(sl, function (b) { return b.nights; })], h: { 0: propCell(p) } };
+      return { pid: p.id, v: [p.name, mSold(r.from, r.to, { propertyId: p.id }), mAvail(r.from, r.to, p.id), o, oP, c ? o - oP : null, weekendOcc(r, p.id), avg(sl, function (b) { return b.nights; })], h: { 0: propCell(p) } };
     });
     var cols = [{ label: 'Property', type: 'text', w: 52 }, { label: 'Nights sold', type: 'num', w: 20 }, { label: 'Available', type: 'num', w: 18 }, { label: 'Occupancy', type: 'pct', dp: 1, w: 20 }];
     if (c) cols.push({ label: 'Before', type: 'pct', dp: 1, w: 18 }, { label: 'Change', type: 'pts', w: 20 });
     cols.push({ label: 'Weekend', type: 'pct', w: 18 }, { label: 'Avg stay', type: 'dec1', w: 18 });
     if (!c) rows.forEach(function (x) { x.v.splice(4, 2); });
-    var total = { v: ['All properties' + (st.pid ? '' : ' (' + D.properties.length + ')'), sold, avail, occ].concat(c ? [occP, occ - occP] : []).concat([we, los]) };
+    var total = { v: ['All properties' + (st.pid ? '' : ' (' + props().length + ')'), sold, avail, occ].concat(c ? [occP, occ - occP] : []).concat([we, los]) };
     /* side: occupancy by property, sorted */
-    var ranked = props().map(function (p) { return { p: p, o: M.occupancy(r.from, r.to, p.id) }; }).sort(function (a, b) { return b.o - a.o; });
+    var ranked = props().map(function (p) { return { p: p, o: mOcc(r.from, r.to, p.id) }; }).sort(function (a, b) { return b.o - a.o; });
     var side = { title: 'Occupancy by property', sub: 'Highest first', html: '<div class="side-list">' + O.chart.hbars(ranked.map(function (x) { return { label: esc(x.p.short), value: x.o * 100, display: fmt.pct(x.o) }; }), { max: 100 }) + '</div>' };
     return {
       kpis: kpis, chartTitle: 'Occupancy ' + chart.unit, chartSub: 'Share of available nights that were sold', chart: chart, side: side,
@@ -374,23 +386,23 @@
   };
 
   BUILD.revenue = function (r, c) {
-    var pid = st.pid, rev = M.revenue(r.from, r.to, f(pid)), revP = c ? M.revenue(c.from, c.to, f(pid)) : null;
-    var adr = M.adr(r.from, r.to, f(pid)), adrP = c ? M.adr(c.from, c.to, f(pid)) : null;
-    var rp = M.revpar(r.from, r.to, pid || undefined), rpP = c ? M.revpar(c.from, c.to, pid || undefined) : null;
+    var pid = st.pid, rev = mRev(r.from, r.to, f(pid)), revP = c ? mRev(c.from, c.to, f(pid)) : null;
+    var adr = mAdr(r.from, r.to, f(pid)), adrP = c ? mAdr(c.from, c.to, f(pid)) : null;
+    var rp = mRevpar(r.from, r.to, pid || undefined), rpP = c ? mRevpar(c.from, c.to, pid || undefined) : null;
     var fe = fees(r, pid), feP = c ? fees(c, pid) : null;
-    var nights = M.nightsSold(r.from, r.to, f(pid));
+    var nights = mSold(r.from, r.to, f(pid));
     var kpis = [
       { label: 'Revenue', value: fmt.money(rev), delta: c ? chg(rev, revP) : null, sub: c ? 'vs ' + fmt.money(revP) : null, hl: true },
       { label: 'ADR', value: fmt.money(adr), delta: c ? chg(adr, adrP) : null, sub: 'per night sold' },
       { label: 'RevPAR', value: fmt.money(rp), delta: c ? chg(rp, rpP) : null, sub: 'per available night' },
       { label: 'Platform fees', value: fmt.money(fe), delta: c ? chg(fe, feP) : null, deltaOpts: { invert: true }, sub: rev ? fmt.pct(fe / rev, 1) + ' of revenue' : null },
       { label: 'Revenue after fees', value: fmt.money(rev - fe), delta: c ? chg(rev - fe, revP - feP) : null },
-      { label: 'Nights sold', value: fmt.num(nights), sub: fmt.pct(M.occupancy(r.from, r.to, pid || undefined)) + ' occupancy' }
+      { label: 'Nights sold', value: fmt.num(nights), sub: fmt.pct(mOcc(r.from, r.to, pid || undefined)) + ' occupancy' }
     ];
-    var chart = seriesChart('bars', r, c, function (a, b) { return M.revenue(a, b, f(pid)); }, { yFormat: moneyAxis, aria: 'Revenue over time' });
+    var chart = seriesChart('bars', r, c, function (a, b) { return mRev(a, b, f(pid)); }, { yFormat: moneyAxis, aria: 'Revenue over time' });
     var rows = props().map(function (p) {
-      var rv = M.revenue(r.from, r.to, { propertyId: p.id }), rvP = c ? M.revenue(c.from, c.to, { propertyId: p.id }) : null;
-      var v = [p.name, rv, M.nightsSold(r.from, r.to, { propertyId: p.id }), M.adr(r.from, r.to, { propertyId: p.id }), M.revpar(r.from, r.to, p.id), fees(r, p.id), rv - fees(r, p.id)];
+      var rv = mRev(r.from, r.to, { propertyId: p.id }), rvP = c ? mRev(c.from, c.to, { propertyId: p.id }) : null;
+      var v = [p.name, rv, mSold(r.from, r.to, { propertyId: p.id }), mAdr(r.from, r.to, { propertyId: p.id }), mRevpar(r.from, r.to, p.id), fees(r, p.id), rv - fees(r, p.id)];
       if (c) v.push(rvP, chg(rv, rvP));
       return { pid: p.id, v: v, h: { 0: propCell(p) } };
     });
@@ -398,7 +410,7 @@
     if (c) cols.push({ label: 'Before', type: 'money', w: 21 }, { label: 'Change', type: 'delta', w: 14 });
     else cols[0].w = 74;
     var total = { v: ['All properties', rev, nights, adr, rp, fe, rev - fe].concat(c ? [revP, chg(rev, revP)] : []) };
-    var byCh = U.channelsInUse().map(function (ch) { return { ch: ch, v: M.revenue(r.from, r.to, { propertyId: pid, channel: ch }) }; }).sort(function (a, b) { return b.v - a.v; });
+    var byCh = U.channelsInUse().map(function (ch) { return { ch: ch, v: mRev(r.from, r.to, { propertyId: pid, channel: ch }) }; }).sort(function (a, b) { return b.v - a.v; });
     var side = { title: 'Revenue by channel', sub: 'Before platform fees', html: '<div class="side-list">' + O.chart.hbars(byCh.map(function (x) { return { label: U.plat(x.ch), value: x.v, display: fmt.moneyShort(x.v) }; })) + '</div>' };
     return {
       kpis: kpis, chartTitle: 'Revenue ' + chart.unit, chartSub: 'Accommodation and cleaning fees earned on nights in the range', chart: chart, side: side,
@@ -455,20 +467,20 @@
 
   BUILD.channels = function (r, c) {
     var pid = st.pid, money = canMoney();
-    var totN = M.nightsSold(r.from, r.to, f(pid)), totR = M.revenue(r.from, r.to, f(pid));
+    var totN = mSold(r.from, r.to, f(pid)), totR = mRev(r.from, r.to, f(pid));
     var data = U.channelsInUse().map(function (ch) {
       var ff = { propertyId: pid, channel: ch };
       var st0 = D.bookings.filter(function (b) { return live(b) && b.channel === ch && pidOk(b) && M.nightsIn(b, r.from, r.to) > 0; });
       var mk = created(r, pid, true).filter(function (b) { return b.channel === ch; });
       return {
-        ch: ch, stays: st0.length, nights: M.nightsSold(r.from, r.to, ff), nightsP: c ? M.nightsSold(c.from, c.to, ff) : null,
-        rev: M.revenue(r.from, r.to, ff), fee: fees(r, pid, ch), lead: avg(st0, leadDays),
+        ch: ch, stays: st0.length, nights: mSold(r.from, r.to, ff), nightsP: c ? mSold(c.from, c.to, ff) : null,
+        rev: mRev(r.from, r.to, ff), fee: fees(r, pid, ch), lead: avg(st0, leadDays),
         cancel: mk.length ? mk.filter(function (b) { return !live(b); }).length / mk.length : null
       };
     });
     var top = data.slice().sort(function (a, b) { return b.nights - a.nights; })[0];
     var direct = data.filter(function (x) { return x.ch === 'direct'; })[0];
-    var directP = c ? M.nightsSold(c.from, c.to, { propertyId: pid, channel: 'direct' }) / (M.nightsSold(c.from, c.to, f(pid)) || 1) : null;
+    var directP = c ? mSold(c.from, c.to, { propertyId: pid, channel: 'direct' }) / (mSold(c.from, c.to, f(pid)) || 1) : null;
     var feeT = sum(data, function (x) { return x.fee; });
     var ota = data.filter(function (x) { return x.ch !== 'direct'; });
     var otaFee = sum(ota, function (x) { return x.fee; }), otaRev = sum(ota, function (x) { return x.rev; });
@@ -477,7 +489,7 @@
     var kpis = [
       { label: 'Top channel', value: top && top.nights ? esc(U.platName(top.ch)) : '–', sub: top && totN ? fmt.pct(top.nights / totN) + ' of nights' : null, hl: true },
       { label: 'Direct share', value: totN ? fmt.pct(direct.nights / totN, 1) : '–', sub: c && totN ? ptsHTML(direct.nights / totN - directP) + ' vs ' + fmt.pct(directP, 1) : 'no OTA commission' },
-      { label: 'Nights sold', value: fmt.num(totN), delta: c ? chg(totN, M.nightsSold(c.from, c.to, f(pid))) : null },
+      { label: 'Nights sold', value: fmt.num(totN), delta: c ? chg(totN, mSold(c.from, c.to, f(pid))) : null },
       money ? { label: 'OTA commission', value: fmt.money(otaFee), sub: otaRev ? fmt.pct(otaFee / otaRev, 1) + ' of OTA revenue' : null } : { label: 'Channels used', value: String(data.filter(function (x) { return x.nights; }).length), sub: 'of ' + data.length + ' connected' },
       { label: 'OTA share', value: totN ? fmt.pct(1 - direct.nights / totN) : '–', sub: 'of nights, via OTAs', title: 'Airbnb, Booking.com, Agoda and Vrbo' }
     ];
@@ -580,7 +592,7 @@
     var b2b = backToBack(r, pid), b2bP = c ? backToBack(c, pid) : [];
     var same = ins.filter(function (b) { return String(b.createdAt || '').slice(0, 10) === b.checkIn; });
     var days = d.diff(r.from, r.to) + 1;
-    var tasks = D.tasks.filter(function (t) { var x = String(t.due || '').slice(0, 10); return x >= r.from && x <= r.to && (!pid || t.propertyId === pid); });
+    var tasks = D.tasks.filter(function (t) { var x = String(t.due || '').slice(0, 10); return x >= r.from && x <= r.to && inPid(t, pid); });
     var done = tasks.filter(function (t) { return t.status === 'done'; }), onTime = done.filter(function (t) { return t.doneAt && t.doneAt <= t.due; });
     var overdue = tasks.filter(function (t) { return t.status !== 'done' && t.due < D.NOW; });
     var kpis = [
@@ -595,9 +607,9 @@
     var cols = [{ label: 'Property', type: 'text', w: 46 }, { label: 'Housekeeper', type: 'text', w: 34 }, { label: 'Check-ins', type: 'num', w: 18 }, { label: 'Turnovers', type: 'num', w: 20 }, { label: 'Back-to-back', type: 'num', w: 24 }, { label: 'Blocked', type: 'num', w: 18 }, { label: 'ID checked', type: 'pct', w: 26 }];
     var rows = props().map(function (p) {
       var i = staysStarting(r, p.id), hk = D.staffById(p.housekeeper);
-      return { pid: p.id, v: [p.name, hk ? hk.name : 'Unassigned', i.length, turnoversIn(r, p.id).length, backToBack(r, p.id).length, M.blockedNights(r.from, r.to, p.id), i.length ? i.filter(function (b) { return b.idVerified; }).length / i.length : null], h: { 0: propCell(p) } };
+      return { pid: p.id, v: [p.name, hk ? hk.name : 'Unassigned', i.length, turnoversIn(r, p.id).length, backToBack(r, p.id).length, mBlocked(r.from, r.to, p.id), i.length ? i.filter(function (b) { return b.idVerified; }).length / i.length : null], h: { 0: propCell(p) } };
     });
-    var tot = ['All properties', '', ins.length, outs.length, b2b.length, M.blockedNights(r.from, r.to, pid || undefined), ins.length ? ins.filter(function (b) { return b.idVerified; }).length / ins.length : null];
+    var tot = ['All properties', '', ins.length, outs.length, b2b.length, mBlocked(r.from, r.to, pid || undefined), ins.length ? ins.filter(function (b) { return b.idVerified; }).length / ins.length : null];
     var taskKV = '<div class="section-title">Tasks due in this range</div><dl class="kv"><dt>Done</dt><dd>' + done.length + '</dd><dt>In progress</dt><dd>' + tasks.filter(function (t) { return t.status === 'in_progress'; }).length + '</dd><dt>To do</dt><dd>' + tasks.filter(function (t) { return t.status === 'todo'; }).length + '</dd><dt>Unassigned</dt><dd>' + tasks.filter(function (t) { return t.status !== 'done' && !t.assigneeId; }).length + '</dd><dt class="tot">Total</dt><dd class="tot">' + tasks.length + '</dd></dl>';
     var hk = {}; outs.forEach(function (b) { var pp = D.propById[b.propertyId], k = (pp && pp.housekeeper) || ''; hk[k] = (hk[k] || 0) + 1; });
     var hkKeys = Object.keys(hk).sort(function (a, b) { return hk[b] - hk[a]; });
@@ -615,7 +627,7 @@
     var tot = sum(ex, function (e) { return e.amount; }), totP = sum(exP, function (e) { return e.amount; });
     var capex = ex.filter(isCapex), capT = sum(capex, function (e) { return e.amount; }), opT = tot - capT;
     var opP = sum(exP.filter(function (e) { return !isCapex(e); }), function (e) { return e.amount; });
-    var nights = M.nightsSold(r.from, r.to, f(pid));
+    var nights = mSold(r.from, r.to, f(pid));
     var noRcpt = ex.filter(function (e) { return !e.receipt; });
     var claims = ex.filter(function (e) { return e.method === 'Paid personally (claim)'; });
     var byType = {}, capByType = {}; ex.forEach(function (e) { byType[e.type] = (byType[e.type] || 0) + e.amount; if (isCapex(e)) capByType[e.type] = (capByType[e.type] || 0) + e.amount; });
@@ -654,13 +666,14 @@
   };
 
   BUILD.tax = function (r, c) {
+    if (!props().some(O.tourismTaxApplies)) return { empty: 'Tourism tax applies to units in Malaysia only, and ' + (st.pid ? 'this unit is not in Malaysia.' : 'none of the units in ' + O.viewCur() + ' are.') };
     var pid = st.pid, tax = taxIn(r, pid), taxP = c ? taxIn(c, pid) : null, fn = foreignNights(r, pid);
-    var nightsAll = M.nightsSold(r.from, r.to, f(pid));
-    var stays = D.bookings.filter(function (b) { return live(b) && pidOk(b) && M.nightsIn(b, r.from, r.to) > 0; });
+    var nightsAll = mSold(r.from, r.to, f(pid));
+    var stays = D.bookings.filter(function (b) { return live(b) && pidOk(b) && O.tourismTaxApplies(b) && M.nightsIn(b, r.from, r.to) > 0; });
     var fs = stays.filter(function (b) { return b.guest.foreign; }), ds = stays.filter(function (b) { return !b.guest.foreign; });
     var kpis = [
       { label: 'Tax collected', value: fmt.money(tax), delta: c ? chg(tax, taxP) : null, sub: c ? 'vs ' + fmt.money(taxP) : null, hl: true },
-      { label: 'Foreign room-nights', value: fmt.num(fn), sub: 'RM ' + TAX_PER_NIGHT + ' each' },
+      { label: 'Foreign room-nights', value: fmt.num(fn), sub: fmt.money(TAX_PER_NIGHT, { cur: 'MYR' }) + ' each' },
       { label: 'Foreign stays', value: fmt.num(fs.length), sub: 'taxable' },
       { label: 'Malaysian stays', value: fmt.num(ds.length), sub: 'exempt' },
       { label: 'Taxable share', value: nightsAll ? fmt.pct(fn / nightsAll) : '–', sub: 'of nights sold' }
@@ -668,9 +681,9 @@
     var chart = seriesChart('bars', r, c, function (a, b) { return taxIn({ from: a, to: b }, pid); }, { aria: 'Tourism tax over time', yFormat: moneyAxis });
     var cols = [{ label: 'Property', type: 'text', w: 56 }, { label: 'Foreign stays', type: 'num', w: 26 }, { label: 'Room-nights', type: 'num', w: 26 }, { label: 'Exempt nights', type: 'num', w: 26 }, { label: 'Tax', type: 'money', w: 26 }];
     if (c) { cols.push({ label: 'Before', type: 'money', w: 22 }); cols[0].w = 46; cols.slice(1, 4).forEach(function (x) { x.w = 22; }); }
-    var rows = props().map(function (p) {
+    var rows = props().filter(O.tourismTaxApplies).map(function (p) {
       var fsP = fs.filter(function (b) { return b.propertyId === p.id; });
-      var v = [p.name, fsP.length, foreignNights(r, p.id), M.nightsSold(r.from, r.to, { propertyId: p.id }) - foreignNights(r, p.id), taxIn(r, p.id)];
+      var v = [p.name, fsP.length, foreignNights(r, p.id), mSold(r.from, r.to, { propertyId: p.id }) - foreignNights(r, p.id), taxIn(r, p.id)];
       if (c) v.push(taxIn(c, p.id));
       return { pid: p.id, v: v, h: { 0: propCell(p) } };
     });
@@ -687,12 +700,12 @@
       var status = me >= D.TODAY ? U.pill('Collecting', 'info') : due < D.TODAY ? U.pill('Paid', 'ok') : U.pill('Due ' + d.fmt(due), 'warn');
       return '<tr><td>' + d.monthName(ms, true) + ' ' + ms.slice(0, 4) + (a !== ms || z !== me ? ' <span class="xs muted">(' + d.fmtRange(a, z) + ')</span>' : '') + '</td><td class="num">' + fmt.money(amt) + '</td><td>' + status + '</td></tr>';
     }).join('');
-    var side = { title: 'Monthly returns', sub: 'Paid through MyTTx by the end of the next month', flush: true, html: '<div class="table-wrap"><table class="table mini-table"><thead><tr><th>Month</th><th class="num">Tax</th><th>Status</th></tr></thead><tbody>' + fileRows + '</tbody></table></div>' + '<div class="card-body"><dl class="kv"><dt>Paid to Customs</dt><dd>' + fmt.money(paidT) + '</dd><dt>Due, not yet paid</dt><dd>' + fmt.money(dueT) + '</dd><dt>Still collecting</dt><dd>' + fmt.money(collT) + '</dd><dt class="tot">Total in range</dt><dd class="tot">' + fmt.money(tax) + '</dd></dl><div class="note rp-sfoot">Foreign guests pay RM ' + TAX_PER_NIGHT + ' per room per night on top of the stay. It shows as a separate line on every invoice.</div></div>' };
+    var side = { title: 'Monthly returns', sub: 'Paid through MyTTx by the end of the next month', flush: true, html: '<div class="table-wrap"><table class="table mini-table"><thead><tr><th>Month</th><th class="num">Tax</th><th>Status</th></tr></thead><tbody>' + fileRows + '</tbody></table></div>' + '<div class="card-body"><dl class="kv"><dt>Paid to Customs</dt><dd>' + fmt.money(paidT) + '</dd><dt>Due, not yet paid</dt><dd>' + fmt.money(dueT) + '</dd><dt>Still collecting</dt><dd>' + fmt.money(collT) + '</dd><dt class="tot">Total in range</dt><dd class="tot">' + fmt.money(tax) + '</dd></dl><div class="note rp-sfoot">Foreign guests pay ' + fmt.money(TAX_PER_NIGHT, { cur: 'MYR' }) + ' per room per night on top of the stay. It shows as a separate line on every invoice.</div></div>' };
     return {
       kpis: kpis, chartTitle: 'Tourism tax ' + chart.unit, chartSub: 'Charged on foreign guests’ nights in the range', chart: chart, side: side,
       table: { title: 'By property', sub: 'Taxable and exempt nights', cols: cols, rows: rows, total: { v: totRow } },
       summary: [['Tax collected', fmt.money(tax)], ['Foreign room-nights', fmt.num(fn)], ['Foreign stays', fmt.num(fs.length)], ['Malaysian stays (exempt)', fmt.num(ds.length)]],
-      notes: 'Tourism tax is RM ' + TAX_PER_NIGHT + ' per room per night for foreign guests; Malaysian guests are exempt. It is collected for the Royal Malaysian Customs Department, passed through and not counted as revenue.',
+      notes: 'Tourism tax is ' + fmt.money(TAX_PER_NIGHT, { cur: 'MYR' }) + ' per room per night for foreign guests; Malaysian guests are exempt. It is collected for the Royal Malaysian Customs Department, passed through and not counted as revenue.',
       insight: '<b>' + fmt.money(tax) + '</b> collected on ' + fmt.num(fn) + ' foreign room-nights. This is passed through to Customs and is not revenue.'
     };
   };
@@ -705,10 +718,10 @@
     var pid = st.pid;
     function totals(S) {
       var t = { units: 0, gross: 0, fee: 0, mgmt: 0, opex: 0, capex: 0, payout: 0, nights: 0, avail: 0 };
-      S.lines.forEach(function (l) { if (pid && l.p.id !== pid) return; t.units++; ['gross', 'fee', 'mgmt', 'opex', 'capex', 'payout', 'nights', 'avail'].forEach(function (k) { t[k] += l[k]; }); });
+      S.lines.forEach(function (l) { if (!inPid({ propertyId: l.p.id }, pid)) return; t.units++; ['gross', 'fee', 'mgmt', 'opex', 'capex', 'payout', 'nights', 'avail'].forEach(function (k) { t[k] += l[k]; }); });
       t.occ = t.avail ? t.nights / t.avail : 0; return t;
     }
-    var list = F.owners().filter(function (o) { return !pid || o.units.some(function (p) { return p.id === pid; }); }).map(function (o) {
+    var list = F.owners().filter(function (o) { return o.units.some(function (p) { return inPid({ propertyId: p.id }, pid); }); }).map(function (o) {
       return { name: o.name, t: totals(F.statement(o.name, r.from, r.to)), p: c ? totals(F.statement(o.name, c.from, c.to)) : null };
     }).sort(function (a, b) { return b.t.payout - a.t.payout; });
     if (!list.length) return { empty: pid ? 'This property has no owner set. Add one in Properties.' : 'No property has an owner set yet. Add owners in Properties to see their payouts.' };
@@ -756,7 +769,7 @@
     (D.invMoves || []).forEach(function (mv) {
       if (!mv || mv.dir !== 'out' || !mv.date || mv.date < r.from || mv.date > r.to) return;
       var u = mv.propertyId || '';
-      if (pid && u !== pid) return;
+      if (!inPid(mv, pid)) return;
       var x = units[u] || (units[u] = { qty: 0, cost: 0, items: {}, stays: {}, moves: 0 });
       x.moves++; out.moves++;
       if (mv.bookingId) x.stays[mv.bookingId] = 1;
@@ -877,7 +890,7 @@
 
     /* CSV: one line per unit and product (quantities and cost), then the per-unit summary */
     function csvRows() {
-      var head = ['Unit', 'Location', 'Product', 'Category', 'Quantity', 'Unit of measure'].concat(money ? ['Cost per item (RM)', 'Cost (RM)'] : []);
+      var head = ['Unit', 'Location', 'Product', 'Category', 'Quantity', 'Unit of measure'].concat(money ? ['Cost per item (' + fmt.cur() + ')', 'Cost (' + fmt.cur() + ')'] : []);
       var out = [['Stock used by unit report', rangeText(r)], ['Scope', scopeText()], []].concat(summary.map(function (s) { return [s[0], s[1]]; })).concat([[], head]);
       urows.forEach(function (x) {
         byRank(x.x.items).forEach(function (id) {
@@ -887,7 +900,7 @@
       });
       out.push(['All units', '', '', '', A.qty, ''].concat(money ? ['', A.cost.toFixed(2)] : []));
       if (!pid) {
-        out.push([], ['By unit'], ['Unit', 'Stays restocked', 'Items used'].concat(money ? ['Cost (RM)', 'Cost per stay (RM)'] : []).concat(['Top products']));
+        out.push([], ['By unit'], ['Unit', 'Stays restocked', 'Items used'].concat(money ? ['Cost (' + fmt.cur() + ')', 'Cost per stay (' + fmt.cur() + ')'] : []).concat(['Top products']));
         urows.forEach(function (x) { out.push([unitName(x.u), x.x.nStays, x.x.qty].concat(money ? [Math.round(x.x.cost), x.x.nStays ? Math.round(x.x.cost / x.x.nStays) : ''] : []).concat([topNames(x.x, 3).join(', ')])); });
       }
       return out;
@@ -965,7 +978,7 @@
     return rows;
   }
   function fileBase(r) { return (O.ws().name + '-' + REP[st.report].name + '-report-' + r.from + '-to-' + r.to).toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
-  function scopeText() { return st.pid && D.propById[st.pid] ? propLabel(D.propById[st.pid]) : 'All ' + fmt.plural(D.properties.length, 'property', 'properties'); }
+  function scopeText() { return st.pid && D.propById[st.pid] ? propLabel(D.propById[st.pid]) : 'All ' + fmt.plural(props().length, 'property', 'properties') + (O.multiCur() ? ' in ' + O.viewCur() : ''); }
   /* the KPI boxes at the top of a PDF (same look as O.pdf.report) */
   function pdfSummary(doc, y, summary) {
     if (!summary || !summary.length) return y;
@@ -1082,7 +1095,7 @@
       }).join('') + '</select></div>';
     var bar = '<div class="rp-bar"><div class="grp"><span data-slot="range"></span></div>' +
       '<div class="grp"><span class="lbl">Compare with</span><div class="seg rp-cmp" role="group" aria-label="Compare with">' + COMPARE.map(function (x) { return '<button type="button" data-cmp="' + x[0] + '" class="' + (x[0] === st.compare ? 'on' : '') + '" aria-pressed="' + (x[0] === st.compare) + '"><span class="l">' + esc(x[1]) + '</span><span class="s">' + esc(x[2]) + '</span></button>'; }).join('') + '</div></div>' +
-      '<div class="grp"><label class="sr-only" for="rp-prop">Property</label><select id="rp-prop" class="select">' + U.propOptions(st.pid, { all: 'All properties' }) + '</select></div></div>';
+      '<div class="grp"><label class="sr-only" for="rp-prop">Property</label><select id="rp-prop" class="select"><option value="">All properties</option>' + D.properties.filter(function (p) { return (!p.archived || p.id === st.pid) && O.inCur(p); }).map(function (p) { return '<option value="' + p.id + '"' + (p.id === st.pid ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select>' + O.curSwitchHTML() + '</div></div>';
 
     var html = '<div class="pg-reports">' + head + (lk ? '' : bar), built = null;
     if (lk) {
@@ -1154,6 +1167,7 @@
       if (t) O.go(t.dataset.go);
     };
     O.$('[data-switch]', root).onchange = function (e) { openReport(e.target.value, root, ctx); };
+    O.curSwitchWire(root);
     var sel = O.$('#rp-prop', root);
     if (sel) sel.onchange = function () { st.pid = sel.value; render(root, ctx); };
   }
@@ -1162,10 +1176,10 @@
     var p0 = ctx.params || {};
     if (ctx.fresh) {
       if (p0.report && REP[p0.report]) { st.report = p0.report; st.view = 'report'; } else st.view = 'library';
-      if (p0.propertyId && D.propById[p0.propertyId]) st.pid = p0.propertyId;
+      if (p0.propertyId && D.propById[p0.propertyId]) { st.pid = p0.propertyId; if (!O.inCur(st.pid)) O.store.set('viewCur', O.curOf(st.pid)); } /* open in that unit's currency */
       ctx.fresh = false; /* internal re-renders reuse this ctx */
     }
-    if (st.pid && !D.propById[st.pid]) st.pid = '';
+    if (st.pid && (!D.propById[st.pid] || !O.inCur(st.pid))) st.pid = ''; /* the currency was switched: back to all units */
     if (st.view === 'report') renderReport(root, ctx); else renderLibrary(root, ctx);
   }
 

@@ -45,18 +45,66 @@
 
   /* ---------------- formatting ---------------- */
   function group(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  /* ---------------- currency ----------------
+     Each building has a currency (building.currency, MYR when not set); its units, bookings, prices, expenses and
+     invoices are in it. Money for one thing: O.fmt.money(n, {cur: thing}) where thing is a booking, unit, unit type,
+     building, any record with propertyId / unitTypeId / buildingId, an id, or a code. Without cur, money is in the
+     view currency: O.viewCur() (the workspace's only currency, else the one picked in O.curSwitchHTML on totals pages).
+     Totals never add two currencies: totals pages keep only O.inCur(x) rows. */
+  var CUR_SYMBOL = { MYR: 'RM', USD: 'US$', SGD: 'S$', THB: '฿', IDR: 'Rp', PHP: '₱', VND: '₫', EUR: '€', GBP: '£', AUD: 'A$', JPY: '¥', CNY: 'CN¥', HKD: 'HK$', INR: '₹', KRW: '₩', TWD: 'NT$', NZD: 'NZ$' };
+  O.curSymbol = function (code) { code = String(code || 'MYR').toUpperCase(); return CUR_SYMBOL[code] || code; };
+  function bdCur(bd) { return bd && bd.currency ? String(bd.currency).trim().toUpperCase() || 'MYR' : 'MYR'; }
+  O.curOf = function (x) {
+    if (x == null || x === '') return O.viewCur();
+    if (typeof x === 'string' && /^[A-Za-z]{3}$/.test(x) && !D.propById[x] && !O.building(x) && !O.unitType(x)) return x.toUpperCase();
+    var bd = O.buildingOf(x);
+    return bd ? bdCur(bd) : O.baseCur();
+  };
+  /* the currencies in use (buildings with units), most used first; MYR when there are none */
+  O.currencies = function () {
+    var n = {};
+    (D.buildings || []).forEach(function (bd) { if (!bd.archived) { var c = bdCur(bd); n[c] = (n[c] || 0) + 1; } });
+    var list = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a === 'MYR' ? -1 : b === 'MYR' ? 1 : a.localeCompare(b)); });
+    return list.length ? list : ['MYR'];
+  };
+  O.baseCur = function () { return O.currencies()[0]; };
+  O.multiCur = function () { return O.currencies().length > 1; };
+  O.viewCur = function () { var list = O.currencies(), c = O.store.get('viewCur', ''); return list.indexOf(c) >= 0 ? c : list[0]; };
+  O.setViewCur = function (c) { O.store.set('viewCur', String(c || '').toUpperCase()); O.render(); };
+  /* true when x (booking, unit, expense, invoice, ...) is in the view currency; always true with one currency */
+  O.inCur = function (x) { return O.inView(x) && (!O.multiCur() || O.curOf(x) === O.viewCur()); };
+  /* the currency picker for totals pages; empty with one currency. Wire it with O.curSwitchWire(root). */
+  O.curSwitchHTML = function () {
+    if (!O.multiCur()) return '';
+    var v = O.viewCur();
+    return '<label class="cur-switch" title="Totals are shown per currency"><span class="small muted">Currency</span><select class="select select-sm" data-cur-switch>' +
+      O.currencies().map(function (c) { return '<option value="' + c + '"' + (c === v ? ' selected' : '') + '>' + O.esc(c === 'MYR' ? 'RM (MYR)' : O.curSymbol(c) === c ? c : O.curSymbol(c) + ' (' + c + ')') + '</option>'; }).join('') + '</select></label>';
+  };
+  O.curSwitchWire = function (root) { (root ? root.querySelectorAll('[data-cur-switch]') : []).forEach(function (s) { s.onchange = function () { O.setViewCur(s.value); }; }); };
+  /* Malaysia's tourism tax applies to buildings in Malaysia (building.country MY, or MYR when no country is set) */
+  O.buildingOf = function (x) {
+    if (!x) return null; if (typeof x === 'string') x = D.propById[x] || O.building(x) || O.unitType(x); if (!x) return null;
+    if ((O.raw('buildings') || []).indexOf(x) >= 0) return x;
+    var t = x.unitTypeId ? O.unitType(x.unitTypeId) : null, bid = x.buildingId || (t && t.buildingId);
+    if (!bid && x.propertyId && D.propById[x.propertyId]) return O.buildingOf(D.propById[x.propertyId]);
+    return bid ? O.building(bid) : null;
+  };
+  O.tourismTaxApplies = function (x) { var bd = O.buildingOf(x); if (bd && bd.country) return String(bd.country).toUpperCase() === 'MY'; return O.curOf(x) === 'MYR'; };
+
   O.fmt = {
     money: function (n, opt) {
       opt = opt || {}; if (n == null || isNaN(n)) return '–';
       var dp = opt.dp != null ? opt.dp : 0, neg = n < 0, a = Math.abs(n);
       var s = dp ? a.toFixed(dp).replace(/^(\d+)/, function (m) { return group(m); }) : group(Math.round(a));
-      return (neg ? '−' : '') + (opt.bare ? '' : 'RM ') + s;
+      return (neg ? '−' : '') + (opt.bare ? '' : O.curSymbol(O.curOf(opt.cur)) + ' ') + s;
     },
-    moneyShort: function (n) {
+    moneyShort: function (n, cur) {
       if (n == null || isNaN(n)) return '–';
       var a = Math.abs(n), s = a >= 1e6 ? (a / 1e6).toFixed(1) + 'm' : a >= 1e4 ? (a % 100 === 0 && a % 1000 !== 0 && a < 1e5 ? (a / 1e3).toFixed(1) : Math.round(a / 1e3)) + 'k' : a >= 1e3 ? (a / 1e3).toFixed(1) + 'k' : String(Math.round(a));
-      return (n < 0 ? '−' : '') + 'RM ' + s.replace('.0k', 'k').replace('.0m', 'm');
+      return (n < 0 ? '−' : '') + O.curSymbol(O.curOf(cur)) + ' ' + s.replace('.0k', 'k').replace('.0m', 'm');
     },
+    /* the symbol for labels such as "Nightly price (RM)" */
+    cur: function (x) { return O.curSymbol(O.curOf(x)); },
     num: function (n, dp) { if (n == null || isNaN(n)) return '–'; return dp ? n.toFixed(dp) : group(Math.round(n)); },
     pct: function (x, dp) { if (x == null || isNaN(x)) return '–'; return (x * 100).toFixed(dp == null ? 0 : dp) + '%'; },
     /* signed change between a and b, e.g. +8.6% */
@@ -509,8 +557,88 @@
      assignment {how: 'auto'|'manual', by, at, locked} and needsUnit. Untyped units and their bookings work as before. */
   D.buildings = D.buildings || [];
   D.unitTypes = D.unitTypes || [];
-  O.building = function (id) { if (!id) return null; for (var i = 0; i < D.buildings.length; i++) if (D.buildings[i].id === id) return D.buildings[i]; return null; };
-  O.unitType = function (id) { if (!id) return null; for (var i = 0; i < D.unitTypes.length; i++) if (D.unitTypes[i].id === id) return D.unitTypes[i]; return null; };
+  /* ---------------- country view ----------------
+     With buildings in more than one country, the top bar picks a country (O.viewCountry(), '' = all countries) and
+     D.properties, D.buildings, D.unitTypes, D.bookings, D.blocks, D.tasks, D.reviews, D.expenses and D.conversations
+     hold that country only. Pages read and change them as before: push / unshift / splice on a country list change the
+     full list too (never assign by index or set .length on them). The full lists: O.raw(key), or run code in
+     O.unscoped(fn). Saving, background jobs and the channel manager always see every country.
+     A building's country is building.country (else the one its currency is from); units, unit types and records follow
+     their building. Records with no unit: expenses and bookings belong to the main country, tasks and chats to every country. */
+  var SCOPED = ['properties', 'buildings', 'unitTypes', 'bookings', 'blocks', 'tasks', 'reviews', 'expenses', 'conversations'];
+  var EVERYWHERE = { tasks: 1, conversations: 1 };
+  var CUR_COUNTRY = { MYR: 'MY', SGD: 'SG', THB: 'TH', IDR: 'ID', PHP: 'PH', VND: 'VN', JPY: 'JP', AUD: 'AU', USD: 'US', GBP: 'UK', CNY: 'CN', HKD: 'HK', INR: 'IN', KRW: 'KR', TWD: 'TW', NZD: 'NZ' };
+  var RAW = {}, VIEW = {}, SC = { ver: 0, off: 0, list: null, listVer: -1 };
+  O.raw = function (k) { return RAW[k] || D[k]; };
+  O.unscoped = function (fn) { SC.off++; try { return fn(); } finally { SC.off--; } };
+  O.unscopedFn = function (fn) { return function () { var a = arguments, t = this; return O.unscoped(function () { return fn.apply(t, a); }); }; };
+  O.countryOf = function (bd) { return bd ? String(bd.country || '').trim().toUpperCase() || CUR_COUNTRY[bdCur(bd)] || 'MY' : O.mainCountry(); };
+  O.countryLabel = function (c) { return (D.countryName && D.countryName[c]) || c; };
+  O.defaultCurrencyFor = function (c) { var hit = 'MYR'; Object.keys(CUR_COUNTRY).some(function (k) { if (CUR_COUNTRY[k] === c) { hit = k; return true; } return false; }); return ['FR', 'IT', 'ES', 'IE', 'DE'].indexOf(c) >= 0 ? 'EUR' : hit; };
+  /* the countries in use (buildings that are not archived), most buildings first */
+  O.countries = function () {
+    if (SC.list && SC.listVer === SC.ver) return SC.list;
+    var n = {};
+    (RAW.buildings || []).forEach(function (bd) { if (!bd.archived) { var c = O.countryOf(bd); n[c] = (n[c] || 0) + 1; } });
+    var list = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a === 'MY' ? -1 : b === 'MY' ? 1 : a.localeCompare(b)); });
+    SC.list = list.length ? list : ['MY']; SC.listVer = SC.ver; return SC.list;
+  };
+  O.mainCountry = function () { return O.countries()[0]; };
+  O.multiCountry = function () { return O.countries().length > 1; };
+  function countryKey() { return 'viewCountry:' + (O.state && O.state.workspace || ''); }
+  O.viewCountry = function () {
+    if (SC.off || !O._started || !O.multiCountry()) return '';
+    var c = O.store.get(countryKey(), ''); return O.countries().indexOf(c) >= 0 ? c : '';
+  };
+  /* true when x (unit, booking, record or id) is in the country on screen; always true with all countries */
+  O.inView = function (x) { var c = O.viewCountry(); if (!c || x == null || x === '') return true; var bd = O.buildingOf(x); return bd ? O.countryOf(bd) === c : c === O.mainCountry(); };
+  O.setCountry = function (c) { O.store.set(countryKey(), String(c || '').toUpperCase()); SC.ver++; O.emit('country'); };
+  function belongs(k, x, c) {
+    if (k === 'buildings') return O.countryOf(x) === c;
+    var bd = O.buildingOf(x);
+    if (!bd && x.bookingId && D.booking) bd = O.buildingOf(D.booking(x.bookingId));
+    if (bd) return O.countryOf(bd) === c;
+    return EVERYWHERE[k] ? true : c === O.mainCountry();
+  }
+  function scopedView(k) {
+    var raw = RAW[k], c = O.viewCountry();
+    if (!c || !Array.isArray(raw)) return raw;
+    var v = VIEW[k];
+    if (v && v._ver === SC.ver && v._c === c && v._n === raw.length) return v;
+    v = O.unscoped(function () { return raw.filter(function (x) { return x && belongs(k, x, c); }); });
+    var AP = Array.prototype;
+    Object.defineProperties(v, {
+      _ver: { value: SC.ver }, _c: { value: c }, _n: { value: raw.length, writable: true },
+      push: { value: function () { AP.push.apply(raw, arguments); this._n = raw.length; return AP.push.apply(this, arguments); } },
+      unshift: { value: function () { AP.unshift.apply(raw, arguments); this._n = raw.length; return AP.unshift.apply(this, arguments); } },
+      splice: { value: function (start, del) {
+        var len = this.length, add = AP.slice.call(arguments, 2);
+        start = start < 0 ? Math.max(0, len + start) : Math.min(start || 0, len);
+        del = arguments.length < 2 ? len - start : Math.max(0, Math.min(del, len - start));
+        var after = this[start + del];
+        for (var i = start; i < start + del; i++) { var j = raw.indexOf(this[i]); if (j >= 0) raw.splice(j, 1); }
+        if (add.length) { var at = after ? raw.indexOf(after) : -1; AP.splice.apply(raw, [at >= 0 ? at : raw.length, 0].concat(add)); }
+        this._n = raw.length;
+        return AP.splice.apply(this, [start, del].concat(add));
+      } }
+    });
+    VIEW[k] = v; return v;
+  }
+  SCOPED.forEach(function (k) {
+    RAW[k] = Array.isArray(D[k]) ? D[k] : [];
+    Object.defineProperty(D, k, { configurable: true, enumerable: true, get: function () { return scopedView(k); }, set: function (v) { RAW[k] = v; SC.ver++; } });
+  });
+  O.on('data', function () { SC.ver++; });
+  O.on('remote', function () { SC.ver++; });
+  O.building = function (id) { var a = RAW.buildings; if (!id || !a) return null; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; };
+  O.unitType = function (id) { var a = RAW.unitTypes; if (!id || !a) return null; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; };
+  /* the country picker in the top bar; empty with one country */
+  O.countrySwitchHTML = function () {
+    if (!O.multiCountry()) return '';
+    var v = O.viewCountry();
+    return '<label class="country-switch" title="Show one country"><select class="select select-sm" id="country-switch" aria-label="Country">' +
+      '<option value="">All countries</option>' + O.countries().map(function (c) { return '<option value="' + O.esc(c) + '"' + (c === v ? ' selected' : '') + '>' + O.esc(O.countryLabel(c)) + '</option>'; }).join('') + '</select></label>';
+  };
   /* the unit type of a unit (property or id), or null for an untyped unit */
   O.typeOf = function (p) { if (typeof p === 'string') p = D.propById[p]; return p && p.unitTypeId ? O.unitType(p.unitTypeId) : null; };
   O.unitsOfType = function (typeId, withArchived) { return D.properties.filter(function (p) { return p && p.unitTypeId === typeId && (withArchived || !p.archived); }).sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); }); };
@@ -1118,8 +1246,8 @@
   /* ---------------- invoices & receipts ---------------- */
   O.invoice = {};
   O.invoice.lines = function (b) {
-    var p = O.guestPlace(b), rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
-    if (b.tourismTax) rows.push(['Tourism tax (foreign guests, RM 10 per night)', b.nights + ' × RM 10', b.tourismTax]);
+    var p = O.guestPlace(b), mc = { cur: b }, rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly, mc), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
+    if (b.tourismTax && O.tourismTaxApplies(b)) rows.push(['Tourism tax (foreign guests, ' + O.fmt.money(10, mc) + ' per night)', b.nights + ' × ' + O.fmt.money(10, mc), b.tourismTax]);
     return rows;
   };
   O.invoice.canReceipt = function (b) { return !!b.paidAt; };
@@ -1131,8 +1259,8 @@
       '<div class="doc-body"><div class="doc-meta"><div><div class="dm-k">Billed to</div><b>' + O.esc(b.guest.name) + '</b><br>' + O.esc(ct.email) + '<br>' + O.esc(ct.phone) + '<br>' + O.esc(b.guest.countryName || '') + '</div>' +
       '<div class="right"><div class="dm-k">' + (isR ? 'Receipt no.' : 'Invoice no.') + '</div><b>' + O.esc(no || 'Not issued yet') + '</b><div class="dm-k" style="margin-top:6px">Date</div>' + (date ? d.fmtY(date) : '–') + '<div class="dm-k" style="margin-top:6px">Booking</div>' + O.esc(b.id) + ' · ' + O.esc(U.platName(b.channel)) + '</div></div>' +
       '<table><thead><tr><th>Description</th><th></th><th class="num">Amount</th></tr></thead><tbody>' +
-      O.invoice.lines(b).map(function (r) { return '<tr><td>' + O.esc(r[0]) + '</td><td class="muted">' + O.esc(r[1]) + '</td><td class="num">' + O.fmt.money(r[2], { dp: 2 }) + '</td></tr>'; }).join('') +
-      '<tr class="doc-total"><td>' + (isR ? 'Amount received' : 'Total due') + '</td><td></td><td class="num">' + O.fmt.money(b.total, { dp: 2 }) + '</td></tr></tbody></table>' +
+      O.invoice.lines(b).map(function (r) { return '<tr><td>' + O.esc(r[0]) + '</td><td class="muted">' + O.esc(r[1]) + '</td><td class="num">' + O.fmt.money(r[2], { cur: b, dp: 2 }) + '</td></tr>'; }).join('') +
+      '<tr class="doc-total"><td>' + (isR ? 'Amount received' : 'Total due') + '</td><td></td><td class="num">' + O.fmt.money(b.total, { cur: b, dp: 2 }) + '</td></tr></tbody></table>' +
       (isR ? '<div class="row-flex" style="margin-top:14px;justify-content:space-between"><div class="small">Paid ' + d.fmtY(b.paidAt) + ' · ' + O.esc(b.payMethod) + '</div><span class="doc-paid">PAID</span></div>'
         : '<div class="small" style="margin-top:12px">' + (b.paidAt ? 'Paid in full on ' + d.fmtY(b.paidAt) + ' (' + O.esc(b.payMethod) + ').' : b.channel === 'direct' ? 'Please pay by ' + d.fmtY(d.add(b.checkIn, -7)) + ' by FPX, card or DuitNow QR using the payment link.' : 'Collected by ' + O.esc(U.platName(b.channel)) + '.') + '</div>') +
       '</div><div class="doc-foot">' + O.esc(ws.legal || ws.name) + ' · ' + O.esc(ws.regNo || '') + ' · ' + O.esc(ws.address) + ' · ' + O.esc(ws.phone) + '<br>Stay at ' + O.esc(p.name) + (p.area ? ', ' + O.esc(p.area) : '') + '. Check-in ' + O.fmt.time(b.checkInTime) + ', check-out ' + O.fmt.time(b.checkOutTime) + '.</div></div>';
@@ -1141,13 +1269,13 @@
     var isR = kind === 'receipt', no = isR ? b.receiptNo : b.invoiceNo;
     if (isR && !b.paidAt) { U.toast('No payment recorded yet, so there is no receipt', 'bad'); return Promise.resolve(false); }
     return O.pdf.start(isR ? 'Payment receipt' : 'Invoice', no + ' · ' + d.fmtY(isR ? b.paidAt : b.invoiceDate)).then(function (r) {
-      var doc = r.doc, y = r.y, p = O.guestPlace(b), ct = O.contact(b);
+      var doc = r.doc, y = r.y, p = O.guestPlace(b), ct = O.contact(b), sym = O.fmt.cur(b), pdfCur = /^[\x20-\x7e]+$/.test(sym) ? sym : O.curOf(b); /* PDF fonts lack symbols such as ฿, so those show the code */
       y = O.pdf.text(doc, y, 'Billed to', { muted: true, size: 8 });
       y = O.pdf.text(doc, y, b.guest.name, { bold: true, size: 11 });
       y = O.pdf.text(doc, y, [ct.email, ct.phone, b.guest.countryName].filter(Boolean).join('  ·  '), { size: 9 });
       y = O.pdf.text(doc, y + 2, 'Booking ' + b.id + ' via ' + U.platName(b.channel) + ' · ' + p.name + (p.area ? ', ' + p.area : ''), { muted: true, size: 8.5 });
-      y = O.pdf.table(doc, y + 4, [{ label: 'Description', w: 110 }, { label: 'Qty', w: 40 }, { label: 'Amount (RM)', w: 36, align: 'right' }],
-        O.invoice.lines(b).map(function (l) { return [l[0], l[1], l[2].toFixed(2)]; }).concat([[isR ? 'Amount received' : 'Total due', '', b.total.toFixed(2)]]), { boldLast: true });
+      y = O.pdf.table(doc, y + 4, [{ label: 'Description', w: 110 }, { label: 'Qty', w: 40 }, { label: 'Amount (' + pdfCur + ')', w: 36, align: 'right' }],
+        O.invoice.lines(b).map(function (l) { return [l[0], pdfCur === sym ? l[1] : String(l[1]).split(sym + ' ').join(pdfCur + ' '), l[2].toFixed(2)]; }).concat([[isR ? 'Amount received' : 'Total due', '', b.total.toFixed(2)]]), { boldLast: true });
       if (isR) y = O.pdf.text(doc, y + 2, 'PAID on ' + d.fmtY(b.paidAt) + ' by ' + b.payMethod + '.', { bold: true, size: 10 });
       else y = O.pdf.text(doc, y + 2, b.paidAt ? 'Paid in full on ' + d.fmtY(b.paidAt) + ' (' + b.payMethod + ').' : b.channel === 'direct' ? 'Payment due by ' + d.fmtY(d.add(b.checkIn, -7)) + '.' : 'Collected by ' + U.platName(b.channel) + '.', { size: 9 });
       O.pdf.text(doc, y + 4, 'Check-in ' + O.fmt.time(b.checkInTime) + ' on ' + d.fmtY(b.checkIn) + ', check-out ' + O.fmt.time(b.checkOutTime) + ' on ' + d.fmtY(b.checkOut) + '. Thank you for staying with ' + O.ws().name + '.', { muted: true, size: 8.5 });
@@ -1156,7 +1284,7 @@
   };
   O.invoice.markPaid = function (b, method) {
     if (b.paidAt) return;
-    var max = D.bookings.reduce(function (m, x) { return x.receiptNo ? Math.max(m, +((/(\d+)\D*$/.exec(x.receiptNo) || [0, 0])[1])) : m; }, 1000);
+    var max = O.raw('bookings').reduce(function (m, x) { return x.receiptNo ? Math.max(m, +((/(\d+)\D*$/.exec(x.receiptNo) || [0, 0])[1])) : m; }, 1000);
     b.paidAt = D.TODAY; b.receiptNo = 'RCP-' + D.TODAY.slice(0, 4) + '-' + (max + 1); b.payMethod = method || 'Bank transfer';
     if (b.status === 'pending') b.status = 'confirmed';
     O.emit('data', { type: 'payment', bookingId: b.id });
@@ -1191,7 +1319,7 @@
     O.$('.snd-msg', body).value = 'Hi ' + b.guest.name.split(' ')[0] + ', thank you for booking ' + O.guestPlace(b).name + ' (' + d.fmtRange(b.checkIn, b.checkOut) + '). Your ' + (kinds.length > 1 ? 'invoice and payment receipt are' : kinds[0] === 'receipt' ? 'payment receipt is' : 'invoice is') + ' attached. — ' + ws.name;
     paint();
     U.modal({
-      title: 'Send to ' + b.guest.name, sub: 'Booking ' + b.id + ' · total ' + O.fmt.money(b.total), body: body,
+      title: 'Send to ' + b.guest.name, sub: 'Booking ' + b.id + ' · total ' + O.fmt.money(b.total, { cur: b }), body: body,
       actions: [{ label: 'Cancel' }, {
         label: 'Send', kind: 'primary', onClick: function () {
           var inv = O.$('[name=inv]', body).checked, rcp = O.$('[name=rcp]', body).checked;
@@ -1247,8 +1375,8 @@
         '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(p.area || p.location || p.city ? O.propLabel(p) : p.name) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
         (b.status !== 'cancelled' && b.checkOut > D.TODAY ? '<div><div class="section-title" style="margin-top:0">Arrival readiness</div>' + O.readinessHTML(b) + '<div class="row-flex wrap" style="margin-top:8px">' + (!b.idVerified && canEdit ? '<button class="btn btn-ghost btn-sm" data-act="verify">Mark ID verified</button>' : '') + (canCodes ? '<button class="btn btn-ghost btn-sm" data-act="lock">' + O.icon('key') + 'Change door code</button><span class="small muted">Guest code <span class="kbd">' + O.esc(b.doorCode || '') + '</span></span>' : '') + '</div></div>' : '') +
         '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (conv && O.can('inbox') ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
-        (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly) + '</dt><dd>' + O.fmt.money(b.accommodation) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total) + '</dd>' +
-        (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout) + '</dd>' : '') + '</dl></div>' : '') +
+        (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly, { cur: b }) + '</dt><dd>' + O.fmt.money(b.accommodation, { cur: b }) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee, { cur: b }) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax, { cur: b }) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total, { cur: b }) + '</dd>' +
+        (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee, { cur: b }) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout, { cur: b }) + '</dd>' : '') + '</dl></div>' : '') +
         (b.status !== 'cancelled' && canInv && canMoney ? '<div><div class="section-title" style="margin-top:0">Invoice &amp; receipt</div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Invoice ' + O.esc(b.invoiceNo || '') + '</div><div class="lr-sub">Created automatically ' + d.fmtY(b.invoiceDate || b.checkIn) + '</div></div>' + O.invoice.statusHTML(b, 'invoice') + '<button class="btn btn-ghost btn-xs" data-act="inv">View</button></div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Receipt ' + O.esc(b.receiptNo || '') + '</div><div class="lr-sub">' + (b.paidAt ? 'Created automatically when paid, ' + d.fmtY(b.paidAt) : 'Created automatically when payment arrives') + '</div></div>' + O.invoice.statusHTML(b, 'receipt') + (b.paidAt || canPay ? '<button class="btn btn-ghost btn-xs" data-act="rcp">' + (b.paidAt ? 'View' : 'Record payment') + '</button>' : '') + '</div>' +
@@ -1398,14 +1526,15 @@
   };
 
   /* bookings move along as time passes: confirmed -> in-house after the check-in day, -> checked out after check-out time */
-  O.rollStatuses = function () {
+  O.rollStatuses = O.unscopedFn(function () {
     var N = D.NOW, T = D.TODAY;
     D.bookings.forEach(function (b) {
       if (b.status !== 'confirmed' && b.status !== 'checked_in') return;
       if (N >= b.checkOut + 'T' + (b.checkOutTime || '11:00')) { b.status = 'checked_out'; if (b.codeStatus && b.codeStatus !== 'cancelled') b.codeStatus = 'expired'; }
       else if (b.status === 'confirmed' && b.checkIn < T) b.status = 'checked_in';
     });
-  };
+  });
+
 
   /* background jobs (create turnover tasks, reminders...). Pages register at load:
      O.automation.register('turnovers', function (reason) { ...mutate D in place, deterministic ids so two devices never duplicate... })
@@ -1413,7 +1542,7 @@
   var JOBS = [];
   O.automation = {
     register: function (name, fn) { JOBS = JOBS.filter(function (j) { return j[0] !== name; }); JOBS.push([name, fn]); },
-    run: function (reason) { if (!O.sync.canWrite()) return; JOBS.forEach(function (j) { try { j[1](reason || 'manual'); } catch (e) { console.error('automation ' + j[0], e); } }); }
+    run: function (reason) { if (!O.sync.canWrite()) return; O.unscoped(function () { JOBS.forEach(function (j) { try { j[1](reason || 'manual'); } catch (e) { console.error('automation ' + j[0], e); } }); }); }
   };
 
   /* ===================================================================
@@ -1472,7 +1601,8 @@
     });
     return out;
   }
-  O.reindex = function () { /* D.propById / D.itemById follow D.properties / D.invItems (same objects) */
+  O.reindex = function () { O.unscoped(reindex); };
+  function reindex() { /* D.propById / D.itemById follow D.properties / D.invItems (same objects) */
     Object.keys(D.propById).forEach(function (k) { delete D.propById[k]; }); D.properties.forEach(function (p) { D.propById[p.id] = p; });
     if (D.itemById) { Object.keys(D.itemById).forEach(function (k) { delete D.itemById[k]; }); D.invItems.forEach(function (x) { D.itemById[x.id] = x; }); }
   };
@@ -1524,6 +1654,7 @@
     });
     return { rows: rows, blobs: blobs };
   }
+  snapshotAll = O.unscopedFn(snapshotAll); applyRows = O.unscopedFn(applyRows); diff = O.unscopedFn(diff);
   function setStatus(st, err) { S.status = st; S.error = err || null; O.emit('sync'); }
   S.flush = function () {
     clearTimeout(S._timer); S._timer = null;
@@ -1569,15 +1700,15 @@
   window.addEventListener('beforeunload', function (e) { if (S._writing || S._timer) { S.flush(); e.preventDefault(); e.returnValue = ''; } });
 
   /* the built-in demo, kept so a fresh workspace can load it later (server mode) */
-  S.captureDemo = function () {
+  S.captureDemo = O.unscopedFn(function () {
     var out = {}; Object.keys(REG).forEach(function (k) { if (REG[k].kind === 'demo' && D[k] !== undefined) out[k] = clone(D[k]); });
     S._demo = out; return out;
-  };
+  });
   /* start: load from the adapter, merge, remember what is saved, then keep saving */
   S.start = function () {
     var A = S.adapter || (S.adapter = O.localAdapter());
     setStatus('loading');
-    return Promise.resolve(A.load()).then(function (res) {
+    return Promise.resolve(A.load()).then(O.unscopedFn(function (res) {
       res = res || {};
       if (A.replace) {
         /* the server holds the whole workspace: start from empty demo collections and defaults */
@@ -1596,7 +1727,8 @@
       S.started = true;
       setStatus(A.name === 'local' ? 'local' : S.readOnly ? 'readonly' : 'saved');
       if (A.subscribe) S._unsub = A.subscribe(S.remote);
-    });
+      SC.ver++;
+    }));
   };
 
   /* local adapter: this browser's storage, layered over the built-in demo. Other tabs see changes through 'storage' events. */
@@ -1781,8 +1913,8 @@
     try { def.render(root, ctx); }
     catch (e) { console.error(e); root.innerHTML = U.empty('Something went wrong showing this section: ' + e.message, '⚠'); }
   };
-  ['theme', 'viewer', 'lang', 'workspace', 'data'].forEach(function (evt) {
-    O.on(evt, function () { if (!O._started) return; if (evt !== 'data') paintShell(); if (evt === 'data') { paintBadges(); paintTabs(); } var def = O.pages[O.state.page]; if (evt === 'data' && def && def.noDataRerender) return; if (held && (evt === 'data' || evt === 'lang' || evt === 'theme')) { deferred = true; return; } O.render(false); });
+  ['theme', 'viewer', 'lang', 'workspace', 'country', 'data'].forEach(function (evt) {
+    O.on(evt, function () { if (!O._started) return; if (evt !== 'data') paintShell(); if (evt === 'data') { paintBadges(); paintTabs(); paintCountry(); } var def = O.pages[O.state.page]; if (evt === 'data' && def && def.noDataRerender) return; if (held && (evt === 'data' || evt === 'lang' || evt === 'theme')) { deferred = true; return; } O.render(false); });
   });
   O.on('sync', paintSync);
 
@@ -1825,7 +1957,7 @@
     var mine = function (t) { return O.can('tasks.others') || t.assigneeId === O.state.viewer; };
     D.tasks.filter(function (t) { return t.status !== 'done' && t.due.slice(0, 10) < D.TODAY && mine(t); }).forEach(function (t) { out.push({ icon: '⏰', tone: 'bad', t: 'Overdue: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
     if (O.can('tasks.assign')) D.tasks.filter(function (t) { return t.status !== 'done' && !t.assigneeId; }).forEach(function (t) { out.push({ icon: '👤', tone: 'warn', t: 'Unassigned task: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
-    if (O.can('invoices')) D.bookings.filter(function (b) { return b.status !== 'cancelled' && !b.invoiceSent && b.invoiceNo && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (b) { out.push({ icon: '🧾', tone: '', t: 'Invoice not sent: ' + b.guest.name, s: b.invoiceNo + ' · ' + O.fmt.money(b.total), go: ['invoices'] }); });
+    if (O.can('invoices')) D.bookings.filter(function (b) { return b.status !== 'cancelled' && !b.invoiceSent && b.invoiceNo && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (b) { out.push({ icon: '🧾', tone: '', t: 'Invoice not sent: ' + b.guest.name, s: b.invoiceNo + ' · ' + O.fmt.money(b.total, { cur: b }), go: ['invoices'] }); });
     if (O.can('bookings')) D.bookings.filter(function (b) { return b.status === 'pending'; }).slice(0, 2).forEach(function (b) { out.push({ icon: '⏳', tone: 'warn', t: 'Pending booking: ' + b.guest.name, s: P(b.propertyId) + ' · ' + d.fmtRange(b.checkIn, b.checkOut), go: ['bookings'] }); });
     (O.notifiers || []).forEach(function (fn) { try { out.push.apply(out, fn() || []); } catch (e) { console.error(e); } });
     return out;
@@ -1853,7 +1985,12 @@
     O.$('#bell-menu').style.minWidth = '320px';
     O.$('#bell-btn .dot').hidden = !ns.length;
     O.$('#lock-btn').hidden = !O.can('guestapp.doorCodes');
-    paintTabs(); paintSync();
+    paintCountry(); paintTabs(); paintSync();
+  }
+  function paintCountry() {
+    var cs = O.$('#country-slot'); if (!cs) return;
+    var h = O.countrySwitchHTML(); if (cs._h === h) return; cs._h = h; cs.innerHTML = h;
+    var sel = O.$('#country-switch', cs); if (sel) sel.onchange = function () { O.setCountry(sel.value); };
   }
   /* local test mode: pick anyone on the team (one person per role) */
   function viewerChoices() { var seen = {}; return D.staff.filter(function (s) { if (s.status === 'left' || seen[s.role + (s.role === 'housekeeping' ? s.id : '')]) return false; seen[s.role + (s.role === 'housekeeping' ? s.id : '')] = 1; return true; }); }
