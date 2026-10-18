@@ -2042,7 +2042,7 @@
       /* on a phone the bell is not at the screen's right edge, so a right-aligned 320px list runs off the left: pin it to the screen */
       if (window.innerWidth < 640) { var r = O.$('#bell-btn').getBoundingClientRect(); m.style.position = 'fixed'; m.style.left = '12px'; m.style.right = '12px'; m.style.top = Math.round(r.bottom + 6) + 'px'; m.style.minWidth = '0'; m.style.maxHeight = 'calc(100vh - ' + Math.round(r.bottom + 24) + 'px)'; m.style.overflowY = 'auto'; }
       else { m.style.position = m.style.left = m.style.right = m.style.top = m.style.maxHeight = m.style.overflowY = ''; m.style.minWidth = '320px'; }
-      m.classList.add('open');
+      /* closeOnOutside has already toggled the list, so a second tap on the bell closes it */
     });
     O.$('#bell-menu').addEventListener('click', function (e) { var b = e.target.closest('[data-n]'); if (!b) return; O.$('#bell-menu').classList.remove('open'); var n = O.notifications()[+b.dataset.n]; if (n) O.go(n.go[0], n.go[1]); });
     O.$('#lock-btn').onclick = function () { O.lock.change({ propertyId: O.state.lockProp || null }); };
