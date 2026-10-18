@@ -77,6 +77,11 @@ test('email: skipped without a key or address, sent through Resend, 4xx is perma
   assert.match(body.html, /Open Orbique/);
   await assert.rejects(sendEmail(cfg, ['a@b.co'], msg, { fetch: async () => reply(403, { message: 'domain not verified' }) }), (e) => e.permanent === true && /domain not verified/.test(e.message) && !/re_test/.test(e.message));
   await assert.rejects(sendEmail(cfg, ['a@b.co'], msg, { fetch: async () => reply(503, {}) }), (e) => e.permanent === false);
+  // one address the Resend account may not send to does not stop the others
+  const tos = [];
+  const part = await sendEmail(cfg, ['owner@b.co', 'other@c.co'], msg, { fetch: async (url, init) => { const t = JSON.parse(init.body).to; tos.push(t); return t[0] === 'owner@b.co' ? reply(200, {}) : reply(403, { message: 'You can only send testing emails to your own email address' }); } });
+  assert.deepEqual(tos, [['owner@b.co'], ['other@c.co']]);
+  assert.match(part, /^sent to owner@b\.co; not to other@c\.co: You can only send/);
 });
 
 test('WhatsApp: skipped until set up; sends the template with the title and details', async () => {
