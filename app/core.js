@@ -45,18 +45,66 @@
 
   /* ---------------- formatting ---------------- */
   function group(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  /* ---------------- currency ----------------
+     Each building has a currency (building.currency, MYR when not set); its units, bookings, prices, expenses and
+     invoices are in it. Money for one thing: O.fmt.money(n, {cur: thing}) where thing is a booking, unit, unit type,
+     building, any record with propertyId / unitTypeId / buildingId, an id, or a code. Without cur, money is in the
+     view currency: O.viewCur() (the workspace's only currency, else the one picked in O.curSwitchHTML on totals pages).
+     Totals never add two currencies: totals pages keep only O.inCur(x) rows. */
+  var CUR_SYMBOL = { MYR: 'RM', USD: 'US$', SGD: 'S$', THB: '฿', IDR: 'Rp', PHP: '₱', VND: '₫', EUR: '€', GBP: '£', AUD: 'A$', JPY: '¥', CNY: 'CN¥', HKD: 'HK$', INR: '₹', KRW: '₩', TWD: 'NT$', NZD: 'NZ$' };
+  O.curSymbol = function (code) { code = String(code || 'MYR').toUpperCase(); return CUR_SYMBOL[code] || code; };
+  function bdCur(bd) { return bd && bd.currency ? String(bd.currency).trim().toUpperCase() || 'MYR' : 'MYR'; }
+  O.curOf = function (x) {
+    if (x == null || x === '') return O.viewCur();
+    if (typeof x === 'string' && /^[A-Za-z]{3}$/.test(x) && !D.propById[x] && !O.building(x) && !O.unitType(x)) return x.toUpperCase();
+    var bd = O.buildingOf(x);
+    return bd ? bdCur(bd) : O.baseCur();
+  };
+  /* the currencies in use (buildings with units), most used first; MYR when there are none */
+  O.currencies = function () {
+    var n = {};
+    (D.buildings || []).forEach(function (bd) { if (!bd.archived) { var c = bdCur(bd); n[c] = (n[c] || 0) + 1; } });
+    var list = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a === 'MYR' ? -1 : b === 'MYR' ? 1 : a.localeCompare(b)); });
+    return list.length ? list : ['MYR'];
+  };
+  O.baseCur = function () { return O.currencies()[0]; };
+  O.multiCur = function () { return O.currencies().length > 1; };
+  O.viewCur = function () { var list = O.currencies(), c = O.store.get('viewCur', ''); return list.indexOf(c) >= 0 ? c : list[0]; };
+  O.setViewCur = function (c) { O.store.set('viewCur', String(c || '').toUpperCase()); O.render(); };
+  /* true when x (booking, unit, expense, invoice, ...) is in the view currency; always true with one currency */
+  O.inCur = function (x) { return !O.multiCur() || O.curOf(x) === O.viewCur(); };
+  /* the currency picker for totals pages; empty with one currency. Wire it with O.curSwitchWire(root). */
+  O.curSwitchHTML = function () {
+    if (!O.multiCur()) return '';
+    var v = O.viewCur();
+    return '<label class="cur-switch" title="Totals are shown per currency"><span class="small muted">Currency</span><select class="select select-sm" data-cur-switch>' +
+      O.currencies().map(function (c) { return '<option value="' + c + '"' + (c === v ? ' selected' : '') + '>' + O.esc(c === 'MYR' ? 'RM (MYR)' : O.curSymbol(c) === c ? c : O.curSymbol(c) + ' (' + c + ')') + '</option>'; }).join('') + '</select></label>';
+  };
+  O.curSwitchWire = function (root) { (root ? root.querySelectorAll('[data-cur-switch]') : []).forEach(function (s) { s.onchange = function () { O.setViewCur(s.value); }; }); };
+  /* Malaysia's tourism tax applies to buildings in Malaysia (building.country MY, or MYR when no country is set) */
+  O.buildingOf = function (x) {
+    if (!x) return null; if (typeof x === 'string') x = D.propById[x] || O.building(x) || O.unitType(x); if (!x) return null;
+    if ((D.buildings || []).indexOf(x) >= 0) return x;
+    var t = x.unitTypeId ? O.unitType(x.unitTypeId) : null, bid = x.buildingId || (t && t.buildingId);
+    if (!bid && x.propertyId && D.propById[x.propertyId]) return O.buildingOf(D.propById[x.propertyId]);
+    return bid ? O.building(bid) : null;
+  };
+  O.tourismTaxApplies = function (x) { var bd = O.buildingOf(x); if (bd && bd.country) return String(bd.country).toUpperCase() === 'MY'; return O.curOf(x) === 'MYR'; };
+
   O.fmt = {
     money: function (n, opt) {
       opt = opt || {}; if (n == null || isNaN(n)) return '–';
       var dp = opt.dp != null ? opt.dp : 0, neg = n < 0, a = Math.abs(n);
       var s = dp ? a.toFixed(dp).replace(/^(\d+)/, function (m) { return group(m); }) : group(Math.round(a));
-      return (neg ? '−' : '') + (opt.bare ? '' : 'RM ') + s;
+      return (neg ? '−' : '') + (opt.bare ? '' : O.curSymbol(O.curOf(opt.cur)) + ' ') + s;
     },
-    moneyShort: function (n) {
+    moneyShort: function (n, cur) {
       if (n == null || isNaN(n)) return '–';
       var a = Math.abs(n), s = a >= 1e6 ? (a / 1e6).toFixed(1) + 'm' : a >= 1e4 ? (a % 100 === 0 && a % 1000 !== 0 && a < 1e5 ? (a / 1e3).toFixed(1) : Math.round(a / 1e3)) + 'k' : a >= 1e3 ? (a / 1e3).toFixed(1) + 'k' : String(Math.round(a));
-      return (n < 0 ? '−' : '') + 'RM ' + s.replace('.0k', 'k').replace('.0m', 'm');
+      return (n < 0 ? '−' : '') + O.curSymbol(O.curOf(cur)) + ' ' + s.replace('.0k', 'k').replace('.0m', 'm');
     },
+    /* the symbol for labels such as "Nightly price (RM)" */
+    cur: function (x) { return O.curSymbol(O.curOf(x)); },
     num: function (n, dp) { if (n == null || isNaN(n)) return '–'; return dp ? n.toFixed(dp) : group(Math.round(n)); },
     pct: function (x, dp) { if (x == null || isNaN(x)) return '–'; return (x * 100).toFixed(dp == null ? 0 : dp) + '%'; },
     /* signed change between a and b, e.g. +8.6% */
@@ -509,8 +557,8 @@
      assignment {how: 'auto'|'manual', by, at, locked} and needsUnit. Untyped units and their bookings work as before. */
   D.buildings = D.buildings || [];
   D.unitTypes = D.unitTypes || [];
-  O.building = function (id) { if (!id) return null; for (var i = 0; i < D.buildings.length; i++) if (D.buildings[i].id === id) return D.buildings[i]; return null; };
-  O.unitType = function (id) { if (!id) return null; for (var i = 0; i < D.unitTypes.length; i++) if (D.unitTypes[i].id === id) return D.unitTypes[i]; return null; };
+  O.building = function (id) { if (!id || !D.buildings) return null; for (var i = 0; i < D.buildings.length; i++) if (D.buildings[i].id === id) return D.buildings[i]; return null; };
+  O.unitType = function (id) { if (!id || !D.unitTypes) return null; for (var i = 0; i < D.unitTypes.length; i++) if (D.unitTypes[i].id === id) return D.unitTypes[i]; return null; };
   /* the unit type of a unit (property or id), or null for an untyped unit */
   O.typeOf = function (p) { if (typeof p === 'string') p = D.propById[p]; return p && p.unitTypeId ? O.unitType(p.unitTypeId) : null; };
   O.unitsOfType = function (typeId, withArchived) { return D.properties.filter(function (p) { return p && p.unitTypeId === typeId && (withArchived || !p.archived); }).sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); }); };
