@@ -9,73 +9,8 @@
 (function () {
   'use strict';
   var O = window.O, OTHER = '__other';
-  /* states (or regions) and their main cities, towns and areas */
-  var P = {
-    MY: {
-      'Johor': ['Johor Bahru', 'Iskandar Puteri', 'Pasir Gudang', 'Kulai', 'Desaru', 'Kota Tinggi', 'Batu Pahat', 'Muar', 'Kluang', 'Segamat', 'Mersing', 'Pontian'],
-      'Kedah': ['Langkawi', 'Alor Setar', 'Sungai Petani', 'Kulim', 'Jitra'],
-      'Kelantan': ['Kota Bharu', 'Pasir Mas', 'Tumpat', 'Tanah Merah', 'Gua Musang'],
-      'Kuala Lumpur': ['Kuala Lumpur'],
-      'Labuan': ['Labuan'],
-      'Melaka': ['Melaka', 'Ayer Keroh', 'Klebang', 'Alor Gajah', 'Jasin'],
-      'Negeri Sembilan': ['Seremban', 'Port Dickson', 'Nilai', 'Kuala Pilah', 'Bahau'],
-      'Pahang': ['Kuantan', 'Genting Highlands', 'Cameron Highlands', 'Bentong', 'Fraser\'s Hill', 'Cherating', 'Tioman Island', 'Temerloh', 'Raub'],
-      'Penang': ['George Town', 'Batu Ferringhi', 'Tanjung Bungah', 'Tanjung Tokong', 'Gelugor', 'Air Itam', 'Bayan Lepas', 'Balik Pulau', 'Butterworth', 'Bukit Mertajam'],
-      'Perak': ['Ipoh', 'Taiping', 'Lumut', 'Pangkor Island', 'Sitiawan', 'Kampar', 'Teluk Intan'],
-      'Perlis': ['Kangar', 'Arau', 'Padang Besar'],
-      'Putrajaya': ['Putrajaya'],
-      'Sabah': ['Kota Kinabalu', 'Kundasang', 'Ranau', 'Sandakan', 'Semporna', 'Tawau', 'Lahad Datu', 'Kudat'],
-      'Sarawak': ['Kuching', 'Miri', 'Sibu', 'Bintulu', 'Mukah'],
-      'Selangor': ['Petaling Jaya', 'Shah Alam', 'Subang Jaya', 'Cyberjaya', 'Puchong', 'Seri Kembangan', 'Sepang', 'Klang', 'Port Klang', 'Ampang', 'Kajang', 'Bangi', 'Rawang'],
-      'Terengganu': ['Kuala Terengganu', 'Redang Island', 'Perhentian Islands', 'Kemaman', 'Dungun', 'Besut']
-    },
-    SG: {
-      'Central': ['Orchard', 'Marina Bay', 'Downtown Core', 'River Valley', 'Tanjong Pagar', 'Chinatown', 'Bugis', 'Novena', 'Newton', 'Bukit Timah', 'Tiong Bahru', 'Queenstown', 'Kallang', 'Toa Payoh', 'Bishan', 'Sentosa'],
-      'East': ['Katong', 'Marine Parade', 'Geylang', 'Bedok', 'Tampines', 'Pasir Ris', 'Changi'],
-      'North': ['Woodlands', 'Yishun', 'Sembawang'],
-      'North-East': ['Ang Mo Kio', 'Serangoon', 'Hougang', 'Sengkang', 'Punggol'],
-      'West': ['Jurong East', 'Jurong West', 'Clementi', 'Bukit Batok', 'Bukit Panjang', 'Choa Chu Kang']
-    },
-    TH: {
-      'Bangkok': ['Sukhumvit', 'Silom', 'Sathorn', 'Siam', 'Riverside', 'Ratchathewi', 'Chatuchak', 'Khao San'],
-      'Chiang Mai': ['Chiang Mai', 'Nimman', 'Mae Rim', 'Doi Saket'],
-      'Chiang Rai': ['Chiang Rai'],
-      'Chon Buri': ['Pattaya', 'Jomtien', 'Na Jomtien', 'Si Racha'],
-      'Krabi': ['Ao Nang', 'Krabi Town', 'Railay', 'Koh Lanta'],
-      'Mae Hong Son': ['Pai', 'Mae Hong Son'],
-      'Phang Nga': ['Khao Lak', 'Koh Yao'],
-      'Phuket': ['Patong', 'Kata', 'Karon', 'Kamala', 'Bang Tao', 'Rawai', 'Phuket Town'],
-      'Prachuap Khiri Khan': ['Hua Hin', 'Pranburi'],
-      'Surat Thani': ['Koh Samui', 'Koh Phangan', 'Koh Tao', 'Surat Thani']
-    },
-    ID: {
-      'Bali': ['Seminyak', 'Canggu', 'Ubud', 'Kuta', 'Legian', 'Sanur', 'Nusa Dua', 'Uluwatu', 'Jimbaran', 'Denpasar', 'Nusa Penida'],
-      'East Java': ['Surabaya', 'Malang', 'Batu'],
-      'Jakarta': ['Central Jakarta', 'South Jakarta', 'North Jakarta', 'West Jakarta', 'East Jakarta'],
-      'North Sumatra': ['Medan', 'Lake Toba'],
-      'Riau Islands': ['Batam', 'Bintan'],
-      'West Java': ['Bandung', 'Bogor', 'Depok', 'Bekasi'],
-      'West Nusa Tenggara': ['Lombok', 'Gili Islands', 'Mataram'],
-      'Yogyakarta': ['Yogyakarta', 'Sleman']
-    },
-    PH: {
-      'Aklan': ['Boracay'],
-      'Benguet': ['Baguio'],
-      'Bohol': ['Panglao', 'Tagbilaran'],
-      'Cebu': ['Cebu City', 'Mactan', 'Moalboal'],
-      'Metro Manila': ['Makati', 'Taguig (BGC)', 'Pasay', 'Manila', 'Quezon City', 'Mandaluyong', 'Pasig'],
-      'Palawan': ['El Nido', 'Coron', 'Puerto Princesa']
-    },
-    VN: {
-      'Da Nang': ['Da Nang'],
-      'Hanoi': ['Hoan Kiem', 'Ba Dinh', 'Tay Ho', 'Cau Giay'],
-      'Ho Chi Minh City': ['District 1', 'District 3', 'Binh Thanh', 'District 7', 'Thu Duc'],
-      'Khanh Hoa': ['Nha Trang', 'Cam Ranh'],
-      'Kien Giang': ['Phu Quoc'],
-      'Lam Dong': ['Da Lat'],
-      'Quang Nam': ['Hoi An']
-    }
-  };
+  /* states (or regions) and every city, town and area under them: app/pages/places-data.js (generated) */
+  var P = O.placeData || {};
   function esc(s) { return O.esc(s == null ? '' : String(s)); }
   function states(c) { return P[c] ? Object.keys(P[c]).sort() : null; }
   function cities(c, st) { return P[c] && P[c][st] ? P[c][st] : null; }
@@ -123,7 +58,7 @@
     /* follow changes: a new country redraws state and city, a new state redraws city; onChange(field) after each */
     wire: function (root, onChange, o) {
       o = o || {}; var pre = o.prefix || '';
-      function lab(n, t) { var l = root.querySelector('label[for="' + pre + n + '"]'); if (l && l.firstChild) l.firstChild.nodeValue = t; }
+      function lab(n, t) { var l = root.querySelector('label[for="' + pre + n + '"]'); if (l && l.firstChild) l.firstChild.nodeValue = t + (l.firstChild.nextSibling ? ' ' : ''); }
       root.addEventListener('change', function (e) {
         var t = e.target; if (!t || !t.name) return;
         var cur = O.places.read(root);
