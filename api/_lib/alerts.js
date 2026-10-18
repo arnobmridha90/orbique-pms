@@ -182,19 +182,28 @@ function emailHtml(msg, appUrl) {
     '<p style="margin-top:16px;font-size:12px;color:#6b7280">You get this because your workspace sends booking alerts to this address. Change it in Orbique under Automations.</p></div>';
 }
 
+/* one email per address: Resend refuses a whole email when any address is not allowed (before a domain is verified,
+   only the Resend account's own address is), and one address should never stop the others */
 export async function sendEmail(cfg, to, msg, opts = {}) {
   if (!cfg.configured) return 'skipped: email is not set up (RESEND_API_KEY)';
   if (!to.length) return 'skipped: no email address';
   const fetchFn = opts.fetch || fetch;
-  const r = await fetchJson(fetchFn, cfg.baseUrl + '/emails', {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + cfg.key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: cfg.from, to, subject: msg.title, text: msg.text + (opts.appUrl ? '\n\n' + opts.appUrl : ''), html: emailHtml(msg, opts.appUrl) })
-  });
-  if (r.ok) return 'sent';
-  const why = clean(r.body && (r.body.message || r.body.error), 200) || 'HTTP ' + r.status;
-  // 4xx other than rate limits will not get better by retrying (wrong key, address not allowed)
-  throw new AlertError('Resend: ' + why, { permanent: r.status >= 400 && r.status < 500 && r.status !== 429 });
+  const sent = [], failed = [];
+  let retry = false;
+  for (const addr of to) {
+    const r = await fetchJson(fetchFn, cfg.baseUrl + '/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + cfg.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: cfg.from, to: [addr], subject: msg.title, text: msg.text + (opts.appUrl ? '\n\n' + opts.appUrl : ''), html: emailHtml(msg, opts.appUrl) })
+    });
+    if (r.ok) { sent.push(addr); continue; }
+    failed.push(addr + ': ' + (clean(r.body && (r.body.message || r.body.error), 200) || 'HTTP ' + r.status));
+    // 4xx other than rate limits will not get better by retrying (wrong key, address not allowed)
+    if (!(r.status >= 400 && r.status < 500 && r.status !== 429)) retry = true;
+  }
+  if (!failed.length) return 'sent';
+  if (sent.length) return 'sent to ' + sent.join(', ') + '; not to ' + failed.join('; ');
+  throw new AlertError('Resend: ' + failed[0], { permanent: !retry });
 }
 
 export async function sendWhatsApp(cfg, waCfg, number, to, msg, opts = {}) {
@@ -282,7 +291,7 @@ async function waNumber(sb, orgId) {
   return !r.error && r.data && r.data[0] ? r.data[0].phone_number_id : null;
 }
 
-const finalState = (v) => typeof v === 'string' && (v === 'sent' || v.startsWith('skipped') || v.startsWith('failed'));
+const finalState = (v) => typeof v === 'string' && (v === 'sent' || v.startsWith('sent to ') || v.startsWith('skipped') || v.startsWith('failed'));
 
 /**
  * Send one outbox row on the channels not done yet. -> {done, error, finished}

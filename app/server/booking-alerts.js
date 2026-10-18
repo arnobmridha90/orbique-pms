@@ -92,8 +92,8 @@
     api('test').then(function (r) {
       var done = r.done || {}, names = { email: 'Email', whatsapp: 'WhatsApp', push: 'Phone app' };
       st.last = Object.keys(names).map(function (k) {
-        var v = String(done[k] || 'not tried'), okk = v === 'sent';
-        return '<div>' + (okk ? '✓ ' : '• ') + '<b>' + names[k] + ':</b> ' + esc(okk ? 'sent' : v.replace(/^(skipped|failed|error): /, '')) + '</div>';
+        var v = String(done[k] || 'not tried'), okk = v === 'sent' || v.indexOf('sent to ') === 0;
+        return '<div>' + (okk ? '✓ ' : '• ') + '<b>' + names[k] + ':</b> ' + esc(v === 'sent' ? 'sent' : v.replace(/^(skipped|failed|error): /, '')) + '</div>';
       }).join('');
     }, function (e) { st.last = esc(errText(e)); }).then(function () { st.testing = false; load(true); repaint(); });
   }

@@ -2001,7 +2001,7 @@
     O.$('#lang-menu').innerHTML = O.LANGS.map(function (l) { return '<button class="pop-opt' + (l[0] === O.state.lang ? ' sel' : '') + '" data-lang="' + l[0] + '">' + O.esc(l[1]) + ' <span class="xs muted">' + O.esc(l[2]) + '</span></button>'; }).join('');
     var ns = O._started ? O.notifications() : [];
     O.$('#bell-menu').innerHTML = '<div class="menu-label">Notifications</div>' + (ns.length ? ns.map(function (n, i) { return '<button class="notif" data-n="' + i + '"><span class="ni" style="background:' + (n.tone === 'bad' ? 'var(--bad-soft)' : n.tone === 'warn' ? 'var(--warn-soft)' : 'var(--surface-2)') + '">' + n.icon + '</span><span><span class="nt" style="display:block">' + O.esc(n.t) + '</span><span class="ns" style="display:block">' + O.esc(n.s) + '</span></span></button>'; }).join('') : '<div class="small muted" style="padding:10px 12px">Nothing needs you right now.</div>');
-    O.$('#bell-menu').style.minWidth = '320px';
+    if (window.innerWidth >= 640) O.$('#bell-menu').style.minWidth = '320px';
     O.$('#bell-btn .dot').hidden = !ns.length;
     O.$('#lock-btn').hidden = !O.can('guestapp.doorCodes');
     paintCountry(); paintTabs(); paintSync();
@@ -2036,7 +2036,14 @@
     U.closeOnOutside(O.$('#lang-btn'), O.$('#lang-menu'));
     O.$('#lang-menu').addEventListener('click', function (e) { var b = e.target.closest('[data-lang]'); if (!b) return; O.$('#lang-menu').classList.remove('open'); O.state.lang = b.dataset.lang; O.store.set('lang', O.state.lang); O.emit('lang'); });
     U.closeOnOutside(O.$('#bell-btn'), O.$('#bell-menu'));
-    O.$('#bell-btn').addEventListener('click', function () { paintShell(); O.$('#bell-menu').classList.add('open'); });
+    O.$('#bell-btn').addEventListener('click', function () {
+      paintShell();
+      var m = O.$('#bell-menu');
+      /* on a phone the bell is not at the screen's right edge, so a right-aligned 320px list runs off the left: pin it to the screen */
+      if (window.innerWidth < 640) { var r = O.$('#bell-btn').getBoundingClientRect(); m.style.position = 'fixed'; m.style.left = '12px'; m.style.right = '12px'; m.style.top = Math.round(r.bottom + 6) + 'px'; m.style.minWidth = '0'; m.style.maxHeight = 'calc(100vh - ' + Math.round(r.bottom + 24) + 'px)'; m.style.overflowY = 'auto'; }
+      else { m.style.position = m.style.left = m.style.right = m.style.top = m.style.maxHeight = m.style.overflowY = ''; m.style.minWidth = '320px'; }
+      m.classList.add('open');
+    });
     O.$('#bell-menu').addEventListener('click', function (e) { var b = e.target.closest('[data-n]'); if (!b) return; O.$('#bell-menu').classList.remove('open'); var n = O.notifications()[+b.dataset.n]; if (n) O.go(n.go[0], n.go[1]); });
     O.$('#lock-btn').onclick = function () { O.lock.change({ propertyId: O.state.lockProp || null }); };
     O.$('#menu-btn').onclick = function () { O.$('.side').classList.add('open'); O.$('.scrim').classList.add('open'); };
