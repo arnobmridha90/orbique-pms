@@ -820,7 +820,7 @@
         ctx.setActions('');
         var canAdd = O.allowed('properties') && O.can('properties.create');
         root.innerHTML = '<div class="pg-pricing"><div class="card"><div class="empty"><div class="e-icon">' + O.icon('pricing') + '</div><p style="margin:0 0 12px">Add a property to see suggested nightly prices for it.</p>' +
-          (canAdd ? '<button type="button" class="btn btn-primary" data-go-props>' + O.icon('plus') + 'Add a property</button>' : '') + '</div></div></div>';
+          (canAdd ? '<button type="button" class="btn btn-primary" data-go-props>' + O.icon('plus') + 'Add a unit</button>' : '') + '</div></div></div>';
         var gb = O.$('[data-go-props]', root); if (gb) gb.onclick = function () { O.go('properties'); };
         return;
       }

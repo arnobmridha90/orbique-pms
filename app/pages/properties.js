@@ -17,7 +17,6 @@
   var MAX_PHOTOS = 4, PHOTO_LIMIT = 150 * 1024;
   var KINDS = ['Apartment', 'Condo', 'Loft', 'Suite', 'Flat', 'Studio', 'Townhouse', 'House', 'Villa', 'Bungalow', 'Chalet', 'Shophouse'];
   var LOCKS = ['Yale', 'Igloohome', 'Nuki', 'Samsung', 'Philips', 'Schlage', 'Key box'];
-  var CITIES = ['Kuala Lumpur', 'Petaling Jaya', 'Putrajaya', 'Penang', 'George Town', 'Melaka', 'Johor Bahru', 'Ipoh', 'Cameron Highlands', 'Genting Highlands', 'Langkawi', 'Port Dickson', 'Kota Kinabalu', 'Kuching'];
   var NEW_OWNER = '__new';
 
   O.css('properties', `
@@ -368,9 +367,10 @@
   }
   function emptyHTML(canCreate) {
     var demo = { id: '__empty', type: '2BR condo' };
-    return '<div class="card pp-empty"><div class="art">' + art(demo) + '</div><h3>Add your first property</h3>' +
+    return '<div class="card pp-empty"><div class="art">' + art(demo) + '</div><h3>Add your first unit</h3>' +
       '<p>Each unit you manage lives here with its address, lock, Wi-Fi and photos. Bookings, cleaning and the guest app all start here.</p>' +
-      (canCreate ? '<button type="button" class="btn btn-primary" data-act="add">' + O.icon('plus') + 'Add your first property</button>' : '<p class="small">An account owner or ops manager can add properties.</p>') + '</div>';
+      '<p class="small muted">Several units in one building? Add the building and its unit types first, then its units. A single home can be added straight away.</p>' +
+      (canCreate ? '<div class="row-flex" style="justify-content:center;flex-wrap:wrap;gap:8px"><button type="button" class="btn btn-primary" data-act="addbuilding">' + O.icon('plus') + 'Add a building</button><button type="button" class="btn btn-ghost" data-act="add">' + O.icon('plus') + 'Add a single unit</button></div>' : '<p class="small">An account owner or ops manager can add properties.</p>') + '</div>';
   }
 
   function tabHTML() { return '<div class="pp-tab">' + U.seg([['units', 'Units'], ['types', 'Buildings & unit types']], st.tab, 'data-tab') + '</div>'; }
@@ -378,13 +378,15 @@
     var canCreate = O.can('properties.create');
     var P0 = ctx.params || {};
     if (P0.tab) { st.tab = P0.tab; P0.tab = null; }
-    if (st.tab === 'types' && D.properties.length) { renderTypes(root, ctx); deepLinks(ctx, canCreate); return; }
-    ctx.setActions(canCreate && D.properties.length ? '<button type="button" class="btn btn-primary" data-act="add">' + O.icon('plus') + 'Add property</button>' : '');
+    if (st.tab === 'types' && (D.properties.length || liveBuildings().length)) { renderTypes(root, ctx); deepLinks(ctx, canCreate); return; }
+    ctx.setActions(canCreate && D.properties.length ? '<button type="button" class="btn btn-primary" data-act="add">' + O.icon('plus') + 'Add unit</button>' : '');
     var addBtn = O.$('[data-act=add]', ctx.actionsEl); if (addBtn) addBtn.onclick = function () { openDrawer('edit', null); };
 
     if (!D.properties.length) {
-      root.innerHTML = '<div class="pg-props">' + emptyHTML(canCreate) + '</div>';
+      root.innerHTML = '<div class="pg-props">' + (liveBuildings().length ? tabHTML() : '') + emptyHTML(canCreate) + '</div>';
       var b = O.$('[data-act=add]', root); if (b) b.onclick = function () { openDrawer('edit', null); };
+      var bb = O.$('[data-act=addbuilding]', root); if (bb) bb.onclick = function () { st.tab = 'types'; O.store.set('properties:tab', st.tab); buildingModal(null); };
+      var tb0 = O.$('.pp-tab', root); if (tb0) tb0.onclick = function (e) { var t = e.target.closest('[data-tab]'); if (t) { st.tab = t.dataset.tab; O.store.set('properties:tab', st.tab); ctx.rerender(); } };
     } else {
       var nArch = D.properties.filter(function (p) { return p && p.archived; }).length, nAct = D.properties.length - nArch;
       if (!nArch) st.show = 'active';
@@ -439,6 +441,7 @@
   var BT = { sel: {} }; /* ticked unit ids in the tagging lists */
   var CURRENCIES = ['MYR', 'SGD', 'THB', 'IDR', 'PHP', 'VND', 'USD', 'EUR', 'GBP', 'AUD'];
   /* countries for the building form: the ones in use first, then the rest by name */
+  function curList(sel) { return sel && CURRENCIES.indexOf(sel) < 0 ? CURRENCIES.concat([sel]) : CURRENCIES; }
   function countryList(sel) {
     var names = D.countryName || {}, used = O.countries().slice();
     if (sel && used.indexOf(sel) < 0) used.push(sel);
@@ -624,13 +627,11 @@
     var fCountry = O.countryOf(bd || { currency: f.currency, country: O.viewCountry() || O.mainCountry() });
     var body = '<form class="form-grid bt-form" novalidate autocomplete="off">' +
       mf('name', 'Building name', mi('name', f.name, ' maxlength="60" placeholder="e.g. Seri Saujana Residences"'), { full: true, hint: 'Guests see this with the unit type, for example "' + (f.name || 'Seri Saujana Residences') + ' · Deluxe".' }) +
+      O.places.html({ country: fCountry, state: f.state, city: f.city }, mf, { prefix: 'bt-', stateOptional: true, countryOpts: { hint: 'With buildings in more than one country, the top bar can show one country at a time.' } }) +
       mf('address', 'Street address', mi('address', f.address, ' maxlength="160" placeholder="e.g. 2 Jalan Saujana Indah, Bukit Jalil"'), { full: true, hint: 'Guests see the building address before they get their unit number.' }) +
-      mf('city', 'City', mi('city', f.city, ' maxlength="40" placeholder="e.g. Kuala Lumpur"')) +
-      mf('state', 'State', mi('state', f.state, ' maxlength="40" placeholder="e.g. Wilayah Persekutuan"'), { opt: true }) +
       mf('zip', 'Postcode', mi('zip', f.zip, ' maxlength="12" inputmode="numeric" placeholder="57000"'), { opt: true }) +
       mf('email', 'Email for booking sites', mi('email', f.email, ' type="email" inputmode="email" maxlength="80" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.email) || 'e.g. stay@example.com') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business email in Brand.' }) +
       mf('phone', 'Phone for booking sites', mi('phone', f.phone, ' type="tel" inputmode="tel" maxlength="24" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.phone) || '+60 3-1234 5678') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business phone in Brand.' }) +
-      mf('country', 'Country', '<select class="select" id="bt-country" name="country">' + countryList(fCountry).map(function (c) { return '<option value="' + esc(c) + '"' + (c === fCountry ? ' selected' : '') + '>' + esc(O.countryLabel(c)) + '</option>'; }).join('') + '</select>', { hint: 'With buildings in more than one country, the top bar can show one country at a time.' }) +
       mf('currency', 'Currency', '<select class="select" id="bt-currency" name="currency"' + (curLocked ? ' disabled' : '') + '>' + cur.map(function (c) { return '<option' + (c === (f.currency || 'MYR') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>', curLocked ? { hint: 'Fixed while this building is connected to channels: booking sites keep the currency it was connected with.' } : null) +
       mf('checkInTime', 'Check-in from', mi('checkInTime', f.checkInTime || '15:00', ' type="time" step="900"')) +
       mf('checkOutTime', 'Check-out by', mi('checkOutTime', f.checkOutTime || '11:00', ' type="time" step="900"')) +
@@ -638,13 +639,13 @@
     var actions = [{ label: 'Cancel' }];
     if (!isNew && O.can('properties.archive')) actions.push({ label: 'Archive', onClick: function (close) { archiveBuilding(bd, close); return false; } });
     actions.push({ label: isNew ? 'Add building' : 'Save changes', kind: 'primary', onClick: function (close, el) {
-      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: mval(el, 'city'), state: mval(el, 'state'), zip: mval(el, 'zip'), email: mval(el, 'email'), phone: mval(el, 'phone'), country: mval(el, 'country') || fCountry, currency: curLocked ? (bd.currency || 'MYR') : mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
+      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: O.places.read(el).city, state: O.places.read(el).state, zip: mval(el, 'zip'), email: mval(el, 'email'), phone: mval(el, 'phone'), country: O.places.read(el).country || fCountry, currency: curLocked ? (bd.currency || 'MYR') : mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
       if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) E.email = 'Check the email address.';
       if (v.phone && !/^\+?[\d\s()-]{7,20}$/.test(v.phone)) E.phone = 'Check the phone number. Use digits, spaces and +.';
       if (!v.name) E.name = 'Give the building a name.';
       else if (O.raw('buildings').some(function (x) { return x !== bd && low(x.name) === low(v.name); })) E.name = 'Another building is already called "' + v.name + '".';
       if (!v.address) E.address = 'Add the street address. Guests see it before their unit number.';
-      if (!v.city) E.city = 'Add the city.';
+      if (!v.city) E.city = v.country === 'SG' ? 'Choose the area.' : 'Choose the city or town.';
       if (!/^\d{2}:\d{2}$/.test(v.checkInTime)) E.checkInTime = 'Choose a check-in time.';
       if (!/^\d{2}:\d{2}$/.test(v.checkOutTime)) E.checkOutTime = 'Choose a check-out time.';
       else if (!E.checkInTime && v.checkOutTime >= v.checkInTime) E.checkOutTime = 'Check-out should be earlier than check-in.';
@@ -660,6 +661,7 @@
     U.modal({ title: isNew ? 'Add a building' : 'Edit ' + bd.name, sub: isNew ? 'A building holds units that share an address.' : 'Changes show to guests straight away', body: body, actions: actions });
     /* a new country suggests its currency (still changeable) */
     setTimeout(function () {
+      var fm = O.$('.bt-form'); if (fm) O.places.wire(fm, null, { prefix: 'bt-' });
       var c = document.getElementById('bt-country'), u = document.getElementById('bt-currency'); if (!c || !u || curLocked) return;
       c.onchange = function () { var k = O.defaultCurrencyFor(c.value); if (![].some.call(u.options, function (o) { return o.value === k; })) u.add(new Option(k, k)); u.value = k; };
     }, 0);
@@ -718,7 +720,7 @@
   }
   function addUnitsModal(bd) {
     var free = D.properties.filter(function (p) { return p && !p.archived && !p.buildingId; }).sort(function (a, b) { return O.assign.naturalCompare(a.name, b.name); });
-    if (!free.length) { U.toast('Every unit is already in a building. Add a new property first.', 'bad'); return; }
+    if (!free.length) { U.toast('Every unit is already in a building. Add a new unit first.', 'bad'); return; }
     var types = O.typesOf(bd.id);
     var body = '<form class="bt-form" novalidate><div class="bt-pick">' + free.map(function (p) {
       return '<label><input type="checkbox" name="u" value="' + esc(p.id) + '"><span>' + esc(p.name) + '</span><small>' + esc(p.area || '') + '</small></label>';
@@ -871,17 +873,20 @@
       hood: hoodOf(p), city: cityOf(p), address: p.address || '', mapUrl: p.mapUrl || '',
       lockBrand: p.lockBrand || '', lockCode: p.lockCode || '', wifiName: (p.wifi && p.wifi[0]) || '', wifiPw: (p.wifi && p.wifi[1]) || '', parking: p.parking || '',
       photos: Array.isArray(p.photos) ? p.photos.slice(0, MAX_PHOTOS) : [], owner: p.owner || '', ownerPhone: p.ownerPhone || '', ownerEmail: p.ownerEmail || '', housekeeper: p.housekeeper || '',
-      buildingId: p.buildingId || '', unitTypeId: p.unitTypeId || '', unitNo: p.unitNo || '', assignPriority: p.assignPriority == null ? '' : p.assignPriority
+      buildingId: p.buildingId || '', unitTypeId: p.unitTypeId || '', unitNo: p.unitNo || '', assignPriority: p.assignPriority == null ? '' : p.assignPriority,
+      country: O.countryOf(O.placeOf(p)), currency: O.curOf(p), state: p.state || ''
     } : {
       name: '', short: '', kind: 'Apartment', beds: 1, base: '', maxGuests: '', checkInTime: '15:00', checkOutTime: '11:00', notes: '',
       hood: '', city: '', address: '', mapUrl: '', lockBrand: lockDefault, lockCode: '', wifiName: '', wifiPw: '', parking: '',
-      photos: [], owner: '', ownerPhone: '', ownerEmail: '', housekeeper: hkDefault, buildingId: '', unitTypeId: '', unitNo: '', assignPriority: ''
+      photos: [], owner: '', ownerPhone: '', ownerEmail: '', housekeeper: hkDefault, buildingId: '', unitTypeId: '', unitNo: '', assignPriority: '',
+      country: O.viewCountry() || O.mainCountry(), currency: O.viewCountry() ? O.defaultCurrencyFor(O.viewCountry()) : O.baseCur(), state: ''
     };
     var X = parts();
-    X.h.textContent = p ? 'Edit ' + p.name : 'Add a property';
+    X.h.textContent = p ? 'Edit ' + p.name : 'Add a unit';
     X.sub.textContent = p ? 'Changes show everywhere straight away' : 'Fill in what you know now. You can add the rest later.';
     X.body.innerHTML = formHTML(DR.draft, !p);
-    X.foot.innerHTML = '<button type="button" class="btn btn-ghost" data-de="cancel">Cancel</button><div class="r"><button type="button" class="btn btn-primary" data-de="save">' + (p ? 'Save changes' : 'Add property') + '</button></div>';
+    var fm = O.$('[data-form]', X.body); if (fm) O.places.wire(fm, null, { prefix: 'pp-' });
+    X.foot.innerHTML = '<button type="button" class="btn btn-ghost" data-de="cancel">Cancel</button><div class="r"><button type="button" class="btn btn-primary" data-de="save">' + (p ? 'Save changes' : 'Add unit') + '</button></div>';
     syncForm();
     if (!p) setTimeout(function () { var f = O.$('[name=name]', DR && DR.dr.el); if (f && window.matchMedia && !window.matchMedia('(max-width:760px)').matches) f.focus(); }, 40);
   }
@@ -895,7 +900,6 @@
   function datalist(id, items) { return '<datalist id="' + id + '">' + items.map(function (x) { return '<option value="' + esc(x) + '"></option>'; }).join('') + '</datalist>'; }
   function formHTML(f, isNew) {
     var kinds = KINDS.indexOf(f.kind) >= 0 ? KINDS : KINDS.concat([f.kind]);
-    var cityList = CITIES.slice(); D.properties.forEach(function (x) { var c = cityOf(x); if (c && cityList.indexOf(c) < 0) cityList.push(c); });
     var lockList = LOCKS.slice(); D.properties.forEach(function (x) { if (x.lockBrand && lockList.indexOf(x.lockBrand) < 0) lockList.push(x.lockBrand); });
     var ows = owners(), wsName = O.ws().name, known = ows.some(function (o) { return o.name === f.owner; });
     var ownOpts = '<option value="">Choose the owner</option>' + ows.map(function (o) { return '<option value="' + esc(o.name) + '"' + (o.name === f.owner ? ' selected' : '') + '>' + esc(o.name) + ' · ' + fmt.plural(o.units.length, 'unit') + '</option>'; }).join('') +
@@ -917,9 +921,10 @@
       buildingSecHTML(f) +
 
       '<div class="pp-sec"><h4>Location</h4><div class="sd">Shown to guests and used for local events in pricing.</div><div class="form-grid">' +
-      fld('hood', 'Area or neighbourhood', inp('hood', f.hood, ' maxlength="60" placeholder="e.g. Gurney Drive"'), { opt: true }) +
-      fld('city', 'City or state', inp('city', f.city, ' maxlength="40" list="pp-cities" placeholder="e.g. Penang"') + datalist('pp-cities', cityList)) +
+      O.places.html({ country: f.country, state: f.state, city: f.city }, fld, { prefix: 'pp-', countryOpts: { attr: ' data-place' } }) +
+      fld('hood', 'Street or neighbourhood', inp('hood', f.hood, ' maxlength="60" placeholder="e.g. Gurney Drive"'), { opt: true }) +
       fld('address', 'Full address', '<textarea class="textarea" id="pp-address" name="address" rows="2" maxlength="240" placeholder="Unit, building, street, postcode">' + esc(f.address) + '</textarea>', { full: true, opt: true }) +
+      fld('currency', 'Currency', '<select class="select" id="pp-currency" name="currency">' + curList(f.currency).map(function (c) { return '<option' + (c === f.currency ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>', { hint: 'Prices, bookings and invoices for this unit are in it.' }) +
       fld('mapUrl', 'Map link', inp('mapUrl', f.mapUrl, ' type="url" inputmode="url" maxlength="400" placeholder="https://maps.app.goo.gl/..."'), { full: true, opt: true, hint: 'Paste a Google Maps or Waze link. Without one, directions use the address.' }) +
       '</div></div>' +
 
@@ -954,10 +959,11 @@
   function typeOptsHTML(bdId, sel) {
     return '<option value="">No type, it takes its own bookings</option>' + (bdId ? O.typesOf(bdId) : []).map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === sel ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('');
   }
-  function buildingSecHTML(f) { /* only when the workspace has buildings, or this unit is in one */
+  function buildingSecHTML(f) { /* with no buildings yet: how to add one */
     var bds = liveBuildings();
     if (f.buildingId && !bds.some(function (b) { return b.id === f.buildingId; }) && O.building(f.buildingId)) bds = bds.concat([O.building(f.buildingId)]);
-    if (!bds.length) return '';
+    if (!bds.length) return '<div class="pp-sec"><h4>Building and unit type</h4><div class="sd">Several units at one address? Add the building and its unit types first, then pick them here. Units of one type share a listing on the channels. A single home can skip this.</div>' +
+      (O.can('properties.create') ? '<button type="button" class="btn btn-ghost btn-sm" data-de="addbuilding">' + O.icon('plus') + 'Add a building first</button>' : '') + '</div>';
     return '<div class="pp-sec"><h4>Building and unit type</h4><div class="sd">Units of one type share a listing on the channels, and Orbique picks the unit for each booking.</div><div class="form-grid">' +
       fld('buildingId', 'Building', '<select class="select" id="pp-buildingId" name="buildingId"><option value="">Not in a building</option>' + bds.map(function (b) { return '<option value="' + esc(b.id) + '"' + (b.id === f.buildingId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select>', { opt: true }) +
       fld('unitTypeId', 'Unit type', '<select class="select" id="pp-unitTypeId" name="unitTypeId">' + typeOptsHTML(f.buildingId, f.unitTypeId) + '</select>', { opt: true }) +
@@ -974,7 +980,7 @@
         '<button type="button" data-ph="del" data-i="' + i + '" aria-label="Remove photo ' + (i + 1) + '">' + O.icon('trash') + '</button></div></div>';
     }).join('') +
       (DR.busy ? '<div class="pp-pt busy"><span class="spinner"></span>Preparing photo…</div>' : '') +
-      (n + (DR.busy ? 1 : 0) < MAX_PHOTOS ? '<label class="pp-pt add">' + O.icon('camera') + '<b>' + (n ? 'Add more photos' : 'Add photos') + '</b><span>' + (n ? (MAX_PHOTOS - n) + ' more can go here' : 'Up to ' + MAX_PHOTOS + ', JPG or PNG') + '</span><input type="file" accept="image/*" multiple hidden data-phfile aria-label="Add property photos"></label>' : '') +
+      (n + (DR.busy ? 1 : 0) < MAX_PHOTOS ? '<label class="pp-pt add">' + O.icon('camera') + '<b>' + (n ? 'Add more photos' : 'Add photos') + '</b><span>' + (n ? (MAX_PHOTOS - n) + ' more can go here' : 'Up to ' + MAX_PHOTOS + ', JPG or PNG') + '</span><input type="file" accept="image/*" multiple hidden data-phfile aria-label="Add unit photos"></label>' : '') +
       '</div>';
   }
   function paintPhotos() { var box = DR && O.$('[data-photos]', DR.dr.el); if (box) box.innerHTML = photosHTML(); }
@@ -1018,9 +1024,24 @@
       }
       tySel.disabled = !bdSel.value; if (no) no.disabled = !bdSel.value; if (pr) pr.disabled = !tySel.value;
     }
+    /* a unit in a building takes the building's country and currency */
+    var cSel = O.$('[name=country]', el), uSel = O.$('[name=currency]', el), bd = bdSel && bdSel.value ? O.building(bdSel.value) : null, cs = O.$('[data-cur]', el);
+    if (cSel && uSel) {
+      if (bd) {
+        var bc = O.countryOf(bd), bu = O.curOf(bd);
+        if (![].some.call(cSel.options, function (o) { return o.value === bc; })) cSel.add(new Option(O.countryLabel(bc), bc));
+        if (![].some.call(uSel.options, function (o) { return o.value === bu; })) uSel.add(new Option(bu, bu));
+        cSel.value = bc; uSel.value = bu;
+      }
+      cSel.disabled = uSel.disabled = !!bd;
+      var h = O.$('[data-place] .hint', el);
+      if (!h) { h = document.createElement('div'); h.className = 'hint'; var w = O.$('[data-place]', el); if (w) w.insertBefore(h, O.$('.pp-err', w)); }
+      h.textContent = bd ? 'Set on ' + bd.name + ' in Buildings & unit types.' : '';
+      if (cs) cs.textContent = fmt.cur(uSel.value);
+    }
   }
   /* the currency of the unit being edited: its building's (or its unit type's building's) */
-  function formCur(v) { return O.curOf(v.unitTypeId || v.buildingId || O.baseCur()); }
+  function formCur(v) { return v.unitTypeId || v.buildingId ? O.curOf(v.unitTypeId || v.buildingId) : (v.currency || O.baseCur()); }
   function onFormInput(e) {
     var t = e.target; if (!t) return;
     if (t.matches('[data-phfile]')) { if (e.type === 'change') { addPhotos(t.files); t.value = ''; } return; }
@@ -1028,6 +1049,7 @@
     var err = O.$('[data-err="' + (t.name === 'ownerSel' ? 'owner' : t.name) + '"]', DR.dr.el); if (err) err.textContent = '';
     t.classList.remove('bad');
     if (t.name === 'buildingId' || t.name === 'unitTypeId') { var cs = O.$('[data-cur]', DR.dr.el); if (cs) cs.textContent = fmt.cur(formCur({ buildingId: (O.$('[name=buildingId]', DR.dr.el) || {}).value, unitTypeId: (O.$('[name=unitTypeId]', DR.dr.el) || {}).value })); }
+    if (t.name === 'country' && e.type === 'change') { var u = O.$('[name=currency]', DR.dr.el), k = O.defaultCurrencyFor(t.value); if (u && !u.disabled) { if (![].some.call(u.options, function (o) { return o.value === k; })) u.add(new Option(k, k)); u.value = k; } }
     if (t.name === 'ownerSel' && e.type === 'change') {
       var o = owners().filter(function (x) { return x.name === t.value; })[0], ph = O.$('[name=ownerPhone]', DR.dr.el), em = O.$('[name=ownerEmail]', DR.dr.el);
       if (o) { if (ph && !ph.value) ph.value = o.phone; if (em && !em.value) em.value = o.email; }
@@ -1036,15 +1058,16 @@
     syncForm();
   }
   function readForm() {
-    var sel = val('ownerSel');
+    var sel = val('ownerSel'), pl = O.places.read(DR.dr.el);
     return {
       name: val('name') || '', short: val('short') || '', kind: val('kind') || 'Apartment', beds: val('beds'), base: val('base'), maxGuests: val('maxGuests'),
       checkInTime: val('checkInTime') || '', checkOutTime: val('checkOutTime') || '', notes: val('notes') || '',
-      hood: (val('hood') || '').replace(/,\s*$/, ''), city: val('city') || '', address: val('address') || '', mapUrl: val('mapUrl') || '',
+      hood: (val('hood') || '').replace(/,\s*$/, ''), city: pl.city, state: pl.state, address: val('address') || '', mapUrl: val('mapUrl') || '',
       lockBrand: val('lockBrand'), lockCode: val('lockCode'), wifiName: val('wifiName'), wifiPw: val('wifiPw'), parking: val('parking'),
       ownerName: sel === NEW_OWNER ? (val('ownerName') || '') : (sel || ''), ownerNew: sel === NEW_OWNER, ownerPhone: val('ownerPhone') || '', ownerEmail: val('ownerEmail') || '',
       housekeeper: val('housekeeper') || '',
-      buildingId: val('buildingId'), unitTypeId: val('unitTypeId') || '', unitNo: val('unitNo') || '', assignPriority: val('assignPriority') || ''
+      buildingId: val('buildingId'), unitTypeId: val('unitTypeId') || '', unitNo: val('unitNo') || '', assignPriority: val('assignPriority') || '',
+      country: pl.country, currency: val('currency') || ''
     };
   }
   function validate(v, p) {
@@ -1061,7 +1084,7 @@
     var cur = formCur(v), mc = { cur: cur };
     if (!(base > 0)) E.base = 'Enter the usual price for one night in ' + fmt.cur(cur) + ', for example 220.';
     else if (cur === 'MYR' && (base < 20 || base > 50000)) E.base = 'That looks unusual. Enter a nightly price between ' + fmt.money(20, mc) + ' and ' + fmt.money(50000, mc) + '.';
-    if (!v.city) E.city = 'Add the city or state, for example Penang.';
+    if (!v.city) E.city = v.country === 'SG' ? 'Choose the area.' : 'Choose the city or town.';
     if (v.mapUrl && !/^https?:\/\/\S+$/i.test(v.mapUrl)) E.mapUrl = 'Paste the full link, starting with https://';
     if (!/^\d{2}:\d{2}$/.test(v.checkInTime)) E.checkInTime = 'Choose a check-in time.';
     if (!/^\d{2}:\d{2}$/.test(v.checkOutTime)) E.checkOutTime = 'Choose a check-out time.';
@@ -1101,7 +1124,7 @@
     var oldCode = p.lockCode || '';
     p.name = v.name; p.short = v.short || suggestShort(v.name);
     p.beds = v.kind === 'Studio' ? 0 : Number(v.beds); p.type = typeText(v.kind, p.beds); p.base = Math.round(Number(v.base));
-    p.city = v.city; p.area = v.hood ? v.hood + ', ' + v.city : v.city;
+    p.city = v.city; p.area = v.hood ? v.hood + ', ' + v.city : v.city; setOpt(p, 'state', v.state);
     setOpt(p, 'address', v.address); setOpt(p, 'mapUrl', v.mapUrl);
     p.checkInTime = v.checkInTime; p.checkOutTime = v.checkOutTime;
     setOpt(p, 'maxGuests', v.maxGuests ? Number(v.maxGuests) : null); setOpt(p, 'notes', v.notes);
@@ -1119,6 +1142,7 @@
       setOpt(p, 'assignPriority', tid && v.assignPriority !== '' ? Number(v.assignPriority) : null);
       if (isNew) { if (tid) p.unitTypeId = tid; } else retag = tagUnit(p, tid || null);
     }
+    if (p.buildingId) { delete p.country; delete p.currency; } else { setOpt(p, 'country', v.country); setOpt(p, 'currency', v.currency); }
     if (isNew) { p.createdAt = D.NOW; p.createdBy = O.state.viewer; D.properties.push(p); }
     O.reindex();
     var moved = retag ? O.reassignUnits() : [];
@@ -1163,6 +1187,10 @@
     var de = e.target.closest('[data-de]');
     if (de) {
       if (de.dataset.de === 'save') save();
+      if (de.dataset.de === 'addbuilding') {
+        var go = function () { closeDrawer(); O.go('properties', { tab: 'types' }); setTimeout(function () { buildingModal(null); }, 80); };
+        if (DR.dirty) U.confirm('Leave this unit unsaved and add a building first?', 'Add building', 'primary').then(function (ok) { if (ok) go(); }); else go();
+      }
       if (de.dataset.de === 'cancel') {
         var back = function () { if (!DR) return; if (DR.id) { DR.mode = 'view'; DR.dirty = false; paintView(); } else closeDrawer(); };
         if (DR.dirty) U.confirm('Discard your changes?', 'Discard', 'danger').then(function (ok) { if (ok) back(); }); else back();

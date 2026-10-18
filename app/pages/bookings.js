@@ -901,7 +901,7 @@
     var T = D.TODAY;
     if (!O.can('bookings.create')) { U.toast(NO.create, 'bad'); return; }
     var props = D.properties.filter(function (p) { return !isArchived(p); });
-    if (!props.length) { U.toast('Add a property first, then you can take bookings for it.', 'bad'); return; }
+    if (!props.length) { U.toast('Add a unit first, then you can take bookings for it.', 'bad'); return; }
     var pid0 = o.propertyId && D.propById[o.propertyId] && !isArchived(D.propById[o.propertyId]) ? o.propertyId : null;
     var ci0 = o.checkIn && o.checkIn >= T ? o.checkIn : null;
     var co0 = ci0 && o.checkOut && o.checkOut > ci0 ? o.checkOut : null;

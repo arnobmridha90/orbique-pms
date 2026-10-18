@@ -289,7 +289,7 @@
     var hasProps = D.properties.length > 0, canAdd = O.allowed && O.allowed('properties') && (O.can('properties.create') || O.can('properties.edit'));
     root.innerHTML = '<div class="pg-owner"><div class="card"><div class="op-empty">' + O.icon('owner') +
       '<p>' + (hasProps ? 'Statements appear here once your properties have an owner. Add the owner’s name to each property.' : 'Statements for your property owners appear here once you add a property and its owner.') + '</p>' +
-      (canAdd ? '<button type="button" class="btn btn-primary" data-go-props>' + O.icon(hasProps ? 'edit' : 'plus') + (hasProps ? 'Open properties' : 'Add a property') + '</button>' : '<div class="small muted">Ask an account owner to add properties.</div>') +
+      (canAdd ? '<button type="button" class="btn btn-primary" data-go-props>' + O.icon(hasProps ? 'edit' : 'plus') + (hasProps ? 'Open properties' : 'Add a unit') + '</button>' : '<div class="small muted">Ask an account owner to add properties.</div>') +
       '</div></div></div>';
     var b = O.$('[data-go-props]', root); if (b) b.onclick = function () { O.go('properties'); };
   }
