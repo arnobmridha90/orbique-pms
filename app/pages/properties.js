@@ -369,7 +369,8 @@
     var demo = { id: '__empty', type: '2BR condo' };
     return '<div class="card pp-empty"><div class="art">' + art(demo) + '</div><h3>Add your first unit</h3>' +
       '<p>Each unit you manage lives here with its address, lock, Wi-Fi and photos. Bookings, cleaning and the guest app all start here.</p>' +
-      (canCreate ? '<button type="button" class="btn btn-primary" data-act="add">' + O.icon('plus') + 'Add your first unit</button>' : '<p class="small">An account owner or ops manager can add properties.</p>') + '</div>';
+      '<p class="small muted">Several units in one building? Add the building and its unit types first, then its units. A single home can be added straight away.</p>' +
+      (canCreate ? '<div class="row-flex" style="justify-content:center;flex-wrap:wrap;gap:8px"><button type="button" class="btn btn-primary" data-act="addbuilding">' + O.icon('plus') + 'Add a building</button><button type="button" class="btn btn-ghost" data-act="add">' + O.icon('plus') + 'Add a single unit</button></div>' : '<p class="small">An account owner or ops manager can add properties.</p>') + '</div>';
   }
 
   function tabHTML() { return '<div class="pp-tab">' + U.seg([['units', 'Units'], ['types', 'Buildings & unit types']], st.tab, 'data-tab') + '</div>'; }
@@ -377,13 +378,15 @@
     var canCreate = O.can('properties.create');
     var P0 = ctx.params || {};
     if (P0.tab) { st.tab = P0.tab; P0.tab = null; }
-    if (st.tab === 'types' && D.properties.length) { renderTypes(root, ctx); deepLinks(ctx, canCreate); return; }
+    if (st.tab === 'types' && (D.properties.length || liveBuildings().length)) { renderTypes(root, ctx); deepLinks(ctx, canCreate); return; }
     ctx.setActions(canCreate && D.properties.length ? '<button type="button" class="btn btn-primary" data-act="add">' + O.icon('plus') + 'Add unit</button>' : '');
     var addBtn = O.$('[data-act=add]', ctx.actionsEl); if (addBtn) addBtn.onclick = function () { openDrawer('edit', null); };
 
     if (!D.properties.length) {
-      root.innerHTML = '<div class="pg-props">' + emptyHTML(canCreate) + '</div>';
+      root.innerHTML = '<div class="pg-props">' + (liveBuildings().length ? tabHTML() : '') + emptyHTML(canCreate) + '</div>';
       var b = O.$('[data-act=add]', root); if (b) b.onclick = function () { openDrawer('edit', null); };
+      var bb = O.$('[data-act=addbuilding]', root); if (bb) bb.onclick = function () { st.tab = 'types'; O.store.set('properties:tab', st.tab); buildingModal(null); };
+      var tb0 = O.$('.pp-tab', root); if (tb0) tb0.onclick = function (e) { var t = e.target.closest('[data-tab]'); if (t) { st.tab = t.dataset.tab; O.store.set('properties:tab', st.tab); ctx.rerender(); } };
     } else {
       var nArch = D.properties.filter(function (p) { return p && p.archived; }).length, nAct = D.properties.length - nArch;
       if (!nArch) st.show = 'active';
