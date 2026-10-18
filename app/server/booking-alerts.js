@@ -34,7 +34,7 @@
 
   /* ---------- the card ---------- */
   function line(icon, name, ready, who, why) {
-    return '<div class="row-flex" style="gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid var(--border)">' + O.icon(icon) +
+    return '<div class="row-flex" style="gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid var(--border)">' + O.icon(icon, 'al-ic') +
       '<div class="grow" style="min-width:0"><b>' + esc(name) + '</b><div class="small muted">' + who + '</div>' + (why ? '<div class="xs muted" style="margin-top:2px">' + why + '</div>' : '') + '</div>' +
       (ready === null ? U.pill('Checking', 'neutral') : ready ? U.pill('Ready', 'ok') : U.pill('Set up needed', 'warn')) + '</div>';
   }

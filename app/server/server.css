@@ -144,3 +144,6 @@ html.orb-platform #sync-pill, html.orb-platform .tabbar, html.orb-platform #lock
   .pf-hide-sm{display:none;}
   .pf-req .btn{min-height:40px;}
 }
+
+/* Booking alerts card (booking-alerts.js) */
+.al-ic{width:18px; height:18px; flex-shrink:0; margin-top:2px; color:var(--muted);}
