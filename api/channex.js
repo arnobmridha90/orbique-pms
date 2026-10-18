@@ -243,6 +243,10 @@ async function setStatus(sb, body, me, action) {
   if (action === 'disconnect') {
     // nothing is sent any more; Channex keeps the property so a later connect can reuse it
     must(await sb.from('channex_outbox').delete().eq('channex_property_id', p.channex_property_id), 'clear marks');
+    // the building's link in the other Channex (staging after the switch to production) is not shown anywhere, but
+    // it would still count as connected and block Start empty (reset_org), so it goes too
+    const other = must(await sb.from('channex_properties').update(Object.assign({ updated_at: now }, patch)).eq('org_id', ws.org.id).eq('building_id', buildingId).neq('env', ws.cfg.env).neq('status', 'disconnected').select('channex_property_id'), 'disconnect other environment') || [];
+    for (const o of other) must(await sb.from('channex_outbox').delete().eq('channex_property_id', o.channex_property_id), 'clear marks');
   }
   // resume: what queued up while paused goes out with complete values; retry (Send again): dates Channex dropped too
   if (action === 'resume') await forceMarks(sb, p.channex_property_id);

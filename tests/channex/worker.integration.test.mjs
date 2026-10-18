@@ -704,8 +704,12 @@ test('worker endpoint: bearer secret required; nightly marks day 500 and prunes'
 });
 
 test('disconnect stops sending and clears marks; connecting again requests a full sync', { skip: SKIP }, async () => {
+  // the same building still linked in the other Channex (left over from staging after the switch to production)
+  await db.query("insert into public.channex_properties (org_id, env, building_id, channex_property_id, currency, status) values ($1, 'production', 'BD-1', 'eeeeeeee-0000-4000-8000-000000000099', 'MYR', 'live')", [ORG_A]);
   const d = await channex(owner, { action: 'disconnect', orgId: ORG_A, buildingId: 'BD-1' });
   assert.equal(d.json.property.status, 'disconnected');
+  assert.equal((await db.query("select status from public.channex_properties where channex_property_id = 'eeeeeeee-0000-4000-8000-000000000099'")).rows[0].status, 'disconnected', 'other environment disconnected too');
+  await db.query("delete from public.channex_properties where channex_property_id = 'eeeeeeee-0000-4000-8000-000000000099'");
   await setDays('RP-TB', { '2027-04-01': { rate: 999 } });
   assert.equal((await db.query('select count(*)::int n from public.channex_outbox where org_id = $1', [ORG_A])).rows[0].n, 0, 'no marks while disconnected');
   const c = await channex(owner, { action: 'connect', orgId: ORG_A, buildingId: 'BD-1' });
