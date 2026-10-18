@@ -11,6 +11,8 @@
      screen is drawn
    tests/native_sim.py runs these files in Chromium with Capacitor's native side simulated.
    - guest and invite links point at the live site (window.ORBIQUE_CONFIG.appUrl), not at the app's own files
+   - booking alerts (Firebase Cloud Messaging): owners and ops managers are asked once to allow notifications; the
+     phone's token goes to /api/alerts (register-device); tapping an alert opens the booking; signing out removes it
    Loaded after app/server/*.js and before O.boot().
    =================================================================== */
 (function () {
@@ -23,7 +25,8 @@
   var App = plugin('capacitorApp', 'App'), Browser = plugin('capacitorBrowser', 'Browser'), Share = plugin('capacitorShare', 'Share'),
     Splash = plugin('capacitorSplashScreen', 'SplashScreen'), TTS = plugin('capacitorTextToSpeech', 'TextToSpeech'),
     FS = plugin('capacitorFilesystemPluginCapacitor', 'Filesystem'), FSDir = plugin('capacitorFilesystemPluginCapacitor', 'Directory'),
-    Bars = window.capacitorExports && window.capacitorExports.SystemBars;
+    Bars = window.capacitorExports && window.capacitorExports.SystemBars,
+    Push = plugin('capacitorPushNotifications', 'PushNotifications');
 
   O.native = { platform: platform };
   document.documentElement.classList.add('native', 'native-' + platform);
@@ -254,6 +257,68 @@
     paintBar();
     if (Splash) Splash.hide({ fadeOutDuration: 200 }).catch(function () {});
   })();
+
+  /* ---------------- booking alerts: phone notifications ----------------
+     O.native.push.enable(ask) -> Promise {ok, message}: asks for permission when ask is true (otherwise only when it
+     was already given), makes the "Booking alerts" channel, registers with Firebase and sends the token to
+     /api/alerts. The first time an owner or ops manager opens a workspace on this phone it is asked once by itself. */
+  if (Push && O.auth && O.auth.enabled && O.auth.enabled()) {
+    var pushToken = null, waiting = [], ASKED = 'pushAsked';
+    var canAlert = function () { var r = O.auth.role && O.auth.role(); return !!O.auth.orgId() && (r === 'owner' || r === 'ops'); };
+    var settle = function (r) { var w = waiting; waiting = []; w.forEach(function (fn) { fn(r); }); };
+    var sendToken = function (token) {
+      if (!canAlert()) return Promise.resolve({ ok: false, message: 'Booking alerts are for account owners and ops managers.' });
+      return O.auth.call('/api/alerts', { action: 'register-device', orgId: O.auth.orgId(), token: token, platform: platform })
+        .then(function () { return { ok: true }; }, function (e) { return { ok: false, message: (e && e.message) || 'This phone could not be signed up for alerts.' }; });
+    };
+    Push.addListener('registration', function (t) { pushToken = t && t.value; sendToken(pushToken).then(settle); });
+    Push.addListener('registrationError', function (e) { settle({ ok: false, message: 'The phone could not sign up for notifications' + (e && e.error ? ': ' + e.error : '.') }); });
+    Push.addListener('pushNotificationReceived', function (n) { /* the app is open: a toast instead of a system notification */
+      if (n && n.title) U.toast(n.title + (n.body ? ': ' + String(n.body).split('\n')[0] : ''));
+    });
+    Push.addListener('pushNotificationActionPerformed', function (a) {
+      var id = a && a.notification && a.notification.data && a.notification.data.bookingId;
+      if (!id) return;
+      (function open(tries) {
+        if (O._started && O.booking && O.data.bookings && O.data.bookings.some(function (b) { return b.id === id; })) { O.booking.open(id); return; }
+        if (tries > 0) setTimeout(function () { open(tries - 1); }, 500);
+        else if (O._started) O.go('bookings');
+      })(20);
+    });
+    var enable = function (ask) {
+      if (!canAlert()) return Promise.resolve({ ok: false, message: 'Booking alerts are for account owners and ops managers.' });
+      return Push.checkPermissions().then(function (p) {
+        if (p.receive === 'granted') return p;
+        if (!ask || p.receive === 'denied') return p;
+        return Push.requestPermissions();
+      }).then(function (p) {
+        if (p.receive !== 'granted') return { ok: false, message: 'Notifications are off for Orbique. Turn them on in the phone\'s settings (Apps, Orbique, Notifications).' };
+        var channel = platform === 'android' && Push.createChannel ? Push.createChannel({ id: 'bookings', name: 'Booking alerts', description: 'New bookings, cancellations and date changes', importance: 5, visibility: 1, vibration: true }).catch(function () {}) : Promise.resolve();
+        return channel.then(function () {
+          return new Promise(function (resolve) {
+            waiting.push(resolve);
+            Push.register().catch(function (e) { settle({ ok: false, message: (e && e.message) || 'The phone could not sign up for notifications.' }); });
+            setTimeout(function () { settle({ ok: false, message: 'The phone did not answer. Check the internet connection and try again.' }); }, 20000);
+          });
+        });
+      }, function (e) { return { ok: false, message: (e && e.message) || 'Notifications are not available on this phone.' }; });
+    };
+    O.native.push = { enable: enable };
+    /* once the workspace is open: refresh the token quietly, or ask the first time */
+    (function whenStarted(tries) {
+      if (!O._started) { if (tries > 0) setTimeout(function () { whenStarted(tries - 1); }, 1000); return; }
+      if (!canAlert()) return;
+      var key = ASKED + ':' + O.auth.orgId(), asked = O.store.get(key);
+      setTimeout(function () { enable(!asked).then(function () { O.store.set(key, '1'); }); }, asked ? 500 : 2500);
+    })(120);
+    /* signing out: this phone stops getting the workspace's alerts */
+    var signOut = O.auth.signOut;
+    O.auth.signOut = function () {
+      if (!pushToken) return signOut.apply(this, arguments);
+      var args = arguments, self = this, stop = O.auth.call('/api/alerts', { action: 'unregister-device', orgId: O.auth.orgId(), token: pushToken }).catch(function () {});
+      return Promise.race([stop, new Promise(function (r) { setTimeout(r, 2500); })]).then(function () { return signOut.apply(self, args); });
+    };
+  }
 
   /* ---------------- coming back to the app ---------------- */
   if (App) App.addListener('appStateChange', function (s) {

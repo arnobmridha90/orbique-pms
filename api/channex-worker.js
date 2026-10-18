@@ -8,6 +8,7 @@
  *   2. poll /booking_revisions/feed when 15 minutes have passed (the backup to webhooks)
  *   3. setup queue (edits to buildings, unit types and rate plans of connected buildings)
  *   4. every property with marks or a full-sync request: availability, then rates and restrictions
+ *   5. booking alerts that are due (email, WhatsApp, phone app; api/_lib/alerts.js)
  * nightly:
  *   mark the day that just came into the 500-day window (a delta, never a full sync), refresh channel lists,
  *   prune the call log and events older than 60 days, raise needs_unit alerts for unassigned arrivals within 48 h,
@@ -20,6 +21,7 @@ import { channexConfig, safeEqual, channelView } from './_lib/channex.js';
 import { must, tracked, records, addAlert, todayMY, addDays } from './_lib/channex-db.js';
 import { runWorker, markLastDay, CONNECTED } from './_lib/channex-sync.js';
 import { retryInbound, pollFeed, reassignUpcoming } from './_lib/channex-bookings.js';
+import { processOutbox } from './_lib/alerts.js';
 
 export const TICK_BUDGET_MS = 15000;
 const PRUNE_DAYS = 60;
@@ -30,7 +32,8 @@ const PRUNE_DAYS = 60;
 export const bookingHooks = {
   retryInbound: (sb, opts) => retryInbound(sb, opts),
   pollFeed: (sb, opts) => pollFeed(sb, opts),
-  reassignUpcoming: (sb, opts) => reassignUpcoming(sb, opts)
+  reassignUpcoming: (sb, opts) => reassignUpcoming(sb, opts),
+  alerts: (sb, opts) => processOutbox(sb, opts)
 };
 
 /** Run a hook; a failure is logged and reported, never stops the tick (ARI still goes out). */
@@ -50,6 +53,8 @@ export async function tick(sb, opts = {}) {
   };
   const budget = Math.max(3000, (opts.budgetMs || TICK_BUDGET_MS) - (Date.now() - start));
   out.ari = summary(await runWorker(sb, { config: cfg, budgetMs: budget, request: opts.request, quietMs: opts.quietMs }));
+  // the bookings above may have queued alerts: send them in the same tick
+  out.alerts = await safely('alerts', () => bookingHooks.alerts(sb, { budgetMs: 6000 }));
   return out;
 }
 

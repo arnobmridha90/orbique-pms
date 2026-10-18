@@ -33,11 +33,24 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Booking alerts (Firebase Cloud Messaging): the small icon and colour of notifications the system shows -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_orbique" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="bookings" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13 and later: booking alerts ask for this the first time they are turned on -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Voice notes in the inbox (getUserMedia). Capacitor asks for both when the page wants the microphone and refuses
          if either is missing; RECORD_AUDIO is asked the first time someone records. -->

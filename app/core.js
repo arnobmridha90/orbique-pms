@@ -1607,7 +1607,7 @@
   ['ratePlans', 'channelRates'].forEach(function (k) { S.records(k, 'demo'); });
   REG.channelLog = { type: 'blob', kind: 'demo', cap: 500 };
   REG.channelSim = { type: 'blob', kind: 'demo' };
-  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
+  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
 
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
   function capBlob(key, v) { var r = REG[key]; return r && r.cap && Array.isArray(v) && v.length > r.cap ? v.slice(0, r.cap) : v; }

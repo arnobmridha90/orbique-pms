@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1095891572136",
+    "project_id": "orbique-pms",
+    "storage_bucket": "orbique-pms.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095891572136:android:990bd0025058b9380af99d",
+        "android_client_info": {
+          "package_name": "com.orbique.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYKtgmoK56O1UyoIAuMYF2pG6VBHpos8o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
