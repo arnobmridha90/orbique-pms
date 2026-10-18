@@ -6,6 +6,7 @@
    channels the server has set up (/api/alerts status) and sends a test alert. On the phone app, O.native.push
    (app/native/bridge.js) turns alerts on for this phone.
    =================================================================== */
+/* Loads after app/server/auth.js (files load in name order), which defines O.auth. */
 (function () {
   var O = window.O, U = O.ui, D = O.data, esc = O.esc;
   if (!O.auth || !O.auth.enabled || !O.auth.enabled()) return;
