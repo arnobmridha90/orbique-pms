@@ -956,10 +956,11 @@
   function typeOptsHTML(bdId, sel) {
     return '<option value="">No type, it takes its own bookings</option>' + (bdId ? O.typesOf(bdId) : []).map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === sel ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('');
   }
-  function buildingSecHTML(f) { /* only when the workspace has buildings, or this unit is in one */
+  function buildingSecHTML(f) { /* with no buildings yet: how to add one */
     var bds = liveBuildings();
     if (f.buildingId && !bds.some(function (b) { return b.id === f.buildingId; }) && O.building(f.buildingId)) bds = bds.concat([O.building(f.buildingId)]);
-    if (!bds.length) return '';
+    if (!bds.length) return '<div class="pp-sec"><h4>Building and unit type</h4><div class="sd">Several units at one address? Add the building and its unit types first, then pick them here. Units of one type share a listing on the channels. A single home can skip this.</div>' +
+      (O.can('properties.create') ? '<button type="button" class="btn btn-ghost btn-sm" data-de="addbuilding">' + O.icon('plus') + 'Add a building first</button>' : '') + '</div>';
     return '<div class="pp-sec"><h4>Building and unit type</h4><div class="sd">Units of one type share a listing on the channels, and Orbique picks the unit for each booking.</div><div class="form-grid">' +
       fld('buildingId', 'Building', '<select class="select" id="pp-buildingId" name="buildingId"><option value="">Not in a building</option>' + bds.map(function (b) { return '<option value="' + esc(b.id) + '"' + (b.id === f.buildingId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select>', { opt: true }) +
       fld('unitTypeId', 'Unit type', '<select class="select" id="pp-unitTypeId" name="unitTypeId">' + typeOptsHTML(f.buildingId, f.unitTypeId) + '</select>', { opt: true }) +
@@ -1183,6 +1184,10 @@
     var de = e.target.closest('[data-de]');
     if (de) {
       if (de.dataset.de === 'save') save();
+      if (de.dataset.de === 'addbuilding') {
+        var go = function () { closeDrawer(); O.go('properties', { tab: 'types' }); setTimeout(function () { buildingModal(null); }, 80); };
+        if (DR.dirty) U.confirm('Leave this unit unsaved and add a building first?', 'Add building', 'primary').then(function (ok) { if (ok) go(); }); else go();
+      }
       if (de.dataset.de === 'cancel') {
         var back = function () { if (!DR) return; if (DR.id) { DR.mode = 'view'; DR.dirty = false; paintView(); } else closeDrawer(); };
         if (DR.dirty) U.confirm('Discard your changes?', 'Discard', 'danger').then(function (ok) { if (ok) back(); }); else back();
