@@ -91,6 +91,8 @@
     return Object.keys(map).sort(function (a, b) { return map[b].length - map[a].length || (a < b ? -1 : 1); }).map(function (k) { return { name: k, units: map[k] }; });
   }
   function ownerUnits(name) { return D.properties.filter(function (p) { return p.owner === name && !p.archived; }); }
+  /* statement units: only those in the view currency, so a statement never adds two currencies (all units with one currency) */
+  function curUnits(name) { return ownerUnits(name).filter(O.inCur); }
   /* the first month with anything to show: the earliest stay (or, before any booking, the first property added),
      never before the start of the data and never after today */
   function firstMonth() {
@@ -117,7 +119,7 @@
 
   /* one owner's figures for any date range (no carried balance) */
   function statementRange(name, a, b) {
-    var lines = ownerUnits(name).map(function (p) {
+    var lines = curUnits(name).map(function (p) {
       var gross = M.revenue(a, b, { propertyId: p.id }), fee = fees(p.id, a, b), net = gross - fee, mg = net * MGMT;
       var opexList = unitCosts(p.id, a, b, 'opex'), capexList = unitCosts(p.id, a, b, 'capex'), opex = amt(opexList), capex = amt(capexList);
       var rv = D.reviews.filter(function (r) { return r.propertyId === p.id && r.date >= a && r.date <= b; });
@@ -139,7 +141,7 @@
     S.partial = S.to < d.monthEnd(ms);
     return S;
   }
-  /* shared with Reports (Owners report) */
+  /* shared with Reports (Owners report); statements hold the view currency's units only */
   O.ownerFinance = { MGMT: MGMT, notCharged: NOT_CHARGED, chargeRule: CHARGE_RULE, owners: owners, statement: statementRange };
 
   /* where each ringgit of revenue went: payout, management fee, platform fees, running costs, capital spending */
@@ -171,14 +173,14 @@
   /* ------------------------------------------------------------------ actions */
   function fileBase(name, ms) { return ('owner-statement-' + name + '-' + ms.slice(0, 7)).toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
   function downloadCSV(name, ms) {
-    var S = statement(name, ms), t = S.t;
+    var S = statement(name, ms), t = S.t, c = fmt.cur();
     var rows = [['Owner statement', name], ['Period', U.rangeLabel(S.from, S.to)], ['Management fee', (MGMT * 100) + '% of rental income after platform fees'], ['Expenses', CHARGE_RULE], [],
-      ['Unit', 'Location', 'Nights', 'Revenue (RM)', 'Platform fees (RM)', 'Management fee (RM)', 'Running costs (RM)', 'Capital spending (RM)', 'Owner payout (RM)']]
+      ['Unit', 'Location', 'Nights', 'Revenue (' + c + ')', 'Platform fees (' + c + ')', 'Management fee (' + c + ')', 'Running costs (' + c + ')', 'Capital spending (' + c + ')', 'Owner payout (' + c + ')']]
       .concat(S.lines.map(function (l) { return [l.p.name, placeOf(l.p), l.nights, Math.round(l.gross), Math.round(l.fee), Math.round(l.mgmt), Math.round(l.opex), Math.round(l.capex), Math.round(l.payout)]; }))
       .concat(t.carry ? [['Carried from ' + d.monthName(d.addMonths(ms, -1), true), '', '', '', '', '', '', '', Math.round(t.carry)]] : [])
       .concat([['Total', '', t.nights, Math.round(t.gross), Math.round(t.fee), Math.round(t.mgmt), Math.round(t.opex), Math.round(t.capex), Math.round(t.payout)]]);
     var ex = []; S.lines.forEach(function (l) { l.opexList.concat(l.capexList).forEach(function (e) { ex.push([e.date, l.p.name, expType(e), e.costClass === 'capex' ? 'Capital spending' : 'Running cost', e.note || '', e.amount]); }); });
-    if (ex.length) rows = rows.concat([[], ['Costs charged'], ['Date', 'Unit', 'Type', 'Cost type', 'Note', 'Amount (RM)']]).concat(ex);
+    if (ex.length) rows = rows.concat([[], ['Costs charged'], ['Date', 'Unit', 'Type', 'Cost type', 'Note', 'Amount (' + c + ')']]).concat(ex);
     O.downloadCSV(fileBase(name, ms) + '.csv', rows);
   }
   function downloadPDF(name, ms) {
@@ -263,7 +265,7 @@
           var bl = D.blocks.filter(function (x) { return x.propertyId === pid && x.start < b && a < x.end; });
           if (clash.length || bl.length) { box.className = 'os-msg note warn'; box.textContent = clash.length ? 'These dates overlap ' + fmt.plural(clash.length, 'guest booking') + ' (' + clash.map(function (x) { return d.fmtRange(x.checkIn, x.checkOut); }).join(', ') + '). Choose other dates.' : 'These dates are already blocked.'; return false; }
           var lost = d.range(a, d.add(b, -1)).reduce(function (s, x) { return s + rateOf(pid, x); }, 0);
-          box.className = 'os-msg note brand'; box.textContent = 'Available: ' + fmt.plural(d.diff(a, b), 'night') + ', ' + d.fmtRange(a, b) + '.' + (canMoney() && lost ? ' Lost revenue estimate ' + fmt.money(lost) + ' at current prices.' : '');
+          box.className = 'os-msg note brand'; box.textContent = 'Available: ' + fmt.plural(d.diff(a, b), 'night') + ', ' + d.fmtRange(a, b) + '.' + (canMoney() && lost ? ' Lost revenue estimate ' + fmt.money(lost, { cur: pid }) + ' at current prices.' : '');
           return true;
         }
         el.addEventListener('change', check); el.addEventListener('input', check); check();
@@ -330,7 +332,7 @@
     if (money) {
       var capCol = t.capex > 0;
       var sendBtn = canSend() ? '<button type="button" class="btn btn-ghost btn-sm" data-act="send">' + O.icon('mail') + (sent ? 'Send again' : 'Email') + '</button>' : '';
-      stmt = '<div class="card"><div class="card-head"><div class="hd"><h3>Statement · ' + esc(monthLabel(st.month)) + (S.partial ? ' to date' : '') + '</h3><div class="sub">' + esc(U.rangeLabel(S.from, S.to)) + ' · management fee ' + (MGMT * 100) + '% of revenue after platform fees' + (sent ? ' · emailed ' + esc(d.fmt(sent.at.slice(0, 10))) : '') + '</div></div>' +
+      stmt = '<div class="card"><div class="card-head"><div class="hd"><h3>Statement · ' + esc(monthLabel(st.month)) + (S.partial ? ' to date' : '') + '</h3><div class="sub">' + esc(U.rangeLabel(S.from, S.to)) + ' · management fee ' + (MGMT * 100) + '% of revenue after platform fees' + (S.lines.length < units.length ? ' · ' + esc(O.viewCur()) + ' units only' : '') + (sent ? ' · emailed ' + esc(d.fmt(sent.at.slice(0, 10))) : '') + '</div></div>' +
         '<div class="row-flex" style="gap:8px;flex-wrap:wrap">' + U.pill(ps.label, ps.pill) + sendBtn + '<button type="button" class="btn btn-ghost btn-sm" data-act="csv">' + O.icon('download') + 'CSV</button><button type="button" class="btn btn-ghost btn-sm" data-act="pdf">' + O.icon('file') + 'PDF</button></div></div>' +
         '<div class="card-body flush"><div class="table-wrap"><table class="table stmt"><thead><tr><th>Unit</th><th class="num">Nights</th><th class="num">Revenue</th><th class="num">Platform fees</th><th class="num">Mgmt fee</th><th class="num">Running costs</th>' + (capCol ? '<th class="num">Capital</th>' : '') + '<th class="num">Payout</th></tr></thead><tbody>' +
         S.lines.map(function (l) { return '<tr><td>' + propCell(l.p) + '</td><td class="num">' + l.nights + '</td><td class="num">' + fmt.money(l.gross) + '</td><td class="num">' + minus(l.fee) + '</td><td class="num">' + minus(l.mgmt) + '</td><td class="num">' + (l.opex ? minus(l.opex) : '<span class="faint">–</span>') + '</td>' + (capCol ? '<td class="num">' + (l.capex ? minus(l.capex) : '<span class="faint">–</span>') + '</td>' : '') + '<td class="num b">' + fmt.money(l.payout) + '</td></tr>'; }).join('') +
@@ -390,13 +392,13 @@
     M.expenses(firstMonth(), D.TODAY).forEach(function (e) {
       if ((e.type === 'Repairs & maintenance' || e.costClass === 'capex' || e.type === 'Others') && unitIds[e.propertyId]) {
         var who = D.staffById(e.paidBy);
-        log.push({ date: e.date, ic: e.costClass === 'capex' ? 'sparkle' : 'expenses', unit: D.propById[e.propertyId], what: expType(e) + (e.note ? ' · ' + e.note : ''), who: who ? who.name : '', cost: e.amount, status: e.costClass === 'capex' ? U.pill('Capital', 'brand') : U.pill('Charged', 'neutral') });
+        log.push({ date: e.date, ic: e.costClass === 'capex' ? 'sparkle' : 'expenses', unit: D.propById[e.propertyId], what: expType(e) + (e.note ? ' · ' + e.note : ''), who: who ? who.name : '', cost: e.amount, cur: e, status: e.costClass === 'capex' ? U.pill('Capital', 'brand') : U.pill('Charged', 'neutral') });
       }
     });
     D.blocks.forEach(function (x) { if (x.type === 'maintenance' && unitIds[x.propertyId]) log.push({ date: x.start, ic: 'lock', unit: D.propById[x.propertyId], what: 'Unit closed ' + d.fmtRange(x.start, x.end) + (x.note ? ' · ' + x.note : ''), who: 'Operations', cost: null, status: x.start > D.TODAY ? U.pill('Scheduled', 'neutral') : x.end > D.TODAY ? U.pill('In progress', 'info') : U.pill('Done', 'ok') }); });
     log = log.filter(function (l) { return l.date; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     var logTable = log.length ? '<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Unit</th><th>Work</th><th>By</th>' + (money ? '<th class="num">Cost to you</th>' : '') + '<th>Status</th></tr></thead><tbody>' + log.slice(0, st.all ? 25 : SHOW).map(function (l) {
-      return '<tr><td style="white-space:nowrap">' + esc(d.fmt(l.date)) + '</td><td style="white-space:nowrap">' + unitCell(l.unit) + '</td><td class="ml-work"><div class="row-flex" style="gap:8px;flex-wrap:nowrap"><span class="ml-ic">' + O.icon(l.ic) + '</span><span>' + esc(l.what) + '</span></div></td><td style="white-space:nowrap">' + esc(l.who) + '</td>' + (money ? '<td class="num">' + (l.cost != null ? fmt.money(l.cost) : '<span class="faint">–</span>') + '</td>' : '') + '<td>' + l.status + '</td></tr>';
+      return '<tr><td style="white-space:nowrap">' + esc(d.fmt(l.date)) + '</td><td style="white-space:nowrap">' + unitCell(l.unit) + '</td><td class="ml-work"><div class="row-flex" style="gap:8px;flex-wrap:nowrap"><span class="ml-ic">' + O.icon(l.ic) + '</span><span>' + esc(l.what) + '</span></div></td><td style="white-space:nowrap">' + esc(l.who) + '</td>' + (money ? '<td class="num">' + (l.cost != null ? fmt.money(l.cost, { cur: l.cur }) : '<span class="faint">–</span>') + '</td>' : '') + '<td>' + l.status + '</td></tr>';
     }).join('') + '</tbody></table></div>' + more(Math.min(25, log.length)) : U.empty('No maintenance recorded for these units.');
 
     var canBlock = O.can('calendar.block');
@@ -419,20 +421,20 @@
       var all = ms_.map(function (m) { return statement(name, m); });
       O.chart.bars(chEl, {
         labels: ms_.map(function (m) { return d.monthName(m); }), height: 190, padLeft: 62, ariaLabel: 'Revenue and payout by month',
-        yFormat: function (v, ax) { if (!ax || v < 10000) return fmt.money(v); var k = v / 1000; return 'RM ' + (k % 1 === 0 ? k : (k * 10) % 1 === 0 ? k.toFixed(1) : k.toFixed(2)) + 'k'; },
+        yFormat: function (v, ax) { if (!ax || v < 10000) return fmt.money(v); var k = v / 1000; return fmt.cur() + ' ' + (k % 1 === 0 ? k : (k * 10) % 1 === 0 ? k.toFixed(1) : k.toFixed(2)) + 'k'; },
         tipTitle: function (i) { return monthLabel(ms_[i]) + (all[i].partial ? ' (to date)' : ''); },
         series: [{ name: 'Revenue', values: all.map(function (s) { return s.t.gross; }), tone: 'prev1' }, { name: 'Owner payout', values: all.map(function (s) { return Math.max(0, s.t.payout); }), tone: 'brand' }]
       });
       O.$('.legend-slot', root).innerHTML = O.chart.legend([{ name: 'Revenue', tone: 'prev1', square: true }, { name: 'Owner payout', tone: 'brand', square: true }]);
     }
 
-    var acts = O.html('<div class="row-flex" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-ghost btn-sm" data-top="link">' + O.icon('copy') + 'Copy portal link</button>' + (money ? '<button type="button" class="btn btn-primary btn-sm" data-top="pdf">' + O.icon('download') + 'Statement PDF</button>' : '') + '</div>');
+    var acts = O.html('<div class="row-flex" style="gap:8px;flex-wrap:wrap">' + O.curSwitchHTML() + '<button type="button" class="btn btn-ghost btn-sm" data-top="link">' + O.icon('copy') + 'Copy portal link</button>' + (money ? '<button type="button" class="btn btn-primary btn-sm" data-top="pdf">' + O.icon('download') + 'Statement PDF</button>' : '') + '</div>');
     acts.addEventListener('click', function (e) {
       var b = e.target.closest('[data-top]'); if (!b) return;
       if (b.dataset.top === 'pdf') downloadPDF(name, st.month);
       else { try { navigator.clipboard.writeText(portalLink()).then(function () { U.toast('Portal link copied: ' + portalLink()); }, function () { U.toast('Portal link: ' + portalLink()); }); } catch (err) { U.toast('Portal link: ' + portalLink()); } }
     });
-    ctx.setActions(acts);
+    O.curSwitchWire(acts); ctx.setActions(acts);
 
     function approveModal(m) {
       if (!canApprove()) { U.toast('Only account owners approve payouts', 'bad'); return; }

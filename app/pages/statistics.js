@@ -46,12 +46,21 @@
   function staffName(id) { var s = id && D.staffById(id); return s ? s.name : 'Unassigned'; }
   function foreign(b) { return !!(b.guest && (b.guest.foreign || (b.guest.country && b.guest.country !== 'MY'))); }
   function countryOf(b) { var g = b.guest || {}; return g.countryName || (g.country && D.countryName && D.countryName[g.country]) || g.country || 'Unknown'; }
-  function bks(pid) { return pid ? D.bookings.filter(function (b) { return b.propertyId === pid; }) : D.bookings; }
+  function bks(pid) { return pid ? D.bookings.filter(function (b) { return b.propertyId === pid; }) : O.multiCur() ? D.bookings.filter(O.inCur) : D.bookings; }
+  /* with several currencies the page covers the units in the view currency (O.curSwitchHTML); M's all-unit totals mix
+     currencies, so they are summed unit by unit here. One currency: these are M's own functions. */
+  function inPid(x, pid) { return pid ? x.propertyId === pid : O.inCur(x); }
+  function perUnit(pid) { return !pid && O.multiCur(); }
+  function curIds() { return D.properties.filter(O.inCur).map(function (p) { return p.id; }); }
+  function mRev(a, z, ff) { ff = ff || {}; return perUnit(ff.propertyId) ? sum(curIds(), function (id) { return M.revenue(a, z, { propertyId: id, channel: ff.channel }); }) : M.revenue(a, z, ff); }
+  function mSold(a, z, ff) { ff = ff || {}; return perUnit(ff.propertyId) ? sum(curIds(), function (id) { return M.nightsSold(a, z, { propertyId: id, channel: ff.channel }); }) : M.nightsSold(a, z, ff); }
+  function mAvail(a, z, pid) { return perUnit(pid) ? sum(curIds(), function (id) { return M.availableNights(a, z, id); }) : M.availableNights(a, z, pid); }
+  function mBlocked(a, z, pid) { return perUnit(pid) ? sum(curIds(), function (id) { return M.blockedNights(a, z, id); }) : M.blockedNights(a, z, pid); }
   function madeIn(p, pid) { return bks(pid).filter(function (b) { var c = created(b); return c >= p.from && c <= p.to && (!b.createdAt || b.createdAt <= D.NOW); }); }
   function inBucket(lo, hi) { return function (v) { return v >= lo && v <= hi; }; }
   function tabIndex(id) { for (var i = 0; i < TABS.length; i++) if (TABS[i][0] === id) return i; return -1; }
   function tabName(id) { var i = tabIndex(id); return i >= 0 ? TABS[i][1] : id; }
-  function moneyAxis(v, ax) { if (!ax) return fmt.money(v); if (Math.abs(v) < 1000) return 'RM ' + Math.round(v); var k = v / 1000; return 'RM ' + (Math.abs(k - Math.round(k)) < 0.05 ? Math.round(k) : k.toFixed(1)) + 'k'; }
+  function moneyAxis(v, ax) { if (!ax) return fmt.money(v); if (Math.abs(v) < 1000) return fmt.cur() + ' ' + Math.round(v); var k = v / 1000; return fmt.cur() + ' ' + (Math.abs(k - Math.round(k)) < 0.05 ? Math.round(k) : k.toFixed(1)) + 'k'; }
   function countAxis(v, ax) { return ax ? (v % 1 ? v.toFixed(1) : String(v)) : fmt.num(v); }
   function pctAxis(v) { return Math.round(v * 100) + '%'; }
 
@@ -67,6 +76,7 @@
     nights: [function (v) { return fmt.num(v, 1) + ' nights'; }, function (v) { return v.toFixed(1); }, ' (nights)'],
     dur: [function (v) { return dur(v); }, function (v) { return Math.round(v); }, ' (minutes)']
   };
+  function unitTag(type) { return type === 'money' ? ' (' + fmt.cur() + ')' : F[type] ? F[type][2] : ''; } /* CSV header suffix, e.g. ' (RM)' */
   function fv(type, v) { return v == null || isNaN(v) ? '–' : (F[type] || F.num)[0](v); }
   function fc(type, v) { return v == null || isNaN(v) ? '' : (F[type] || F.num)[1](v); }
 
@@ -199,7 +209,7 @@
   var memo = {}, turnIdx = null;
   function get(name, p, pid) {
     if (!p) return null;
-    var k = name + '|' + p.from + '|' + p.to + '|' + (pid || '');
+    var k = name + '|' + p.from + '|' + p.to + '|' + (pid || O.viewCur());
     if (!(k in memo)) memo[k] = CALC[name](p, pid);
     return memo[k];
   }
@@ -210,10 +220,10 @@
   var CALC = {
     base: function (p, pid) {
       var f = pid ? { propertyId: pid } : null, o = {};
-      o.revenue = M.revenue(p.from, p.to, f);
-      o.nights = M.nightsSold(p.from, p.to, f);
-      o.avail = M.availableNights(p.from, p.to, pid || undefined);
-      o.blocked = M.blockedNights(p.from, p.to, pid || undefined);
+      o.revenue = mRev(p.from, p.to, f);
+      o.nights = mSold(p.from, p.to, f);
+      o.avail = mAvail(p.from, p.to, pid || undefined);
+      o.blocked = mBlocked(p.from, p.to, pid || undefined);
       o.occ = ratio(o.nights, o.avail); o.adr = ratio(o.revenue, o.nights); o.revpar = ratio(o.revenue, o.avail);
       var arr = bks(pid).filter(function (b) { return live(b) && b.checkIn >= p.from && b.checkIn <= p.to; });
       o.arr = arr; o.alos = avg(arr, function (b) { return b.nights; });
@@ -228,7 +238,7 @@
     },
     week: function (p, pid) { /* weekend (Fri, Sat nights) vs weekday occupancy */
       var f = pid ? { propertyId: pid } : null, we = [0, 0], wd = [0, 0];
-      d.range(p.from, p.to).forEach(function (x) { var t = d.isWeekend(x) ? we : wd; t[0] += M.nightsSold(x, x, f); t[1] += M.availableNights(x, x, pid || undefined); });
+      d.range(p.from, p.to).forEach(function (x) { var t = d.isWeekend(x) ? we : wd; t[0] += mSold(x, x, f); t[1] += mAvail(x, x, pid || undefined); });
       return { weekend: ratio(we[0], we[1]), weekday: ratio(wd[0], wd[1]) };
     },
     ahead: function (p, pid) { /* the 30 nights after the range (or after today), as they were booked at that point */
@@ -239,11 +249,11 @@
         var k = M.nightsIn(b, from, to); if (!k) return;
         rev += (b.revenue || 0) / b.nights * k; n += k;
       });
-      var avail = M.availableNights(from, to, pid || undefined);
+      var avail = mAvail(from, to, pid || undefined);
       return { from: from, to: to, asOf: asOf, revenue: rev, nights: n, occ: ratio(n, avail) };
     },
     rv: function (p, pid) {
-      var list = D.reviews.filter(function (x) { return x.date >= p.from && x.date <= p.to && (!pid || x.propertyId === pid); });
+      var list = D.reviews.filter(function (x) { return x.date >= p.from && x.date <= p.to && inPid(x, pid); });
       var replied = list.filter(function (x) { return x.reply; });
       var o = { list: list, n: list.length, rating: avg(list, function (x) { return x.stars; }) };
       o.respRate = ratio(replied.length, list.length);
@@ -271,7 +281,7 @@
       };
     },
     ops: function (p, pid) {
-      var tasks = D.tasks.filter(function (t) { var dd = String(t.due || '').slice(0, 10); return dd && dd >= p.from && dd <= p.to && (!pid || t.propertyId === pid); });
+      var tasks = D.tasks.filter(function (t) { var dd = String(t.due || '').slice(0, 10); return dd && dd >= p.from && dd <= p.to && inPid(t, pid); });
       var done = tasks.filter(function (t) { return t.status === 'done'; }), timed = done.filter(function (t) { return t.doneAt && t.due; });
       var onTime = timed.filter(function (t) { return t.doneAt <= t.due; });
       var open = tasks.filter(function (t) { return t.status !== 'done'; });
@@ -297,7 +307,7 @@
       };
     },
     cost: function (p, pid) {
-      var all = M.expenses(p.from, p.to).filter(function (e) { return !pid || e.propertyId === pid; });
+      var all = M.expenses(p.from, p.to).filter(function (e) { return inPid(e, pid); });
       var cls = function (e) { return e.costClass === 'capex' ? 'capex' : 'opex'; };
       var opex = all.filter(function (e) { return cls(e) === 'opex'; }), capex = all.filter(function (e) { return cls(e) === 'capex'; });
       var byType = {};
@@ -434,7 +444,7 @@
       tile('rating', cur.rating, p1.rating, S),
       tile('cancelRate', cur.cancelRate, p1.cancelRate, S)
     ];
-    var fn = mon ? function (a, b) { return M.revenue(a, b, S.pid ? { propertyId: S.pid } : null); } : function (a, b) { return M.nightsSold(a, b, S.pid ? { propertyId: S.pid } : null); };
+    var fn = mon ? function (a, b) { return mRev(a, b, S.pid ? { propertyId: S.pid } : null); } : function (a, b) { return mSold(a, b, S.pid ? { propertyId: S.pid } : null); };
     var cmpTxt = S.c1 ? ' vs ' + S.c1.short + (S.c2 ? ' and ' + S.c2.short : '') : '';
     var u = unitWord(S.bk);
     var chart = !S.c1 ? {
@@ -462,7 +472,7 @@
       .concat([{ label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg' }, { label: 'vs ' + (S.c2 ? S.c2.tag : 'before that'), type: 'chg', cmp2: true }]);
     function row(k) {
       var m = MET[k], o = { kind: m.kind, invert: m.invert, neutral: m.neutral, f: m.f, eps: m.eps };
-      return [{ html: '<span title="' + esc(m.title || '') + '">' + esc(m.label) + '</span>', text: m.label + (F[m.type] ? F[m.type][2] : '') }]
+      return [{ html: '<span title="' + esc(m.title || '') + '">' + esc(m.label) + '</span>', text: m.label + unitTag(m.type) }]
         .concat(X.map(function (x) { return x ? { v: x[k], t: m.type } : null; }))
         .concat([X[1] ? Object.assign({ cur: cur[k], prev: X[1][k] }, o) : null, X[2] ? Object.assign({ cur: cur[k], prev: X[2][k] }, o) : null]);
     }
@@ -514,9 +524,9 @@
     if (S.pid && u === 'day' && S.r.days >= 14) { So = Object.assign({}, S, { bk: buckets(S.r, 'week') }); So.bk1 = align(So.bk, S.c1); }
     var uo = unitWord(So.bk);
     var cards = [
-      mon ? { title: 'Revenue per ' + u, sub: 'Earned on nights stayed', legend: legend(S, 2, true), body: chartSlot('rev'), draw: function (el) { cmpBars(el, S, function (a, b) { return M.revenue(a, b, f); }, { yFormat: moneyAxis, aria: 'Revenue per ' + u }); } }
-        : { title: 'Nights sold per ' + u, sub: 'Nights with a guest', legend: legend(S, 2, true), body: chartSlot('nts'), draw: function (el) { cmpBars(el, S, function (a, b) { return M.nightsSold(a, b, f); }, { yFormat: countAxis, aria: 'Nights sold per ' + u }); } },
-      { title: 'Occupancy per ' + uo, sub: 'Share of available nights that were sold', legend: legend(S, 2), body: chartSlot('occ'), draw: function (el) { cmpLine(el, So, function (a, b) { var av = M.availableNights(a, b, S.pid || undefined); return av ? M.nightsSold(a, b, f) / av : null; }, { yFormat: pctAxis, yMin: 0, yMax: 1, aria: 'Occupancy per ' + uo }); } }
+      mon ? { title: 'Revenue per ' + u, sub: 'Earned on nights stayed', legend: legend(S, 2, true), body: chartSlot('rev'), draw: function (el) { cmpBars(el, S, function (a, b) { return mRev(a, b, f); }, { yFormat: moneyAxis, aria: 'Revenue per ' + u }); } }
+        : { title: 'Nights sold per ' + u, sub: 'Nights with a guest', legend: legend(S, 2, true), body: chartSlot('nts'), draw: function (el) { cmpBars(el, S, function (a, b) { return mSold(a, b, f); }, { yFormat: countAxis, aria: 'Nights sold per ' + u }); } },
+      { title: 'Occupancy per ' + uo, sub: 'Share of available nights that were sold', legend: legend(S, 2), body: chartSlot('occ'), draw: function (el) { cmpLine(el, So, function (a, b) { var av = mAvail(a, b, S.pid || undefined); return av ? mSold(a, b, f) / av : null; }, { yFormat: pctAxis, yMin: 0, yMax: 1, aria: 'Occupancy per ' + uo }); } }
     ];
     var table;
     if (!S.pid) {
@@ -525,7 +535,7 @@
       cols.push({ label: 'Nights', type: 'num' }, { label: 'Occupancy', type: 'pct' }, { label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg' });
       if (mon) cols.push({ label: 'ADR', type: 'money' }, { label: 'RevPAR', type: 'money' });
       cols.push({ label: 'Avg stay', type: 'dec1', title: 'Average nights of stays arriving in the range' }, { label: 'Blocked', type: 'num', title: 'Nights blocked for owner stays or maintenance' });
-      var rows = D.properties.filter(function (p) { var x = get('base', S.r, p.id); return !p.archived || x.nights || x.revenue; }).map(function (p) {
+      var rows = D.properties.filter(function (p) { var x = get('base', S.r, p.id); return O.inCur(p) && (!p.archived || x.nights || x.revenue); }).map(function (p) {
         var x = get('base', S.r, p.id), y = S.c1 ? get('base', S.c1, p.id) : null;
         var r = [propCell(p)];
         if (mon) r.push(x.revenue, y ? { cur: x.revenue, prev: y.revenue } : null);
@@ -546,7 +556,7 @@
       cols2.push({ label: 'Nights', type: 'num' }, { label: 'Available', type: 'num' }, { label: 'Occupancy', type: 'pct' });
       if (mon) cols2.push({ label: 'ADR', type: 'money' });
       var rows2 = S.bk.map(function (bk) {
-        var rev = M.revenue(bk.a, bk.b, f), n = M.nightsSold(bk.a, bk.b, f), av = M.availableNights(bk.a, bk.b, S.pid);
+        var rev = mRev(bk.a, bk.b, f), n = mSold(bk.a, bk.b, f), av = mAvail(bk.a, bk.b, S.pid);
         var r = [{ html: esc(bucketTitle(bk)), text: bucketTitle(bk) }];
         if (mon) r.push(rev);
         r.push(n, av, ratio(n, av));
@@ -633,7 +643,7 @@
     var tFrom = d.add(S.r.to, -83) < S.r.from ? d.add(S.r.to, -83) : S.r.from, ds = dataStart();
     if (tFrom < ds) tFrom = ds;
     var tr = { from: tFrom, to: S.r.to }, tn = d.diff(tFrom, S.r.to) + 1, tb = buckets(tr, tn <= 200 ? 'week' : 'month');
-    var revIn = function (a, b) { return D.reviews.filter(function (x) { return x.date >= a && x.date <= b && (!S.pid || x.propertyId === S.pid); }); };
+    var revIn = function (a, b) { return D.reviews.filter(function (x) { return x.date >= a && x.date <= b && inPid(x, S.pid); }); };
     var trend = tb.map(function (bk) { var l = revIn(bk.a, bk.b); return { bk: bk, n: l.length, v: avg(l, function (x) { return x.stars; }) }; });
     var minV = Math.min.apply(null, trend.filter(function (x) { return x.v != null; }).map(function (x) { return x.v; }).concat([5]));
     var subRows = SUBS.map(function (s) {
@@ -758,7 +768,7 @@
     ];
     var cols = [{ label: 'Property', type: 'text' }, { label: 'Turnovers', type: 'num' }, { label: 'Back-to-back', type: 'num' }, { label: 'Avg window', type: 'dur', title: 'Time between check-out and the next check-in on back-to-back days' },
       { label: 'Avg turnover time', type: 'dur', title: 'From check-out to the clean done or the restock logged' }, { label: 'Tasks done', type: 'num' }, { label: 'On time', type: 'pct' }, { label: 'Open tasks', type: 'num' }];
-    var props = S.pid ? [S.prop] : D.properties.filter(function (p) { var x = get('ops', S.r, p.id); return !p.archived || x.deps || x.tasksN; });
+    var props = S.pid ? [S.prop] : D.properties.filter(function (p) { var x = get('ops', S.r, p.id); return O.inCur(p) && (!p.archived || x.deps || x.tasksN); });
     var rows = props.map(function (p) {
       var x = get('ops', S.r, p.id);
       return [propCell(p), x.deps, x.b2b, x.window, x.turn, x.done.length, x.onTime, x.open.length];
@@ -783,10 +793,10 @@
       tile('entries', c0.n, c1.n, S)
     ];
     var u = unitWord(S.bk);
-    var opexIn = function (a, b) { return sum(M.expenses(a, b, 'opex').filter(function (e) { return !S.pid || e.propertyId === S.pid; }), function (e) { return e.amount; }); };
+    var opexIn = function (a, b) { return sum(M.expenses(a, b, 'opex').filter(function (e) { return inPid(e, S.pid); }), function (e) { return e.amount; }); };
     var cap = c0.capexList.slice().sort(function (a, b) { return b.amount - a.amount; });
     var capBody = cap.length ? '<div class="st-list">' + cap.slice(0, 6).map(function (e) {
-      return '<div class="list-row"><div class="lr-main"><div class="lr-title">' + esc(e.note || e.type) + '</div><div class="lr-sub">' + esc(d.fmt(e.date) + ' · ' + (e.propertyId ? propName(e.propertyId, true) : 'Company-wide') + ' · ' + e.type) + '</div></div><b class="tnum">' + esc(fmt.money(e.amount)) + '</b></div>';
+      return '<div class="list-row"><div class="lr-main"><div class="lr-title">' + esc(e.note || e.type) + '</div><div class="lr-sub">' + esc(d.fmt(e.date) + ' · ' + (e.propertyId ? propName(e.propertyId, true) : 'Company-wide') + ' · ' + e.type) + '</div></div><b class="tnum">' + esc(fmt.money(e.amount, { cur: e })) + '</b></div>';
     }).join('') + (cap.length > 6 ? '<div class="small muted" style="padding-top:8px">and ' + (cap.length - 6) + ' more, ' + esc(fmt.money(sum(cap.slice(6), function (e) { return e.amount; }))) + '</div>' : '') + '</div>'
       : U.empty('No capital spending in this range. Assets such as furniture and appliances show here.');
     var cards = [
@@ -811,7 +821,7 @@
     if (m.table) {
       var t = m.table;
       rows.push([]); rows.push([t.title + (t.sub ? ' (' + t.sub + ')' : '')]);
-      rows.push(t.cols.map(function (c) { return c.label + (c.type !== 'text' && c.type !== 'chg' && c.type !== 'auto' && F[c.type] ? F[c.type][2] : ''); }));
+      rows.push(t.cols.map(function (c) { return c.label + (c.type !== 'text' && c.type !== 'chg' && c.type !== 'auto' ? unitTag(c.type) : ''); }));
       t.rows.forEach(function (r) { rows.push(Array.isArray(r) ? t.cols.map(function (c, i) { return cellText(c, r[i]); }) : [r.group]); });
       if (t.foot) rows.push(t.cols.map(function (c, i) { return cellText(c, t.foot[i]); }));
     }
@@ -861,7 +871,7 @@
     st.pid = O.store.get('statistics:property', '') || '';
   }
   function propOptions() { /* every property, archived ones too: statistics is history (marked, listed last) */
-    var list = D.properties.filter(function (p) { return !p.archived; }).concat(D.properties.filter(function (p) { return p.archived; }));
+    var list = D.properties.filter(function (p) { return !p.archived && O.inCur(p); }).concat(D.properties.filter(function (p) { return p.archived && O.inCur(p); }));
     return '<option value="">All properties</option>' + list.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === st.pid ? ' selected' : '') + '>' + esc(p.name) + (p.archived ? ' (archived)' : '') + '</option>'; }).join('');
   }
   function allowedTab(id) { return id !== 'costs' || O.can('statistics.money'); }
@@ -879,10 +889,10 @@
         if (prm.tab && tabIndex(prm.tab) >= 0) st.tab = prm.tab;
         if (prm.preset && PRESETS.concat(['today', 'yesterday', 'thisMonth', 'lastMonthToDate']).indexOf(prm.preset) >= 0) { st.preset = prm.preset; }
         else if (prm.from && prm.to) { st.preset = null; st.from = prm.from; st.to = prm.to; }
-        if (prm.propertyId != null) st.pid = prm.propertyId;
+        if (prm.propertyId != null) { st.pid = prm.propertyId; if (st.pid && D.propById[st.pid] && !O.inCur(st.pid)) O.store.set('viewCur', O.curOf(st.pid)); } /* open in that unit's currency */
         if (prm.tab || prm.preset || prm.from || prm.propertyId != null) save();
       }
-      if (st.pid && !D.propById[st.pid]) st.pid = '';
+      if (st.pid && (!D.propById[st.pid] || !O.inCur(st.pid))) st.pid = ''; /* the currency was switched: back to all units */
       var tab = allowedTab(st.tab) ? st.tab : 'overview';
 
       /* top bar: exports (statistics.export) */
@@ -900,7 +910,7 @@
         return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === tab) + '" class="' + (t[0] === tab ? 'on' : '') + '"' + (ok ? '' : ' disabled title="Your access does not include money figures, so costs are hidden. An account owner can allow it in Staff Access."') + '>' + (ok ? '' : '<span aria-hidden="true">🔒 </span>') + esc(t[1]) + '</button>';
       }).join('');
       root.innerHTML = '<div class="pg-statistics">' +
-        '<div class="st-bar"><span data-slot="range"></span>' + propSel + (hasProps && D.bookings.length ? '<div class="st-cmp">' + esc(cmpSentence(S)) + (S.r.note ? ' <span class="st-rnote">' + esc(S.r.note) + '</span>' : '') + '</div>' : '') + '</div>' +
+        '<div class="st-bar"><span data-slot="range"></span>' + propSel + O.curSwitchHTML() + (hasProps && D.bookings.length ? '<div class="st-cmp">' + esc(cmpSentence(S)) + (S.r.note ? ' <span class="st-rnote">' + esc(S.r.note) + '</span>' : '') + '</div>' : '') + '</div>' +
         '<div class="st-tabs" role="tablist" aria-label="Statistics">' + tabsHTML + '</div>' +
         '<div class="st-body" role="tabpanel"></div></div>';
       var page = O.$('.pg-statistics', root);
@@ -910,6 +920,7 @@
         onChange: function (v) { st.preset = v.preset || null; st.from = v.from; st.to = v.to; save(); ctx.rerender(); }
       }));
       O.$('.st-prop', page).onchange = function (e) { st.pid = e.target.value; save(); ctx.rerender(); };
+      O.curSwitchWire(page);
       var tabsEl = O.$('.st-tabs', page);
       tabsEl.addEventListener('click', function (e) {
         var b = e.target.closest('[data-tab]'); if (!b || b.disabled) return;

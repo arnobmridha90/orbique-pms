@@ -175,7 +175,7 @@
       nightly: nightly,
       accommodation: nightly * nights,
       cleaningFee: cleaning,
-      tourismTax: country !== 'MY' ? 10 * nights : 0, /* RM10 per room per night for foreign guests (configurable) */
+      tourismTax: country !== 'MY' ? 10 * nights : 0, /* RM10 per room per night for foreign guests (the demo buildings are all in Malaysia; new bookings use O.tourismTaxApplies) */
       status: o.status,
       idVerified: o.idVerified,
       codeStatus: o.codeStatus,
@@ -487,7 +487,7 @@
 
   /* ---------------- inventory ---------------- */
   /* one central store; stock goes OUT to a unit (used by a staff member, usually at a turnover) and comes IN from purchases.
-     A move: {id, date, at, dir:'in'|'out'|'adjust', lines:[{itemId, qty}], propertyId (out), usedBy (out), bookingId?, supplier?, cost? (in, RM total), note, by} */
+     A move: {id, date, at, dir:'in'|'out'|'adjust', lines:[{itemId, qty}], propertyId (out), usedBy (out), bookingId?, supplier?, cost? (in, total in the main currency), note, by} */
   var invCats = ['Toiletries & amenities', 'Kitchen & consumables', 'Cleaning supplies', 'Linen & towels', 'Maintenance parts', 'Welcome & guest supplies'];
   /* use: per stay = a + b*nights + c*guests (fractions accumulate per unit, so 0.12 per stay = about one every 8 stays) */
   var invItems = [

@@ -1166,8 +1166,8 @@
   /* ---------------- invoices & receipts ---------------- */
   O.invoice = {};
   O.invoice.lines = function (b) {
-    var p = O.guestPlace(b), rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
-    if (b.tourismTax) rows.push(['Tourism tax (foreign guests, RM 10 per night)', b.nights + ' × RM 10', b.tourismTax]);
+    var p = O.guestPlace(b), mc = { cur: b }, rows = [[d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + p.name, b.nights + ' night' + (b.nights > 1 ? 's' : '') + ' × ' + O.fmt.money(b.nightly, mc), b.accommodation], ['Cleaning fee', '', b.cleaningFee]];
+    if (b.tourismTax && O.tourismTaxApplies(b)) rows.push(['Tourism tax (foreign guests, ' + O.fmt.money(10, mc) + ' per night)', b.nights + ' × ' + O.fmt.money(10, mc), b.tourismTax]);
     return rows;
   };
   O.invoice.canReceipt = function (b) { return !!b.paidAt; };
@@ -1179,8 +1179,8 @@
       '<div class="doc-body"><div class="doc-meta"><div><div class="dm-k">Billed to</div><b>' + O.esc(b.guest.name) + '</b><br>' + O.esc(ct.email) + '<br>' + O.esc(ct.phone) + '<br>' + O.esc(b.guest.countryName || '') + '</div>' +
       '<div class="right"><div class="dm-k">' + (isR ? 'Receipt no.' : 'Invoice no.') + '</div><b>' + O.esc(no || 'Not issued yet') + '</b><div class="dm-k" style="margin-top:6px">Date</div>' + (date ? d.fmtY(date) : '–') + '<div class="dm-k" style="margin-top:6px">Booking</div>' + O.esc(b.id) + ' · ' + O.esc(U.platName(b.channel)) + '</div></div>' +
       '<table><thead><tr><th>Description</th><th></th><th class="num">Amount</th></tr></thead><tbody>' +
-      O.invoice.lines(b).map(function (r) { return '<tr><td>' + O.esc(r[0]) + '</td><td class="muted">' + O.esc(r[1]) + '</td><td class="num">' + O.fmt.money(r[2], { dp: 2 }) + '</td></tr>'; }).join('') +
-      '<tr class="doc-total"><td>' + (isR ? 'Amount received' : 'Total due') + '</td><td></td><td class="num">' + O.fmt.money(b.total, { dp: 2 }) + '</td></tr></tbody></table>' +
+      O.invoice.lines(b).map(function (r) { return '<tr><td>' + O.esc(r[0]) + '</td><td class="muted">' + O.esc(r[1]) + '</td><td class="num">' + O.fmt.money(r[2], { cur: b, dp: 2 }) + '</td></tr>'; }).join('') +
+      '<tr class="doc-total"><td>' + (isR ? 'Amount received' : 'Total due') + '</td><td></td><td class="num">' + O.fmt.money(b.total, { cur: b, dp: 2 }) + '</td></tr></tbody></table>' +
       (isR ? '<div class="row-flex" style="margin-top:14px;justify-content:space-between"><div class="small">Paid ' + d.fmtY(b.paidAt) + ' · ' + O.esc(b.payMethod) + '</div><span class="doc-paid">PAID</span></div>'
         : '<div class="small" style="margin-top:12px">' + (b.paidAt ? 'Paid in full on ' + d.fmtY(b.paidAt) + ' (' + O.esc(b.payMethod) + ').' : b.channel === 'direct' ? 'Please pay by ' + d.fmtY(d.add(b.checkIn, -7)) + ' by FPX, card or DuitNow QR using the payment link.' : 'Collected by ' + O.esc(U.platName(b.channel)) + '.') + '</div>') +
       '</div><div class="doc-foot">' + O.esc(ws.legal || ws.name) + ' · ' + O.esc(ws.regNo || '') + ' · ' + O.esc(ws.address) + ' · ' + O.esc(ws.phone) + '<br>Stay at ' + O.esc(p.name) + (p.area ? ', ' + O.esc(p.area) : '') + '. Check-in ' + O.fmt.time(b.checkInTime) + ', check-out ' + O.fmt.time(b.checkOutTime) + '.</div></div>';
@@ -1189,13 +1189,13 @@
     var isR = kind === 'receipt', no = isR ? b.receiptNo : b.invoiceNo;
     if (isR && !b.paidAt) { U.toast('No payment recorded yet, so there is no receipt', 'bad'); return Promise.resolve(false); }
     return O.pdf.start(isR ? 'Payment receipt' : 'Invoice', no + ' · ' + d.fmtY(isR ? b.paidAt : b.invoiceDate)).then(function (r) {
-      var doc = r.doc, y = r.y, p = O.guestPlace(b), ct = O.contact(b);
+      var doc = r.doc, y = r.y, p = O.guestPlace(b), ct = O.contact(b), sym = O.fmt.cur(b), pdfCur = /^[\x20-\x7e]+$/.test(sym) ? sym : O.curOf(b); /* PDF fonts lack symbols such as ฿, so those show the code */
       y = O.pdf.text(doc, y, 'Billed to', { muted: true, size: 8 });
       y = O.pdf.text(doc, y, b.guest.name, { bold: true, size: 11 });
       y = O.pdf.text(doc, y, [ct.email, ct.phone, b.guest.countryName].filter(Boolean).join('  ·  '), { size: 9 });
       y = O.pdf.text(doc, y + 2, 'Booking ' + b.id + ' via ' + U.platName(b.channel) + ' · ' + p.name + (p.area ? ', ' + p.area : ''), { muted: true, size: 8.5 });
-      y = O.pdf.table(doc, y + 4, [{ label: 'Description', w: 110 }, { label: 'Qty', w: 40 }, { label: 'Amount (RM)', w: 36, align: 'right' }],
-        O.invoice.lines(b).map(function (l) { return [l[0], l[1], l[2].toFixed(2)]; }).concat([[isR ? 'Amount received' : 'Total due', '', b.total.toFixed(2)]]), { boldLast: true });
+      y = O.pdf.table(doc, y + 4, [{ label: 'Description', w: 110 }, { label: 'Qty', w: 40 }, { label: 'Amount (' + pdfCur + ')', w: 36, align: 'right' }],
+        O.invoice.lines(b).map(function (l) { return [l[0], pdfCur === sym ? l[1] : String(l[1]).split(sym + ' ').join(pdfCur + ' '), l[2].toFixed(2)]; }).concat([[isR ? 'Amount received' : 'Total due', '', b.total.toFixed(2)]]), { boldLast: true });
       if (isR) y = O.pdf.text(doc, y + 2, 'PAID on ' + d.fmtY(b.paidAt) + ' by ' + b.payMethod + '.', { bold: true, size: 10 });
       else y = O.pdf.text(doc, y + 2, b.paidAt ? 'Paid in full on ' + d.fmtY(b.paidAt) + ' (' + b.payMethod + ').' : b.channel === 'direct' ? 'Payment due by ' + d.fmtY(d.add(b.checkIn, -7)) + '.' : 'Collected by ' + U.platName(b.channel) + '.', { size: 9 });
       O.pdf.text(doc, y + 4, 'Check-in ' + O.fmt.time(b.checkInTime) + ' on ' + d.fmtY(b.checkIn) + ', check-out ' + O.fmt.time(b.checkOutTime) + ' on ' + d.fmtY(b.checkOut) + '. Thank you for staying with ' + O.ws().name + '.', { muted: true, size: 8.5 });
@@ -1239,7 +1239,7 @@
     O.$('.snd-msg', body).value = 'Hi ' + b.guest.name.split(' ')[0] + ', thank you for booking ' + O.guestPlace(b).name + ' (' + d.fmtRange(b.checkIn, b.checkOut) + '). Your ' + (kinds.length > 1 ? 'invoice and payment receipt are' : kinds[0] === 'receipt' ? 'payment receipt is' : 'invoice is') + ' attached. — ' + ws.name;
     paint();
     U.modal({
-      title: 'Send to ' + b.guest.name, sub: 'Booking ' + b.id + ' · total ' + O.fmt.money(b.total), body: body,
+      title: 'Send to ' + b.guest.name, sub: 'Booking ' + b.id + ' · total ' + O.fmt.money(b.total, { cur: b }), body: body,
       actions: [{ label: 'Cancel' }, {
         label: 'Send', kind: 'primary', onClick: function () {
           var inv = O.$('[name=inv]', body).checked, rcp = O.$('[name=rcp]', body).checked;
@@ -1295,8 +1295,8 @@
         '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(p.area || p.location || p.city ? O.propLabel(p) : p.name) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
         (b.status !== 'cancelled' && b.checkOut > D.TODAY ? '<div><div class="section-title" style="margin-top:0">Arrival readiness</div>' + O.readinessHTML(b) + '<div class="row-flex wrap" style="margin-top:8px">' + (!b.idVerified && canEdit ? '<button class="btn btn-ghost btn-sm" data-act="verify">Mark ID verified</button>' : '') + (canCodes ? '<button class="btn btn-ghost btn-sm" data-act="lock">' + O.icon('key') + 'Change door code</button><span class="small muted">Guest code <span class="kbd">' + O.esc(b.doorCode || '') + '</span></span>' : '') + '</div></div>' : '') +
         '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (conv && O.can('inbox') ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
-        (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly) + '</dt><dd>' + O.fmt.money(b.accommodation) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total) + '</dd>' +
-        (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout) + '</dd>' : '') + '</dl></div>' : '') +
+        (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly, { cur: b }) + '</dt><dd>' + O.fmt.money(b.accommodation, { cur: b }) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee, { cur: b }) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax, { cur: b }) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total, { cur: b }) + '</dd>' +
+        (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee, { cur: b }) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout, { cur: b }) + '</dd>' : '') + '</dl></div>' : '') +
         (b.status !== 'cancelled' && canInv && canMoney ? '<div><div class="section-title" style="margin-top:0">Invoice &amp; receipt</div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Invoice ' + O.esc(b.invoiceNo || '') + '</div><div class="lr-sub">Created automatically ' + d.fmtY(b.invoiceDate || b.checkIn) + '</div></div>' + O.invoice.statusHTML(b, 'invoice') + '<button class="btn btn-ghost btn-xs" data-act="inv">View</button></div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Receipt ' + O.esc(b.receiptNo || '') + '</div><div class="lr-sub">' + (b.paidAt ? 'Created automatically when paid, ' + d.fmtY(b.paidAt) : 'Created automatically when payment arrives') + '</div></div>' + O.invoice.statusHTML(b, 'receipt') + (b.paidAt || canPay ? '<button class="btn btn-ghost btn-xs" data-act="rcp">' + (b.paidAt ? 'View' : 'Record payment') + '</button>' : '') + '</div>' +
@@ -1873,7 +1873,7 @@
     var mine = function (t) { return O.can('tasks.others') || t.assigneeId === O.state.viewer; };
     D.tasks.filter(function (t) { return t.status !== 'done' && t.due.slice(0, 10) < D.TODAY && mine(t); }).forEach(function (t) { out.push({ icon: '⏰', tone: 'bad', t: 'Overdue: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
     if (O.can('tasks.assign')) D.tasks.filter(function (t) { return t.status !== 'done' && !t.assigneeId; }).forEach(function (t) { out.push({ icon: '👤', tone: 'warn', t: 'Unassigned task: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
-    if (O.can('invoices')) D.bookings.filter(function (b) { return b.status !== 'cancelled' && !b.invoiceSent && b.invoiceNo && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (b) { out.push({ icon: '🧾', tone: '', t: 'Invoice not sent: ' + b.guest.name, s: b.invoiceNo + ' · ' + O.fmt.money(b.total), go: ['invoices'] }); });
+    if (O.can('invoices')) D.bookings.filter(function (b) { return b.status !== 'cancelled' && !b.invoiceSent && b.invoiceNo && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (b) { out.push({ icon: '🧾', tone: '', t: 'Invoice not sent: ' + b.guest.name, s: b.invoiceNo + ' · ' + O.fmt.money(b.total, { cur: b }), go: ['invoices'] }); });
     if (O.can('bookings')) D.bookings.filter(function (b) { return b.status === 'pending'; }).slice(0, 2).forEach(function (b) { out.push({ icon: '⏳', tone: 'warn', t: 'Pending booking: ' + b.guest.name, s: P(b.propertyId) + ' · ' + d.fmtRange(b.checkIn, b.checkOut), go: ['bookings'] }); });
     (O.notifiers || []).forEach(function (fn) { try { out.push.apply(out, fn() || []); } catch (e) { console.error(e); } });
     return out;

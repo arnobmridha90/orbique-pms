@@ -178,9 +178,12 @@
   function canEditCls(e) { return canApprove() || (canAll() && O.can('expenses', 'edit')) || e.recordedBy === me().id; }
   function range() { if (st.preset) { var p = U.preset(st.preset); return { from: p.from, to: p.to }; } return { from: st.from, to: st.to }; }
   function prevRange(r) { var n = d.diff(r.from, r.to) + 1; return { from: d.add(r.from, -n), to: d.add(r.from, -1) }; }
-  function sum(list, f) { return list.reduce(function (s, x) { return s + (f ? f(x) : x.amount); }, 0); }
-  /* RM 96, RM 185.50 — cents only when there are cents */
-  function money(n) { return fmt.money(n, { dp: Math.abs(n - Math.round(n)) > 0.004 ? 2 : 0 }); }
+  /* an expense is in its unit's (or building's) currency; one with no unit is in the view currency. Totals add view-currency expenses only */
+  function curE(e) { return e && (e.propertyId || e.buildingId) ? e : O.baseCur(); } /* company-wide costs are in the main currency, as in Reports */
+  function inC(e) { return O.inCur(curE(e)); }
+  function sum(list, f) { return list.reduce(function (s, x) { return s + (f ? f(x) : inC(x) ? x.amount : 0); }, 0); }
+  /* RM 96, RM 185.50 — cents only when there are cents (cur: the expense, else the view currency) */
+  function money(n, cur) { return fmt.money(n, { dp: Math.abs(n - Math.round(n)) > 0.004 ? 2 : 0, cur: cur }); }
   /* Wei Ling Tan -> Wei Ling, Siti Aminah -> Siti */
   function firstName(name) { var p = String(name).split(' '); return p.length >= 3 ? p.slice(0, 2).join(' ') : p[0]; }
   /* a rejected claim is not a company expense: it stays in the list but is left out of every total (same rule as Financials) */
@@ -234,13 +237,13 @@
     if (status === 'rejected') { e.rejectedAt = D.TODAY; e.rejectedBy = me().id; }
     if (!quiet) {
       var who = firstName(staff(e.paidBy).name);
-      U.toast(status === 'approved' ? 'Claim approved. ' + who + ' is told on WhatsApp and will be paid back ' + money(e.amount) + '.' :
+      U.toast(status === 'approved' ? 'Claim approved. ' + who + ' is told on WhatsApp and will be paid back ' + money(e.amount, curE(e)) + '.' :
         status === 'reimbursed' ? 'Marked as paid back to ' + who + '.' : 'Claim rejected. ' + who + ' is told why on WhatsApp.');
       O.emit('data', { type: 'expense' });
     }
   }
   function rejectClaim(e) {
-    var body = O.html('<div class="stack ex-rjm"><div class="note">' + esc(staff(e.paidBy).name) + ' · ' + esc(typeLabel(e)) + ' · <b>' + money(e.amount) + '</b> on ' + d.fmtY(e.date) + '</div>' +
+    var body = O.html('<div class="stack ex-rjm"><div class="note">' + esc(staff(e.paidBy).name) + ' · ' + esc(typeLabel(e)) + ' · <b>' + money(e.amount, curE(e)) + '</b> on ' + d.fmtY(e.date) + '</div>' +
       '<div class="field"><label for="ex-rj">Reason (sent to ' + esc(firstName(staff(e.paidBy).name)) + ') <span class="req">*</span></label><textarea class="textarea" id="ex-rj" rows="3" placeholder="e.g. Personal purchase, not for the business">' + (e.receipt ? '' : 'Please add a photo of the receipt and submit again.') + '</textarea><span class="hint">The claim is left out of all totals. It stays in the list as rejected.</span></div></div>');
     U.modal({ title: 'Reject this claim?', body: body, actions: [{ label: 'Cancel' }, { label: 'Reject claim', kind: 'danger', onClick: function () {
       var r = O.$('#ex-rj', body).value.trim();
@@ -264,31 +267,31 @@
     var pic = e.receiptImg ? '<div class="ex-photo"><img src="' + e.receiptImg + '" alt="Receipt photo"></div><div class="ex-cap">' + esc(e.receiptName || 'Receipt photo') + '</div>'
       : e.receipt ? '<div class="slip" aria-label="Receipt summary"><div class="c">' + esc(p ? p.area.split(',')[0] : 'Kuala Lumpur') + '</div><div class="c" style="font-weight:400">' + d.fmtDM(e.date) + '/' + e.date.slice(2, 4) + '  ' + ('0' + (e.date === D.TODAY ? 8 + D.hash(e.id) % 2 : 9 + D.hash(e.id) % 9)).slice(-2) + ':' + ('0' + D.hash(e.id + 'm') % 60).slice(-2) + '</div><hr>' +
         '<div class="r"><span>' + esc(typeLabel(e).slice(0, 22)) + '</span></div>' + (e.note ? '<div class="r"><span>' + esc(e.note.slice(0, 28)) + '</span></div>' : '') + '<hr>' +
-        '<div class="r tot"><span>TOTAL</span><span>RM ' + e.amount.toFixed(2) + '</span></div><div class="r"><span>' + esc(e.method === 'Company card' ? 'CARD' : e.method.indexOf('Cash') === 0 ? 'CASH' : e.method === 'Bank transfer' ? 'TRANSFER' : 'PAID') + '</span></div></div><div class="ex-cap">Receipt photo on file</div>'
+        '<div class="r tot"><span>TOTAL</span><span>' + esc(fmt.cur(curE(e))) + ' ' + e.amount.toFixed(2) + '</span></div><div class="r"><span>' + esc(e.method === 'Company card' ? 'CARD' : e.method.indexOf('Cash') === 0 ? 'CASH' : e.method === 'Bank transfer' ? 'TRANSFER' : 'PAID') + '</span></div></div><div class="ex-cap">Receipt photo on file</div>'
         : '<div class="note warn">No receipt photo yet.' + (canPhoto ? '' : ' Ask ' + esc(firstName(who.name)) + ' to add one.') + '</div>' +
           (canPhoto ? '<label class="photo-btn ex-add-ph" for="ex-add-file">' + O.icon('camera') + 'Add receipt photo</label><input type="file" id="ex-add-file" accept="image/*" capture="environment" class="sr-only">' : '');
     var body = '<div class="ex-detail"><div><dl class="kv">' +
-      '<dt>Amount</dt><dd><b>' + fmt.money(e.amount, { dp: 2 }) + '</b></dd><dt>Date</dt><dd>' + d.fmtY(e.date) + '</dd><dt>Type</dt><dd>' + esc(typeLabel(e)) + '</dd>' +
+      '<dt>Amount</dt><dd><b>' + fmt.money(e.amount, { dp: 2, cur: curE(e) }) + '</b></dd><dt>Date</dt><dd>' + d.fmtY(e.date) + '</dd><dt>Type</dt><dd>' + esc(typeLabel(e)) + '</dd>' +
       '<dt>Cost type</dt><dd>' + (canEditCls(e) ? '<div class="ex-ccm">' + U.seg([['opex', 'Operating'], ['capex', 'Capital']], clsOf(e), 'data-ccm') + '</div>' : esc(CC[clsOf(e)][0])) + '</dd>' +
       '<dt>For</dt><dd>' + esc(propName(e.propertyId)) + '</dd><dt>Paid by</dt><dd>' + esc(who.name) + '</dd><dt>Method</dt><dd>' + esc(e.method) + '</dd>' +
       (e.recordedBy && e.recordedBy !== e.paidBy ? '<dt>Recorded by</dt><dd>' + esc(staff(e.recordedBy).name) + '</dd>' : '') +
       '<dt>Reference</dt><dd>' + esc(e.id) + '</dd>' + (e.note ? '<dt>Note</dt><dd style="text-align:right;font-weight:500">' + esc(e.note) + '</dd>' : '') + '</dl>' + tl + '</div><div>' + pic + '</div></div>';
     var acts = [];
-    if (canDelete) acts.push({ label: 'Delete', kind: 'ghost', onClick: function (close) { U.confirm('Delete this ' + money(e.amount) + ' expense?', 'Delete', 'danger').then(function (ok) { if (!ok) return; var i = D.expenses.indexOf(e); if (i >= 0) D.expenses.splice(i, 1); U.toast('Expense deleted'); O.emit('data', { type: 'expense' }); }); } });
+    if (canDelete) acts.push({ label: 'Delete', kind: 'ghost', onClick: function (close) { U.confirm('Delete this ' + money(e.amount, curE(e)) + ' expense?', 'Delete', 'danger').then(function (ok) { if (!ok) return; var i = D.expenses.indexOf(e); if (i >= 0) D.expenses.splice(i, 1); U.toast('Expense deleted'); O.emit('data', { type: 'expense' }); }); } });
     if (owner() && isClaim(e) && e.claimStatus === 'pending') {
       acts.push({ label: 'Reject', kind: 'ghost', onClick: function () { setTimeout(function () { rejectClaim(e); }, 0); } });
       acts.push({ label: 'Approve claim', kind: 'primary', onClick: function () { setClaim(e, 'approved'); } });
     } else if (owner() && isClaim(e) && e.claimStatus === 'approved') {
       acts.push({ label: 'Mark as paid back', kind: 'primary', onClick: function () { setClaim(e, 'reimbursed'); } });
     } else acts.push({ label: 'Close', kind: 'primary' });
-    U.modal({ title: typeLabel(e) + ' · ' + money(e.amount), sub: propName(e.propertyId) + ' · ' + d.fmtY(e.date), body: body, size: 'wide', actions: acts, autofocus: false,
+    U.modal({ title: typeLabel(e) + ' · ' + money(e.amount, curE(e)), sub: propName(e.propertyId) + ' · ' + d.fmtY(e.date), body: body, size: 'wide', actions: acts, autofocus: false,
       onOpen: function (el, close) {
         var ccm = O.$('.ex-ccm', el);
         if (ccm) ccm.addEventListener('click', function (ev) {
           var b = ev.target.closest('[data-ccm]'); if (!b || b.dataset.ccm === clsOf(e)) return;
           e.costClass = b.dataset.ccm;
           O.$$('[data-ccm]', ccm).forEach(function (x) { x.classList.toggle('on', x === b); });
-          U.toast(money(e.amount) + ' is now counted as ' + (e.costClass === 'capex' ? 'a capital expense, shown below operating profit in Financials' : 'an operating expense, inside the profit and loss') + '.');
+          U.toast(money(e.amount, curE(e)) + ' is now counted as ' + (e.costClass === 'capex' ? 'a capital expense, shown below operating profit in Financials' : 'an operating expense, inside the profit and loss') + '.');
           O.emit('data', { type: 'expense', id: e.id });
         });
         var inp = O.$('#ex-add-file', el); if (!inp) return;
@@ -323,7 +326,7 @@
     if (!canRecord()) return '<div class="card"><div class="card-body ex-norec">' + O.icon('lock') + '<div><b>Recording expenses is not part of your access.</b><div class="small muted">You can look through the expenses here. An account owner can change this in Staff Access.</div></div></div></div>';
     return '<form class="card ex-form" novalidate autocomplete="off"><div class="card-head"><div><h3>' + O.icon('plus') + 'Record an expense</h3><div class="sub">Everyone records what they spend. It shows up in Financials straight away.</div></div></div><div class="card-body">' +
       '<div class="form-grid"><div class="field' + (er.date ? ' is-bad' : '') + '"><label for="ex-date">Date <span class="req">*</span></label><input class="input" type="date" id="ex-date" data-d="date" value="' + esc(f.date) + '" max="' + D.TODAY + '">' + errHTML('date') + '</div>' +
-      '<div class="field"><label for="ex-amt">Amount <span class="req">*</span></label><div class="money-in' + (er.amount ? ' is-bad' : '') + '"><span>RM</span><input class="input" id="ex-amt" data-d="amount" inputmode="decimal" placeholder="0.00" value="' + esc(f.amount) + '"></div>' + errHTML('amount') + '</div></div>' +
+      '<div class="field"><label for="ex-amt">Amount <span class="req">*</span></label><div class="money-in' + (er.amount ? ' is-bad' : '') + '"><span class="ex-cur">' + esc(fmt.cur(f.propertyId || null)) + '</span><input class="input" id="ex-amt" data-d="amount" inputmode="decimal" placeholder="0.00" value="' + esc(f.amount) + '"></div>' + errHTML('amount') + '</div></div>' +
       '<div class="field' + (er.type ? ' is-bad' : '') + '"><label for="ex-type">Expense type <span class="req">*</span></label><select class="select" id="ex-type" data-d="type"><option value="">Choose a type…</option>' +
       D.expenseTypes.map(function (t) { return '<option' + (f.type === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' + errHTML('type') + '</div>' +
       (f.type === 'Others' ? '<div class="field ex-other' + (er.otherType ? ' is-bad' : '') + '"><label for="ex-other">What was it for? <span class="req">*</span></label><input class="input" id="ex-other" data-d="otherType" maxlength="60" placeholder="e.g. Pest control, Key cutting, Parking fine" value="' + esc(f.otherType) + '">' + errHTML('otherType') + '</div>' : '') +
@@ -356,7 +359,7 @@
     var e = { id: O.uid('EX'), date: f.date, propertyId: f.propertyId || null, type: f.type, costClass: f.costClass, amount: Math.round(amt * 100) / 100, paidBy: payer.id, method: f.method,
       receipt: !!f.img, receiptImg: f.img || null, receiptName: f.imgName || '', note: f.note.trim(), recordedBy: v.id, createdAt: D.NOW };
     if (f.type === 'Others') e.otherType = f.otherType.trim();
-    var msg = 'Saved ' + money(e.amount) + ' (' + typeLabel(e) + ', ' + propName(e.propertyId, true) + ', ' + CC[e.costClass][0].toLowerCase() + ').';
+    var msg = 'Saved ' + money(e.amount, curE(e)) + ' (' + typeLabel(e) + ', ' + propName(e.propertyId, true) + ', ' + CC[e.costClass][0].toLowerCase() + ').';
     if (isClaim(e)) {
       var own = D.staff.filter(function (s) { return s.role === 'owner'; })[0];
       if (payer.role === 'owner') { e.claimStatus = 'approved'; e.approvedAt = D.TODAY; e.approvedBy = payer.id; msg += ' Claim approved.'; }
@@ -382,7 +385,7 @@
       var rowsH = pend.map(function (e) {
         var w = staff(e.paidBy);
         return '<div class="cl-row click" data-eid="' + e.id + '" title="Open to see the receipt">' + U.avatar(w.name, 'sm') + '<div class="main"><div class="t">' + esc(w.name) + ' · ' + esc(typeLabel(e)) + '</div><div class="s">' + d.fmt(e.date) + ' · ' + esc(propName(e.propertyId, true)) + (e.receipt ? ' · receipt attached' : ' · no receipt') + (e.note ? ' · ' + esc(e.note) : '') + '</div></div>' +
-          '<span class="amt">' + money(e.amount) + '</span><div class="btns"><button type="button" class="btn btn-ghost btn-sm" data-act="reject">Reject</button><button type="button" class="btn btn-primary btn-sm" data-act="approve">Approve</button></div></div>';
+          '<span class="amt">' + money(e.amount, curE(e)) + '</span><div class="btns"><button type="button" class="btn btn-ghost btn-sm" data-act="reject">Reject</button><button type="button" class="btn btn-primary btn-sm" data-act="approve">Approve</button></div></div>';
       }).join('');
       return '<div class="card"><div class="card-head"><div><h3>Claims waiting for your approval' + (pend.length ? '<span class="cl-head-count">' + pend.length + '</span>' : '') + '</h3><div class="sub">' +
         (pend.length ? money(sum(pend)) + ' paid personally by staff' : 'Nothing to approve') + (appr.length ? ' · ' + money(sum(appr)) + ' approved, still to pay back' : '') + '</div></div>' +
@@ -392,13 +395,13 @@
     var mine = all.filter(function (e) { return e.claimStatus !== 'reimbursed'; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     return '<div class="card"><div class="card-head"><div><h3>Your claims</h3><div class="sub">' + (mine.length ? money(sum(mine.filter(function (e) { return e.claimStatus !== 'rejected'; }))) + ' waiting to be paid back to you' : 'Nothing waiting') + '</div></div></div>' +
       (mine.length ? '<div>' + mine.map(function (e) {
-        return '<div class="cl-row click" data-eid="' + e.id + '" data-act="open"><div class="main"><div class="t">' + esc(typeLabel(e)) + '</div><div class="s">' + d.fmt(e.date) + ' · ' + esc(propName(e.propertyId, true)) + '</div></div><span class="amt">' + money(e.amount) + '</span>' + claimPill(e) + '</div>';
+        return '<div class="cl-row click" data-eid="' + e.id + '" data-act="open"><div class="main"><div class="t">' + esc(typeLabel(e)) + '</div><div class="s">' + d.fmt(e.date) + ' · ' + esc(propName(e.propertyId, true)) + '</div></div><span class="amt">' + money(e.amount, curE(e)) + '</span>' + claimPill(e) + '</div>';
       }).join('') + '</div>' : '<div class="card-body">' + U.empty('You have no open claims. Choose "Paid personally (claim)" when you pay with your own money.', '✓') + '</div>') +
       '<div class="card-foot">Claims are approved by the account owner. You get a WhatsApp message when yours is approved or paid back.</div></div>';
   }
   function breakdownCards(list, plist) {
     var total = sum(list) || 1;
-    var types = {}; list.forEach(function (e) { var k = e.type; types[k] = (types[k] || 0) + e.amount; });
+    var types = {}; list.filter(inC).forEach(function (e) { var k = e.type; types[k] = (types[k] || 0) + e.amount; });
     var tRows = Object.keys(types).sort(function (a, b) { return types[b] - types[a]; }).map(function (k) {
       return { label: '<span class="hb-click-l">' + esc(k) + '</span>', value: types[k], display: money(types[k]) + ' <span class="hb-sub">' + fmt.pct(types[k] / total) + '</span>', k: k };
     });
@@ -442,9 +445,9 @@
           '<td class="c-who"><span class="ex-who">' + U.avatar(w.name, 'sm') + '<span><span class="b">' + esc(w.name) + '</span><span class="ex-meth">' + esc(e.method) + '</span></span></span></td>' +
           '<td class="c-rc">' + rcHTML(e) + '</td>' +
           '<td class="c-claim">' + claimPill(e) + '</td>' +
-          '<td class="c-amt num b nowrap">' + money(e.amount) + '</td>' +
+          '<td class="c-amt num b nowrap">' + money(e.amount, curE(e)) + '</td>' +
           (appr ? '<td class="c-acts nowrap">' + (isClaim(e) && e.claimStatus === 'pending' ? '<button type="button" class="btn btn-primary btn-xs" data-act="approve">Approve</button>' : isClaim(e) && e.claimStatus === 'approved' ? '<button type="button" class="btn btn-ghost btn-xs" data-act="paid">Mark paid back</button>' : '') + '</td>' : '') + '</tr>';
-      }).join('') + '</tbody><tfoot><tr class="ex-tot"><td colspan="6">Total of ' + fmt.plural(list.filter(counts).length, 'expense') + (list.some(function (e) { return !counts(e); }) ? '<span class="small muted" style="font-weight:500"> · rejected claims not counted</span>' : '') + (st.cls ? '' : '<span class="ex-split">' + splitText(list.filter(counts)) + '</span>') + '</td><td class="num nowrap">' + money(sum(list.filter(counts))) + '</td>' + (appr ? '<td></td>' : '') + '</tr></tfoot></table></div>' +
+      }).join('') + '</tbody><tfoot><tr class="ex-tot"><td colspan="6">Total of ' + fmt.plural(list.filter(function (e) { return counts(e) && inC(e); }).length, 'expense') + (list.some(function (e) { return !counts(e); }) ? '<span class="small muted" style="font-weight:500"> · rejected claims not counted</span>' : '') + (st.cls ? '' : '<span class="ex-split">' + splitText(list.filter(counts)) + '</span>') + '</td><td class="num nowrap">' + money(sum(list.filter(counts))) + '</td>' + (appr ? '<td></td>' : '') + '</tr></tfoot></table></div>' +
       (list.length > shown.length ? '<div class="ex-more"><button type="button" class="btn btn-ghost btn-sm" data-act="more">Show ' + Math.min(30, list.length - shown.length) + ' more · ' + (list.length - shown.length) + ' hidden</button></div>' : '')
       : emptyHTML(baseR, all);
     return '<div class="card ex-list">' + head + filters + table + '</div>';
@@ -461,15 +464,16 @@
   function exportCSV(list) {
     var r = range();
     if (!list.length) { U.toast('Nothing to export for these filters'); return; }
-    var out = [['Reference', 'Date', 'Type', 'Details', 'Cost type', 'Property', 'Paid by', 'Method', 'Receipt', 'Claim status', 'Note', 'Amount (RM)']];
+    var mc = O.multiCur(), vc = mc ? [O.viewCur()] : []; /* several currencies: a Currency column; totals are the view currency's */
+    var out = [['Reference', 'Date', 'Type', 'Details', 'Cost type', 'Property', 'Paid by', 'Method', 'Receipt', 'Claim status', 'Note', mc ? 'Amount' : 'Amount (' + fmt.cur() + ')'].concat(mc ? ['Currency'] : [])];
     list.forEach(function (e) {
       out.push([e.id, e.date, e.type, e.type === 'Others' ? e.otherType || '' : '', CC[clsOf(e)][1], propName(e.propertyId), staff(e.paidBy).name, e.method, e.receipt ? 'Yes' : 'No',
-        isClaim(e) ? (CLAIM_PILL[e.claimStatus] || CLAIM_PILL.pending)[0] : 'Not a claim', e.note || '', e.amount.toFixed(2)]);
+        isClaim(e) ? (CLAIM_PILL[e.claimStatus] || CLAIM_PILL.pending)[0] : 'Not a claim', e.note || '', e.amount.toFixed(2)].concat(mc ? [O.curOf(curE(e))] : []));
     });
     var ok = list.filter(counts);
-    out.push(['', '', '', '', 'Operating', '', '', '', '', '', 'Operating total', sum(ok.filter(function (e) { return clsOf(e) === 'opex'; })).toFixed(2)]);
-    out.push(['', '', '', '', 'Capital', '', '', '', '', '', 'Capital total', sum(ok.filter(function (e) { return clsOf(e) === 'capex'; })).toFixed(2)]);
-    out.push(['', '', '', '', '', '', '', '', '', '', 'Total (rejected claims not counted)', sum(ok).toFixed(2)]);
+    out.push(['', '', '', '', 'Operating', '', '', '', '', '', 'Operating total', sum(ok.filter(function (e) { return clsOf(e) === 'opex'; })).toFixed(2)].concat(vc));
+    out.push(['', '', '', '', 'Capital', '', '', '', '', '', 'Capital total', sum(ok.filter(function (e) { return clsOf(e) === 'capex'; })).toFixed(2)].concat(vc));
+    out.push(['', '', '', '', '', '', '', '', '', '', 'Total (rejected claims not counted)', sum(ok).toFixed(2)].concat(vc));
     O.downloadCSV('Expenses-' + r.from + '-to-' + r.to + '.csv', out);
   }
 
@@ -503,7 +507,7 @@
       var inRc = inR.filter(counts), noRc = inRc.filter(function (e) { return !e.receipt; });
       var pendLabel = canApprove() ? 'Claims to approve' : 'Your claims pending';
 
-      ctx.setActions('<button type="button" class="btn btn-ghost" data-top="csv"' + (list.length ? '' : ' disabled title="Nothing to export"') + '>' + O.icon('download') + 'Export CSV</button>' + (canRecord() ? '<button type="button" class="btn btn-primary" data-top="new">' + O.icon('plus') + 'Record expense</button>' : ''));
+      ctx.setActions(O.curSwitchHTML() + '<button type="button" class="btn btn-ghost" data-top="csv"' + (list.length ? '' : ' disabled title="Nothing to export"') + '>' + O.icon('download') + 'Export CSV</button>' + (canRecord() ? '<button type="button" class="btn btn-primary" data-top="new">' + O.icon('plus') + 'Record expense</button>' : ''));
       root.innerHTML = '<div class="pg-expenses">' + U.kpis([
         { label: canAll() ? 'Operating costs' : 'Your operating costs', value: money(opex), delta: fmt.change(opex, prevOpex), deltaOpts: { invert: true }, sub: '<span class="lg">vs prior ' + fmt.plural(nDays, 'day') + '</span><span class="sm">vs prior ' + nDays + 'd</span>', title: 'Running costs of the month, counted in profit. Compared with ' + U.rangeLabel(pr.from, pr.to) + ': ' + money(prevOpex), hl: true },
         { label: canAll() ? 'Capital spending' : 'Your capital spending', value: money(capex), sub: capL.length ? fmt.plural(capL.length, 'purchase') + '<span class="lg"> · kept out of profit</span>' : 'None in range', title: 'Long-lasting purchases for a property, shown below operating profit in Financials' },
@@ -520,6 +524,7 @@
 
       /* arriving from Financials (a person) or a claims link: show the filtered list, not the form */
       if (ctx.fresh && ctx.params && (ctx.params.person || ctx.params.claim)) setTimeout(function () { var l = O.$('.pg-expenses .ex-list'); if (l) l.scrollIntoView({ block: 'start' }); }, 60);
+      O.curSwitchWire(ctx.actionsEl);
       ctx.actionsEl.onclick = function (e) {
         var x = e.target.closest('[data-top]'); if (!x) return;
         if (x.dataset.top === 'csv') exportCSV(list);
@@ -587,6 +592,7 @@
       form.addEventListener('input', function (e) { var k = e.target.dataset.d; if (k) { st.draft[k] = e.target.value; if (st.err[k]) { delete st.err[k]; e.target.closest('.field').classList.remove('is-bad'); var m = O.$('.ex-err', e.target.closest('.field')); if (m) m.remove(); var mi = e.target.closest('.money-in'); if (mi) mi.classList.remove('is-bad'); } } });
       form.addEventListener('change', function (e) {
         var t = e.target, k = t.dataset.d;
+        if (k === 'propertyId') { st.draft.propertyId = t.value; var cs = O.$('.ex-cur', form); if (cs) cs.textContent = fmt.cur(t.value || null); return; }
         if (t.name === 'ex-cc') { st.draft.costClass = t.value; st.draft.ccAuto = false; delete st.err.costClass; ctx.rerender(); var c = O.$('.ex-cc input[value="' + t.value + '"]'); if (c) c.focus(); return; }
         if (k === 'type' || k === 'method' || k === 'paidBy') {
           st.draft[k] = t.value;

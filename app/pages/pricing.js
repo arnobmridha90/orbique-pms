@@ -4,7 +4,7 @@
      expected revenue impact.
    - Chart: our price vs competitor average (min–max band) vs suggested; or this year vs last two years.
    - Per-night table with selection + apply (stored in D.priceOverrides[pid][iso], read by bookings/calendar too).
-   - Reasoning panel: every suggestion is a chain of factors in RM that add up exactly to the suggested price
+   - Reasoning panel: every suggestion is a chain of factors (in the building's currency) that add up exactly to the suggested price
      (base, season, weekend, local event, competitor gap, booking pace, days until arrival, orphan night,
      min/max rule, rounding).
    - Competitor set (include/exclude listings from the average), same-date history, pricing rules, portfolio overview.
@@ -18,7 +18,7 @@
     pid: '', from: null, to: null, preset: 'next30',
     view: 'all', chart: 'market', sel: {}, picked: {}, excl: {}, compSort: { k: 'avg', dir: -1 }
   };
-  D.priceOverrides = D.priceOverrides || {};      /* {pid: {iso: RM number}} read by bookings, calendar and website */
+  D.priceOverrides = D.priceOverrides || {};      /* {pid: {iso: price in the property's currency}} read by bookings, calendar and website */
   D.priceOverrideMeta = D.priceOverrideMeta || {}; /* {pid: {iso: {how:'suggestion'|'manual', by, at}}} who set an override and how */
   D.pricingRules = D.pricingRules || {};
   D.priceLog = D.priceLog || [];
@@ -194,7 +194,7 @@
   function round5(v) { return Math.round(v / 5) * 5; }
   function avg(a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : 0; }
   function sum(a) { return a.reduce(function (s, x) { return s + x; }, 0); }
-  function signed(n) { return (n > 0 ? '+' : n < 0 ? '−' : '±') + fmt.money(Math.abs(n)); }
+  function signed(n, c) { return (n > 0 ? '+' : n < 0 ? '−' : '±') + fmt.money(Math.abs(n), { cur: c }); }
   function signedPct(x, dp) { dp = dp == null ? 0 : dp; if (x != null && !isNaN(x) && Math.round(Math.abs(x) * 100 * Math.pow(10, dp)) === 0) return '±0%'; return fmt.changeText(x, dp); }
   /* share of a night's final occupancy that is usually on the books at a given lead time (market booking curve) */
   var CURVE = [[0, 1], [3, 0.86], [7, 0.73], [14, 0.59], [30, 0.41], [60, 0.23], [90, 0.11], [150, 0.04]];
@@ -321,7 +321,7 @@
     return { P: P, R: R, comps: comps, used: used, mOcc: mOcc, usualOcc: usualOcc, groupName: groupName, group: group, days: days, idx: idx };
   }
 
-  /* the factor chain: each step is an RM amount, the amounts add up exactly to the suggestion */
+  /* the factor chain: each step is an amount in the property's currency, the amounts add up exactly to the suggestion */
   function factors(P, R, n, groupName) {
     var out = [], run = 0;
     function add(key, label, short, amt, detail, always) {
@@ -339,7 +339,7 @@
     var gap = n.cAvg - run, cap = run * 0.15;
     var compAmt = clamp(gap * R.compWeight / 100, -cap, cap);
     add('comp', 'Competitor gap', 'Market', compAmt,
-      'Comp avg ' + fmt.money(n.cAvg) + ' is ' + (Math.abs(gap) < 1 ? 'level with' : fmt.money(Math.abs(gap)) + (gap > 0 ? ' above' : ' below')) + ' the price so far; move ' + R.compWeight + '% of the way' + (Math.abs(gap * R.compWeight / 100) > cap ? ' (capped at 15%)' : ''), true);
+      'Comp avg ' + fmt.money(n.cAvg, { cur: P }) + ' is ' + (Math.abs(gap) < 1 ? 'level with' : fmt.money(Math.abs(gap), { cur: P }) + (gap > 0 ? ' above' : ' below')) + ' the price so far; move ' + R.compWeight + '% of the way' + (Math.abs(gap * R.compWeight / 100) > cap ? ' (capped at 15%)' : ''), true);
     var diff = n.grpOTB - n.usualOTB, pacePct = clamp(diff * 0.25, -0.06, 0.08);
     add('pace', 'Booking pace', 'Pace', run * pacePct,
       groupName.charAt(0).toUpperCase() + groupName.slice(1) + ' ' + fmt.pct(n.grpOTB) + ' booked vs ' + fmt.pct(n.usualOTB) + ' usual at ' + fmt.plural(Math.max(0, n.lead), 'day') + ' out' + (Math.abs(diff) < 0.03 ? ' (on pace)' : diff > 0 ? ' (ahead)' : ' (behind)'), true);
@@ -351,9 +351,9 @@
     else leadTxt = fmt.plural(n.lead, 'day') + ' to arrival: no lead-time adjustment';
     add('lead', 'Days until arrival', 'Last-minute', -run * leadPct / 100, leadTxt, true);
     if (orphan) add('orphan', 'Orphan night', 'Orphan night', -run * R.orphanPct / 100, 'Single open night between stays: orphan-night discount ' + R.orphanPct + '%');
-    if (run < R.min) add('rule', 'Minimum price rule', 'Floor', R.min - run, 'Raised to your floor of ' + fmt.money(R.min));
-    else if (run > R.max) add('rule', 'Maximum price rule', 'Ceiling', R.max - run, 'Capped at your ceiling of ' + fmt.money(R.max));
-    add('round', 'Rounding', 'Rounding', round5(run) - run, 'Rounded to the nearest RM 5');
+    if (run < R.min) add('rule', 'Minimum price rule', 'Floor', R.min - run, 'Raised to your floor of ' + fmt.money(R.min, { cur: P }));
+    else if (run > R.max) add('rule', 'Maximum price rule', 'Ceiling', R.max - run, 'Capped at your ceiling of ' + fmt.money(R.max, { cur: P }));
+    add('round', 'Rounding', 'Rounding', round5(run) - run, 'Rounded to the nearest ' + fmt.money(5, { cur: P }));
     return out;
   }
   function shortReason(n) {
@@ -406,7 +406,7 @@
     var v = O.viewer(), P = D.propById[pid];
     var range = list.length === 1 ? d.fmt(list[0].iso) : d.fmtRange(list[0].iso, list[list.length - 1].iso);
     D.priceLog.unshift({ at: D.NOW, pid: pid, n: list.length, by: v ? v.name : '', how: how || 'Suggestions applied', first: list[0].iso, last: list[list.length - 1].iso });
-    audit((manual ? 'Set the price for ' + range + ' to ' + fmt.money(list[0].price) : 'Applied ' + fmt.plural(list.length, 'suggested price') + ' (' + range + ')') + ' for ' + P.name);
+    audit((manual ? 'Set the price for ' + range + ' to ' + fmt.money(list[0].price, { cur: pid }) : 'Applied ' + fmt.plural(list.length, 'suggested price') + ' (' + range + ')') + ' for ' + P.name);
     st.picked = {};
     var tn = typeNote(P);
     U.toast((list.length === 1 ? 'New price for ' + d.fmt(list[0].iso) : list.length + ' new prices') + ' saved for ' + (tn ? tn.replace('Prices apply to ', '') : P.short) + '. ' + channelNote(P));
@@ -425,7 +425,7 @@
     U.toast('Back on the model rate for ' + fmt.plural(isoList.length, 'night') + (tn ? ' (' + tn.replace('Prices apply to ', '') + ')' : '') + '.' + (O.channel && O.channel.mode() === 'live' && D.propById[pid].unitTypeId && O.channel.typeConnected(D.propById[pid].unitTypeId) ? ' ' + channelNote(D.propById[pid]) : ''));
     O.emit('data', { type: 'pricing' });
   }
-  function moneySigned(v) { return Math.round(v) === 0 ? fmt.money(0) : (v > 0 ? '+' : '−') + fmt.money(Math.abs(v)); }
+  function moneySigned(v, c) { return Math.round(v) === 0 ? fmt.money(0, { cur: c }) : (v > 0 ? '+' : '−') + fmt.money(Math.abs(v), { cur: c }); }
 
   /* ------------------------------------------------------------------ render pieces */
   function kpiStrip(m, s) {
@@ -433,10 +433,10 @@
     var idxDelta = s.index != null ? s.index / 100 - 1 : null;
     var otbPts = Math.round((s.otb - s.mkt) * 100);
     return U.kpis([
-      { label: 'Our average price', value: none ? '–' : fmt.money(s.ourAvg), delta: none ? null : fmt.change(s.ourAvg, s.lyAvg), sub: none ? 'every night is blocked' : 'vs last year', title: 'Booked nights at the booked rate, open nights at the current listed rate' },
-      { label: 'Competitor average', value: none ? '–' : fmt.money(s.compAvg), sub: idxDelta == null ? fmt.plural(m.used.length, 'listing') : Math.abs(idxDelta) < 0.01 ? 'we are level with them' : 'we are ' + fmt.pct(Math.abs(idxDelta)) + (idxDelta > 0 ? ' above' : ' below'), title: 'Average of the ' + m.used.length + ' listings in the competitor set' },
+      { label: 'Our average price', value: none ? '–' : fmt.money(s.ourAvg, { cur: m.P }), delta: none ? null : fmt.change(s.ourAvg, s.lyAvg), sub: none ? 'every night is blocked' : 'vs last year', title: 'Booked nights at the booked rate, open nights at the current listed rate' },
+      { label: 'Competitor average', value: none ? '–' : fmt.money(s.compAvg, { cur: m.P }), sub: idxDelta == null ? fmt.plural(m.used.length, 'listing') : Math.abs(idxDelta) < 0.01 ? 'we are level with them' : 'we are ' + fmt.pct(Math.abs(idxDelta)) + (idxDelta > 0 ? ' above' : ' below'), title: 'Average of the ' + m.used.length + ' listings in the competitor set' },
       { label: 'On the books', value: s.avail ? fmt.pct(s.otb) : '–', sub: s.avail ? (Math.abs(otbPts) < 1 ? 'on pace with the market' : Math.abs(otbPts) + ' pts ' + (otbPts > 0 ? 'ahead of' : 'behind') + ' the market') : 'no nights to sell', title: s.avail ? s.sold + ' of ' + fmt.plural(s.avail, 'night') + ' booked; the market usually has ' + fmt.pct(s.mkt) + ' booked by now' : '' },
-      { label: 'Impact if applied', value: s.changes.length ? moneySigned(s.impact) : '–', sub: !s.open.length ? 'no open nights in range' : !s.changes.length ? 'all suggestions applied' : 'expected · ' + moneySigned(s.upside) + ' if all sell', hl: true, title: 'Expected: the sum of price changes on open nights, each weighted by its chance to sell. If all sell: the full sum.' }
+      { label: 'Impact if applied', value: s.changes.length ? moneySigned(s.impact, m.P) : '–', sub: !s.open.length ? 'no open nights in range' : !s.changes.length ? 'all suggestions applied' : 'expected · ' + moneySigned(s.upside, m.P) + ' if all sell', hl: true, title: 'Expected: the sum of price changes on open nights, each weighted by its chance to sell. If all sell: the full sum.' }
     ]);
   }
 
@@ -455,8 +455,8 @@
     function link(n) { return '<button type="button" class="btn btn-quiet btn-xs" data-pick="' + n.iso + '">' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '</button>'; }
     var up = open.filter(function (n) { return n.change > 0; }).sort(function (a, b) { return b.change - a.change; });
     var dn = open.filter(function (n) { return n.change < 0; }).sort(function (a, b) { return a.change - b.change; });
-    if (up.length) out.push(['up', '<b>' + fmt.plural(up.length, 'open night') + '</b> priced below the suggestion, worth ' + signed(sum(up.map(function (n) { return n.change; }))) + ' if they sell. Largest gap ' + signed(up[0].change) + ' on', up[0]]);
-    if (dn.length) out.push(['down', '<b>' + fmt.plural(dn.length, 'open night') + '</b> look expensive for current demand. Largest cut ' + signed(dn[0].change) + ' on', dn[0]]);
+    if (up.length) out.push(['up', '<b>' + fmt.plural(up.length, 'open night') + '</b> priced below the suggestion, worth ' + signed(sum(up.map(function (n) { return n.change; })), m.P) + ' if they sell. Largest gap ' + signed(up[0].change, m.P) + ' on', up[0]]);
+    if (dn.length) out.push(['down', '<b>' + fmt.plural(dn.length, 'open night') + '</b> look expensive for current demand. Largest cut ' + signed(dn[0].change, m.P) + ' on', dn[0]]);
     var under = open.filter(function (n) { return n.our < n.cAvg * 0.9; });
     if (under.length) {
       /* say why: the biggest discount among those nights (orphan night, last-minute, pace) */
@@ -469,10 +469,10 @@
     Object.keys(evs).forEach(function (k) {
       var ns = evs[k], o = ns.filter(function (n) { return n.status.kind === 'open'; }), b = ns.filter(function (n) { return n.status.kind === 'booked'; });
       var mk = avg(ns.map(function (n) { return n.cAvg; })), parts = [];
-      if (b.length) parts.push(fmt.plural(b.length, 'night') + ' booked at ' + fmt.money(avg(b.map(function (n) { return n.our; }))));
-      if (o.length) parts.push(fmt.plural(o.length, 'night') + ' open, suggested ' + fmt.money(avg(o.map(function (n) { return n.sugg; }))));
+      if (b.length) parts.push(fmt.plural(b.length, 'night') + ' booked at ' + fmt.money(avg(b.map(function (n) { return n.our; })), { cur: m.P }));
+      if (o.length) parts.push(fmt.plural(o.length, 'night') + ' open, suggested ' + fmt.money(avg(o.map(function (n) { return n.sugg; })), { cur: m.P }));
       if (ns.length > b.length + o.length) parts.push(fmt.plural(ns.length - b.length - o.length, 'night') + ' blocked');
-      out.push(['event', '<b>' + esc(k) + '</b>: ' + parts.join(', ') + '; market ' + fmt.money(mk) + '. See', o[0] || ns[0]]);
+      out.push(['event', '<b>' + esc(k) + '</b>: ' + parts.join(', ') + '; market ' + fmt.money(mk, { cur: m.P }) + '. See', o[0] || ns[0]]);
     });
     var orph = open.filter(function (n) { return n.run <= m.R.orphanMax; });
     if (orph.length) out.push(['orphan', '<b>' + fmt.plural(orph.length, 'orphan night') + '</b> between stays, discounted to help them sell, first on', orph[0]]);
@@ -499,7 +499,7 @@
       ];
     }
     var band = st.chart === 'market' ? { lo: days.map(function (n) { return n.cMin; }), hi: days.map(function (n) { return n.cMax; }), name: 'Competitor range' } : null;
-    /* fit the axis to the prices (bottom and top on round RM values) so the lines fill the chart */
+    /* fit the axis to the prices (bottom and top on round values) so the lines fill the chart */
     var all = [];
     series.forEach(function (se) { se.values.forEach(function (v) { if (v != null) all.push(v); }); });
     if (band) all = all.concat(band.lo, band.hi);
@@ -507,7 +507,7 @@
     O.chart.line(el, {
       labels: labels, height: 290, markers: 'none', yMin: fit.yMin, yMax: fit.yMax, padLeft: 46, series: series, band: band,
       ariaLabel: st.chart === 'market' ? 'Our nightly price, suggested price and competitor average by night' : 'Our nightly price this year, last year and two years ago by night',
-      yFormat: function (v, axis) { return axis ? 'RM ' + Math.round(v + off) : fmt.money(v + off); },
+      yFormat: function (v, axis) { return axis ? fmt.cur(m.P) + ' ' + Math.round(v + off) : fmt.money(v + off, { cur: m.P }); },
       xFormat: function (l) { return d.fmt(l); },
       tipTitle: function (i) { var n = days[i]; return d.dowName(n.iso) + ' ' + d.fmt(n.iso) + (n.status.kind === 'booked' ? ' · booked' : n.status.kind === 'blocked' ? ' · blocked' : '') + (n.ev ? ' · ' + n.ev.name : ''); }
     });
@@ -547,14 +547,14 @@
     var sMin = Math.min.apply(null, pts), sMax = Math.max.apply(null, pts);
     var pad = (sMax - sMin) * 0.08 || 10, a0 = sMin - pad, a1 = sMax + pad;
     function sp(v) { return ((v - a0) / (a1 - a0) * 100).toFixed(1); }
-    return '<div><div class="strip" role="img" aria-label="Competitor prices from ' + fmt.money(n.cMin) + ' to ' + fmt.money(n.cMax) + ', average ' + fmt.money(n.cAvg) + '; ' + priceLabel.toLowerCase() + ' ' + fmt.money(price) + (sugg != null ? '; suggested ' + fmt.money(sugg) : '') + '">' +
+    return '<div><div class="strip" role="img" aria-label="Competitor prices from ' + fmt.money(n.cMin, { cur: m.P }) + ' to ' + fmt.money(n.cMax, { cur: m.P }) + ', average ' + fmt.money(n.cAvg, { cur: m.P }) + '; ' + priceLabel.toLowerCase() + ' ' + fmt.money(price, { cur: m.P }) + (sugg != null ? '; suggested ' + fmt.money(sugg, { cur: m.P }) : '') + '">' +
       '<div class="ln"></div><div class="rg" style="left:' + sp(n.cMin) + '%;width:' + (sp(n.cMax) - sp(n.cMin)).toFixed(1) + '%"></div>' +
-      n.cps.map(function (v, i) { return '<span class="cp" style="left:' + sp(v) + '%" title="' + esc(m.used[i].name) + ': ' + fmt.money(v) + '"></span>'; }).join('') +
-      '<span class="av" style="left:' + sp(n.cAvg) + '%" title="Competitor average ' + fmt.money(n.cAvg) + '"></span>' +
+      n.cps.map(function (v, i) { return '<span class="cp" style="left:' + sp(v) + '%" title="' + esc(m.used[i].name) + ': ' + fmt.money(v, { cur: m.P }) + '"></span>'; }).join('') +
+      '<span class="av" style="left:' + sp(n.cAvg) + '%" title="Competitor average ' + fmt.money(n.cAvg, { cur: m.P }) + '"></span>' +
       '<span class="mk us" style="left:' + sp(price) + '%">' + esc(priceLabel) + '<i></i></span>' +
-      (sugg != null ? '<span class="mk sg" style="left:' + sp(sugg) + '%"><i></i>' + fmt.money(sugg) + '</span>' : '') + '</div>' +
-      '<div class="strip-key"><span><i class="k-cp"></i>Competitors ' + fmt.money(n.cMin) + '–' + fmt.money(n.cMax, { bare: true }) + '</span><span><i class="k-av"></i>Average ' + fmt.money(n.cAvg) + '</span>' +
-      '<span><i class="k-us"></i>' + esc(priceLabel) + ' ' + fmt.money(price) + '</span>' + (sugg != null ? '<span><i class="k-sg"></i>Suggested ' + fmt.money(sugg) + '</span>' : '') + '</div></div>';
+      (sugg != null ? '<span class="mk sg" style="left:' + sp(sugg) + '%"><i></i>' + fmt.money(sugg, { cur: m.P }) + '</span>' : '') + '</div>' +
+      '<div class="strip-key"><span><i class="k-cp"></i>Competitors ' + fmt.money(n.cMin, { cur: m.P }) + '–' + fmt.money(n.cMax, { bare: true }) + '</span><span><i class="k-av"></i>Average ' + fmt.money(n.cAvg, { cur: m.P }) + '</span>' +
+      '<span><i class="k-us"></i>' + esc(priceLabel) + ' ' + fmt.money(price, { cur: m.P }) + '</span>' + (sugg != null ? '<span><i class="k-sg"></i>Suggested ' + fmt.money(sugg, { cur: m.P }) + '</span>' : '') + '</div></div>';
   }
   /* the selected night against the competitor set (sits under the chart) */
   function mktCard(m, n) {
@@ -563,8 +563,8 @@
     var sugg = k === 'open' && n.change ? n.sugg : null;
     function place(v) { var below = n.cps.filter(function (c) { return c < v; }).length; return below === 0 ? 'the cheapest of the ' + (n.cps.length + 1) + ' listings' : below === n.cps.length ? 'the most expensive of the ' + (n.cps.length + 1) + ' listings' : 'cheaper than ' + (n.cps.length - below) + ' of ' + n.cps.length + ' competitors'; }
     function gap(v) { var g = v / n.cAvg - 1; return Math.abs(g) < 0.01 ? 'level with the average' : fmt.pct(Math.abs(g)) + (g > 0 ? ' above' : ' under') + ' the average'; }
-    var line = (k === 'booked' ? 'Booked at ' : k === 'open' ? 'Listed at ' : 'Blocked; the model rate would be ') + fmt.money(price) + ': ' + gap(price) + ', ' + place(price) + '.' +
-      (sugg != null ? ' The suggestion of ' + fmt.money(sugg) + ' would be ' + gap(sugg) + ' and ' + place(sugg) + '.' : '');
+    var line = (k === 'booked' ? 'Booked at ' : k === 'open' ? 'Listed at ' : 'Blocked; the model rate would be ') + fmt.money(price, { cur: m.P }) + ': ' + gap(price) + ', ' + place(price) + '.' +
+      (sugg != null ? ' The suggestion of ' + fmt.money(sugg, { cur: m.P }) + ' would be ' + gap(sugg) + ' and ' + place(sugg) + '.' : '');
     return '<div class="card pr-mkt"><div class="card-head"><div class="hd"><h3>Market on ' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '</h3><div class="sub">' + fmt.plural(m.used.length, 'competitor') + ' in the average · hover a dot for the listing</div></div></div>' +
       '<div class="card-body stack">' + marketStrip(m, n, price, lbl, sugg) + '<div class="small" style="color:var(--text-2)">' + line + '</div></div></div>';
   }
@@ -583,12 +583,12 @@
       var stayMkt = avg(stayN.map(function (x) { return x.cAvg; })), sp2 = b.nightly / stayMkt - 1;
       var verdict = sp2 < -0.08 ? 'This stay sold ' + fmt.pct(-sp2) + ' under the market average for its nights. If nights keep selling this far ahead at this gap, a higher base price or a bigger "follow the market" share in the rules would close it.'
         : sp2 > 0.05 ? 'This stay sold ' + fmt.pct(sp2) + ' above the market average for its nights.' : 'This stay sold close to the market average for its nights.';
-      var body = '<div class="pr-head3"><div><div class="l">Booked rate</div><div class="v">' + fmt.money(b.nightly) + '</div><div class="small muted">' + esc(U.platName(b.channel)) + '</div></div>' +
-        '<div><div class="l">Market average</div><div class="v">' + fmt.money(n.cAvg) + '</div><div class="small muted">' + signedPct(pos) + ' vs market</div></div>' +
-        '<div><div class="l">Model today</div><div class="v">' + fmt.money(n.modelSugg) + '</div><div class="small muted">if it were open</div></div></div>' +
-        '<div class="note">Price locked: ' + esc(b.guest.name) + ' booked ' + fmt.plural(b.nights, 'night') + ' (' + d.fmtRange(b.checkIn, b.checkOut) + ') on ' + d.fmt(made) + ', ' + (lead === 0 ? 'the same day' : fmt.plural(lead, 'day') + ' before arrival') + ', at ' + fmt.money(b.nightly) + ' a night against a market average of ' + fmt.money(stayMkt) + ' for those nights.</div>' +
-        '<dl class="kv"><dt>Same weekday last year</dt><dd>' + fmt.money(n.ly) + ' <span class="muted small">(' + d.fmt(d.sameWeekdayYearsAgo(n.iso, 1)) + ')</span></dd><dt>Two years ago</dt><dd>' + fmt.money(n.y2) + ' <span class="muted small">(' + d.fmt(d.sameWeekdayYearsAgo(n.iso, 2)) + ')</span></dd>' +
-        '<dt>Booking revenue</dt><dd>' + fmt.money(b.revenue) + '</dd></dl>' +
+      var body = '<div class="pr-head3"><div><div class="l">Booked rate</div><div class="v">' + fmt.money(b.nightly, { cur: P }) + '</div><div class="small muted">' + esc(U.platName(b.channel)) + '</div></div>' +
+        '<div><div class="l">Market average</div><div class="v">' + fmt.money(n.cAvg, { cur: P }) + '</div><div class="small muted">' + signedPct(pos) + ' vs market</div></div>' +
+        '<div><div class="l">Model today</div><div class="v">' + fmt.money(n.modelSugg, { cur: P }) + '</div><div class="small muted">if it were open</div></div></div>' +
+        '<div class="note">Price locked: ' + esc(b.guest.name) + ' booked ' + fmt.plural(b.nights, 'night') + ' (' + d.fmtRange(b.checkIn, b.checkOut) + ') on ' + d.fmt(made) + ', ' + (lead === 0 ? 'the same day' : fmt.plural(lead, 'day') + ' before arrival') + ', at ' + fmt.money(b.nightly, { cur: P }) + ' a night against a market average of ' + fmt.money(stayMkt, { cur: P }) + ' for those nights.</div>' +
+        '<dl class="kv"><dt>Same weekday last year</dt><dd>' + fmt.money(n.ly, { cur: P }) + ' <span class="muted small">(' + d.fmt(d.sameWeekdayYearsAgo(n.iso, 1)) + ')</span></dd><dt>Two years ago</dt><dd>' + fmt.money(n.y2, { cur: P }) + ' <span class="muted small">(' + d.fmt(d.sameWeekdayYearsAgo(n.iso, 2)) + ')</span></dd>' +
+        '<dt>Booking revenue</dt><dd>' + fmt.money(b.revenue, { cur: P }) + '</dd></dl>' +
         '<div class="small muted">' + verdict + '</div>' +
         '<div class="row-flex wrap"><button type="button" class="btn btn-ghost btn-sm" data-open-bk="' + esc(b.id) + '">' + O.icon('bookings') + 'Open booking ' + esc(b.id) + '</button>' + nextBtn + '</div>';
       return '<div class="card pr-why">' + head + '<div class="card-body">' + body + '</div></div>';
@@ -596,7 +596,7 @@
     if (n.status.kind !== 'open') {
       var k = n.status.block;
       var bodyB = '<div class="note">' + (k ? 'Blocked ' + d.fmtRange(k.start, k.end) + ': ' + esc(k.note || (k.type === 'owner' ? 'Owner stay' : 'Maintenance')) + '.' : 'This night has passed.') + ' No price is published for blocked nights.</div>' +
-        '<dl class="kv"><dt>Market average that night</dt><dd>' + fmt.money(n.cAvg) + '</dd><dt>Model rate if it were open</dt><dd>' + fmt.money(n.modelRate) + '</dd><dt>Same weekday last year</dt><dd>' + fmt.money(n.ly) + '</dd></dl>' +
+        '<dl class="kv"><dt>Market average that night</dt><dd>' + fmt.money(n.cAvg, { cur: P }) + '</dd><dt>Model rate if it were open</dt><dd>' + fmt.money(n.modelRate, { cur: P }) + '</dd><dt>Same weekday last year</dt><dd>' + fmt.money(n.ly, { cur: P }) + '</dd></dl>' +
         (nextBtn ? '<div>' + nextBtn + '</div>' : '');
       return '<div class="card pr-why">' + head + '<div class="card-body">' + bodyB + '</div></div>';
     }
@@ -611,23 +611,23 @@
       var cls = f.key === 'base' ? 'base' : f.amt >= 0 ? 'up' : 'down';
       return '<div class="wf-row' + (f.amt ? '' : ' zero') + '"><div class="wl">' + esc(f.label) + '<div class="wd">' + esc(f.detail) + '</div></div>' +
         '<div class="wf-track" aria-hidden="true">' + (f.amt ? '<i class="' + cls + '" style="left:' + pos2(a).toFixed(1) + '%;width:' + Math.max(0.8, pos2(b2) - pos2(a)).toFixed(1) + '%"></i>' : '') + '</div>' +
-        '<div class="wa">' + (f.key === 'base' ? fmt.money(f.amt) : f.amt ? '<span class="' + (f.amt > 0 ? 'pos' : 'neg') + '">' + signed(f.amt) + '</span>' : 'RM 0') +
+        '<div class="wa">' + (f.key === 'base' ? fmt.money(f.amt, { cur: P }) : f.amt ? '<span class="' + (f.amt > 0 ? 'pos' : 'neg') + '">' + signed(f.amt, P) + '</span>' : fmt.money(0, { cur: P })) +
         (f.key !== 'base' && f.amt && f.pct != null ? '<small>' + signedPct(f.pct, 1) + '</small>' : '') + '</div></div>';
     }).join('');
-    rows += '<div class="wf-row tot"><div class="wl">Suggested price<div class="wd">Sum of the ' + fs.length + ' lines above</div></div><div class="wf-track" aria-hidden="true"><i class="tot" style="left:0;width:' + pos2(n.sugg).toFixed(1) + '%"></i></div><div class="wa">' + fmt.money(n.sugg) + '</div></div>';
-    var axis = '<div class="wf-row wf-axis" aria-hidden="true"><div></div><div class="ax" title="Bar scale in RM"><span>' + fmt.money(lo, { bare: true }) + '</span><span>' + fmt.money(hi, { bare: true }) + '</span></div><div></div></div>';
+    rows += '<div class="wf-row tot"><div class="wl">Suggested price<div class="wd">Sum of the ' + fs.length + ' lines above</div></div><div class="wf-track" aria-hidden="true"><i class="tot" style="left:0;width:' + pos2(n.sugg).toFixed(1) + '%"></i></div><div class="wa">' + fmt.money(n.sugg, { cur: P }) + '</div></div>';
+    var axis = '<div class="wf-row wf-axis" aria-hidden="true"><div></div><div class="ax" title="Bar scale in ' + esc(fmt.cur(P)) + '"><span>' + fmt.money(lo, { bare: true }) + '</span><span>' + fmt.money(hi, { bare: true }) + '</span></div><div></div></div>';
     var chg = n.change, chgPct = n.our ? chg / n.our : 0;
-    var top = '<div class="pr-head3"><div><div class="l">Current price</div><div class="v">' + fmt.money(n.our) + '</div><div class="small muted">' + (n.how === 'suggestion' ? 'Suggestion applied' : n.how === 'manual' ? 'Set by you' : 'Model rate') + '</div></div>' +
-      '<div class="sug"><div class="l">Suggested</div><div class="v">' + fmt.money(n.sugg) + '</div><div class="small muted">' + (n.ev ? esc(n.ev.name) : n.run <= m.R.orphanMax ? 'Orphan night' : n.wk ? 'Weekend night' : 'Weekday night') + '</div></div>' +
-      '<div><div class="l">Change</div><div class="v ' + (chg > 0 ? 'pos' : chg < 0 ? 'neg' : '') + '">' + (chg ? signed(chg) : 'None') + '</div><div class="small muted">' + (chg ? signedPct(chgPct, 1) + ' · ' + Math.round(n.pSell * 100) + '% chance to sell' : 'Already at the suggestion') + '</div></div></div>';
+    var top = '<div class="pr-head3"><div><div class="l">Current price</div><div class="v">' + fmt.money(n.our, { cur: P }) + '</div><div class="small muted">' + (n.how === 'suggestion' ? 'Suggestion applied' : n.how === 'manual' ? 'Set by you' : 'Model rate') + '</div></div>' +
+      '<div class="sug"><div class="l">Suggested</div><div class="v">' + fmt.money(n.sugg, { cur: P }) + '</div><div class="small muted">' + (n.ev ? esc(n.ev.name) : n.run <= m.R.orphanMax ? 'Orphan night' : n.wk ? 'Weekend night' : 'Weekday night') + '</div></div>' +
+      '<div><div class="l">Change</div><div class="v ' + (chg > 0 ? 'pos' : chg < 0 ? 'neg' : '') + '">' + (chg ? signed(chg, P) : 'None') + '</div><div class="small muted">' + (chg ? signedPct(chgPct, 1) + ' · ' + Math.round(n.pSell * 100) + '% chance to sell' : 'Already at the suggestion') + '</div></div></div>';
     var R = m.R, wk = weekStay(m, n.iso);
     var los = '<div class="small muted">Length-of-stay discounts come off the stay total at booking: ' + R.weeklyPct + '% for 7 nights or more, ' + R.monthlyPct + '% for 28 or more. ' +
-      (wk.blockedOn ? 'A 7-night stay cannot start on this date because ' + d.fmt(wk.blockedOn) + ' is taken.' : 'A 7-night stay from this date at suggested prices: <b>' + fmt.money(wk.total * (1 - R.weeklyPct / 100)) + '</b> (' + fmt.money(wk.total) + ' before the discount).') + '</div>';
+      (wk.blockedOn ? 'A 7-night stay cannot start on this date because ' + d.fmt(wk.blockedOn) + ' is taken.' : 'A 7-night stay from this date at suggested prices: <b>' + fmt.money(wk.total * (1 - R.weeklyPct / 100), { cur: P }) + '</b> (' + fmt.money(wk.total, { cur: P }) + ' before the discount).') + '</div>';
     var acts = edit ? '<div class="pr-set">' +
-      (chg ? '<button type="button" class="btn btn-primary btn-sm" data-apply-one="' + n.iso + '">' + O.icon('check') + 'Apply ' + fmt.money(n.sugg) + '</button>' : '') +
-      '<div class="field"><label for="pr-own">Set my own price</label><div class="inunit"><span>RM</span><input id="pr-own" type="number" inputmode="numeric" min="' + R.min + '" max="' + R.max + '" step="5" value="' + n.our + '"></div></div>' +
+      (chg ? '<button type="button" class="btn btn-primary btn-sm" data-apply-one="' + n.iso + '">' + O.icon('check') + 'Apply ' + fmt.money(n.sugg, { cur: P }) + '</button>' : '') +
+      '<div class="field"><label for="pr-own">Set my own price</label><div class="inunit"><span>' + esc(fmt.cur(P)) + '</span><input id="pr-own" type="number" inputmode="numeric" min="' + R.min + '" max="' + R.max + '" step="5" value="' + n.our + '"></div></div>' +
       '<button type="button" class="btn btn-ghost btn-sm" data-own="' + n.iso + '">Save price</button>' +
-      (n.manual ? '<button type="button" class="btn btn-quiet btn-sm" data-revert="' + n.iso + '">Back to model rate (' + fmt.money(n.modelRate) + ')</button>' : '') + '</div>'
+      (n.manual ? '<button type="button" class="btn btn-quiet btn-sm" data-revert="' + n.iso + '">Back to model rate (' + fmt.money(n.modelRate, { cur: P }) + ')</button>' : '') + '</div>'
       : '<div class="note">' + O.icon('lock') + ' ' + esc(WHY_CHANGE) + '</div>';
     return '<div class="card pr-why">' + head + '<div class="card-body">' + top + '<div class="wf">' + rows + axis + '</div>' + acts + los + '</div></div>';
   }
@@ -674,18 +674,18 @@
       return '<tr data-iso="' + n.iso + '" class="' + (n.iso === sel ? 'sel ' : '') + (k !== 'open' ? 'bk ' : '') + (st.picked[n.iso] && open ? 'picked ' : '') + (n.wk ? 'wk' : '') + '">' +
         '<td>' + (open && edit ? '<input type="checkbox" data-pick-row="' + n.iso + '" aria-label="Select ' + d.fmt(n.iso) + '"' + (st.picked[n.iso] ? ' checked' : '') + (n.change ? '' : ' disabled title="Already at the suggestion"') + '>' : '') + '</td>' +
         '<td class="dt" title="' + (n.lead === 0 ? 'Tonight' : 'In ' + fmt.plural(n.lead, 'day')) + '"><button type="button" class="dt-btn" data-pick="' + n.iso + '" aria-label="Show the reasoning for ' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '">' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '</button>' + (n.wk ? '<span class="wkd">Weekend</span>' : '') + '<span class="stl">' + stCell + '</span></td>' +
-        '<td class="num"><b>' + (k === 'blocked' ? '–' : fmt.money(n.our)) + '</b></td>' +
-        '<td class="num" title="Competitors ' + fmt.money(n.cMin) + ' to ' + fmt.money(n.cMax) + '">' + fmt.money(n.cAvg) + '</td>' +
-        '<td class="num" title="' + d.dowName(n.iso) + ' ' + d.fmtY(d.sameWeekdayYearsAgo(n.iso, 1)) + '">' + fmt.money(n.ly) + '</td>' +
+        '<td class="num"><b>' + (k === 'blocked' ? '–' : fmt.money(n.our, { cur: m.P })) + '</b></td>' +
+        '<td class="num" title="Competitors ' + fmt.money(n.cMin, { cur: m.P }) + ' to ' + fmt.money(n.cMax, { cur: m.P }) + '">' + fmt.money(n.cAvg, { cur: m.P }) + '</td>' +
+        '<td class="num" title="' + d.dowName(n.iso) + ' ' + d.fmtY(d.sameWeekdayYearsAgo(n.iso, 1)) + '">' + fmt.money(n.ly, { cur: m.P }) + '</td>' +
         '<td class="pace" title="' + esc(m.groupName) + ': ' + n.grpBooked + ' of ' + n.grpAvail + ' booked; usually ' + expW + '% at this lead time (last 90 days)"><i><b style="width:' + paceW + '%"></b><em style="left:' + expW + '%"></em></i>' + paceW + '% <span class="faint">/ ' + expW + '%</span></td>' +
         '<td class="evt small">' + (n.ev ? '<span class="pill accent">' + esc(n.ev.name) + '</span>' : '<span class="faint">–</span>') + '</td>' +
-        '<td class="num sg">' + (open ? fmt.money(n.sugg) : '<span class="faint">' + (k === 'booked' ? 'Locked' : '–') + '</span>') + '</td>' +
-        '<td class="num">' + (open ? (n.change ? '<b class="' + (n.change > 0 ? 'pos' : 'neg') + '" title="' + signedPct(n.change / n.our, 1) + '">' + signed(n.change) + '</b>' : '<span class="faint">' + (n.how === 'suggestion' ? 'Applied' : 'At suggestion') + '</span>') : '') + '</td>' +
+        '<td class="num sg">' + (open ? fmt.money(n.sugg, { cur: m.P }) : '<span class="faint">' + (k === 'booked' ? 'Locked' : '–') + '</span>') + '</td>' +
+        '<td class="num">' + (open ? (n.change ? '<b class="' + (n.change > 0 ? 'pos' : 'neg') + '" title="' + signedPct(n.change / n.our, 1) + '">' + signed(n.change, m.P) + '</b>' : '<span class="faint">' + (n.how === 'suggestion' ? 'Applied' : 'At suggestion') + '</span>') : '') + '</td>' +
         '<td class="why">' + (open ? shortReason(n) : k === 'booked' ? '<span class="row-flex" style="gap:5px">' + U.platIcon(n.status.b.channel) + '<span class="faint">' + esc(n.status.b.id) + '</span></span>' : '<span class="faint">' + esc((n.status.block && n.status.block.note) || 'Blocked') + '</span>') + '</td></tr>';
     }).join('');
     var pickedChg = sum(pickedNights.map(function (n) { return n.change; }));
     var bulk = !edit ? '<span class="pill neutral">' + O.icon('lock') + 'View only</span>'
-      : (pickedNights.length ? '<span class="small"><b>' + fmt.plural(pickedNights.length, 'night') + '</b> selected · ' + signed(pickedChg) + ' in total</span><button type="button" class="btn btn-ghost btn-sm" data-clear-pick>Clear</button>' : '') +
+      : (pickedNights.length ? '<span class="small"><b>' + fmt.plural(pickedNights.length, 'night') + '</b> selected · ' + signed(pickedChg, m.P) + ' in total</span><button type="button" class="btn btn-ghost btn-sm" data-clear-pick>Clear</button>' : '') +
         '<button type="button" class="btn btn-primary btn-sm" data-apply-picked' + (pickedNights.length ? '' : ' disabled') + '>' + O.icon('check') + 'Apply to selected' + (pickedNights.length ? ' (' + pickedNights.length + ')' : '') + '</button>';
     return '<div class="card pr-tablecard"><div class="card-head"><div class="hd"><h3>Night by night</h3><div class="sub">' + (edit ? 'Tick nights and apply their suggestions, or click a night to see its reasoning.' : 'Click a night to see its reasoning.') + ' Pace: share of ' + esc(m.groupName) + ' booked for that night; the marker shows the usual share at the same lead time.' + (typeNote(m.P) ? ' <b>' + esc(typeNote(m.P)) + '.</b>' : '') + '</div></div>' +
       '<div class="pr-bulk">' + bulk + '</div></div>' +
@@ -693,7 +693,7 @@
       U.seg([['all', 'All nights ' + cnt.all], ['open', 'Open ' + cnt.open], ['booked', 'Booked ' + cnt.booked], ['changes', 'Change ≥ 5% ' + cnt.changes], ['manual', 'Changed by you ' + cnt.manual]], st.view, 'data-view') + '</div></div>' +
       (rows.length ? '<div class="table-wrap pr-scroll"><table class="table pr-tbl"><thead><tr>' +
         '<th>' + (edit ? '<input type="checkbox" data-pick-all aria-label="Select all nights with a suggested change"' + (allOn ? ' checked' : '') + (pickable.length ? '' : ' disabled') + '>' : '') + '</th>' +
-        '<th>Night · status</th><th class="num">Our price</th><th class="num" title="Average of the competitor set">Comp avg</th><th class="num" title="Same weekday last year">Last year</th><th title="Share of ' + esc(m.groupName) + ' booked for the night / usual share at this lead time">Pace (now / usual)</th><th>Event</th><th class="num">Suggested</th><th class="num">Change</th><th>Main reasons (RM)</th>' +
+        '<th>Night · status</th><th class="num">Our price</th><th class="num" title="Average of the competitor set">Comp avg</th><th class="num" title="Same weekday last year">Last year</th><th title="Share of ' + esc(m.groupName) + ' booked for the night / usual share at this lead time">Pace (now / usual)</th><th>Event</th><th class="num">Suggested</th><th class="num">Change</th><th>Main reasons (' + esc(fmt.cur(m.P)) + ')</th>' +
         '</tr></thead><tbody>' + body + '</tbody></table></div>'
         : U.empty(st.view === 'manual' ? 'No prices in this range have been changed by hand or by applying a suggestion.' : st.view === 'changes' ? 'Every open night is within 5% of its suggestion.' : st.view === 'booked' ? 'No booked nights in this range.' : 'No open nights in this range.')) +
       '</div>';
@@ -715,18 +715,18 @@
     var ourOn = n ? (n.status.kind === 'booked' ? n.status.b.nightly : n.status.kind === 'open' ? n.our : null) : null;
     function th(key, label, title) { return '<th class="num"' + (title ? ' title="' + esc(title) + '"' : '') + '><button type="button" class="th-sort' + (k === key ? ' on' : '') + '" data-sort="' + key + '" aria-label="Sort by ' + esc(label.toLowerCase()) + '">' + label + (k === key ? O.icon(dir > 0 ? 'up' : 'down') : '') + '</button></th>'; }
     var none = !priced.length;
-    var body = '<tr class="us"><td></td><td><div class="cmp-nm">' + U.platIcon('direct', 'Your listing') + esc(m.P.name) + ' <span class="pill brand">You</span></div></td><td class="nowrap">' + bedsLabel(m.P.beds) + '</td><td class="num">–</td><td class="num nowrap">' + (ourRating ? '<span class="stars">★</span> ' + ourRating.toFixed(2) + ' <span class="faint">(' + revs.length + ')</span>' : '–') + '</td><td class="num nowrap">' + (s.avail ? fmt.pct(s.otb) + '<span class="faint"> booked</span>' : '–') + '</td><td class="num">' + (none ? '–' : fmt.money(s.ourAvg)) + '</td>' + (n ? '<td class="num">' + (ourOn != null ? fmt.money(ourOn) : '–') + '</td>' : '') + '<td class="num">–</td></tr>' +
+    var body = '<tr class="us"><td></td><td><div class="cmp-nm">' + U.platIcon('direct', 'Your listing') + esc(m.P.name) + ' <span class="pill brand">You</span></div></td><td class="nowrap">' + bedsLabel(m.P.beds) + '</td><td class="num">–</td><td class="num nowrap">' + (ourRating ? '<span class="stars">★</span> ' + ourRating.toFixed(2) + ' <span class="faint">(' + revs.length + ')</span>' : '–') + '</td><td class="num nowrap">' + (s.avail ? fmt.pct(s.otb) + '<span class="faint"> booked</span>' : '–') + '</td><td class="num">' + (none ? '–' : fmt.money(s.ourAvg, { cur: m.P })) + '</td>' + (n ? '<td class="num">' + (ourOn != null ? fmt.money(ourOn, { cur: m.P }) : '–') + '</td>' : '') + '<td class="num">–</td></tr>' +
       rows.map(function (r) {
         var off = !!ex[r.c.id];
         return '<tr class="' + (off ? 'off' : '') + '"><td><input type="checkbox" data-comp="' + esc(r.c.id) + '" aria-label="Use ' + esc(r.c.name) + ' in the average"' + (off ? '' : ' checked') + '></td>' +
           '<td><div class="cmp-nm">' + U.platIcon(r.c.channel) + esc(r.c.name) + (off ? ' <span class="faint small">left out</span>' : '') + '</div></td><td class="nowrap">' + bedsLabel(r.c.beds) + '</td><td class="num nowrap">' + r.c.distanceKm.toFixed(1) + ' km</td>' +
           '<td class="num nowrap"><span class="stars">★</span> ' + r.c.rating.toFixed(2) + ' <span class="faint">(' + r.c.reviews + ')</span></td><td class="num">' + r.c.occ + '%</td>' +
-          '<td class="num"><b>' + (none ? '–' : fmt.money(r.avg)) + '</b></td>' + (n ? '<td class="num">' + fmt.money(r.on) + '</td>' : '') +
+          '<td class="num"><b>' + (none ? '–' : fmt.money(r.avg, { cur: m.P })) + '</b></td>' + (n ? '<td class="num">' + fmt.money(r.on, { cur: m.P }) + '</td>' : '') +
           '<td class="num">' + (none ? '–' : '<span class="' + (r.vs > 0.02 ? 'pos' : r.vs < -0.02 ? 'neg' : '') + '">' + signedPct(r.vs) + '</span>') + '</td></tr>';
       }).join('');
     return '<div class="card"><div class="card-head"><div class="hd"><h3>Competitor set</h3><div class="sub">' + m.used.length + ' of ' + m.comps.length + ' similar listings within 2.5 km are in the average. Untick a listing to leave it out (at least 3 stay in).</div></div></div>' +
       '<div class="table-wrap"><table class="table pr-tbl"><thead><tr><th><span class="sr-only">Use in average</span></th><th>Listing</th><th>Beds</th>' + th('dist', 'Distance') + th('rating', 'Rating') + th('occ', 'Occupancy', 'Competitors: typical occupancy from the market feed. Your listing: nights booked in this range.') + th('avg', 'Avg price', 'Average nightly price over the booked and open nights in this range') + (n ? '<th class="num" title="Price on the night selected above">' + onLabel + '</th>' : '') + th('vs', 'vs ours', 'Their average compared with ours for the same nights') + '</tr></thead><tbody>' + body + '</tbody>' +
-      '<tfoot><tr><td></td><td>Competitor average</td><td></td><td></td><td class="num">' + avg(m.used.map(function (c) { return c.rating; })).toFixed(2) + '</td><td class="num">' + Math.round(m.mOcc * 100) + '%</td><td class="num">' + (none ? '–' : fmt.money(s.compAvg)) + '</td>' + (n ? '<td class="num">' + fmt.money(n.cAvg) + '</td>' : '') + '<td class="num">' + (none ? '–' : signedPct(s.compAvg / s.ourAvg - 1)) + '</td></tr></tfoot></table></div>' +
+      '<tfoot><tr><td></td><td>Competitor average</td><td></td><td></td><td class="num">' + avg(m.used.map(function (c) { return c.rating; })).toFixed(2) + '</td><td class="num">' + Math.round(m.mOcc * 100) + '%</td><td class="num">' + (none ? '–' : fmt.money(s.compAvg, { cur: m.P })) + '</td>' + (n ? '<td class="num">' + fmt.money(n.cAvg, { cur: m.P }) + '</td>' : '') + '<td class="num">' + (none ? '–' : signedPct(s.compAvg / s.ourAvg - 1)) + '</td></tr></tfoot></table></div>' +
       '<div class="card-foot">Competitor prices and occupancy here are sample figures until a market data feed is connected for listings near each property.</div></div>';
   }
   function historyCard(m, s, n) {
@@ -737,16 +737,16 @@
     var cur = sel.status.kind === 'blocked' ? null : sel.our;
     function since(prev) { return cur ? ' · ' + U.delta(fmt.change(cur, prev), { suffix: 'since then' }) : ''; }
     var boxes = '<div class="hist">' +
-      '<div class="cur"><div class="l"><i class="key k0"></i>This year</div><div class="v">' + (cur ? fmt.money(cur) : '–') + '</div><div class="s">' + d.dowName(sel.iso) + ' ' + d.fmtY(sel.iso) + (sel.status.kind === 'booked' ? ' · booked' : sel.status.kind === 'blocked' ? ' · blocked' : sel.change ? ' · suggested ' + fmt.money(sel.sugg) : '') + '</div></div>' +
-      '<div><div class="l"><i class="key k1"></i>Last year</div><div class="v">' + fmt.money(sel.ly) + '</div><div class="s">' + d.dowName(a1) + ' ' + d.fmtY(a1) + since(sel.ly) + '</div></div>' +
-      '<div><div class="l"><i class="key k2"></i>Two years ago</div><div class="v">' + fmt.money(sel.y2) + '</div><div class="s">' + d.dowName(a2) + ' ' + d.fmtY(a2) + since(sel.y2) + '</div></div></div>';
+      '<div class="cur"><div class="l"><i class="key k0"></i>This year</div><div class="v">' + (cur ? fmt.money(cur, { cur: m.P }) : '–') + '</div><div class="s">' + d.dowName(sel.iso) + ' ' + d.fmtY(sel.iso) + (sel.status.kind === 'booked' ? ' · booked' : sel.status.kind === 'blocked' ? ' · blocked' : sel.change ? ' · suggested ' + fmt.money(sel.sugg, { cur: m.P }) : '') + '</div></div>' +
+      '<div><div class="l"><i class="key k1"></i>Last year</div><div class="v">' + fmt.money(sel.ly, { cur: m.P }) + '</div><div class="s">' + d.dowName(a1) + ' ' + d.fmtY(a1) + since(sel.ly) + '</div></div>' +
+      '<div><div class="l"><i class="key k2"></i>Two years ago</div><div class="v">' + fmt.money(sel.y2, { cur: m.P }) + '</div><div class="s">' + d.dowName(a2) + ' ' + d.fmtY(a2) + since(sel.y2) + '</div></div></div>';
     var withSugg = avg(m.days.filter(function (x) { return x.status.kind !== 'blocked'; }).map(function (x) { return x.sugg != null ? x.sugg : x.our; }));
     var sentence = !s.priced.length ? 'Every night in this range is blocked, so there is no price to compare.'
-      : 'Across the range our average is ' + fmt.money(s.ourAvg) + ', ' + signedPct(fmt.change(s.ourAvg, lyAvg), 1) + ' on last year and ' + signedPct(fmt.change(s.ourAvg, y2Avg), 1) + ' on two years ago' +
-        (s.changes.length ? '. With the suggestions applied it would be ' + fmt.money(withSugg) + ', ' + signedPct(fmt.change(withSugg, lyAvg), 1) + ' on last year.' : '.');
+      : 'Across the range our average is ' + fmt.money(s.ourAvg, { cur: m.P }) + ', ' + signedPct(fmt.change(s.ourAvg, lyAvg), 1) + ' on last year and ' + signedPct(fmt.change(s.ourAvg, y2Avg), 1) + ' on two years ago' +
+        (s.changes.length ? '. With the suggestions applied it would be ' + fmt.money(withSugg, { cur: m.P }) + ', ' + signedPct(fmt.change(withSugg, lyAvg), 1) + ' on last year.' : '.');
     return '<div class="card"><div class="card-head"><div class="hd"><h3>Same date in previous years</h3><div class="sub">Like-for-like: the same weekday 364 and 728 days earlier</div></div></div><div class="card-body stack">' + boxes +
       '<div><div class="label" style="margin-bottom:6px">Average by night of the week, ' + U.rangeLabel(m.days[0].iso, m.days[m.days.length - 1].iso) + '</div><div class="pr-dow"></div>' +
-      O.chart.legend([{ name: 'This year ' + (s.priced.length ? fmt.money(s.ourAvg) : '–'), tone: 'brand', square: true }, { name: 'Last year ' + fmt.money(lyAvg), tone: 'prev1', square: true }, { name: 'Two years ago ' + fmt.money(y2Avg), tone: 'prev2', square: true }]) + '</div>' +
+      O.chart.legend([{ name: 'This year ' + (s.priced.length ? fmt.money(s.ourAvg, { cur: m.P }) : '–'), tone: 'brand', square: true }, { name: 'Last year ' + fmt.money(lyAvg, { cur: m.P }), tone: 'prev1', square: true }, { name: 'Two years ago ' + fmt.money(y2Avg, { cur: m.P }), tone: 'prev2', square: true }]) + '</div>' +
       '<div class="small muted">' + sentence + '</div></div></div>';
   }
   function drawDow(root, m) {
@@ -755,7 +755,7 @@
     var by = order.map(function (w) { return m.days.filter(function (x) { return d.dow(x.iso) === w && x.status.kind !== 'blocked'; }); });
     O.chart.bars(el, {
       labels: names, height: 170,
-      yFormat: function (v, axis) { return axis ? 'RM ' + Math.round(v) : fmt.money(v); },
+      yFormat: function (v, axis) { return axis ? fmt.cur(m.P) + ' ' + Math.round(v) : fmt.money(v, { cur: m.P }); },
       tipTitle: function (i) { return names[i] + ' nights (' + by[i].length + ')'; },
       series: [
         { name: 'This year', tone: 'brand', values: by.map(function (a) { return Math.round(avg(a.map(function (x) { return x.our; }))); }) },
@@ -768,7 +768,7 @@
   function rulesCard(m) {
     var R = m.R, pid = m.P.id, edit = canRules();
     function num(name, label, unit, val, hint, step) {
-      return '<div class="field"><label for="pr-r-' + name + '">' + label + '</label><div class="inunit">' + (unit === 'RM' ? '<span>RM</span>' : '') + '<input id="pr-r-' + name + '" name="' + name + '" type="number" inputmode="numeric" min="0" step="' + (step || 1) + '" value="' + val + '">' + (unit !== 'RM' ? '<span>' + unit + '</span>' : '') + '</div>' + (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
+      return '<div class="field"><label for="pr-r-' + name + '">' + label + '</label><div class="inunit">' + (unit === 'RM' ? '<span>' + esc(fmt.cur(m.P)) + '</span>' : '') + '<input id="pr-r-' + name + '" name="' + name + '" type="number" inputmode="numeric" min="0" step="' + (step || 1) + '" value="' + val + '">' + (unit !== 'RM' ? '<span>' + unit + '</span>' : '') + '</div>' + (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
     }
     var log = D.priceLog.filter(function (x) { return x.pid === pid; }).slice(0, 5);
     return '<div class="card rules"><div class="card-head"><div class="hd"><h3>Pricing rules</h3><div class="sub">Used by every suggestion for ' + esc(m.P.short || m.P.name) + '</div></div>' + (edit ? '' : '<span class="pill neutral">' + O.icon('lock') + 'View only</span>') + '</div>' +
@@ -796,15 +796,15 @@
       var m = model(p.id, from, to, { idx: idx }), s = summary(m);
       return { p: p, s: s };
     });
-    var tot = { impact: sum(rows.map(function (r) { return r.s.impact; })), review: sum(rows.map(function (r) { return r.s.review.length; })) };
-    return '<div class="card"><div class="card-head"><div class="hd"><h3>All properties</h3><div class="sub">Same range, same model. Click a property to analyse it.</div></div><span class="pill accent">' + fmt.plural(tot.review, 'night') + ' to review · ' + moneySigned(tot.impact) + ' expected</span></div>' +
+    var tot = { impact: sum(rows.filter(function (r) { return O.inCur(r.p); }).map(function (r) { return r.s.impact; })), review: sum(rows.map(function (r) { return r.s.review.length; })) };
+    return '<div class="card"><div class="card-head"><div class="hd"><h3>All properties</h3><div class="sub">Same range, same model. Click a property to analyse it.</div></div><div class="row-flex wrap">' + O.curSwitchHTML() + '<span class="pill accent">' + fmt.plural(tot.review, 'night') + ' to review · ' + moneySigned(tot.impact) + ' expected</span></div></div>' +
       '<div class="table-wrap"><table class="table pr-tbl"><thead><tr><th>Property</th><th class="num">Our avg</th><th class="num">Comp avg</th><th class="num" title="Share of nights booked; the market usually has this share booked by now">On the books</th><th class="num">Avg suggested</th><th class="num" title="Open nights where the suggestion differs by 5% or more">To review</th><th class="num">Expected impact</th></tr></thead><tbody>' +
       rows.map(function (r) {
         var s = r.s, none = !s.priced.length;
         return '<tr data-prop="' + r.p.id + '" class="' + (r.p.id === st.pid ? 'cur-prop' : '') + '"><td><div class="cmp-nm"><span class="prop-dot" style="background:' + U.propColor(r.p.id) + '"></span><button type="button" class="dt-btn" data-prop-go="' + r.p.id + '">' + esc(r.p.short || r.p.name) + '</button></div><span class="rng">' + esc(city(r.p)) + ' · ' + esc(r.p.type || '') + '</span></td>' +
-          '<td class="num">' + (none ? '<span class="faint">Blocked</span>' : fmt.money(s.ourAvg)) + '</td><td class="num">' + (none ? '–' : fmt.money(s.compAvg)) + '</td>' +
-          '<td class="num" title="' + (s.avail ? 'Market usually ' + fmt.pct(s.mkt) + ' by now' : '') + '">' + (s.avail ? fmt.pct(s.otb) : '–') + '</td><td class="num">' + (s.open.length ? fmt.money(s.suggAvg) : '–') + '</td><td class="num">' + (s.review.length || '<span class="faint">0</span>') + '</td>' +
-          '<td class="num">' + (s.changes.length ? '<b class="' + (s.impact > 0 ? 'pos' : s.impact < 0 ? 'neg' : '') + '">' + moneySigned(s.impact) + '</b>' : '<span class="faint">' + (s.open.length ? 'Up to date' : 'No open nights') + '</span>') + '</td></tr>';
+          '<td class="num">' + (none ? '<span class="faint">Blocked</span>' : fmt.money(s.ourAvg, { cur: r.p })) + '</td><td class="num">' + (none ? '–' : fmt.money(s.compAvg, { cur: r.p })) + '</td>' +
+          '<td class="num" title="' + (s.avail ? 'Market usually ' + fmt.pct(s.mkt) + ' by now' : '') + '">' + (s.avail ? fmt.pct(s.otb) : '–') + '</td><td class="num">' + (s.open.length ? fmt.money(s.suggAvg, { cur: r.p }) : '–') + '</td><td class="num">' + (s.review.length || '<span class="faint">0</span>') + '</td>' +
+          '<td class="num">' + (s.changes.length ? '<b class="' + (s.impact > 0 ? 'pos' : s.impact < 0 ? 'neg' : '') + '">' + moneySigned(s.impact, r.p) + '</b>' : '<span class="faint">' + (s.open.length ? 'Up to date' : 'No open nights') + '</span>') + '</td></tr>';
       }).join('') + '</tbody></table></div></div>';
   }
 
@@ -856,7 +856,7 @@
         '<div class="toolbar"><select class="select pr-prop" data-prop-sel aria-label="Property">' + D.properties.map(function (q) { return '<option value="' + q.id + '"' + (q.id === pid ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') + '</select>' +
         '<span data-slot="range"></span><span class="spacer"></span>' +
         '<span class="pr-auto"' + (editRules ? '' : ' title="' + esc(WHY_RULES) + '"') + '>Auto-apply <button type="button" class="switch' + (m.R.auto ? ' on' : '') + '" data-auto role="switch" aria-checked="' + (m.R.auto ? 'true' : 'false') + '" aria-label="Auto-apply suggestions daily"' + (editRules ? '' : ' disabled') + '></button></span></div>' +
-        '<div class="pr-ctx"><b>' + esc(P.type || '') + '</b>' + (P.area ? '<span class="dot"></span>' + esc(P.area) : '') + '<span class="dot"></span>Base price ' + fmt.money(m.R.base) + '<span class="dot"></span>' + s.open.length + ' of ' + fmt.plural(m.days.length, 'night') + ' open</div>' +
+        '<div class="pr-ctx"><b>' + esc(P.type || '') + '</b>' + (P.area ? '<span class="dot"></span>' + esc(P.area) : '') + '<span class="dot"></span>Base price ' + fmt.money(m.R.base, { cur: P }) + '<span class="dot"></span>' + s.open.length + ' of ' + fmt.plural(m.days.length, 'night') + ' open</div>' +
         kpiStrip(m, s) +
         '<div class="grid g-3-2 pr-top"><div class="pr-left">' + chartCard(m) + mktCard(m, n) + '</div>' + whyCard(m, n) + '</div>' +
         tableCard(m, s) +
@@ -871,6 +871,7 @@
       }));
       drawChart(root, m);
       drawDow(root, m);
+      O.curSwitchWire(root);
 
       /* top bar actions */
       var openChanges = s.changes;
@@ -878,7 +879,7 @@
         (edit ? '<button type="button" class="btn btn-primary btn-sm" data-pr-all' + (openChanges.length ? '' : ' disabled') + '>' + O.icon('sparkle') + (openChanges.length ? (openChanges.length === 1 ? 'Apply 1 suggestion' : 'Apply all ' + openChanges.length + ' suggestions') : s.open.length ? 'All suggestions applied' : 'No open nights to price') + '</button>' : ''));
       var A = ctx.actionsEl;
       O.$('[data-pr-csv]', A).onclick = function () {
-        var rows = [['Date', 'Day', 'Status', 'Our price (RM)', 'Competitor avg (RM)', 'Competitor min', 'Competitor max', 'Index', 'Same weekday last year', 'Same weekday 2 years ago', 'Pace ' + m.groupName, 'Usual pace', 'Event', 'Suggested (RM)', 'Change (RM)', 'Factors']];
+        var rows = [['Date', 'Day', 'Status', 'Our price (' + fmt.cur(P) + ')', 'Competitor avg (' + fmt.cur(P) + ')', 'Competitor min', 'Competitor max', 'Index', 'Same weekday last year', 'Same weekday 2 years ago', 'Pace ' + m.groupName, 'Usual pace', 'Event', 'Suggested (' + fmt.cur(P) + ')', 'Change (' + fmt.cur(P) + ')', 'Factors']];
         m.days.forEach(function (x) {
           rows.push([x.iso, d.dowName(x.iso), x.status.kind, x.status.kind === 'blocked' ? '' : x.our, Math.round(x.cAvg), x.cMin, x.cMax, x.status.kind === 'blocked' ? '' : Math.round(x.our / x.cAvg * 100), x.ly, x.y2, Math.round(x.grpOTB * 100) + '%', Math.round(x.usualOTB * 100) + '%', x.ev ? x.ev.name : '', x.sugg != null ? x.sugg : '', x.sugg != null ? x.change : '',
             x.factors ? x.factors.map(function (f) { return f.label + ' ' + (f.key === 'base' ? f.amt : (f.amt >= 0 ? '+' : '') + f.amt); }).join('; ') : '']);
@@ -891,10 +892,10 @@
         var ups = openChanges.filter(function (x) { return x.change > 0; }), dns = openChanges.filter(function (x) { return x.change < 0; });
         var big = openChanges.slice().sort(function (a, b) { return Math.abs(b.change) - Math.abs(a.change); }).slice(0, 4);
         var body = '<div class="stack pr-modal">' +
-          '<dl class="kv"><dt>Prices going up</dt><dd><span class="pos">' + fmt.plural(ups.length, 'night') + (ups.length ? ' · ' + signed(sum(ups.map(function (x) { return x.change; }))) : '') + '</span></dd>' +
-          '<dt>Prices going down</dt><dd><span class="neg">' + fmt.plural(dns.length, 'night') + (dns.length ? ' · ' + signed(sum(dns.map(function (x) { return x.change; }))) : '') + '</span></dd>' +
-          '<dt>Expected impact</dt><dd>' + moneySigned(s.impact) + '</dd><dt>If every open night sells</dt><dd>' + moneySigned(s.upside) + '</dd></dl>' +
-          '<div><div class="label" style="margin-bottom:4px">Biggest changes</div>' + big.map(function (x) { return '<div class="row-flex small" style="justify-content:space-between"><span>' + d.dowName(x.iso) + ' ' + d.fmt(x.iso) + '</span><span>' + fmt.money(x.our) + ' → <b>' + fmt.money(x.sugg) + '</b> <span class="' + (x.change > 0 ? 'pos' : 'neg') + '">' + signed(x.change) + '</span></span></div>'; }).join('') + '</div>' +
+          '<dl class="kv"><dt>Prices going up</dt><dd><span class="pos">' + fmt.plural(ups.length, 'night') + (ups.length ? ' · ' + signed(sum(ups.map(function (x) { return x.change; })), P) : '') + '</span></dd>' +
+          '<dt>Prices going down</dt><dd><span class="neg">' + fmt.plural(dns.length, 'night') + (dns.length ? ' · ' + signed(sum(dns.map(function (x) { return x.change; })), P) : '') + '</span></dd>' +
+          '<dt>Expected impact</dt><dd>' + moneySigned(s.impact, P) + '</dd><dt>If every open night sells</dt><dd>' + moneySigned(s.upside, P) + '</dd></dl>' +
+          '<div><div class="label" style="margin-bottom:4px">Biggest changes</div>' + big.map(function (x) { return '<div class="row-flex small" style="justify-content:space-between"><span>' + d.dowName(x.iso) + ' ' + d.fmt(x.iso) + '</span><span>' + fmt.money(x.our, { cur: P }) + ' → <b>' + fmt.money(x.sugg, { cur: P }) + '</b> <span class="' + (x.change > 0 ? 'pos' : 'neg') + '">' + signed(x.change, P) + '</span></span></div>'; }).join('') + '</div>' +
           '<div class="small muted">Booked and blocked nights do not change.' + (typeNote(P) ? ' ' + esc(typeNote(P)) + '.' : '') + ' ' + esc(channelNote(P)) + '</div></div>';
         U.modal({
           title: 'Apply ' + fmt.plural(openChanges.length, 'suggested price') + ' to ' + (P.short || P.name) + '?', sub: U.rangeLabel(st.from, st.to) + ' · ' + fmt.plural(s.open.length, 'open night'), body: body,
@@ -936,7 +937,7 @@
         if (v.compWeight > 100 || v.weekendPct > 100 || v.lastMinPct > 60 || v.orphanPct > 60 || v.weeklyPct > 60 || v.monthlyPct > 70) { U.toast('One of the percentages is too high; check the rules', 'bad'); return; }
         var changed = Object.keys(v).filter(function (k) { return v[k] !== m.R[k]; });
         if (!changed.length) { U.toast('No changes to save for ' + P.short); return; }
-        var what = changed.map(function (k) { var u = RULE_LABELS[k][1]; function f2(x) { return u === 'RM' ? fmt.money(x) : x + (u === '%' ? '%' : ' days'); } return RULE_LABELS[k][0] + ' ' + f2(m.R[k]) + ' → ' + f2(v[k]); });
+        var what = changed.map(function (k) { var u = RULE_LABELS[k][1]; function f2(x) { return u === 'RM' ? fmt.money(x, { cur: P }) : x + (u === '%' ? '%' : ' days'); } return RULE_LABELS[k][0] + ' ' + f2(m.R[k]) + ' → ' + f2(v[k]); });
         Object.assign(ownRules(pid), v);
         D.priceLog.unshift({ at: D.NOW, pid: pid, by: (O.viewer() || {}).name || '', text: 'Rules: ' + what.join(', ') });
         audit('Changed pricing rules for ' + P.name + ': ' + what.join(', '));
@@ -956,9 +957,9 @@
         if (t.matches('[data-apply-one]')) { applyPrices(pid, [{ iso: n.iso, price: n.sugg }], 'Suggestion applied'); return; }
         if (t.matches('[data-own]')) {
           var val = Math.round(Number(O.$('#pr-own', root).value));
-          if (!val) { U.toast('Enter a price in RM', 'bad'); return; }
-          if (val < m.R.min || val > m.R.max) { U.toast('Price must be between ' + fmt.money(m.R.min) + ' and ' + fmt.money(m.R.max) + ' (your rules)', 'bad'); return; }
-          if (val === n.our) { U.toast(d.fmt(n.iso) + ' is already listed at ' + fmt.money(val)); return; }
+          if (!val) { U.toast('Enter a price in ' + fmt.cur(P), 'bad'); return; }
+          if (val < m.R.min || val > m.R.max) { U.toast('Price must be between ' + fmt.money(m.R.min, { cur: P }) + ' and ' + fmt.money(m.R.max, { cur: P }) + ' (your rules)', 'bad'); return; }
+          if (val === n.our) { U.toast(d.fmt(n.iso) + ' is already listed at ' + fmt.money(val, { cur: P })); return; }
           applyPrices(pid, [{ iso: n.iso, price: val }], 'Price set manually'); return;
         }
         if (t.matches('[data-revert]')) { revert(pid, [t.dataset.revert]); return; }

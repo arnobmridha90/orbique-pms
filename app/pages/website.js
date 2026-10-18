@@ -1,5 +1,5 @@
 /* Website builder (v4): 8 complete website designs, each rendered live from the workspace's properties, prices,
-   reviews, logo and brand colours. Every design is a full site: hero, intro, homes with "from RM x / night",
+   reviews, logo and brand colours. Every design is a full site: hero, intro, homes with "from RM x / night" (in each home's currency),
    amenities, reviews, location, booking call to action with an enquiry form, and a footer with contact and social links.
    Every site also has a property page (gallery, live availability calendar, booking card) and an about page.
 
@@ -150,7 +150,7 @@
       return {
         p: p, id: p.id, name: p.name || 'Untitled home', short: p.short || p.name || 'Home', city: city, area: p.area || p.address || city,
         type: p.type || (beds ? beds + '-bedroom home' : 'Studio'), beds: beds, sleeps: +(p.sleeps || p.maxGuests || 0) || Math.max(2, beds * 2),
-        from: from, rating: rs.length ? rs.reduce(function (s, r) { return s + r.stars; }, 0) / rs.length : null, nReviews: rs.length,
+        from: from, cur: O.curOf(p), tax: O.tourismTaxApplies(p), rating: rs.length ? rs.reduce(function (s, r) { return s + r.stars; }, 0) / rs.length : null, nReviews: rs.length,
         cleaning: cf.length ? cf[Math.floor(cf.length / 2)] : ({ 0: 50, 1: 60, 2: 80, 3: 110, 4: 130 }[beds] || 80),
         scene: sceneOf(p), photos: (Array.isArray(p.photos) ? p.photos : []).map(photoSrc).filter(Boolean), slug: slug(p.name),
         parking: !!p.parking && !/^no parking|^street|^none/i.test(String(p.parking)), parkingText: p.parking ? String(p.parking) : '',
@@ -178,20 +178,21 @@
     var cmap = {};
     props.forEach(function (x) { (cmap[x.city] = cmap[x.city] || []).push(x); });
     var cities = Object.keys(cmap).map(function (c) {
-      var ps = cmap[c], fr = ps.map(function (x) { return x.from; }).filter(Boolean);
-      return { name: c, props: ps, from: fr.length ? Math.min.apply(null, fr) : null, scene: mode(ps.map(function (x) { return x.scene; })), geo: GEO[c] || null };
+      var ps = cmap[c], cc = ps[0].cur, fr = ps.filter(function (x) { return x.cur === cc; }).map(function (x) { return x.from; }).filter(Boolean);
+      return { name: c, props: ps, cur: cc, from: fr.length ? Math.min.apply(null, fr) : null, scene: mode(ps.map(function (x) { return x.scene; })), geo: GEO[c] || null };
     }).sort(function (a, b) { return b.props.length - a.props.length || (a.name < b.name ? -1 : 1); });
     var good = reviews.filter(function (r) { return r.stars === 5 && r.text && r.text.length >= 50 && r.text.length <= 210; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     var seen = {}, top = good.filter(function (r) { if (seen[r.text]) return false; seen[r.text] = 1; return true; });
     var plats = {}; reviews.forEach(function (r) { plats[r.platform] = 1; });
-    var froms = props.map(function (x) { return x.from; }).filter(Boolean);
+    var curs = props.map(function (x) { return x.cur; }).filter(function (c, i, a) { return a.indexOf(c) === i; }), cur = !curs.length || curs.indexOf(O.baseCur()) >= 0 ? O.baseCur() : curs[0];
+    var froms = props.filter(function (x) { return x.cur === cur; }).map(function (x) { return x.from; }).filter(Boolean);
     var firstStay = bookings.reduce(function (m, b) { return b.checkIn && b.checkIn < m ? b.checkIn : m; }, '9999');
     cache = {
       props: props, byId: byId, cities: cities, reviews: reviews, top: top,
       avg: reviews.length ? reviews.reduce(function (s, r) { return s + r.stars; }, 0) / reviews.length : null, nReviews: reviews.length,
       platforms: Object.keys(plats).map(function (k) { return U.platName(k); }),
       hosted: bookings.filter(function (b) { return b.status === 'checked_out' || b.status === 'checked_in'; }).length,
-      firstStay: firstStay === '9999' ? null : firstStay, minFrom: froms.length ? Math.min.apply(null, froms) : null,
+      firstStay: firstStay === '9999' ? null : firstStay, curs: curs, cur: cur, taxAny: props.some(function (x) { return x.tax; }), minFrom: froms.length ? Math.min.apply(null, froms) : null,
       checkIn: mode(bookings.map(function (b) { return b.checkInTime; })) || mode(props.map(function (x) { return x.checkIn; })) || '15:00',
       checkOut: mode(bookings.map(function (b) { return b.checkOutTime; })) || mode(props.map(function (x) { return x.checkOut; })) || '11:00',
       withParking: props.filter(function (x) { return x.parking; }).length, taken: {}
@@ -218,7 +219,7 @@
   }
   function cityList(F) { var n = F.cities.map(function (c) { return c.name; }); if (!n.length) return 'Malaysia'; if (n.length === 1) return n[0]; return n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]; }
   function shortCity(c) { return c === 'Kuala Lumpur' ? 'KL' : c === 'Cameron Highlands' ? 'Cameron' : c === 'Genting Highlands' ? 'Genting' : c; }
-  function rm(n) { return n == null ? 'RM –' : 'RM ' + fmt.num(n); }
+  function rm(n, cur) { return n == null ? fmt.cur(cur) + ' –' : fmt.money(n, { cur: cur }); } /* in the home's currency (x.cur) */
   function plural(n, one, many) { return fmt.plural(n, one, many); }
   function stars(n) { var s = ''; for (var i = 1; i <= 5; i++) s += i <= Math.round(n || 0) ? '★' : '☆'; return s; }
   function firstName(g) { return String(g || 'Guest').replace(/^The /, '').split(' ')[0]; }
@@ -286,7 +287,7 @@
   var SEC_IDS = ['intro', 'units', 'amenities', 'reviews', 'location', 'book'];
   var SEC_LABEL = { hero: 'Hero', intro: 'Introduction', units: 'Homes and prices', amenities: 'Amenities', reviews: 'Guest reviews', location: 'Location and area', book: 'Booking and enquiry form', footer: 'Footer',
     gallery: 'Photo gallery', overview: 'Overview and facts', calendar: 'Availability calendar and booking', story: 'Our story', team: 'Our team', stats: 'Numbers', faq: 'Questions and answers', contact: 'Contact form and WhatsApp' };
-  var SEC_DESC = { hero: 'Always at the top', footer: 'Contact details and social links, always at the bottom', units: 'Featured homes with "from RM x / night"', reviews: 'Recent five-star reviews from your platforms', book: 'Enquiries arrive in Guest inbox', location: 'Your areas on a map, with a line about each',
+  var SEC_DESC = { hero: 'Always at the top', footer: 'Contact details and social links, always at the bottom', units: 'Featured homes with "from x / night" prices', reviews: 'Recent five-star reviews from your platforms', book: 'Enquiries arrive in Guest inbox', location: 'Your areas on a map, with a line about each',
     calendar: 'Live availability from your calendar, with prices', contact: 'Enquiries arrive in Guest inbox', faq: 'Check-in, door codes, tourism tax, invoices', intro: 'A short welcome and a few key facts', amenities: 'What every stay includes' };
   function homeList(t) {
     var S = site();
@@ -567,7 +568,7 @@
   function rating(x) { return x.rating ? '<span class="w-rate">★ ' + x.rating.toFixed(2) + ' <span>(' + x.nReviews + ')</span></span>' : '<span class="w-rate w-new">New</span>'; }
   function bedsTxt(x) { return x.beds ? plural(x.beds, 'bedroom') : 'Studio'; }
   function facts1(x) { return x.placeholder ? 'Bedrooms · sleeps' : esc(bedsTxt(x)) + ' · sleeps ' + x.sleeps; }
-  function priceLine(x, cls) { return x.from == null && !x.placeholder ? '<span class="w-price ' + (cls || '') + '">Ask us for rates</span>' : '<span class="w-price ' + (cls || '') + '">from <b>' + rm(x.from) + '</b> / night</span>'; }
+  function priceLine(x, cls) { return x.from == null && !x.placeholder ? '<span class="w-price ' + (cls || '') + '">Ask us for rates</span>' : '<span class="w-price ' + (cls || '') + '">from <b>' + rm(x.from, x.cur) + '</b> / night</span>'; }
   function unitAttr(x) { return x.placeholder ? 'data-wact="addprops"' : 'data-wpid="' + esc(x.id) + '"'; }
   function logo(X, onBg) {
     var ws = X.ws;
@@ -644,7 +645,7 @@
       var F = X.F, areas = X.F.props.length ? X.F.props.map(function (x) { return x.area.split(',')[0]; }) : ['Your neighbourhood', 'Your city', 'Your street'];
       var uniq = areas.filter(function (a, i) { return areas.indexOf(a) === i; }), row = uniq.map(function (a) { return '<span>' + esc(a) + '</span><i>/</i>'; }).join('');
       return '<section class="w-hero h-urban"><div class="w-wrap hu-grid"><div class="hu-text"><div class="hu-index"><span>01</span><span>' + esc(F.props.length ? plural(F.props.length, 'home') + ' / ' + plural(F.cities.length, 'city', 'cities') : 'City stays') + '</span></div><h1>' + esc(X.copy.headline) + '</h1><p>' + esc(X.copy.sub) + '</p><div class="w-row">' + btn(esc(X.copy.cta) + ' →', '', 'data-wact="search"') + '<button type="button" class="w-link" data-wnav="about">About us</button></div></div>' +
-        '<div class="hu-media">' + heroImg(X, 'hu-img') + (F.minFrom ? '<div class="hu-tag"><span>From</span><b>' + rm(F.minFrom) + '</b><span>a night</span></div>' : '') + '</div></div><div class="hu-ticker" aria-hidden="true"><div class="hu-track">' + row + row + row + '</div></div></section>';
+        '<div class="hu-media">' + heroImg(X, 'hu-img') + (F.minFrom ? '<div class="hu-tag"><span>From</span><b>' + rm(F.minFrom, F.cur) + '</b><span>a night</span></div>' : '') + '</div></div><div class="hu-ticker" aria-hidden="true"><div class="hu-track">' + row + row + row + '</div></div></section>';
     },
     highland: function (X) {
       var F = X.F;
@@ -713,7 +714,7 @@
     cards: function (X) { return sec('units', 'uv-cards', '<div class="w-wrap">' + unitsHead(X, true) + '<div class="w-cards">' + X.feat.map(function (x, i) { return unitCard(X, x, i); }).join('') + '</div></div>'); },
     grid: function (X) {
       return sec('units', 'uv-grid', '<div class="w-wrap">' + unitsHead(X) + '<div class="w-grid">' + X.feat.map(function (x, i) {
-        return '<button type="button" class="g-unit' + (x.placeholder ? ' is-ph' : '') + '" ' + unitAttr(x) + '><span class="g-no">' + (i < 9 ? '0' : '') + (i + 1) + '</span>' + photo(X, x, i % 3 === 1 ? 1 : 0, 'g-img') + '<span class="g-row"><b>' + esc(x.name) + '</b><span class="g-p">' + (x.from == null && !x.placeholder ? 'Ask' : rm(x.from)) + '</span></span><span class="g-row s"><span>' + esc(x.area.split(',')[0]) + ' · ' + facts1(x) + '</span><span>' + (x.from == null && !x.placeholder ? 'for rates' : 'per night') + '</span></span></button>';
+        return '<button type="button" class="g-unit' + (x.placeholder ? ' is-ph' : '') + '" ' + unitAttr(x) + '><span class="g-no">' + (i < 9 ? '0' : '') + (i + 1) + '</span>' + photo(X, x, i % 3 === 1 ? 1 : 0, 'g-img') + '<span class="g-row"><b>' + esc(x.name) + '</b><span class="g-p">' + (x.from == null && !x.placeholder ? 'Ask' : rm(x.from, x.cur)) + '</span></span><span class="g-row s"><span>' + esc(x.area.split(',')[0]) + ' · ' + facts1(x) + '</span><span>' + (x.from == null && !x.placeholder ? 'for rates' : 'per night') + '</span></span></button>';
       }).join('') + '</div></div>');
     },
     rows: function (X) {
@@ -800,17 +801,17 @@
   function cityRows(X, cls) {
     var F = X.F;
     if (!F.cities.length) return '<div class="' + cls + ' is-ph"><div class="lc"><b>Your city</b><span>Homes and prices appear here</span></div></div>';
-    return '<div class="' + cls + '">' + F.cities.map(function (c) { return '<button type="button" class="lc" data-wpid="' + esc(c.props[0].id) + '"><span class="lc-top"><b>' + esc(c.name) + '</b><span class="lc-n">' + plural(c.props.length, 'home') + '</span></span><span class="lc-note">' + esc(cityNote(c)) + '</span>' + (c.from ? '<span class="lc-from">from ' + rm(c.from) + ' / night</span>' : '') + '</button>'; }).join('') + '</div>';
+    return '<div class="' + cls + '">' + F.cities.map(function (c) { return '<button type="button" class="lc" data-wpid="' + esc(c.props[0].id) + '"><span class="lc-top"><b>' + esc(c.name) + '</b><span class="lc-n">' + plural(c.props.length, 'home') + '</span></span><span class="lc-note">' + esc(cityNote(c)) + '</span>' + (c.from ? '<span class="lc-from">from ' + rm(c.from, c.cur) + ' / night</span>' : '') + '</button>'; }).join('') + '</div>';
   }
   var LOC = {
     map: function (X) { var w = X.t.words.loc; return sec('location', 'lv-map', '<div class="w-wrap lv-grid"><div class="lv-mapbox">' + mapSVG(X) + '</div><div>' + head2(w[0], w[1], locLead(X)) + cityRows(X, 'w-cities') + '</div></div>'); },
     list: function (X) {
       var w = X.t.words.loc, F = X.F;
-      return sec('location', 'lv-list', '<div class="w-wrap">' + head2(w[0], w[1], locLead(X)) + '<div class="w-ltable">' + (F.cities.length ? F.cities.map(function (c) { return '<button type="button" class="lt-row" data-wpid="' + esc(c.props[0].id) + '"><b>' + esc(c.name) + '</b><span class="lt-note">' + esc(cityNote(c)) + '</span><span class="lt-n">' + plural(c.props.length, 'home') + '</span><span class="lt-p">' + (c.from ? 'from ' + rm(c.from) : '') + '</span></button>'; }).join('') : '<div class="lt-row is-ph"><b>Your city</b><span class="lt-note">Your areas appear here</span><span class="lt-n">0 homes</span><span class="lt-p"></span></div>') + '</div></div>');
+      return sec('location', 'lv-list', '<div class="w-wrap">' + head2(w[0], w[1], locLead(X)) + '<div class="w-ltable">' + (F.cities.length ? F.cities.map(function (c) { return '<button type="button" class="lt-row" data-wpid="' + esc(c.props[0].id) + '"><b>' + esc(c.name) + '</b><span class="lt-note">' + esc(cityNote(c)) + '</span><span class="lt-n">' + plural(c.props.length, 'home') + '</span><span class="lt-p">' + (c.from ? 'from ' + rm(c.from, c.cur) : '') + '</span></button>'; }).join('') : '<div class="lt-row is-ph"><b>Your city</b><span class="lt-note">Your areas appear here</span><span class="lt-n">0 homes</span><span class="lt-p"></span></div>') + '</div></div>');
     },
     stops: function (X) {
       var w = X.t.words.loc, F = X.F;
-      return sec('location', 'lv-stops', '<div class="w-wrap lv-sgrid"><div>' + head2(w[0], w[1], locLead(X)) + '<div class="lv-mini">' + mapSVG(X) + '</div></div><ol class="w-stops">' + (F.cities.length ? F.cities.map(function (c) { return '<li><button type="button" data-wpid="' + esc(c.props[0].id) + '">' + art(X, c.scene || 'hills', c.name, 'st-img', c.name) + '<span><b>' + esc(c.name) + '</b><small>' + esc(cityNote(c)) + '</small><em>' + plural(c.props.length, 'home') + (c.from ? ' · from ' + rm(c.from) : '') + '</em></span></button></li>'; }).join('') : '<li class="is-ph"><span><b>Your city</b><small>Your areas appear here</small></span></li>') + '</ol></div>');
+      return sec('location', 'lv-stops', '<div class="w-wrap lv-sgrid"><div>' + head2(w[0], w[1], locLead(X)) + '<div class="lv-mini">' + mapSVG(X) + '</div></div><ol class="w-stops">' + (F.cities.length ? F.cities.map(function (c) { return '<li><button type="button" data-wpid="' + esc(c.props[0].id) + '">' + art(X, c.scene || 'hills', c.name, 'st-img', c.name) + '<span><b>' + esc(c.name) + '</b><small>' + esc(cityNote(c)) + '</small><em>' + plural(c.props.length, 'home') + (c.from ? ' · from ' + rm(c.from, c.cur) : '') + '</em></span></button></li>'; }).join('') : '<li class="is-ph"><span><b>Your city</b><small>Your areas appear here</small></span></li>') + '</ol></div>');
     }
   };
 
@@ -841,7 +842,7 @@
   }
   function footer(X) {
     var ws = X.ws, F = X.F, year = D.TODAY.slice(0, 4), powered = ws.id === 'orbique' ? '' : ' · Booking system by Orbique';
-    var copy = '<div class="wf-copy"><span>© ' + year + ' ' + esc(ws.legal) + powered + '</span><span>Prices in RM · Malaysian tourism tax applies to non-Malaysian guests</span></div>';
+    var copy = '<div class="wf-copy"><span>© ' + year + ' ' + esc(ws.legal) + powered + '</span><span>' + esc((F.curs.length > 1 ? 'Prices in each home\'s local currency' : 'Prices in ' + fmt.cur(F.cur)) + (F.taxAny ? ' · Malaysian tourism tax applies to non-Malaysian guests' : '')) + '</span></div>';
     var brand = '<button type="button" class="w-brand" data-wnav="home">' + logo(X, X.V.deep) + '<span class="w-bname">' + esc(ws.name) + '</span></button>';
     var contact = [ws.phone ? '<span>' + O.icon('phone') + esc(ws.phone) + '</span>' : '', ws.email ? '<span>' + O.icon('mail') + esc(ws.email) + '</span>' : '', ws.address ? '<span>' + O.icon('pin') + esc(ws.address) + '</span>' : ''].join('');
     if (X.t.v.footer === 'centered') return '<footer class="w-footer wf-centered"><div class="w-wrap">' + (X.t.id === 'heritage' ? tiles(X.V, 16) : '') + brand + '<nav class="wf-nav">' + nav(X) + '</nav><div class="wf-contact">' + contact + '</div>' + socialLinks(X) + copy + '</div></footer>';
@@ -870,10 +871,10 @@
   }
   function bookingCard(X, x) {
     var q = quote(x), sel = defaultSel(x);
-    return '<div class="w-bk"><div class="bk-price"><span>' + (q || x.from != null ? '<b>' + rm(q ? q.avg : x.from) + '</b> / night' : '<b>Ask us for rates</b>') + '</span>' + rating(x) + '</div>' +
+    return '<div class="w-bk"><div class="bk-price"><span>' + (q || x.from != null ? '<b>' + rm(q ? q.avg : x.from, x.cur) + '</b> / night' : '<b>Ask us for rates</b>') + '</span>' + rating(x) + '</div>' +
       '<div class="bk-dates"><div><label>Check in</label><b>' + (sel.from ? esc(d.dowName(sel.from) + ', ' + d.fmt(sel.from)) : 'Pick a date') + '</b></div><div><label>Check out</label><b>' + (sel.to ? esc(d.dowName(sel.to) + ', ' + d.fmt(sel.to)) : 'Pick a date') + '</b></div><div class="full"><label>Guests</label><b>2 guests · up to ' + x.sleeps + '</b></div></div>' +
       btn('Book these dates', 'full', 'data-wact="book" data-pid="' + esc(x.id) + '"') +
-      (q ? '<div class="bk-lines"><div><span>' + plural(q.nights, 'night') + (q.nights > 1 ? ' <small>avg ' + rm(q.avg) + '</small>' : '') + '</span><span>' + rm(q.acc) + '</span></div><div><span>Cleaning fee</span><span>' + rm(q.cleaning) + '</span></div><div class="tot"><span>Total</span><span>' + rm(q.total) + '</span></div></div><p class="bk-note">Non-Malaysian guests also pay tourism tax of RM 10 per night. Your invoice is sent as soon as you book.</p>' : '<p class="bk-note">Pick your check-in and check-out dates on the calendar.</p>') + '</div>';
+      (q ? '<div class="bk-lines"><div><span>' + plural(q.nights, 'night') + (q.nights > 1 ? ' <small>avg ' + rm(q.avg, x.cur) + '</small>' : '') + '</span><span>' + rm(q.acc, x.cur) + '</span></div><div><span>Cleaning fee</span><span>' + rm(q.cleaning, x.cur) + '</span></div><div class="tot"><span>Total</span><span>' + rm(q.total, x.cur) + '</span></div></div><p class="bk-note">' + (x.tax ? 'Non-Malaysian guests also pay tourism tax of ' + rm(10, x.cur) + ' per night. ' : '') + 'Your invoice is sent as soon as you book.</p>' : '<p class="bk-note">Pick your check-in and check-out dates on the calendar.</p>') + '</div>';
   }
   function calendar(x) {
     var sel = defaultSel(x), months = [d.monthStart(D.TODAY), d.monthStart(d.addMonths(D.TODAY, 1))];
@@ -883,10 +884,10 @@
       d.range(m, d.monthEnd(m)).forEach(function (iso) {
         var past = iso < D.TODAY, booked = !past && isBooked(x.id, iso), inR = sel.from && sel.to && iso >= sel.from && iso < sel.to, pr = past || booked ? null : price(x.p, iso);
         var cls = 'cd' + (past ? ' past' : '') + (booked ? ' booked' : '') + (inR ? ' in' : '') + (iso === sel.from ? ' s' : '') + (iso === sel.to ? ' e' : '');
-        cells += '<button type="button" class="' + cls + '" ' + (past ? 'disabled' : 'data-wday="' + iso + '" data-pid="' + esc(x.id) + '"') + ' aria-label="' + esc(d.fmtY(iso) + (booked ? ', booked' : past ? '' : pr ? ', ' + rm(pr) : '')) + '"><b>' + d.day(iso) + '</b><em>' + (past ? '' : booked ? '' : pr ? fmt.num(pr) : '') + '</em></button>';
+        cells += '<button type="button" class="' + cls + '" ' + (past ? 'disabled' : 'data-wday="' + iso + '" data-pid="' + esc(x.id) + '"') + ' aria-label="' + esc(d.fmtY(iso) + (booked ? ', booked' : past ? '' : pr ? ', ' + rm(pr, x.cur) : '')) + '"><b>' + d.day(iso) + '</b><em>' + (past ? '' : booked ? '' : pr ? fmt.num(pr) : '') + '</em></button>';
       });
       return '<div class="cm' + (mi ? ' second' : '') + '"><div class="cm-h">' + esc(d.monthName(m, true) + ' ' + m.slice(0, 4)) + '</div><div class="cm-dow">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(function (w) { return '<span>' + w + '</span>'; }).join('') + '</div><div class="cm-grid">' + cells + '</div></div>';
-    }).join('') + '</div><div class="cal-key"><span><i class="k-free"></i>Available, price in RM</span><span><i class="k-booked"></i>Booked</span><span><i class="k-sel"></i>Your dates</span></div>';
+    }).join('') + '</div><div class="cal-key"><span><i class="k-free"></i>Available, price in ' + esc(fmt.cur(x.cur)) + '</span><span><i class="k-booked"></i>Booked</span><span><i class="k-sel"></i>Your dates</span></div>';
   }
   function factTiles(X, x) {
     return '<div class="pp-facts"><span><b>' + (x.beds || 'Studio') + '</b>' + (x.beds ? (x.beds > 1 ? 'bedrooms' : 'bedroom') : '') + '</span><span><b>' + x.sleeps + '</b>guests</span><span><b>' + esc(fmt.time(x.checkIn || X.F.checkIn)) + '</b>check-in</span><span><b>' + esc(fmt.time(x.checkOut || X.F.checkOut)) + '</b>check-out</span></div>';
@@ -900,7 +901,7 @@
     var parts = {
       overview: '<div class="pp-block"><h2 class="w-h3">About this home</h2>' + factTiles(X, x) + '<p>' + esc(aboutLine(x)) + '</p></div>',
       amenities: '<div class="pp-block"><h2 class="w-h3">Amenities</h2><ul class="pp-amen">' + amenItems(X).filter(function (a) { return a[0] !== 'car' || x.parking; }).map(function (a) { return '<li>' + ic(a[0]) + '<span>' + esc(a[0] === 'car' ? 'Parking: ' + x.parkingText : a[0] === 'key' ? 'Self check-in (' + x.lockBrand + ' smart lock)' : a[1]) + '</span></li>'; }).join('') + '</ul></div>',
-      calendar: '<div class="pp-block" data-wsec="calendar"><h2 class="w-h3">Availability</h2><p class="pp-hint">Prices per night in RM. Tap your check-in date, then your check-out date.</p>' + calendar(x) + '</div>',
+      calendar: '<div class="pp-block" data-wsec="calendar"><h2 class="w-h3">Availability</h2><p class="pp-hint">Prices per night in ' + esc(fmt.cur(x.cur)) + '. Tap your check-in date, then your check-out date.</p>' + calendar(x) + '</div>',
       reviews: rs.length ? '<div class="pp-block"><h2 class="w-h3">Guest reviews ' + rating(x) + '</h2><div class="w-rcards two">' + rs.map(function (r) { return '<figure><div class="q-stars">' + stars(r.stars) + '</div><p>' + esc(r.text) + '</p><figcaption><span>' + revMeta(r) + '</span></figcaption></figure>'; }).join('') + '</div></div>' : '',
       location: '<div class="pp-block"><h2 class="w-h3">Location and house info</h2><div class="pp-loc">' + art(X, x.scene, x.id + 'loc', 'pp-map', x.area) + '<dl><dt>Area</dt><dd>' + esc(x.area) + '</dd><dt>Parking</dt><dd>' + esc(x.parkingText || 'Ask us') + '</dd><dt>Entry</dt><dd>' + esc(x.lockBrand) + ' smart lock, code in the guest app</dd><dt>House rules</dt><dd>No smoking, no parties, quiet after 10 PM</dd></dl></div></div>'
     };
@@ -918,11 +919,11 @@
     return [
       ['What time is check-in and check-out?', 'Check-in is from ' + fmt.time(F.checkIn) + ' and check-out is by ' + fmt.time(F.checkOut) + '. Early check-in or late checkout is often possible; message us to ask.'],
       ['How do I get in?', 'Every home has a smart lock. Your door code appears in the guest app once you have accepted the house rules and your ID is verified.'],
-      ['Is there a tourism tax?', 'Malaysia charges tourism tax of RM 10 per room per night for non-Malaysian guests. It is shown on your invoice.'],
+      F.taxAny ? ['Is there a tourism tax?', 'Malaysia charges tourism tax of ' + rm(10, 'MYR') + ' per room per night for non-Malaysian guests' + (F.curs.length > 1 ? ' staying in our Malaysian homes' : '') + '. It is shown on your invoice.'] : null,
       ['Will I get an invoice and a receipt?', 'Yes. An invoice is sent when your booking is confirmed and a receipt as soon as payment arrives, by email or WhatsApp.'],
       ['Is there parking?', F.props.length ? (F.withParking + ' of our ' + plural(F.props.length, 'home') + ' include a parking bay. Each home page says exactly where to park.') : 'Each home page says exactly where to park.'],
       ['Why book here instead of a booking platform?', 'Same homes and the same team, without the platform service fee. You also deal with us directly from the start.']
-    ];
+    ].filter(Boolean);
   }
   function aboutPage(X) {
     var F = X.F, ws = X.ws;
@@ -1007,7 +1008,7 @@
       left += card('Home page sections', 'Show, hide and reorder. Kept when you change design.', secRows(homeList(t), 'home', ro));
       left += card('Headline and welcome', 'Leave a field empty to use the design\'s wording', field('headline', 'Headline', C2.headline, dflt[0], { max: 70 }) + field('sub', 'Subheadline', C2.sub, dflt[1], { area: true, max: 170 }) + field('cta', 'Button label', C2.cta, dflt[2], { max: 24 }) + field('introTitle', 'Welcome heading', C2.introTitle, t.words.intro, { max: 60 }) + field('intro', 'Welcome text', C2.intro, introDefault(F, ws), { area: true, rows: 4, max: 320 }),
         (C2.headline || C2.sub || C2.cta || C2.intro || C2.introTitle ? '<button type="button" class="btn btn-quiet btn-sm" data-act="reset-copy"' + dis(!ro, NO_EDIT) + '>Reset</button>' : ''));
-      left += card('Homes on the home page', F.props.length ? featCount() : 'Add properties to choose which homes to show', F.props.length ? '<div class="wb-feat">' + F.props.map(function (x) { var i = S.featured.indexOf(x.id); return '<label class="check"><input type="checkbox" data-feat="' + esc(x.id) + '"' + (i >= 0 ? ' checked' : '') + dis(!ro, NO_EDIT) + '><span class="grow wb-fname"><b>' + esc(x.name) + '</b><span class="xs muted">' + esc(x.city) + (x.from ? ' · from ' + rm(x.from) + ' / night' : '') + '</span></span>' + (i >= 0 ? '<span class="wb-ordn">' + (featIds().indexOf(x.id) + 1) + '</span>' : '') + '</label>'; }).join('') + '</div><div class="xs muted">None ticked: the first 6 homes are shown.</div>' : '<div class="small muted">Homes appear here once you add properties.</div>');
+      left += card('Homes on the home page', F.props.length ? featCount() : 'Add properties to choose which homes to show', F.props.length ? '<div class="wb-feat">' + F.props.map(function (x) { var i = S.featured.indexOf(x.id); return '<label class="check"><input type="checkbox" data-feat="' + esc(x.id) + '"' + (i >= 0 ? ' checked' : '') + dis(!ro, NO_EDIT) + '><span class="grow wb-fname"><b>' + esc(x.name) + '</b><span class="xs muted">' + esc(x.city) + (x.from ? ' · from ' + rm(x.from, x.cur) + ' / night' : '') + '</span></span>' + (i >= 0 ? '<span class="wb-ordn">' + (featIds().indexOf(x.id) + 1) + '</span>' : '') + '</label>'; }).join('') + '</div><div class="xs muted">None ticked: the first 6 homes are shown.</div>' : '<div class="small muted">Homes appear here once you add properties.</div>');
       left += card('Location text', 'Shown above your areas', field('location', 'About your areas', C2.location, locLead(ctxFor(t, 'home', {})), { area: true, rows: 3, max: 240 }));
     } else if (st.page === 'property') {
       left += card('Property page', F.props.length ? 'The same layout is used for all ' + plural(F.props.length, 'property', 'properties') : 'One page per property', (F.props.length ? '<div class="field"><label for="wb-pp">Preview property</label><select class="select" id="wb-pp" data-act="pp">' + F.props.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === ctxFor(t, 'property', {}).pid ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></div>' : '') + secRows(S.pageSections.property, 'property', ro) + '<div class="note">Availability and prices come from your bookings, blocked dates and Pricing. Booked nights cannot be selected.</div>');
@@ -1221,7 +1222,7 @@
       if (!q && x && x.from == null) { U.toast('No nightly rates yet for this home, so guests would send an enquiry instead. Set rates in Pricing.'); return; }
       if (!q) { U.toast('Pick a check-out date on the calendar first.', 'bad'); return; }
       U.modal({ title: 'Guest checkout (preview)', sub: x.name + ' · ' + d.fmtRange(q.from, q.to),
-        body: '<dl class="kv"><dt>Stay</dt><dd>' + esc(d.fmtY(q.from)) + ' → ' + esc(d.fmtY(q.to)) + '</dd><dt>' + plural(q.nights, 'night') + (q.nights > 1 ? ' (avg ' + rm(q.avg) + ' a night)' : '') + '</dt><dd>' + rm(q.acc) + '</dd><dt>Cleaning fee</dt><dd>' + rm(q.cleaning) + '</dd><dt class="tot">Total</dt><dd class="tot">' + rm(q.total) + '</dd></dl><div class="note" style="margin-top:12px">On the live site the guest pays here, the booking lands in Bookings and the calendar as a direct booking, and the invoice is sent automatically. No booking is created from the preview.</div>',
+        body: '<dl class="kv"><dt>Stay</dt><dd>' + esc(d.fmtY(q.from)) + ' → ' + esc(d.fmtY(q.to)) + '</dd><dt>' + plural(q.nights, 'night') + (q.nights > 1 ? ' (avg ' + rm(q.avg, x.cur) + ' a night)' : '') + '</dt><dd>' + rm(q.acc, x.cur) + '</dd><dt>Cleaning fee</dt><dd>' + rm(q.cleaning, x.cur) + '</dd><dt class="tot">Total</dt><dd class="tot">' + rm(q.total, x.cur) + '</dd></dl><div class="note" style="margin-top:12px">On the live site the guest pays here, the booking lands in Bookings and the calendar as a direct booking, and the invoice is sent automatically. No booking is created from the preview.</div>',
         actions: [{ label: 'Close', kind: 'ghost' }].concat(O.can('bookings') ? [{ label: 'Open Bookings', kind: 'primary', onClick: function () { O.go('bookings'); } }] : []) });
     }
   }

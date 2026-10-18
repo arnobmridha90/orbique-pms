@@ -233,7 +233,7 @@
   function recordPayment(b) {
     if (!canPay()) { U.toast(NO_PAY + '. An account owner can allow it in Staff Access.', 'bad'); return; }
     var body = O.html('<div class="stack">' +
-      '<div class="note">' + esc(b.guest.name) + ' · ' + esc(prop(b.propertyId).name) + ' · ' + d.fmtRange(b.checkIn, b.checkOut) + '<br>Invoice ' + esc(b.invoiceNo) + ' · total <b>' + fmt.money(b.total, { dp: 2 }) + '</b></div>' +
+      '<div class="note">' + esc(b.guest.name) + ' · ' + esc(prop(b.propertyId).name) + ' · ' + d.fmtRange(b.checkIn, b.checkOut) + '<br>Invoice ' + esc(b.invoiceNo) + ' · total <b>' + fmt.money(b.total, { dp: 2, cur: b }) + '</b></div>' +
       '<div class="form-grid"><div class="field"><label for="inv-pm">Payment method</label><select class="select" id="inv-pm">' + PAY_METHODS.map(function (m) { return '<option>' + m + '</option>'; }).join('') + '</select></div>' +
       '<div class="field"><label for="inv-pd">Payment date</label><input class="input" id="inv-pd" type="date" value="' + D.TODAY + '" max="' + D.TODAY + '"></div></div>' +
       '<div class="note brand">Receipt ' + esc(nextNo('receipt')) + ' is created as soon as you save. ' +
@@ -315,10 +315,11 @@
   function exportCSV(list) {
     var r = range();
     var cc = canContacts(); /* without bookings.contacts the phone and email columns are left out */
-    var out = [['Invoice no', 'Invoice date', 'Receipt no', 'Paid on', 'Booking', 'Guest', 'Country'].concat(cc ? ['Phone', 'Email'] : []).concat(['Property', 'Platform', 'Check-in', 'Check-out', 'Nights', 'Accommodation (RM)', 'Cleaning (RM)', 'Tourism tax (RM)', 'Total (RM)', 'Payment method', 'Invoice sent', 'Receipt sent'])];
+    var mc = O.multiCur(), cl = function (l) { return mc ? l : l + ' (' + fmt.cur() + ')'; }; /* several currencies: a Currency column instead of the symbol in the headers */
+    var out = [['Invoice no', 'Invoice date', 'Receipt no', 'Paid on', 'Booking', 'Guest', 'Country'].concat(cc ? ['Phone', 'Email'] : []).concat(['Property', 'Platform', 'Check-in', 'Check-out', 'Nights', cl('Accommodation'), cl('Cleaning'), cl('Tourism tax'), cl('Total')]).concat(mc ? ['Currency'] : []).concat(['Payment method', 'Invoice sent', 'Receipt sent'])];
     list.forEach(function (b) {
       out.push([b.invoiceNo, b.invoiceDate, b.receiptNo || '', b.paidAt || '', b.id, b.guest.name, b.guest.countryName].concat(cc ? [b.guest.phone, b.guest.email] : []).concat([prop(b.propertyId).name, U.platName(b.channel), b.checkIn, b.checkOut, b.nights,
-        b.accommodation.toFixed(2), b.cleaningFee.toFixed(2), b.tourismTax.toFixed(2), b.total.toFixed(2), b.paidAt ? b.payMethod : '',
+        b.accommodation.toFixed(2), b.cleaningFee.toFixed(2), b.tourismTax.toFixed(2), b.total.toFixed(2)]).concat(mc ? [O.curOf(b)] : []).concat([b.paidAt ? b.payMethod : '',
         b.invoiceSent ? b.invoiceSent.at + ' by ' + b.invoiceSent.via : 'Not sent', b.receiptSent ? b.receiptSent.at + ' by ' + b.receiptSent.via : (b.paidAt ? 'Not sent' : 'Awaiting payment')]));
     });
     O.downloadCSV('Invoices-' + r.from + '-to-' + r.to + '.csv', out);
@@ -352,9 +353,9 @@
   window.addEventListener('resize', closeMenu);
 
   /* ------------------------------------------------------------------ render pieces */
-  /* the one figure that stays at the top: every open invoice (any date), overdue ones called out */
+  /* the one figure that stays at the top: every open invoice (any date) in the view currency, overdue ones called out */
   function awaitingCard() {
-    var open = openInvoices(), od = open.filter(isOverdue), total = sum(open, function (b) { return b.total; });
+    var open = openInvoices().filter(O.inCur), od = open.filter(isOverdue), total = sum(open, function (b) { return b.total; });
     var next = open.filter(function (b) { return !isOverdue(b); }).sort(function (a, b) { return dueDate(a) < dueDate(b) ? -1 : 1; })[0];
     var odHTML = od.length ? U.pill(od.length + ' overdue · ' + fmt.money(sum(od, function (b) { return b.total; })), 'bad') + '<span>oldest due ' + d.fmt(od.map(dueDate).sort()[0]) + '</span>'
       : open.length ? U.pill('Nothing overdue', 'ok') + (next ? '<span>next due ' + (dueDate(next) === D.TODAY ? 'today' : d.fmt(dueDate(next))) + '</span>' : '') : '';
@@ -385,7 +386,7 @@
       '<td class="c-guest"><div class="inv-guest">' + U.platIcon(b.channel) + '<div style="min-width:0"><div class="inv-nm">' + esc(b.guest.name) + '</div><div class="inv-sub">' + esc(b.guest.countryName) + ' · ' + esc(b.id) + '</div></div></div></td>' +
       '<td class="c-prop"><span class="nowrap">' + esc(p.short) + '</span></td>' +
       '<td class="c-stay"><span class="nowrap">' + d.fmtRange(b.checkIn, b.checkOut) + '</span><div class="inv-sub">' + fmt.plural(b.nights, 'night') + '</div></td>' +
-      '<td class="c-total num"><b>' + fmt.money(b.total) + '</b>' + (b.tourismTax ? '<div class="inv-sub">incl. tax ' + fmt.money(b.tourismTax) + '</div>' : '') + '</td>' +
+      '<td class="c-total num"><b>' + fmt.money(b.total, { cur: b }) + '</b>' + (b.tourismTax && O.tourismTaxApplies(b) ? '<div class="inv-sub">incl. tax ' + fmt.money(b.tourismTax, { cur: b }) + '</div>' : '') + '</td>' +
       '<td class="c-ist">' + O.invoice.statusHTML(b, 'invoice') + (b.invoiceSent ? '<div class="inv-sub">' + (b.invoiceSent.at === D.TODAY ? 'Today' : d.fmt(b.invoiceSent.at)) + '</div>' : '') + '</td>' +
       '<td class="c-rst">' + O.invoice.statusHTML(b, 'receipt') + (b.receiptNo ? '<div class="inv-sub">' + esc(b.receiptNo) + ' · paid ' + d.fmt(b.paidAt) + '</div>' : dueHTML(b)) + '</td>' +
       '<td class="c-acts"><div class="inv-acts">' +
@@ -417,7 +418,7 @@
     var r = range();
     var head = '<div class="card-head"><div><h3>Invoices and receipts</h3><div class="sub">' + fmt.plural(list.length, 'invoice') + ' dated ' + esc(U.rangeLabel(r.from, r.to)) + (st.status !== 'all' ? ' · ' + esc(STATUSES.filter(function (s) { return s[0] === st.status; })[0][1].toLowerCase()) : '') + '</div></div>' +
       '<div class="row-flex wrap">' + (st.status !== 'all' || st.plat || st.prop || st.q ? '<button type="button" class="btn btn-quiet btn-sm" data-act="clear">Clear filters</button>' : '') + '</div></div>';
-    var bulk = selIds.length ? '<div class="inv-bulk" role="region" aria-label="Selection"><b>' + selIds.length + ' selected</b><span class="muted">' + fmt.money(sum(selIds.map(D.booking), function (b) { return b.total; })) + '</span>' +
+    var bulk = selIds.length ? '<div class="inv-bulk" role="region" aria-label="Selection"><b>' + selIds.length + ' selected</b><span class="muted">' + fmt.money(sum(selIds.map(D.booking).filter(function (b) { return b && O.inCur(b); }), function (b) { return b.total; })) + '</span>' +
       (canSend() ? '<button type="button" class="btn btn-primary btn-sm" data-act="bulksend">' + O.icon('send') + 'Send selected</button>' : '') +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="bulkcsv">' + O.icon('download') + 'Export selected</button>' +
       '<button type="button" class="btn btn-quiet btn-sm" data-act="selnone">Clear selection</button></div>' : '';
@@ -497,7 +498,7 @@
       }
       var b0 = base(), list = rows(), todo = unsent(b0);
       Object.keys(st.sel).forEach(function (k) { if (!list.some(function (b) { return b.id === k; })) delete st.sel[k]; });
-      ctx.setActions('<button type="button" class="btn btn-ghost" data-top="csv"' + (list.length ? '' : ' disabled title="Nothing to export in this view"') + '>' + O.icon('download') + 'Export CSV</button>' +
+      ctx.setActions(O.curSwitchHTML() + '<button type="button" class="btn btn-ghost" data-top="csv"' + (list.length ? '' : ' disabled title="Nothing to export in this view"') + '>' + O.icon('download') + 'Export CSV</button>' +
         '<button type="button" class="btn btn-primary" data-top="sendall"' + (!canSend() ? ' disabled title="' + NO_SEND + '"' : todo.length ? '' : ' disabled title="Every invoice and receipt in this range has been sent"') + '>' + O.icon('send') + 'Send unsent' + (todo.length && canSend() ? ' (' + todo.length + ')' : '') + '</button>');
       root.innerHTML = '<div class="pg-invoices">' +
         awaitingCard() + tableCard(b0, list) +
@@ -508,7 +509,7 @@
         onChange: function (v) { st.preset = v.preset; st.from = v.from; st.to = v.to; st.limit = 25; ctx.rerender(); }
       }));
 
-      var acts = ctx.actionsEl;
+      var acts = ctx.actionsEl; O.curSwitchWire(acts);
       acts.onclick = function (e) {
         var x = e.target.closest('[data-top]'); if (!x || x.disabled) return;
         if (x.dataset.top === 'csv') exportCSV(rows());

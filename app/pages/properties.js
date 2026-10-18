@@ -1,7 +1,7 @@
 /* Properties — the operator's units: add, edit, archive (never delete), photos compressed in the browser.
    A property record in D.properties (records collection 'properties'):
      v3 fields every page reads (names and formats unchanged):
-       id, name, short, type ('2BR loft' | 'Studio'), beds, area ('Gurney Drive, Penang'), base (RM per night), owner (owner's name),
+       id, name, short, type ('2BR loft' | 'Studio'), beds, area ('Gurney Drive, Penang'), base (per night, in the building's currency), owner (owner's name),
        housekeeper (staff id | null), lockCode ('4827'), lockBrand ('Yale'), wifi ([name, password]), parking (text)
      v4 optional fields (old records work without them):
        city ('Penang'), address, mapUrl, checkInTime / checkOutTime ('HH:MM', defaults 15:00 / 11:00), maxGuests, notes,
@@ -345,7 +345,7 @@
       '<span class="pp-meta"><span>' + esc(p.type || bedsText(p)) + (p.maxGuests ? ' · sleeps ' + esc(p.maxGuests) : '') + '</span><span class="st-sm">' + U.pill(s.t, s.kind) + '</span></span>' +
       (miss.length ? '<span class="pp-warn">' + O.icon('alert') + '<span>Add the ' + esc(miss.join(', ')) + '</span></span>' : '') +
       '<span class="pp-ft"><span class="who' + (hk ? '' : ' none') + '">' + (hk ? U.avatar(hk, 'sm') + ' ' + esc(hk) : 'No housekeeper yet') + '</span>' +
-      (canSeePrice() ? '<span class="pp-price">' + fmt.money(+p.base || 0) + '<small> / night</small></span>' : '') + '</span>' +
+      (canSeePrice() ? '<span class="pp-price">' + fmt.money(+p.base || 0, { cur: p }) + '<small> / night</small></span>' : '') + '</span>' +
       '</span></button>';
   }
   function typeLineHTML(p) { /* "Deluxe · unit 21-1" under the name of a typed unit */
@@ -361,7 +361,7 @@
         return '<tr class="click' + (p.archived ? ' arch' : '') + '" data-open="' + esc(p.id) + '" tabindex="0"><td><span class="th">' + cover(p) + '</span></td>' +
           '<td><div class="t1">' + esc(p.name) + '</div><div class="t2">' + esc(O.typeOf(p) ? O.typeOf(p).name + (p.unitNo ? ' · unit ' + p.unitNo : '') : p.short || '') + '</div></td>' +
           '<td><div>' + esc(hoodOf(p) || cityOf(p)) + '</div><div class="t2">' + esc(hoodOf(p) ? cityOf(p) : '') + '</div></td>' +
-          '<td>' + esc(p.type || '') + '</td>' + (price ? '<td class="num">' + fmt.money(+p.base || 0) + '</td>' : '') +
+          '<td>' + esc(p.type || '') + '</td>' + (price ? '<td class="num">' + fmt.money(+p.base || 0, { cur: p }) + '</td>' : '') +
           '<td>' + (hk ? esc(hk) : '<span class="faint">Not set</span>') + '</td>' + (own ? '<td>' + esc(p.owner || '') + '</td>' : '') +
           '<td>' + U.pill(s.t, s.kind) + '<div class="t2">' + esc(s.s) + '</div></td></tr>';
       }).join('') + '</tbody></table></div></div>';
@@ -789,7 +789,7 @@
         p.unitNo ? ['Unit number', esc(p.unitNo) + ' <span class="xs muted">only your team sees this</span>'] : null,
         ['Type', esc(p.type || '') + (p.type && /BR|Studio/i.test(p.type) ? '' : ' · ' + esc(bedsText(p)))],
         p.maxGuests ? ['Sleeps', esc(fmt.plural(+p.maxGuests, 'guest'))] : null,
-        canSeePrice() ? ['Base price', '<span class="pp-price">' + fmt.money(+p.base || 0) + '</span> <span class="xs muted">per night</span>'] : null,
+        canSeePrice() ? ['Base price', '<span class="pp-price">' + fmt.money(+p.base || 0, { cur: p }) + '</span> <span class="xs muted">per night</span>'] : null,
         ['Check-in', 'From ' + esc(fmt.time(p.checkInTime || '15:00'))],
         ['Check-out', 'By ' + esc(fmt.time(p.checkOutTime || '11:00'))],
         p.notes ? ['Team notes', esc(p.notes)] : null
@@ -899,7 +899,7 @@
       fld('short', 'Short name', inp('short', f.short, ' maxlength="20" placeholder="' + esc(suggestShort(f.name) || 'e.g. Bayfront 3B') + '"'), { opt: true, hint: 'For the calendar and phone screens. Left empty, we shorten the name.' }) +
       fld('kind', 'Kind of home', '<select class="select" id="pp-kind" name="kind">' + kinds.map(function (k) { return '<option' + (k === f.kind ? ' selected' : '') + '>' + esc(k) + '</option>'; }).join('') + '</select>') +
       fld('beds', 'Bedrooms', inp('beds', f.beds, ' type="number" min="0" max="30" step="1" inputmode="numeric"'), { hint: '0 for a studio' }) +
-      fld('base', 'Base nightly price', '<div class="pp-money"><span>RM</span>' + inp('base', f.base, ' type="number" min="0" step="5" inputmode="decimal" placeholder="220"') + '</div>', { hint: 'Pricing starts from this and adjusts by day.' }) +
+      fld('base', 'Base nightly price', '<div class="pp-money"><span data-cur>' + esc(fmt.cur(formCur(f))) + '</span>' + inp('base', f.base, ' type="number" min="0" step="5" inputmode="decimal" placeholder="220"') + '</div>', { hint: 'Pricing starts from this and adjusts by day.' }) +
       '</div></div>' +
       buildingSecHTML(f) +
 
@@ -1006,12 +1006,15 @@
       tySel.disabled = !bdSel.value; if (no) no.disabled = !bdSel.value; if (pr) pr.disabled = !tySel.value;
     }
   }
+  /* the currency of the unit being edited: its building's (or its unit type's building's) */
+  function formCur(v) { return O.curOf(v.unitTypeId || v.buildingId || O.baseCur()); }
   function onFormInput(e) {
     var t = e.target; if (!t) return;
     if (t.matches('[data-phfile]')) { if (e.type === 'change') { addPhotos(t.files); t.value = ''; } return; }
     if (!t.name) return;
     var err = O.$('[data-err="' + (t.name === 'ownerSel' ? 'owner' : t.name) + '"]', DR.dr.el); if (err) err.textContent = '';
     t.classList.remove('bad');
+    if (t.name === 'buildingId' || t.name === 'unitTypeId') { var cs = O.$('[data-cur]', DR.dr.el); if (cs) cs.textContent = fmt.cur(formCur({ buildingId: (O.$('[name=buildingId]', DR.dr.el) || {}).value, unitTypeId: (O.$('[name=unitTypeId]', DR.dr.el) || {}).value })); }
     if (t.name === 'ownerSel' && e.type === 'change') {
       var o = owners().filter(function (x) { return x.name === t.value; })[0], ph = O.$('[name=ownerPhone]', DR.dr.el), em = O.$('[name=ownerEmail]', DR.dr.el);
       if (o) { if (ph && !ph.value) ph.value = o.phone; if (em && !em.value) em.value = o.email; }
@@ -1042,8 +1045,9 @@
     var beds = v.beds === '' || v.beds == null ? NaN : Number(v.beds);
     if (!(beds >= 0 && beds <= 30 && Math.floor(beds) === beds)) E.beds = 'Enter the number of bedrooms, 0 for a studio.';
     var base = v.base === '' || v.base == null ? NaN : Number(v.base);
-    if (!(base > 0)) E.base = 'Enter the usual price for one night in RM, for example 220.';
-    else if (base < 20 || base > 50000) E.base = 'That looks unusual. Enter a nightly price between RM 20 and RM 50,000.';
+    var cur = formCur(v), mc = { cur: cur };
+    if (!(base > 0)) E.base = 'Enter the usual price for one night in ' + fmt.cur(cur) + ', for example 220.';
+    else if (cur === 'MYR' && (base < 20 || base > 50000)) E.base = 'That looks unusual. Enter a nightly price between ' + fmt.money(20, mc) + ' and ' + fmt.money(50000, mc) + '.';
     if (!v.city) E.city = 'Add the city or state, for example Penang.';
     if (v.mapUrl && !/^https?:\/\/\S+$/i.test(v.mapUrl)) E.mapUrl = 'Paste the full link, starting with https://';
     if (!/^\d{2}:\d{2}$/.test(v.checkInTime)) E.checkInTime = 'Choose a check-in time.';

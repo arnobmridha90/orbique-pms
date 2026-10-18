@@ -95,7 +95,7 @@
   }
   function countable(e) { return !(e.method === CLAIM && e.claimStatus === 'rejected'); }
   /* M.expenses leaves out rejected claims and, with cls, keeps one cost type ('opex' when costClass is missing) */
-  function expIn(from, to, cls) { return M.expenses(from, to, cls).filter(countable); }
+  function expIn(from, to, cls) { return M.expenses(from, to, cls).filter(function (e) { return countable(e) && O.inCur(e); }); } /* several currencies: the view currency's only */
   function isGeneral(e) { return !e.propertyId || !D.propById[e.propertyId]; } /* company costs, and costs of a removed property */
   function forProp(list, pid) { return pid === undefined ? list : list.filter(function (e) { return pid === null ? isGeneral(e) : e.propertyId === pid; }); }
   function prop(id) { return D.propById[id] || { id: id, name: 'Removed property', short: 'Removed', area: '' }; }
@@ -110,7 +110,7 @@
     var o = { acc: 0, cln: 0, tax: 0, nights: 0, taxNights: 0, fees: {}, feeTotal: 0, stays: 0 };
     D.channelOrder.forEach(function (c) { o.fees[c] = 0; });
     D.bookings.forEach(function (b) {
-      if (!M.live(b) || (pid && b.propertyId !== pid)) return;
+      if (!M.live(b) || (pid ? b.propertyId !== pid : !O.inCur(b))) return;
       var n = M.nightsIn(b, from, to); if (!n) return;
       var k = n / b.nights;
       o.acc += b.accommodation * k; o.cln += b.cleaningFee * k; o.tax += b.tourismTax * k; o.nights += n; o.stays++;
@@ -139,6 +139,11 @@
     return out;
   }
   function money(n) { return fmt.money(Math.round(n)); }
+  function occAll(r) { /* several currencies: the view currency's units only */
+    if (!O.multiCur()) return M.occupancy(r.from, r.to);
+    var ps = D.properties.filter(O.inCur), av = sum(ps, function (p) { return M.availableNights(r.from, r.to, p.id); });
+    return av ? sum(ps, function (p) { return M.nightsSold(r.from, r.to, { propertyId: p.id }); }) / av : 0;
+  }
   function neg(n) { return n ? '−' + money(n) : money(0); }
   function pctTxt(x) { return x == null ? '–' : (x < 0 ? '−' : '') + Math.abs(x * 100).toFixed(1) + '%'; }
   function deltaCell(cur, prev, invert) { return U.delta(fmt.change(cur, prev), { invert: invert }); }
@@ -194,16 +199,16 @@
       '<div class="card-foot">Profit is operating profit. Net cash is operating profit minus capital spending: capital purchases lower the cash for the month but not the profit.</div></div>';
   }
   function taxCard(a, r) {
-    var foreign = D.bookings.filter(function (b) { return M.live(b) && b.tourismTax && M.nightsIn(b, r.from, r.to); });
+    var foreign = D.bookings.filter(function (b) { return M.live(b) && b.tourismTax && O.inCur(b) && O.tourismTaxApplies(b) && M.nightsIn(b, r.from, r.to); });
     var byP = {}; foreign.forEach(function (b) { var n = M.nightsIn(b, r.from, r.to); byP[b.propertyId] = (byP[b.propertyId] || 0) + b.tourismTax / b.nights * n; });
     var top = Object.keys(byP).sort(function (x, y) { return byP[y] - byP[x]; });
     return '<div class="card"><div class="card-head"><div><h3>Tourism tax collected</h3><div class="sub">Passed through to the government, not counted as revenue</div></div></div><div class="card-body">' +
       '<div class="tt"><div><div class="k">Collected</div><div class="v">' + money(a.tax) + '</div></div><div><div class="k">Foreign guest nights</div><div class="v">' + fmt.num(a.taxNights) + '</div></div><div><div class="k">Stays</div><div class="v">' + fmt.num(foreign.length) + '</div></div></div>' +
       (top.length ? O.chart.hbars(top.slice(0, 6).map(function (pid) { return { label: '<span class="prop-dot" style="background:' + U.propColor(pid) + '"></span>' + esc(prop(pid).short), value: byP[pid], display: money(byP[pid]) }; })) : U.empty('No foreign guests stayed in this period.')) +
-      '</div><div class="card-foot">RM 10 per room per night for foreign guests. Malaysians are exempt. Declare and pay it with your monthly tourism tax return.</div></div>';
+      '</div><div class="card-foot">' + fmt.money(10, { cur: 'MYR' }) + ' per room per night for foreign guests. Malaysians are exempt. Declare and pay it with your monthly tourism tax return.</div></div>';
   }
   function propRows(r) {
-    var out = D.properties.map(function (p) {
+    var out = D.properties.filter(O.inCur).map(function (p) {
       var x = pnl(r.from, r.to, p.id);
       return { id: p.id, name: p.name, short: p.short, area: p.area, nights: x.nights, occ: M.occupancy(r.from, r.to, p.id), revenue: x.revenue, fees: x.feeTotal, exp: x.expTotal, net: x.net, margin: x.margin, cap: x.capTotal };
     });
@@ -227,7 +232,7 @@
           '<td class="num b' + (x.net < 0 ? ' m-neg' : '') + '">' + (x.net < 0 ? neg(-x.net) : money(x.net)) + '</td>' +
           '<td class="num nowrap' + (x.margin != null && x.margin < 0 ? ' m-neg' : '') + '">' + (x.margin == null ? '–' : '<span class="mbar" aria-hidden="true"><i style="width:' + Math.max(0, x.margin / maxM * 100).toFixed(0) + '%"></i></span>' + pctTxt(x.margin)) + '</td>' +
           '<td class="num">' + (x.cap ? neg(x.cap) : '–') + '</td></tr>';
-      }).join('') + '</tbody><tfoot><tr><td>All properties</td><td class="num">' + fmt.num(T.nights) + '</td><td class="num">' + fmt.pct(M.occupancy(r.from, r.to)) + '</td><td class="num">' + money(T.revenue) + '</td><td class="num">' + neg(T.fees) + '</td><td class="num">' + neg(T.exp) + '</td><td class="num">' + signed(T.net) + '</td><td class="num">' + pctTxt(T.revenue ? T.net / T.revenue : null) + '</td><td class="num">' + neg(T.cap) + '</td></tr></tfoot></table></div>' +
+      }).join('') + '</tbody><tfoot><tr><td>All properties</td><td class="num">' + fmt.num(T.nights) + '</td><td class="num">' + fmt.pct(occAll(r)) + '</td><td class="num">' + money(T.revenue) + '</td><td class="num">' + neg(T.fees) + '</td><td class="num">' + neg(T.exp) + '</td><td class="num">' + signed(T.net) + '</td><td class="num">' + pctTxt(T.revenue ? T.net / T.revenue : null) + '</td><td class="num">' + neg(T.cap) + '</td></tr></tfoot></table></div>' +
       '<div class="card-foot">Operating profit is revenue minus platform fees and operating expenses. Capital purchases are listed on their own.</div></div>';
   }
   function peopleRows(r) {
@@ -236,8 +241,8 @@
       var mine = ex.filter(function (e) { return e.paidBy === s.id; }), capMine = mine.filter(function (e) { return e.costClass === 'capex'; });
       var types = {}; mine.forEach(function (e) { var k = e.type === 'Others' ? (e.otherType || 'Others') : e.type; types[k] = (types[k] || 0) + e.amount; });
       var top = Object.keys(types).sort(function (a, b) { return types[b] - types[a]; }).slice(0, 2);
-      var pend = D.expenses.filter(function (e) { return e.paidBy === s.id && e.method === CLAIM && e.claimStatus === 'pending'; });
-      var appr = D.expenses.filter(function (e) { return e.paidBy === s.id && e.method === CLAIM && e.claimStatus === 'approved'; });
+      var pend = D.expenses.filter(function (e) { return e.paidBy === s.id && e.method === CLAIM && e.claimStatus === 'pending' && O.inCur(e); });
+      var appr = D.expenses.filter(function (e) { return e.paidBy === s.id && e.method === CLAIM && e.claimStatus === 'approved' && O.inCur(e); });
       var claimsIn = mine.filter(function (e) { return e.method === CLAIM; });
       return { s: s, total: sum(mine), cap: sum(capMine), n: mine.length, top: top, types: types, share: sum(mine) / total, pend: pend, appr: appr, claimed: sum(claimsIn) };
     }).filter(function (x) { return x.n || x.pend.length || x.appr.length || x.s.role === 'owner'; }).sort(function (a, b) { return b.total - a.total || (a.s.role === 'owner' ? -1 : 1); });
@@ -258,7 +263,8 @@
 
   /* ------------------------------------------------------------------ export */
   function exportCSV(r, c, a, b) {
-    var out = [['Profit and loss', U.rangeLabel(r.from, r.to), 'Comparison: ' + U.rangeLabel(c.from, c.to)], [], ['Line', 'This period (RM)', 'Comparison (RM)', 'Change']];
+    var C = fmt.cur();
+    var out = [['Profit and loss', U.rangeLabel(r.from, r.to), 'Comparison: ' + U.rangeLabel(c.from, c.to)], [], ['Line', 'This period (' + C + ')', 'Comparison (' + C + ')', 'Change']];
     pnlRows(a, b).forEach(function (x) {
       if (x[3].indexOf('sec') === 0) { out.push([x[0].toUpperCase()]); return; }
       if (x[3] === 'pct') { out.push([x[0], pctTxt(x[1]), pctTxt(x[2]), '']); return; }
@@ -267,16 +273,16 @@
     });
     out.push(['Tourism tax collected (passed through, not revenue)', a.tax.toFixed(2), b.tax.toFixed(2), '']);
     out.push([CAP_HELP]);
-    out.push([], ['BY PROPERTY'], ['Property', 'Nights', 'Occupancy', 'Revenue (RM)', 'Platform fees (RM)', 'Operating expenses (RM)', 'Operating profit (RM)', 'Margin', 'Capital spending (RM)']);
+    out.push([], ['BY PROPERTY'], ['Property', 'Nights', 'Occupancy', 'Revenue (' + C + ')', 'Platform fees (' + C + ')', 'Operating expenses (' + C + ')', 'Operating profit (' + C + ')', 'Margin', 'Capital spending (' + C + ')']);
     var pr = propRows(r); pr.rows.concat([pr.general]).forEach(function (x) { out.push([x.name, x.nights, x.occ == null ? '' : fmt.pct(x.occ), x.revenue.toFixed(2), x.fees.toFixed(2), x.exp.toFixed(2), x.net.toFixed(2), pctTxt(x.margin), x.cap.toFixed(2)]); });
-    out.push([], ['CASH FLOW BY MONTH'], ['Month', 'Revenue (RM)', 'Platform fees (RM)', 'Operating expenses (RM)', 'Operating profit (RM)', 'Capital spending (RM)', 'Net cash (RM)']);
+    out.push([], ['CASH FLOW BY MONTH'], ['Month', 'Revenue (' + C + ')', 'Platform fees (' + C + ')', 'Operating expenses (' + C + ')', 'Operating profit (' + C + ')', 'Capital spending (' + C + ')', 'Net cash (' + C + ')']);
     months().forEach(function (m) { out.push([m.label, m.p.revenue.toFixed(2), m.p.feeTotal.toFixed(2), m.p.expTotal.toFixed(2), m.p.net.toFixed(2), m.p.capTotal.toFixed(2), m.p.cash.toFixed(2)]); });
-    out.push([], ['SPENDING BY PERSON (operating and capital)'], ['Person', 'Role', 'Total (RM)', 'Of which capital (RM)', 'Expenses', 'Share', 'Top types', 'Paid personally (RM)', 'Claims to approve now', 'Approved, to pay back (RM)']);
+    out.push([], ['SPENDING BY PERSON (operating and capital)'], ['Person', 'Role', 'Total (' + C + ')', 'Of which capital (' + C + ')', 'Expenses', 'Share', 'Top types', 'Paid personally (' + C + ')', 'Claims to approve now', 'Approved, to pay back (' + C + ')']);
     peopleRows(r).forEach(function (x) { out.push([x.s.name, x.s.roleLabel, x.total.toFixed(2), x.cap.toFixed(2), x.n, fmt.pct(x.share), x.top.join('; '), x.claimed.toFixed(2), x.pend.length, sum(x.appr).toFixed(2)]); });
     O.downloadCSV('Financials-' + r.from + '-to-' + r.to + '.csv', out);
   }
   function exportPDF(r, c, a, b) {
-    var m2 = function (n) { return (n < 0 ? '-' : '') + 'RM ' + fmt.num(Math.abs(n)); };
+    var m2 = function (n) { return (n < 0 ? '-' : '') + fmt.cur() + ' ' + fmt.num(Math.abs(n)); };
     return O.pdf.start('Profit and loss', U.rangeLabel(r.from, r.to)).then(function (res) {
       var doc = res.doc, y = res.y;
       var summary = [['Revenue', m2(a.revenue)], ['Operating expenses', m2(a.expTotal)], ['Operating profit', m2(a.net) + '  (' + pctTxt(a.margin) + ')'], ['Capital spending', m2(a.capTotal)]];
@@ -300,7 +306,7 @@
       var pr = propRows(r);
       y = O.pdf.table(doc, y + 3, [{ label: 'Property', w: 46 }, { label: 'Nights', w: 14, align: 'right' }, { label: 'Occ.', w: 14, align: 'right' }, { label: 'Revenue', w: 24, align: 'right' }, { label: 'Fees', w: 21, align: 'right' }, { label: 'Operating', w: 22, align: 'right' }, { label: 'Op. profit', w: 24, align: 'right' }, { label: 'Capital', w: 21, align: 'right' }],
         pr.rows.concat([pr.general]).map(function (x) { return [x.name, x.id ? x.nights : '', x.occ == null ? '' : fmt.pct(x.occ), x.id ? m2(x.revenue) : '', x.id ? m2(-x.fees) : '', m2(-x.exp), m2(x.net), x.cap ? m2(-x.cap) : '-']; })
-          .concat([['All properties', a.nights, fmt.pct(M.occupancy(r.from, r.to)), m2(a.revenue), m2(-a.feeTotal), m2(-a.expTotal), m2(a.net), m2(-a.capTotal)]]), { boldLast: true });
+          .concat([['All properties', a.nights, fmt.pct(occAll(r)), m2(a.revenue), m2(-a.feeTotal), m2(-a.expTotal), m2(a.net), m2(-a.capTotal)]]), { boldLast: true });
       if (y > 220) { doc.addPage(); y = 18; }
       y = O.pdf.text(doc, y + 4, 'Spending by person (operating and capital)', { bold: true, size: 10.5 });
       y = O.pdf.table(doc, y + 3, [{ label: 'Person', w: 44 }, { label: 'Role', w: 34 }, { label: 'Total', w: 26, align: 'right' }, { label: 'Count', w: 16, align: 'right' }, { label: 'Top type', w: 42 }, { label: 'Open claims', w: 24, align: 'right' }],
@@ -331,16 +337,17 @@
       root.innerHTML = '<div class="pg-financials">' +
         '<div class="fin-bar"><span data-slot="range"></span>' +
         '<span class="small muted">Compare with</span>' + U.seg([['auto', 'Auto'], ['prev', 'Previous period'], ['month', 'Same days last month']], st.cmp, 'data-cmp') +
-        '<span class="grow"></span><span class="fin-lock">' + O.icon('lock') + 'Only account owners can open Financials. Staff Access cannot grant it.</span></div>' +
+        O.curSwitchHTML() + '<span class="grow"></span><span class="fin-lock">' + O.icon('lock') + 'Only account owners can open Financials. Staff Access cannot grant it.</span></div>' +
         U.kpis([
           { label: 'Revenue', value: money(a.revenue), delta: fmt.change(a.revenue, b.revenue), sub: vs, spark: perDay('revenue'), hl: true, title: 'Spark line: revenue per day, ' + span },
           { label: 'Operating expenses', value: money(a.expTotal), delta: fmt.change(a.expTotal, b.expTotal), deltaOpts: { invert: true }, sub: vs, spark: perDay('expTotal'), title: 'The running costs of the month. Spark line: per day, ' + span },
           { label: 'Operating profit', value: signed(a.net) + ' <span class="small muted" style="font-weight:700">' + pctTxt(a.margin) + '</span>', delta: fmt.change(a.net, b.net), sub: vs, spark: perDay('net'), title: 'Revenue minus platform fees and operating expenses. Spark line: per day, ' + span },
           { label: 'Capital spending', value: money(a.capTotal), sub: a.cap.length ? fmt.plural(a.cap.length, 'purchase') + '<span class="lg"> · not in profit</span>' : 'None in this period', title: 'Long-lasting purchases for a property, kept out of operating profit. Platform fees: ' + money(a.feeTotal) }
         ]) +
-        '<div class="fin-main"><div class="fin-col">' + chartCard(ms, r) + taxCard(a, r) + '</div><div class="fin-col">' + pnlCard(a, b, r, c) + '</div></div>' +
+        '<div class="fin-main"><div class="fin-col">' + chartCard(ms, r) + (D.properties.some(function (p) { return O.inCur(p) && O.tourismTaxApplies(p); }) ? taxCard(a, r) : '') + '</div><div class="fin-col">' + pnlCard(a, b, r, c) + '</div></div>' +
         peopleCard(r) + propCard(r) + '</div>';
 
+      O.curSwitchWire(root);
       U.mount(root, 'range', U.dateRange({
         preset: st.preset, from: st.from, to: st.to, presets: PRESETS,
         onChange: function (x) { st.preset = x.preset; st.from = x.from; st.to = x.to; ctx.rerender(); }
