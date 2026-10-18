@@ -15,7 +15,7 @@ with status 400 (bad input), 401 (not signed in), 403 (not allowed), 409 (confli
 
 ## GET /api/health
 
-No sign-in. `{ok: true, db: <the service key and URL are set and the database answers>, needsBootstrap: <no platform admin yet>, channex: <CHANNEX_API_KEY is set>, commit}`.
+No sign-in. `{ok: true, db: <the service key and URL are set and the database answers>, needsBootstrap: <no platform admin yet>, channex: <CHANNEX_API_KEY is set>, whatsapp: <the three WHATSAPP_* settings are set>, translate: <ANTHROPIC_API_KEY is set>, commit}`.
 Never returns a key or any other setting's value.
 
 ## POST /api/account
@@ -83,6 +83,37 @@ not applied. Card data (`guarantee`) is never stored. The 0006 triggers mark ava
 reopens the dates on Channex. Sync errors and disconnected channels become alerts. Answers 200 `{ok, stored, status}`
 once stored; whatever is left the worker finishes. `GET /bookings` is never used.
 
+## POST /api/messages
+
+The live guest inbox (`api/messages.js`, `api/_lib/inbox.js`). Signed in, `{action, orgId, ...}`; permissions follow the
+app's rules (`inbox` to read, `inbox.send` to reply; role settings and personal overrides from `rolePerms` / `staffMeta`).
+Demo workspaces never send.
+
+| action | who | body | answer |
+|---|---|---|---|
+| `config` | inbox | `{orgId}` | `{whatsapp: {configured, number: {phone, name} \| null}, channex, translate, lang, autoTranslate, demo}` |
+| `send` | inbox.send | `{orgId, conversationId, text, via: 'whatsapp' \| 'channex', orig?, origLang?, lang?}` | `{conversation: {id, data}}` after the reply was sent and added. WhatsApp only within 24 hours of the guest's last WhatsApp message (`window-closed` otherwise); Channex by message thread, else by booking (403: Messages app off, 422: the site does not support messages) |
+| `translate` | inbox | `{orgId, conversationId, index, to?}` | Translates one message into `to` (default `inboxSettings.lang`) and saves `{lang, tr: {to, text}}` on it: `{conversation, same, lang, text}` |
+| `preview` | inbox.send | `{orgId, text, to}` | `{text, lang, from, same}`: a reply in the guest's language, not saved |
+| `media` | inbox | `{orgId, conversationId, index}` | `{mime, name, data}` (base64, at most 3 MB): a file the guest sent on WhatsApp |
+| `whatsapp-connect` | owner | `{orgId, phoneNumberId}` | Checks the number with Meta and saves it in `whatsapp_numbers`: `{number: {phone, name}}` |
+| `whatsapp-disconnect` | owner | `{orgId}` | `{number: null}` |
+
+## GET/POST /api/whatsapp-webhook
+
+Meta's webhook for the WhatsApp business number. GET answers `hub.challenge` when `hub.verify_token` equals
+`WHATSAPP_VERIFY_TOKEN`. POST needs `X-Hub-Signature-256` (HMAC-SHA256 of the exact body with `WHATSAPP_APP_SECRET`),
+else 401. Messages go to the conversation of the booking whose guest phone matches (in house, else the next stay, else
+the last), else to a conversation with no booking (`contact`, linked later in the inbox); each is stored once (`xid`
+`wa:<id>`) and translated for the team when `ANTHROPIC_API_KEY` is set and `inboxSettings.autoTranslate` is not false.
+Delivery ticks update the message's `status`. A database failure answers 500 so Meta sends it again. Everything is
+refused until WHATSAPP_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN are set.
+
+Booking-site chat through Channex (its paid Messages app) is built but switched off (`CHANNEX_MESSAGES` in
+`api/messages.js`; the webhook does not subscribe to message events). If switched on, Channex message events (`message`,
+`inquiry`, `reservation_request`, `message_thread_booking_assigned`) arrive on `/api/channex-webhook` like booking events and go to the booking's conversation the same way (`xid` `cx:<id>`, the
+thread in `cx`). Conversation and message fields are described at the top of `supabase/migrations/0010_inbox.sql`.
+
 ## Database functions the browser calls (supabase.rpc)
 
 From `supabase/migrations/0001_core.sql`: `my_context()`, `platform_overview()`, `set_org_status(p_org, p_status)`,
@@ -99,7 +130,7 @@ Pages call them only when they exist (`O.auth && O.auth.enabled && O.auth.enable
 
 Channex (Channels page, app/pages/channels.js): `O.auth.call(path, body) -> Promise<json>` (POSTs with the signed-in
 token; a failure rejects with an Error carrying `.code`, `.status` and `.body`), `O.auth.channex(action, body)` (the same
-for `/api/channex`, with `orgId` added) and `O.auth.channexRealtime(onChange) -> unsubscribe` (realtime on
+for `/api/channex`, with `orgId` added), `O.auth.inbox(action, body)` (the same for `/api/messages`) and `O.auth.channexRealtime(onChange) -> unsubscribe` (realtime on
 channex_properties, channex_outbox and channex_alerts for the current org; the Sync log also polls).
 
 The browser side of Channex is `O.channel` (app/pages/channels.js): `mode()` ('live' on the server with Channex configured,

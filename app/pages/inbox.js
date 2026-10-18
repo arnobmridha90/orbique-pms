@@ -13,7 +13,13 @@
    v4: property filter (All properties or one) on the chat list, remembered on this device (O.store 'inbox:prop'); it combines
    with the chips and the search. Permissions: inbox.send (reply to guests, new chats), inbox.notes (internal notes),
    inbox.quickReplies (manage quick replies), inbox edit level (assign, pin, mark unread), bookings.contacts (guest phone,
-   masked otherwise), guestapp.doorCodes (door codes in quick replies and the lock button), invoices.send. Times use D.NOW. */
+   masked otherwise), guestapp.doorCodes (door codes in quick replies and the lock button), invoices.send. Times use D.NOW.
+   Live (server mode, api/messages.js): guest messages from WhatsApp arrive in the booking's chat (booking-site chat through
+   Channex is built but switched off: CHANNEX_MESSAGES); replies go back the way the guest wrote, WhatsApp only within 24 hours
+   of the guest's last WhatsApp message. Guest messages show in the team's language (inboxSettings.lang) with the original a tap
+   away; "Translate" on a reply shows it in the guest's language to check before it goes. Chats from numbers or booking-site
+   threads that match no booking wait at the top of the list to be linked. Photos, files and voice notes still go out only as
+   internal notes; guests' WhatsApp files open through the server. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
@@ -339,7 +345,91 @@
 }
 `);
 
-  /* ------------------------------------------------------------------ helpers */
+  O.css('inbox-live', `
+.pg-inbox .xl{display:block;font-size:11px;margin-top:4px;opacity:0.85;}
+.pg-inbox .xl button{border:none;background:none;padding:0;font:inherit;font-weight:700;color:inherit;text-decoration:underline;cursor:pointer;}
+.pg-inbox .xl .orig{display:block;margin-top:3px;padding:5px 8px;border-radius:6px;background:rgba(127,127,127,0.12);font-style:italic;white-space:pre-wrap;}
+.pg-inbox .via.bad{color:var(--bad);font-weight:700;}
+.pg-inbox .tick.failed{color:var(--bad);font-weight:800;font-size:12px;line-height:1;}
+.pg-inbox .cmp-route{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;}
+.pg-inbox .cmp-route select{height:28px;padding-top:0;padding-bottom:0;font-size:12px;max-width:240px;width:auto;}
+.pg-inbox .cmp-xl{border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:3px 9px;font-size:11.5px;font-weight:700;color:var(--text-2);white-space:nowrap;display:inline-flex;gap:4px;align-items:center;}
+.pg-inbox .cmp-xl svg{width:13px;height:13px;}
+.pg-inbox .cmp-xl.on{border-color:var(--brand-strong);background:var(--brand-soft-2);color:var(--brand-text);}
+.pg-inbox .cmp-warn{font-size:11.5px;color:var(--text-2);background:var(--warn-soft);border-radius:8px;padding:6px 10px;margin:0 0 6px;}
+.pg-inbox .ib-loose{margin:0 12px 8px;display:flex;align-items:center;gap:8px;width:calc(100% - 24px);padding:8px 10px;border:1px dashed var(--brand-strong);border-radius:10px;background:var(--brand-soft-2);color:var(--brand-text);font-size:12.5px;font-weight:700;text-align:left;}
+.pg-inbox .ib-loose svg{width:15px;height:15px;}
+.pg-inbox .ib-lfoot .lk{margin-left:auto;border:none;background:none;padding:0;font:inherit;font-weight:700;color:var(--brand-text);text-decoration:underline;white-space:nowrap;}
+.pg-inbox .mvia{font-size:10px;opacity:0.75;margin-right:4px;}
+.ib-loose-list{display:grid;gap:10px;}
+.ib-loose-list .lc{border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:grid;gap:8px;}
+.ib-loose-list .lc .lh{display:flex;gap:8px;align-items:center;font-weight:700;}
+.ib-loose-list .lc .lh small{font-weight:400;color:var(--muted);}
+.ib-loose-list .lc .lm{font-size:12.5px;color:var(--text-2);white-space:pre-wrap;max-height:90px;overflow:auto;}
+.ib-loose-list .lc .lr{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.ib-loose-list .lc .lr select{flex:1;min-width:200px;}
+.ib-xl-prev textarea{width:100%;min-height:110px;}
+.ib-xl-prev .orig{font-size:12.5px;color:var(--muted);white-space:pre-wrap;border-left:3px solid var(--border);padding-left:8px;}
+`);
+
+  /* ------------------------------------------------------------------ live inbox (server mode) */
+  var LANGS = [['en', 'English'], ['ms', 'Malay'], ['zh', 'Chinese'], ['bn', 'Bengali'], ['ar', 'Arabic'], ['hi', 'Hindi'], ['ta', 'Tamil'], ['id', 'Indonesian'],
+    ['th', 'Thai'], ['vi', 'Vietnamese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'], ['pt', 'Portuguese'],
+    ['ru', 'Russian'], ['tr', 'Turkish'], ['nl', 'Dutch'], ['fa', 'Persian'], ['ur', 'Urdu'], ['tl', 'Filipino'], ['my', 'Burmese'], ['km', 'Khmer'], ['ne', 'Nepali']];
+  function langName(code) { for (var i = 0; i < LANGS.length; i++) if (LANGS[i][0] === code) return LANGS[i][1]; return code ? String(code).toUpperCase() : ''; }
+  var VIA = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site', guestapp: 'Guest app' };
+  var DAY_MS = 24 * 3600 * 1000;
+  var live = { org: null, cfg: null, loading: false, busy: {}, media: {}, via: {}, xl: {}, origOpen: {} };
+  function server() { return !!(O.auth && O.auth.enabled && O.auth.enabled() && O.sync.adapter && O.sync.adapter.name === 'server' && O.auth.orgId && O.auth.orgId() && O.auth.inbox); }
+  function liveCfg() { return server() && live.org === O.auth.orgId() ? live.cfg : null; }
+  /* live sending is on when the workspace has WhatsApp connected or booking-site messages switched on (and is not a demo) */
+  function liveOn() { var c = liveCfg(); return !!(c && !c.demo && ((c.whatsapp.configured && c.whatsapp.number) || c.channex)); }
+  function loadLive(after) {
+    if (!server() || live.loading) return;
+    if (live.org === O.auth.orgId() && live.cfg) { if (after) after(); return; }
+    live.loading = true;
+    O.auth.inbox('config').then(function (r) { live.org = O.auth.orgId(); live.cfg = r; }, function () { live.org = O.auth.orgId(); live.cfg = null; })
+      .then(function () { live.loading = false; if (after) after(); });
+  }
+  /* how a chat can be answered: [{via, label, open, why}] (WhatsApp first when the guest wrote there last) */
+  function routesFor(c) {
+    var cfg = liveCfg(), b = bk(c), out = []; if (!cfg || cfg.demo) return out;
+    var phone = c.wa || (b && b.guest && b.guest.phone) || (c.contact && c.contact.phone);
+    if (cfg.whatsapp.configured && cfg.whatsapp.number && phone) {
+      var t = Date.parse(c.waLastIn || ''), open = isFinite(t) && Date.now() - t < DAY_MS;
+      out.push({ via: 'whatsapp', label: 'WhatsApp' + (canContacts() ? ' to ' + (c.wa ? '+' + c.wa : phone) : ''), open: open,
+        why: open ? '' : (isFinite(t) ? 'The guest last wrote on WhatsApp more than 24 hours ago' : 'The guest has not written to your WhatsApp number yet') + ', so WhatsApp will not take a reply until they write again.' });
+    }
+    var ch = b && b.channel, cxOk = c.cx || c.cxBooking || (b && b.channex && b.channex.bookingId && /^(booking|airbnb|expedia)$/.test(ch || ''));
+    if (cfg.channex && cxOk) {
+      var name = VIA[ch] && /^(booking|airbnb|expedia)$/.test(ch) ? VIA[ch] : c.ota || 'the booking site';
+      out.push({ via: 'channex', label: name + ' chat', open: true, why: '' });
+    }
+    var last = null; for (var i = c.messages.length - 1; i >= 0; i--) if (c.messages[i].from === 'guest' && c.messages[i].via) { last = c.messages[i].via; break; }
+    if (last && last !== 'whatsapp') out = out.filter(function (x) { return x.via === 'channex'; }).concat(out.filter(function (x) { return x.via !== 'channex'; }));
+    return out;
+  }
+  function routeOf(c) {
+    var rs = routesFor(c), want = live.via[c.id];
+    for (var i = 0; i < rs.length; i++) if (rs[i].via === want) return rs[i];
+    for (var j = 0; j < rs.length; j++) if (rs[j].open) return rs[j];
+    return rs[0] || null;
+  }
+  /* the guest's language: what they last wrote in */
+  function guestLang(c) {
+    if (c.lang) return c.lang;
+    for (var i = c.messages.length - 1; i >= 0; i--) if (c.messages[i].from === 'guest' && c.messages[i].lang) return c.messages[i].lang;
+    return '';
+  }
+  function myLang() { var c = liveCfg(); return (c && c.lang) || 'en'; }
+  /* apply a conversation the server returned (as if it came over realtime, so it is not saved back) */
+  function applyConv(conv) {
+    if (!conv || !conv.data) return;
+    O.sync.remote([{ coll: 'conversations', id: conv.id, data: conv.data, deleted: false }], []);
+  }
+  /* chats from numbers / booking-site threads no booking matched yet */
+  function loose() { return D.conversations.filter(function (c) { return !c.bookingId && c.contact && c.messages && c.messages.length; }); }
+
   function prop(id) { return D.propById[id] || { id: id, name: 'Removed property', short: 'Removed property', wifi: ['', ''], parking: '' }; }
   function bk(c) { return D.booking(c.bookingId); }
   /* Staff Access */
@@ -429,7 +519,7 @@
     for (var j = i + 1; j < c.messages.length; j++) if (c.messages[j].from === 'guest') return 'read';
     return 'delivered';
   }
-  function tickHTML(s) { return s === 'sent' ? TICK1.replace('class="tick"', 'class="tick" aria-label="Sent"') : TICK2.replace('class="tick"', 'class="tick' + (s === 'read' ? ' read' : '') + '" aria-label="' + (s === 'read' ? 'Read' : 'Delivered') + '"'); }
+  function tickHTML(s) { if (s === 'failed') return '<span class="tick failed" aria-label="Not delivered">!</span>'; return s === 'sent' ? TICK1.replace('class="tick"', 'class="tick" aria-label="Sent"') : TICK2.replace('class="tick"', 'class="tick' + (s === 'read' ? ' read' : '') + '" aria-label="' + (s === 'read' ? 'Read' : 'Delivered') + '"'); }
   /* @mentions in internal notes: full staff names first ("@Wei Ling Tan", "@Wei Ling"), then any capitalised word */
   function mentionRe() {
     var names = [];
@@ -472,7 +562,7 @@
 
   /* a chat started from a booking but never used is dropped when you move on (like an unsent new chat) */
   function pruneEmpty(keepId) {
-    for (var i = D.conversations.length - 1; i >= 0; i--) { var c = D.conversations[i]; if (c.id !== keepId && c.createdAt && !c.messages.length) D.conversations.splice(i, 1); }
+    for (var i = D.conversations.length - 1; i >= 0; i--) { var c = D.conversations[i]; if (c.id !== keepId && c.createdAt && !c.messages.length && !c.wa && !c.cx) D.conversations.splice(i, 1); }
   }
 
   /* ------------------------------------------------------------------ list */
@@ -536,8 +626,23 @@
       '<div class="ib-tools"><label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search chats" aria-label="Search guests, units or messages" value="' + esc(st.q) + '"></label>' +
       propSelectHTML() + '</div>' +
       '<div class="ib-filters" role="group" aria-label="Filter chats">' + filters + '</div>' +
+      '<div class="ib-loose-wrap">' + looseHTML() + '</div>' +
       '<div class="ib-rows">' + rowsHTML() + '</div>' +
-      '<div class="ib-lfoot">' + O.icon('whatsapp') + 'Replies reach guests on WhatsApp. Sending is not connected in this version.</div>';
+      '<div class="ib-lfoot">' + footHTML() + '</div>';
+  }
+  function footHTML() {
+    var cfg = liveCfg(), owner = O.auth && O.auth.role && O.auth.role() === 'owner', set = owner || canEdit() ? '<button type="button" class="lk" data-act="livesettings">Settings</button>' : '';
+    if (!server()) return O.icon('whatsapp') + '<span>Replies reach guests on WhatsApp. Sending is not connected in this version.</span>';
+    if (!cfg) return O.icon('whatsapp') + '<span>' + (live.loading ? 'Checking the WhatsApp connection…' : 'Live messaging could not be checked.') + '</span>' + set;
+    if (cfg.demo) return O.icon('whatsapp') + '<span>Demo workspace: replies stay in Orbique and are not sent to guests.</span>';
+    var parts = [];
+    if (cfg.whatsapp.configured && cfg.whatsapp.number) parts.push('WhatsApp ' + (cfg.whatsapp.number.phone || ''));
+    if (cfg.channex) parts.push('Booking.com, Airbnb and Expedia');
+    return O.icon('whatsapp') + '<span>' + (parts.length ? 'Live: ' + esc(parts.join(' and ')) : 'Sending is not connected yet.') + '</span>' + set;
+  }
+  function looseHTML() {
+    var n = loose().length; if (!n) return '';
+    return '<button type="button" class="ib-loose" data-act="loose">' + O.icon('chat') + '<span>' + (n === 1 ? '1 new chat is' : n + ' new chats are') + ' not linked to a booking yet</span></button>';
   }
   /* All properties or one; units without chats are listed too, archived ones only when they still have chats */
   function propSelectHTML() {
@@ -601,8 +706,27 @@
       (canEdit() ? '<label class="asg"><span>Handled by</span><select class="select" data-f="assign" aria-label="Assign conversation">' + D.staff.map(function (s) { return '<option value="' + s.id + '"' + (s.id === c.assigneeId ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></label>'
         : '<span class="asg"><span>Handled by</span><span class="who-plain">' + esc((staff(c.assigneeId) || { name: 'Nobody yet' }).name) + '</span></span>') + '</div>';
   }
+  function xlHTML(m, key) {
+    if (m.from === 'guest' && m.tr && m.tr.text) {
+      var open = live.origOpen[key];
+      return '<span class="xl">Translated from ' + esc(langName(m.lang) || 'the guest\'s language') + ' · <button type="button" data-orig="' + key + '">' + (open ? 'Hide original' : 'Show original') + '</button>' + (open ? '<span class="orig">' + esc(m.caption || m.text) + '</span>' : '') + '</span>';
+    }
+    if (m.from === 'staff' && m.orig) {
+      var o2 = live.origOpen[key];
+      return '<span class="xl">Sent in ' + esc(langName(m.lang) || 'the guest\'s language') + ' · <button type="button" data-orig="' + key + '">' + (o2 ? 'Hide what you wrote' : 'Show what you wrote') + '</button>' + (o2 ? '<span class="orig">' + esc(m.orig) + '</span>' : '') + '</span>';
+    }
+    var cfg = liveCfg();
+    if (m.from === 'guest' && m.xid && cfg && cfg.translate && !m.tr && String(m.caption || m.text || '').trim() && m.type !== 'voice' && !(m.lang && m.lang === myLang())) {
+      return '<span class="xl"><button type="button" data-xl="' + key + '">' + (live.busy['xl' + key] ? 'Translating…' : 'Translate') + '</button></span>';
+    }
+    return '';
+  }
   function bubbleInner(c, m, i) {
     var key = c.id + ':' + i;
+    if (m.media && m.media.id && !m.url) {
+      var kind = m.type === 'image' ? 'Photo' : m.type === 'voice' ? 'Voice message' : m.name || m.text || 'File';
+      return { media: true, file: true, cap: m.caption, html: '<div class="fileb"><span class="fi ' + (m.type === 'image' ? 'img' : 'gen') + '">' + O.icon(m.type === 'image' ? 'image' : m.type === 'voice' ? 'mic' : 'file') + '</span><span class="fn"><b>' + esc(kind) + '</b><span>On WhatsApp</span></span><button type="button" class="dl" data-wamedia="' + key + '" aria-label="Open ' + esc(kind) + '">' + (live.busy['m' + key] ? '…' : O.icon('download')) + '</button></div>' + (m.caption ? '<div class="cap">' + esc(m.tr && m.tr.text ? m.tr.text : m.caption) + xlHTML(m, key) + '</div>' : '') };
+    }
     if (m.type === 'image') {
       var img = m.url ? '<img src="' + esc(m.url) + '" alt="' + esc(m.name || 'Photo') + '">' : m.art === 'sink' ? sinkArt() : '<span class="fileb">' + O.icon('image') + esc(m.text) + '</span>';
       return { media: true, cap: m.caption, html: '<button type="button" class="img-btn" data-img="' + key + '" aria-label="Open photo">' + img + '</button>' + (m.caption ? '<div class="cap">' + esc(m.caption) + '</div>' : '') };
@@ -622,14 +746,17 @@
         (m.from !== 'guest' ? '<span class="vav">' + U.avatar(who) + O.icon('mic') + '</span>' : '') + '</div>' +
         (m.transcript ? '<button type="button" class="trans-t" data-trans="' + key + '">' + (st['tr' + key] ? 'Hide transcript' : 'Show transcript') + '</button>' + (st['tr' + key] ? '<div class="trans">' + esc(m.transcript) + '</div>' : '') : '') };
     }
-    var txt = esc(codeSafe(c, m.text));
+    var txt = esc(codeSafe(c, m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.text));
     if (m.from === 'note') txt = txt.replace(mentionRe(), '<b class="mention">@$1</b>');
-    return { html: '<span class="txt">' + txt + '</span>' };
+    return { html: '<span class="txt">' + txt + '</span>' + xlHTML(m, key) };
   }
   function threadHTML(c) {
     if (!c.messages.length) {
       var b0 = bk(c);
-      return '<div class="ib-hello"><b>Start the conversation with ' + esc(b0.guest.name) + '</b><br>' + (canSend() ? 'Your first message goes to ' + esc(phoneOf(b0)) + ' on WhatsApp. Use a quick reply below or type a message.' : 'No messages yet.') + '</div>';
+      var r0 = liveOn() ? routeOf(c) : null;
+      return '<div class="ib-hello"><b>Start the conversation with ' + esc(b0.guest.name) + '</b><br>' + (!canSend() ? 'No messages yet.'
+        : liveOn() ? (r0 && r0.open ? 'Your first message goes by ' + esc(r0.label) + '. Use a quick reply below or type a message.' : 'WhatsApp only takes a reply after the guest has written to your WhatsApp number. Share the number in your booking confirmation' + (routesFor(c).some(function (x) { return x.via === 'channex'; }) ? ', or reply through the booking site below' : '') + '.')
+        : 'Your first message goes to ' + esc(phoneOf(b0)) + ' on WhatsApp. Use a quick reply below or type a message.') + '</div>';
     }
     var out = [], prevDay = null, prevKey = null, prevTime = null, b = bk(c), mark = st.unreadMark[c.id];
     var firstUnread = mark ? mark.i : -1;
@@ -648,10 +775,11 @@
       if (side === 'inote') who = '<div class="who">' + O.icon('lock') + 'Internal note · ' + esc((staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       else if (side === 'out' && first) who = '<div class="who">' + esc((staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       var status = side === 'out' ? msgStatus(c, i) : null;
-      var meta = '<span class="meta">' + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
-      var cls = 'bub' + (inner.media ? ' media' + (inner.cap ? ' hascap' : '') + (m.type === 'file' ? ' isfile' : '') : '') + (inner.voice ? ' vbub' : '');
+      var meta = '<span class="meta">' + (m.via && VIA[m.via] && side === 'in' ? '<span class="mvia">' + esc(VIA[m.via]) + '</span>' : '') + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
+      var cls = 'bub' + (inner.media ? ' media' + (inner.cap ? ' hascap' : '') + (m.type === 'file' || inner.file ? ' isfile' : '') : '') + (inner.voice ? ' vbub' : '');
       out.push('<div class="msg ' + side + (first ? ' first' : '') + '" data-i="' + i + '"><div class="' + cls + '">' + who + inner.html + (inner.voice ? meta.replace('class="meta"', 'class="meta"') : meta) + '</div>' +
-        (side === 'out' && i === c.messages.length - 1 ? '<div class="via">' + (status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent') + ' · WhatsApp to ' + esc(phoneOf(b)) + '</div>' : '') + '</div>');
+        (side === 'out' && status === 'failed' ? '<div class="via bad">Not delivered' + (m.error ? ': ' + esc(m.error) : '') + '</div>'
+          : side === 'out' && i === c.messages.length - 1 ? '<div class="via">' + (status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent') + ' · ' + (m.via && m.via !== 'whatsapp' ? esc(VIA[m.via] || 'the booking site') + ' chat' : 'WhatsApp to ' + esc(m.via ? (c.wa && canContacts() ? '+' + c.wa : phoneOf(b)) : phoneOf(b))) + '</div>' : '') + '</div>');
     });
     return out.join('');
   }
@@ -687,8 +815,10 @@
       '<button type="button" data-pick="audio"><span class="ai">' + O.icon('mic') + '</span><span>Audio file<small>Send a recording as a voice note</small></span></button></div>' +
       (canSend() ? '<div class="qr-wrap">' + qrBarHTML(c) + '</div>' : '') +
       '<div class="tray-wrap">' + trayHTML(c) + '</div>' +
+      (!note && liveOn() && routeOf(c) && !routeOf(c).open ? '<div class="cmp-warn">' + esc(routeOf(c).why) + '</div>' : '') +
       '<div class="cmp-top">' + (ms.length > 1 ? U.seg(ms, st.mode, 'data-mode') : '') +
-      '<span class="cmp-hint' + (ms.length > 1 ? '' : ' only') + '">' + (note ? O.icon('lock') + '<span>' + (ms.length > 1 ? 'Only your team sees notes. Type @ and a name to mention someone.' : 'Your access allows internal notes only. The guest does not see them.') + '</span>' : O.icon('whatsapp') + '<span class="ellipsis">To ' + esc(phoneOf(b)) + ' on WhatsApp</span>') + (canSend() ? '<span class="k">Type / for quick replies</span>' : '') + '</span></div>' +
+      '<span class="cmp-hint' + (ms.length > 1 ? '' : ' only') + '">' + (note ? O.icon('lock') + '<span>' + (ms.length > 1 ? 'Only your team sees notes. Type @ and a name to mention someone.' : 'Your access allows internal notes only. The guest does not see them.') + '</span>'
+        : liveOn() ? routeHTML(c) : O.icon('whatsapp') + '<span class="ellipsis">To ' + esc(phoneOf(b)) + ' on WhatsApp</span>') + (canSend() && !liveOn() ? '<span class="k">Type / for quick replies</span>' : '') + '</span></div>' +
       '<div class="cmp-bar">' + (rec ? recHTML() :
         '<button type="button" class="round plain" data-act="attach" aria-label="Attach a photo, file or audio" aria-haspopup="true" title="Attach">' + O.icon('clip') + '</button>' +
         '<div class="cmp-box"><label class="sr-only" for="ib-input">' + (note ? 'Internal note' : 'Message') + '</label><textarea id="ib-input" rows="1" data-f="msg" title="Enter sends, Shift + Enter adds a new line" placeholder="' + (note ? 'Write an internal note' : 'Message ' + esc(guestFirst(b.guest.name))) + '">' + esc(draft) + '</textarea></div>' +
@@ -699,6 +829,15 @@
       '<input type="file" hidden data-in="doc" multiple>' +
       '<input type="file" hidden data-in="audio" accept="audio/*">' +
       '</div>';
+  }
+  function routeHTML(c) {
+    var rs = routesFor(c), r = routeOf(c), cfg = liveCfg();
+    if (!rs.length) return O.icon('alert') + '<span class="ellipsis">No way to reach this guest yet: add a phone number to the booking</span>';
+    var pick = rs.length > 1 ? '<label class="sr-only" for="ib-via">Send by</label><select id="ib-via" class="select" data-f="via">' + rs.map(function (x) { return '<option value="' + x.via + '"' + (x === r ? ' selected' : '') + '>' + esc(x.label) + (x.open ? '' : ' (closed)') + '</option>'; }).join('') + '</select>'
+      : '<span class="ellipsis">' + esc(r.label) + '</span>';
+    var gl = guestLang(c), on = !!live.xl[c.id];
+    var xl = cfg && cfg.translate ? '<button type="button" class="cmp-xl' + (on ? ' on' : '') + '" data-act="xltoggle" aria-pressed="' + on + '" title="Check the reply in the guest\'s language before it goes">' + O.icon('lang') + (on ? 'Translate to ' + esc(langName(gl) || 'guest\'s language') : 'Translate') + '</button>' : '';
+    return '<span class="cmp-route">' + O.icon(r.via === 'whatsapp' ? 'whatsapp' : 'chat') + pick + xl + '</span>';
   }
   function recHTML() {
     var r = st.rec;
@@ -950,6 +1089,7 @@
         if (st.mode === 'note' ? !canNote() : !canSend()) { U.toast(st.mode === 'note' ? 'Writing internal notes is not part of your access' : NO_SEND, 'bad'); return; }
         var ta = O.$('#ib-input', chat), text = ta ? ta.value.trim() : '', files = st.pending[c.id] || [];
         if (!text && !files.length) return;
+        if (st.mode !== 'note' && liveOn()) { sendLive(c, text, files); return; }
         var from = st.mode === 'note' ? 'note' : 'staff', base = { from: from, staffId: O.state.viewer };
         files.forEach(function (a, i) {
           var cap = i === files.length - 1 && text ? text : '';
@@ -965,6 +1105,159 @@
         if (from === 'staff' && !st.told) { st.told = true; U.toast('Sent to ' + bk(c).guest.name + ' on WhatsApp. Sending is not connected in this version.'); }
         if (from === 'note') U.toast('Internal note added. The guest cannot see it.');
         O.emit('data', { type: 'message', id: c.id });
+      }
+
+      /* ---------- live sending (api/messages.js) ---------- */
+      function sendLive(c, text, files) {
+        if (files.length) { U.toast('Photos, files and voice notes cannot go to guests from Orbique yet. Send them as an internal note, or from WhatsApp on your phone.', 'bad'); return; }
+        if (!text) return;
+        var r = routeOf(c);
+        if (!r) { U.toast('There is no way to reach this guest yet. Add their phone number to the booking.', 'bad'); return; }
+        if (!r.open) { U.toast(r.why, 'bad'); return; }
+        if (live.busy['send' + c.id]) return;
+        var cfg = liveCfg();
+        if (live.xl[c.id] && cfg && cfg.translate) { previewThenSend(c, r, text); return; }
+        deliver(c, r, { text: text }, text);
+      }
+      function deliver(c, r, payload, typed) {
+        live.busy['send' + c.id] = true;
+        var btn = O.$('.round.go', chat); if (btn) btn.disabled = true;
+        O.auth.inbox('send', Object.assign({ conversationId: c.id, via: r.via }, payload)).then(function (res) {
+          applyConv(res.conversation);
+          var ta = O.$('#ib-input', chat);
+          if (ta && ta.value.trim() === typed) { ta.value = ''; autosize(ta); }
+          if ((st.drafts[c.id] || '').trim() === typed) st.drafts[c.id] = '';
+          delete st.unreadMark[c.id];
+          if (st.sel === c.id) paintThread(true);
+          paintRows();
+        }, function (e) { U.toast(e.message || 'The message was not sent. Please try again.', 'bad'); }).then(function () {
+          live.busy['send' + c.id] = false;
+          var b2 = O.$('.round.go', chat); if (b2) b2.disabled = false;
+          paintSendBtn();
+        });
+      }
+      function previewThenSend(c, r, text) {
+        var lang = guestLang(c);
+        var body = O.html('<div class="stack ib-xl-prev"><div class="field"><label for="ib-xl-lang">Guest\'s language</label><select id="ib-xl-lang" class="select"><option value="">Choose a language</option>' +
+          LANGS.filter(function (l) { return l[0] !== myLang(); }).map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === lang ? ' selected' : '') + '>' + esc(l[1]) + '</option>'; }).join('') + '</select></div>' +
+          '<div class="field"><label for="ib-xl-out">What the guest gets</label><textarea id="ib-xl-out" class="textarea" rows="5" placeholder="Choose the guest\'s language"></textarea></div>' +
+          '<div class="field"><label>What you wrote</label><div class="orig">' + esc(text) + '</div></div>' +
+          '<div class="note">Check door codes, times and prices before sending. You can edit the translation.</div></div>');
+        var sel = O.$('#ib-xl-lang', body), out = O.$('#ib-xl-out', body), seq = 0;
+        function run() {
+          var to = sel.value, my = ++seq; out.value = '';
+          if (!to) { out.placeholder = 'Choose the guest\'s language'; return; }
+          out.placeholder = 'Translating…';
+          O.auth.inbox('preview', { text: text, to: to }).then(function (res) { if (my === seq) { out.value = res.text; out.placeholder = ''; } }, function (e) { if (my === seq) out.placeholder = e.message || 'Translation failed. Try again.'; });
+        }
+        sel.addEventListener('change', run);
+        U.modal({ title: 'Check the translation', sub: 'Sent by ' + r.label, body: body, autofocus: false, actions: [
+          { label: 'Cancel' },
+          { label: 'Send what I wrote', onClick: function () { deliver(c, r, { text: text }, text); } },
+          { label: 'Send translation', kind: 'primary', onClick: function () {
+            var t = out.value.trim(); if (!t) { U.toast('Wait for the translation, or choose the guest\'s language', 'bad'); return false; }
+            deliver(c, r, { text: t, orig: text, origLang: myLang(), lang: sel.value }, text);
+          } }
+        ] });
+        if (lang) run();
+      }
+      function translateMsg(key) {
+        var p = key.split(':'), c = conv(p[0]); if (!c || live.busy['xl' + key]) return;
+        live.busy['xl' + key] = true; paintThread(false);
+        O.auth.inbox('translate', { conversationId: c.id, index: +p[1] }).then(function (res) {
+          if (res.conversation) applyConv(res.conversation);
+          if (res.same) U.toast('This message is already in ' + langName(myLang()));
+        }, function (e) { U.toast(e.message || 'Translation failed. Please try again.', 'bad'); }).then(function () { delete live.busy['xl' + key]; paintThread(false); });
+      }
+      function openWaMedia(key) {
+        var p = key.split(':'), c = conv(p[0]), m = c && c.messages[+p[1]]; if (!m) return;
+        function show(f) {
+          var from = m.from === 'guest' ? (bk(c) ? bk(c).guest.name : 'Guest') : 'Team', sub = 'From ' + from + ' · ' + fmt.dateTime(m.time);
+          if (/^image\//.test(f.mime)) U.modal({ title: f.name || 'Photo', sub: sub, size: 'wide', body: '<div class="ib-lightbox"><img src="' + esc(f.url) + '" alt="Photo from the guest"></div>', actions: [{ label: 'Download', onClick: function () { O.download(f.name || 'photo.jpg', f.blob, f.mime); return false; } }, { label: 'Close', kind: 'primary' }] });
+          else if (/^(audio|video)\//.test(f.mime)) U.modal({ title: m.type === 'voice' ? 'Voice message' : f.name || 'Video', sub: sub, body: '<' + (/^audio/.test(f.mime) ? 'audio' : 'video') + ' controls autoplay style="width:100%" src="' + esc(f.url) + '"></' + (/^audio/.test(f.mime) ? 'audio' : 'video') + '>', actions: [{ label: 'Download', onClick: function () { O.download(f.name || 'voice.ogg', f.blob, f.mime); return false; } }, { label: 'Close', kind: 'primary' }] });
+          else O.download(f.name || 'file', f.blob, f.mime);
+        }
+        if (live.media[key]) { show(live.media[key]); return; }
+        if (live.busy['m' + key]) return;
+        live.busy['m' + key] = true; paintThread(false);
+        O.auth.inbox('media', { conversationId: c.id, index: +p[1] }).then(function (res) {
+          var bin = atob(res.data), bytes = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          var blob = new Blob([bytes], { type: res.mime }), f = { blob: blob, mime: res.mime, name: res.name || m.name || null, url: URL.createObjectURL(blob) };
+          live.media[key] = f; show(f);
+        }, function (e) { U.toast(e.message || 'The file could not be opened.', 'bad'); }).then(function () { delete live.busy['m' + key]; paintThread(false); });
+      }
+      /* chats that match no booking: link each to the right stay */
+      function looseModal() {
+        var list = loose(); if (!list.length) return;
+        var today = D.TODAY, pool = D.bookings.filter(function (b) { return b.guest && b.status !== 'cancelled' && b.checkOut >= d.add(today, -30); });
+        function score(c, b) { var n = String((c.contact && c.contact.name) || '').toLowerCase(), g = String(b.guest.name || '').toLowerCase(); return n && g && (g.indexOf(n.split(' ')[0]) >= 0 || n.indexOf(g.split(' ')[0]) >= 0) ? 0 : 1; }
+        var body = O.html('<div class="ib-loose-list">' + list.map(function (c) {
+          var name = (c.contact && c.contact.name) || 'Unknown guest', vias = c.messages.map(function (m) { return m.via; }).filter(Boolean), via = VIA[vias[vias.length - 1]] || 'WhatsApp';
+          var phone = c.contact && c.contact.phone && canContacts() ? ' · ' + c.contact.phone : '';
+          var opts = pool.slice().sort(function (a, b) { return score(c, a) - score(c, b) || (a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : 0); });
+          var msgs = c.messages.filter(function (m) { return m.from === 'guest' || m.from === 'system'; }).slice(-3).map(function (m) { return (m.tr && m.tr.text) || m.text || ''; }).join('\n');
+          return '<div class="lc" data-lc="' + c.id + '"><div class="lh">' + U.avatar(name) + '<span>' + esc(name) + '<br><small>' + esc(via + phone) + '</small></span></div>' +
+            '<div class="lm">' + esc(msgs) + '</div>' +
+            (canEdit() ? '<div class="lr"><select class="select" aria-label="Booking for ' + esc(name) + '"><option value="">Choose the booking</option>' + opts.map(function (b) { return '<option value="' + b.id + '">' + esc(b.guest.name) + ' · ' + esc(b.propertyId ? prop(b.propertyId).short : 'No unit yet') + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + '</option>'; }).join('') + '</select><button type="button" class="btn btn-primary btn-sm" data-link="' + c.id + '">Link</button></div>' : '<div class="small muted">Someone with edit access to the inbox can link this chat.</div>') + '</div>';
+        }).join('') + '</div>');
+        var mod = U.modal({ title: 'Chats to link', sub: 'These came from numbers or booking-site threads that match no booking. Link each to the guest\'s stay so replies and the stay details sit together.', size: 'wide', body: body, autofocus: false, actions: [{ label: 'Close', kind: 'primary' }] });
+        body.addEventListener('click', function (e) {
+          var x = e.target.closest('[data-link]'); if (!x) return;
+          var sel = O.$('select', x.closest('.lc')), bid = sel && sel.value;
+          if (!bid) { U.toast('Choose the booking first', 'bad'); return; }
+          var id = linkLoose(x.dataset.link, bid);
+          x.closest('.lc').remove();
+          if (!O.$('.lc', body)) mod.close();
+          if (id) select(id);
+        });
+      }
+      function linkLoose(cid, bid) {
+        var i = -1; for (var k = 0; k < D.conversations.length; k++) if (D.conversations[k].id === cid) i = k;
+        if (i < 0) return null;
+        var c = D.conversations[i], t = D.conversations.filter(function (x) { return x.bookingId === bid && x !== c; })[0];
+        if (!t) { c.bookingId = bid; delete c.contact; O.emit('data', { type: 'inbox-link', id: c.id }); return c.id; }
+        t.messages = t.messages.concat(c.messages).map(function (m, j) { return [m, j]; })
+          .sort(function (a, b) { return a[0].time < b[0].time ? -1 : a[0].time > b[0].time ? 1 : a[1] - b[1]; }).map(function (x) { return x[0]; });
+        t.unread = (t.unread || 0) + (c.unread || 0);
+        ['wa', 'waLastIn', 'cx', 'cxBooking', 'ota', 'lang'].forEach(function (key) { if (c[key] && !t[key]) t[key] = c[key]; });
+        D.conversations.splice(i, 1);
+        O.emit('data', { type: 'inbox-link', id: t.id });
+        return t.id;
+      }
+      function settingsModal() {
+        var cfg = liveCfg() || { whatsapp: {} }, owner = O.auth.role && O.auth.role() === 'owner', wa = cfg.whatsapp || {};
+        var setv = D.inboxSettings || {}, lang = setv.lang || cfg.lang || 'en', auto = setv.autoTranslate !== false;
+        var waHTML = !wa.configured ? '<div class="note">WhatsApp is not set up on the server yet. Orbique needs WHATSAPP_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN in Vercel (see Putting Orbique online, WhatsApp).</div>'
+          : wa.number ? '<div class="row-flex"><span class="grow">Connected: <b>' + esc(wa.number.phone || '') + '</b>' + (wa.number.name ? ' (' + esc(wa.number.name) + ')' : '') + '</span>' + (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-wa="off">Disconnect</button>' : '') + '</div>'
+          : owner ? '<div class="field"><label for="ib-pnid">Phone number ID from Meta</label><input id="ib-pnid" class="input" inputmode="numeric" placeholder="For example 109876543210987"><div class="small muted">Meta for Developers, your app, WhatsApp, API Setup: the "Phone number ID" under your business number.</div></div><button type="button" class="btn btn-primary btn-sm" data-wa="on">Connect WhatsApp</button>'
+          : '<div class="note">Ask the account owner to connect your WhatsApp business number.</div>';
+        var trHTML = cfg.translate ? '<div class="field"><label for="ib-lang">Show guest messages in</label><select id="ib-lang" class="select"' + (canEdit() ? '' : ' disabled') + '>' + LANGS.map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === lang ? ' selected' : '') + '>' + esc(l[1]) + '</option>'; }).join('') + '</select></div>' +
+            '<label class="row-flex"><input type="checkbox" id="ib-auto"' + (auto ? ' checked' : '') + (canEdit() ? '' : ' disabled') + '> <span>Translate new guest messages as they arrive</span></label>'
+          : '<div class="note">Translation is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).</div>';
+        var body = O.html('<div class="stack"><div class="section-title" style="margin-top:0">WhatsApp</div>' + waHTML +
+          '<div class="section-title">Translation</div>' + trHTML +
+          (cfg.channex ? '<div class="section-title">Booking sites</div><div class="small">Messages from Booking.com, Airbnb and Expedia arrive here once the Messages app is switched on for the building in Channex. Agoda and Trip.com do not offer messages through the channel manager.</div>' : '') + '</div>');
+        var mod = U.modal({ title: 'Inbox settings', body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
+        function reload() { live.cfg = null; live.org = null; loadLive(function () { repaintLive(); }); }
+        body.addEventListener('click', function (e) {
+          var x = e.target.closest('[data-wa]'); if (!x) return;
+          x.disabled = true;
+          var call = x.dataset.wa === 'on' ? O.auth.inbox('whatsapp-connect', { phoneNumberId: (O.$('#ib-pnid', body).value || '').trim() }) : O.auth.inbox('whatsapp-disconnect');
+          call.then(function (r) { U.toast(r.number ? 'WhatsApp connected: ' + (r.number.phone || '') : 'WhatsApp disconnected'); mod.close(); reload(); }, function (er) { x.disabled = false; U.toast(er.message, 'bad'); });
+        });
+        body.addEventListener('change', function (e) {
+          if (!canEdit() || (e.target.id !== 'ib-lang' && e.target.id !== 'ib-auto')) return;
+          D.inboxSettings = { lang: O.$('#ib-lang', body).value, autoTranslate: O.$('#ib-auto', body).checked };
+          if (live.cfg) { live.cfg.lang = D.inboxSettings.lang; live.cfg.autoTranslate = D.inboxSettings.autoTranslate; }
+          O.emit('data', { type: 'inbox-settings' });
+        });
+      }
+      function repaintLive() {
+        if (!document.body.contains(page)) return;
+        var f = O.$('.ib-lfoot', listEl); if (f) f.innerHTML = footHTML();
+        var lw = O.$('.ib-loose-wrap', listEl); if (lw) lw.innerHTML = looseHTML();
+        if (conv(st.sel)) { rebuildComposer(); paintThread(false); }
       }
 
       /* ---------- attachments ---------- */
@@ -1140,6 +1433,9 @@
         if ((x = e.target.closest('[data-filter]'))) { st.filter = x.dataset.filter; paintFilters(); paintRows(); return; }
         if ((x = e.target.closest('[data-qr]'))) { useQuickReply(x.dataset.qr); return; }
         if ((x = e.target.closest('[data-play]'))) { togglePlay(x.dataset.play); return; }
+        if ((x = e.target.closest('[data-xl]'))) { translateMsg(x.dataset.xl); return; }
+        if ((x = e.target.closest('[data-orig]'))) { live.origOpen[x.dataset.orig] = !live.origOpen[x.dataset.orig]; paintThread(false); return; }
+        if ((x = e.target.closest('[data-wamedia]'))) { openWaMedia(x.dataset.wamedia); return; }
         if ((x = e.target.closest('[data-trans]'))) { var k = 'tr' + x.dataset.trans; st[k] = !st[k]; paintThread(false); return; }
         if ((x = e.target.closest('[data-rm]'))) { var pl = st.pending[st.sel] || []; var a = pl.splice(+x.dataset.rm, 1)[0]; if (a) try { URL.revokeObjectURL(a.url); } catch (er) {} paintTray(); return; }
         if ((x = e.target.closest('[data-pick]'))) { O.$('.att-menu', chat).classList.remove('open'); var inp = O.$('input[data-in=' + x.dataset.pick + ']', chat); if (inp) inp.click(); return; }
@@ -1151,10 +1447,12 @@
             actions: m.url ? [{ label: 'Download', onClick: function () { fetch(m.url).then(function (r) { return r.blob(); }).then(function (bl) { O.download(m.name || 'photo.jpg', bl, m.mime); }); return false; } }, { label: 'Close', kind: 'primary' }] : [{ label: 'Close', kind: 'primary' }] });
           return;
         }
-        if ((x = e.target.closest('[data-dl]'))) { var q2 = x.dataset.dl.split(':'), c2 = conv(q2[0]), m2 = c2 && c2.messages[+q2[1]]; if (m2 && m2.url) fetch(m2.url).then(function (r) { return r.blob(); }).then(function (bl) { O.download(m2.name || 'file', bl, m2.mime); }); return; }
+        if ((x = e.target.closest('[data-dl]'))) { var q2 = x.dataset.dl.split(':'), c2 = conv(q2[0]), m2 = c2 && c2.messages[+q2[1]]; if (m2 && m2.url) fetch(m2.url).then(function (r) { return r.blob(); }).then(function (bl) { O.download(m2.name || 'file', bl, m2.mime); }, function () { if (/^https:/.test(m2.url)) window.open(m2.url, '_blank', 'noopener'); }); return; }
         if (!(x = e.target.closest('[data-act]'))) return;
         var act = x.dataset.act;
         if (act === 'newchat') newChat();
+        if (act === 'livesettings') { settingsModal(); return; }
+        if (act === 'loose') { looseModal(); return; }
         if (act === 'allprops') { setProp(''); return; }
         if (act === 'clearq') { st.q = ''; var qx = O.$('[data-f=q]', listEl); if (qx) qx.value = ''; paintRows(); return; }
         if (act === 'manage') { var mm = O.$('.ib-menu.open', page); if (mm) mm.classList.remove('open'); manageQuickReplies(c ? bk(c).propertyId : null, function () { O.emit('data', { type: 'quickreplies' }); }); }
@@ -1169,6 +1467,7 @@
         if (act === 'pin') { c.pinned = !c.pinned; paintRows(); paintChat(false); U.toast(c.pinned ? 'Chat pinned to the top' : 'Chat unpinned'); return; }
         if (act === 'invoice') { if (O.can('invoices.send')) O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); else U.toast('Your access does not include sending invoices and receipts', 'bad'); return; }
         if (act === 'attach') { O.$('.att-menu', chat).classList.toggle('open'); return; }
+        if (act === 'xltoggle') { live.xl[c.id] = !live.xl[c.id]; var tx = O.$('#ib-input', chat); if (tx) st.drafts[c.id] = tx.value; rebuildComposer(); var ty = O.$('#ib-input', chat); if (ty) ty.focus(); return; }
         if (act === 'send') { send(); return; }
         if (act === 'record') { startRecording(); return; }
         if (act === 'recsend') { finishRecording(true); return; }
@@ -1193,6 +1492,7 @@
       page.addEventListener('change', function (e) {
         var t = e.target;
         if (t.dataset.f === 'prop') { setProp(t.value); return; }
+        if (t.dataset.f === 'via') { var cv = conv(st.sel); if (!cv) return; live.via[cv.id] = t.value; var td = O.$('#ib-input', chat); if (td) st.drafts[cv.id] = td.value; rebuildComposer(); return; }
         if (t.dataset.f === 'assign') { var c = conv(st.sel); if (!c || !canEdit()) return; c.assigneeId = t.value; var s = staff(t.value); U.toast('Chat with ' + bk(c).guest.name + ' assigned to ' + s.name + '. ' + firstName(s.name) + ' was notified.'); paintRows(); O.emit('data', { type: 'inbox-assign', id: c.id }); }
       });
       /* property filter: remembered on this device; on a computer the open chat follows the filter */
@@ -1211,12 +1511,21 @@
       /* other pages and modals change data (door codes, ID checks, quick replies, new messages): refresh in place, keep the composer */
       ctx.on('data', function (p) {
         if (!document.body.contains(page)) return;
+        var lw = O.$('.ib-loose-wrap', listEl); if (lw) lw.innerHTML = looseHTML();
+        /* a message arriving in the open chat is read at once, like WhatsApp */
+        var oc = conv(st.sel);
+        if (oc && oc.unread && (st.view === 'chat' || !isPhone()) && document.visibilityState !== 'hidden') {
+          st.unreadMark[oc.id] = { i: Math.max(0, oc.messages.length - oc.unread), n: oc.unread }; oc.unread = 0;
+          O.emit('data', { type: 'inbox-read', id: oc.id }); return;
+        }
         paintFilters(); paintRows();
+        if (oc && liveOn()) { var sig = JSON.stringify(routesFor(oc).map(function (r) { return [r.via, r.open]; })); if (chat.dataset.rsig && chat.dataset.rsig !== sig) rebuildComposer(); chat.dataset.rsig = sig; }
         if (conv(st.sel)) paintChat(false); else if (st.sel) { st.sel = null; paintChat(true); }
         if (p && p.type === 'quickreplies') { var w = O.$('.qr-wrap', chat), c = conv(st.sel); if (w && c) w.innerHTML = qrBarHTML(c); }
       });
 
       paintChat(true);
+      loadLive(repaintLive);
       var sc = O.$('.cv.on', listEl); if (sc && sc.scrollIntoView) { var rows = O.$('.ib-rows', listEl); if (sc.offsetTop > rows.clientHeight) rows.scrollTop = sc.offsetTop - 60; }
       var cur = conv(st.sel);
       if (cur && cur.unread && (st.view === 'chat' || !isPhone())) { st.unreadMark[cur.id] = { i: Math.max(0, cur.messages.length - cur.unread), n: cur.unread }; cur.unread = 0; paintRows(); paintFilters(); paintThread(true); O.emit('data', { type: 'inbox-read', id: cur.id }); }
