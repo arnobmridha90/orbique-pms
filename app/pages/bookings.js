@@ -323,7 +323,7 @@
         var fb0 = O.$('[data-act=first]', root); if (fb0) fb0.onclick = function () { openNew({}); };
         return;
       }
-      if (st.prop && !D.propById[st.prop]) st.prop = '';
+      if (st.prop && (!D.propById[st.prop] || !O.inView(st.prop))) st.prop = '';
 
       var plats = D.channelOrder.map(function (c) { return '<option value="' + c + '"' + (st.plat === c ? ' selected' : '') + '>' + esc(U.platName(c)) + '</option>'; }).join('');
       root.innerHTML = '<div class="pg-bookings' + (st.filtersOpen ? ' f-open' : '') + '">' +
@@ -875,7 +875,7 @@
      New booking (direct), shared form: O.newBooking({propertyId, checkIn, checkOut, onCreated(b)})
      =================================================================== */
   function nextNo(field, prefix) {
-    var max = D.bookings.reduce(function (m, b) { var v = b[field]; return v ? Math.max(m, +String(v).split('-').pop() || 0) : m; }, 1000);
+    var max = O.raw('bookings').reduce(function (m, b) { var v = b[field]; return v ? Math.max(m, +String(v).split('-').pop() || 0) : m; }, 1000);
     return prefix + (max + 1);
   }
   /* invoices for platform bookings that the channel manager created on the server (they arrive without a number):
@@ -891,10 +891,10 @@
   }
   O.automation.register('channel-invoices', function () { if (channelInvoices()) O.emit('data', { type: 'invoices' }); });
   var invT = null;
-  O.on('remote', function () {
+  O.on('remote', O.unscopedFn(function () {
     if (!D.bookings.some(function (b) { return b && b.channex && !b.invoiceNo && b.status !== 'cancelled'; })) return;
-    clearTimeout(invT); invT = setTimeout(function () { if (O.sync.canWrite() && channelInvoices()) O.emit('data', { type: 'invoices' }); }, 1500);
-  });
+    clearTimeout(invT); invT = setTimeout(O.unscopedFn(function () { if (O.sync.canWrite() && channelInvoices()) O.emit('data', { type: 'invoices' }); }), 1500);
+  }));
 
   O.newBooking = function (o) {
     o = o || {};

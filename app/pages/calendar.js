@@ -253,9 +253,9 @@
   function filterOK(v) {
     if (!v) return true;
     if (v.indexOf('area:') === 0) return true;
-    if (v.indexOf('bd:') === 0) { var b = O.building(v.slice(3)); return !!(b && !b.archived); }
-    if (v.indexOf('type:') === 0) { var t = O.unitType(v.slice(5)); return !!(t && !t.archived); }
-    return !!D.propById[v];
+    if (v.indexOf('bd:') === 0) { var b = O.building(v.slice(3)); return !!(b && !b.archived && O.inView(b)); }
+    if (v.indexOf('type:') === 0) { var t = O.unitType(v.slice(5)); return !!(t && !t.archived && O.inView(t)); }
+    return !!D.propById[v] && O.inView(v);
   }
   function oneProp() { return st.prop && D.propById[st.prop] ? st.prop : undefined; }
   function shownProps() {

@@ -485,7 +485,7 @@
       if (!st.draft || st.viewer !== v.id) { st.draft = freshDraft(); st.err = {}; st.viewer = v.id; }
       if (!canAll()) st.person = '';
       if (!owner()) st.draft.paidBy = v.id;
-      if (st.prop && st.prop !== 'general' && !D.propById[st.prop]) st.prop = '';
+      if (st.prop && st.prop !== 'general' && (!D.propById[st.prop] || !O.inView(st.prop))) st.prop = '';
       if (ctx.fresh && ctx.params) {
         if (ctx.params.person && canAll()) st.person = ctx.params.person;
         if (ctx.params.cls === 'opex' || ctx.params.cls === 'capex') st.cls = ctx.params.cls;

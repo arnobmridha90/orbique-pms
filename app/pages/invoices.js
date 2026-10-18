@@ -208,7 +208,7 @@
   function seqOf(no) { var m = /(\d+)\D*$/.exec(String(no || '')); return m ? +m[1] : 0; }
   function nextNo(kind, skipId) {
     var key = kind === 'invoice' ? 'invoiceNo' : 'receiptNo';
-    var max = D.bookings.reduce(function (m, x) { return x[key] && x.id !== skipId ? Math.max(m, seqOf(x[key])) : m; }, 1000);
+    var max = O.raw('bookings').reduce(function (m, x) { return x[key] && x.id !== skipId ? Math.max(m, seqOf(x[key])) : m; }, 1000);
     var cfg = D.invoiceSettings || {};
     var pat = (kind === 'invoice' ? cfg.invPattern : cfg.rcpPattern) || (kind === 'invoice' ? 'INV-{YYYY}-{seq}' : 'RCP-{YYYY}-{seq}');
     return pat.replace(/\{YYYY\}/g, D.TODAY.slice(0, 4)).replace(/\{YY\}/g, D.TODAY.slice(2, 4)).replace(/\{MM\}/g, D.TODAY.slice(5, 7)).replace(/\{seq\}/g, String(max + 1));

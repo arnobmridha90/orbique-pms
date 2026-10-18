@@ -719,20 +719,20 @@
     /* revenue earned on nights from..to (inclusive), optional filter {propertyId, channel} */
     revenue: function (from, to, f) {
       f = f || {};
-      return bookings.reduce(function (s, b) {
+      return O.data.bookings.reduce(function (s, b) {
         if (!live(b) || (f.propertyId && b.propertyId !== f.propertyId) || (f.channel && b.channel !== f.channel)) return s;
         var n = nightsIn(b, from, to); return s + (n ? b.revenue / b.nights * n : 0);
       }, 0);
     },
     nightsSold: function (from, to, f) {
       f = f || {};
-      return bookings.reduce(function (s, b) {
+      return O.data.bookings.reduce(function (s, b) {
         if (!live(b) || (f.propertyId && b.propertyId !== f.propertyId) || (f.channel && b.channel !== f.channel)) return s;
         return s + nightsIn(b, from, to);
       }, 0);
     },
     blockedNights: function (from, to, pid) {
-      return blocks.reduce(function (s, x) {
+      return O.data.blocks.reduce(function (s, x) {
         if (pid && x.propertyId !== pid) return s;
         var a = x.start > from ? x.start : from, z = O.d.add(x.end, -1) < to ? O.d.add(x.end, -1) : to;
         return s + (a > z ? 0 : O.d.diff(a, z) + 1);
@@ -740,7 +740,7 @@
     },
     availableNights: function (from, to, pid) {
       /* each unit counts from the day it was added until the day before it was archived */
-      var list = pid ? properties.filter(function (p) { return p.id === pid; }) : properties;
+      var list = pid ? O.data.properties.filter(function (p) { return p.id === pid; }) : properties;
       if (pid && !list.length) return O.d.diff(from, to) + 1 - M.blockedNights(from, to, pid);
       var days = list.reduce(function (s, p) {
         var a = p.createdAt && String(p.createdAt).slice(0, 10) > from ? String(p.createdAt).slice(0, 10) : from;
@@ -754,21 +754,21 @@
     revpar: function (from, to, pid) { var a = M.availableNights(from, to, pid); return a ? M.revenue(from, to, pid ? { propertyId: pid } : null) / a : 0; },
     /* daily revenue series for a date range (array of {date, value}) */
     dailyRevenue: function (from, to, f) { return O.d.range(from, to).map(function (d) { return { date: d, value: M.revenue(d, d, f) }; }); },
-    bookingsCreated: function (from, to) { return bookings.filter(function (b) { var c = b.createdAt.slice(0, 10); return c >= from && c <= to; }); },
+    bookingsCreated: function (from, to) { return O.data.bookings.filter(function (b) { var c = b.createdAt.slice(0, 10); return c >= from && c <= to; }); },
     stays: function (from, to, f) { /* bookings with at least one night in range */
       f = f || {};
-      return bookings.filter(function (b) {
+      return O.data.bookings.filter(function (b) {
         return (!f.propertyId || b.propertyId === f.propertyId) && (!f.status || f.status.indexOf(b.status) >= 0) && b.checkIn <= to && b.checkOut > from;
       });
     },
     /* rejected claims are not company spend; cls = 'opex' | 'capex' | undefined (both) */
-    expenses: function (from, to, cls) { return expenses.filter(function (e) { return e.date >= from && e.date <= to && e.claimStatus !== 'rejected' && (!cls || (e.costClass || 'opex') === cls); }); },
+    expenses: function (from, to, cls) { return O.data.expenses.filter(function (e) { return e.date >= from && e.date <= to && e.claimStatus !== 'rejected' && (!cls || (e.costClass || 'opex') === cls); }); },
     expenseTotal: function (from, to, cls) { return M.expenses(from, to, cls).reduce(function (s, e) { return s + e.amount; }, 0); },
     platformFees: function (from, to) {
-      return bookings.reduce(function (s, b) { if (!live(b)) return s; var n = nightsIn(b, from, to); return s + (n ? b.platformFee / b.nights * n : 0); }, 0);
+      return O.data.bookings.reduce(function (s, b) { if (!live(b)) return s; var n = nightsIn(b, from, to); return s + (n ? b.platformFee / b.nights * n : 0); }, 0);
     },
     avgRating: function (from, to, pid) {
-      var rs = reviews.filter(function (r) { return r.date >= from && r.date <= to && (!pid || r.propertyId === pid); });
+      var rs = O.data.reviews.filter(function (r) { return r.date >= from && r.date <= to && (!pid || r.propertyId === pid); });
       return rs.length ? rs.reduce(function (s, r) { return s + r.stars; }, 0) / rs.length : null;
     }
   };

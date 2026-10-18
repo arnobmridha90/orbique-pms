@@ -825,7 +825,7 @@
         return;
       }
       if (p0.propertyId && D.propById[p0.propertyId] && ctx.fresh) { st.pid = p0.propertyId; st.picked = {}; }
-      if (!D.propById[st.pid]) { st.pid = D.properties[0].id; st.picked = {}; }
+      if (!D.propById[st.pid] || !O.inView(st.pid)) { st.pid = D.properties[0].id; st.picked = {}; }
       /* the range is worked out from today on every render, so it moves with the clock */
       if (st.preset || !st.from) { var pr = U.preset(st.preset || 'next30'); st.from = pr.from; st.to = pr.to; st.preset = st.preset || 'next30'; }
       if (st.from < D.TODAY) st.from = D.TODAY;

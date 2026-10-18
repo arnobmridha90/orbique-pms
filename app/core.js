@@ -72,7 +72,7 @@
   O.viewCur = function () { var list = O.currencies(), c = O.store.get('viewCur', ''); return list.indexOf(c) >= 0 ? c : list[0]; };
   O.setViewCur = function (c) { O.store.set('viewCur', String(c || '').toUpperCase()); O.render(); };
   /* true when x (booking, unit, expense, invoice, ...) is in the view currency; always true with one currency */
-  O.inCur = function (x) { return !O.multiCur() || O.curOf(x) === O.viewCur(); };
+  O.inCur = function (x) { return O.inView(x) && (!O.multiCur() || O.curOf(x) === O.viewCur()); };
   /* the currency picker for totals pages; empty with one currency. Wire it with O.curSwitchWire(root). */
   O.curSwitchHTML = function () {
     if (!O.multiCur()) return '';
@@ -84,7 +84,7 @@
   /* Malaysia's tourism tax applies to buildings in Malaysia (building.country MY, or MYR when no country is set) */
   O.buildingOf = function (x) {
     if (!x) return null; if (typeof x === 'string') x = D.propById[x] || O.building(x) || O.unitType(x); if (!x) return null;
-    if ((D.buildings || []).indexOf(x) >= 0) return x;
+    if ((O.raw('buildings') || []).indexOf(x) >= 0) return x;
     var t = x.unitTypeId ? O.unitType(x.unitTypeId) : null, bid = x.buildingId || (t && t.buildingId);
     if (!bid && x.propertyId && D.propById[x.propertyId]) return O.buildingOf(D.propById[x.propertyId]);
     return bid ? O.building(bid) : null;
@@ -557,8 +557,88 @@
      assignment {how: 'auto'|'manual', by, at, locked} and needsUnit. Untyped units and their bookings work as before. */
   D.buildings = D.buildings || [];
   D.unitTypes = D.unitTypes || [];
-  O.building = function (id) { if (!id || !D.buildings) return null; for (var i = 0; i < D.buildings.length; i++) if (D.buildings[i].id === id) return D.buildings[i]; return null; };
-  O.unitType = function (id) { if (!id || !D.unitTypes) return null; for (var i = 0; i < D.unitTypes.length; i++) if (D.unitTypes[i].id === id) return D.unitTypes[i]; return null; };
+  /* ---------------- country view ----------------
+     With buildings in more than one country, the top bar picks a country (O.viewCountry(), '' = all countries) and
+     D.properties, D.buildings, D.unitTypes, D.bookings, D.blocks, D.tasks, D.reviews, D.expenses and D.conversations
+     hold that country only. Pages read and change them as before: push / unshift / splice on a country list change the
+     full list too (never assign by index or set .length on them). The full lists: O.raw(key), or run code in
+     O.unscoped(fn). Saving, background jobs and the channel manager always see every country.
+     A building's country is building.country (else the one its currency is from); units, unit types and records follow
+     their building. Records with no unit: expenses and bookings belong to the main country, tasks and chats to every country. */
+  var SCOPED = ['properties', 'buildings', 'unitTypes', 'bookings', 'blocks', 'tasks', 'reviews', 'expenses', 'conversations'];
+  var EVERYWHERE = { tasks: 1, conversations: 1 };
+  var CUR_COUNTRY = { MYR: 'MY', SGD: 'SG', THB: 'TH', IDR: 'ID', PHP: 'PH', VND: 'VN', JPY: 'JP', AUD: 'AU', USD: 'US', GBP: 'UK', CNY: 'CN', HKD: 'HK', INR: 'IN', KRW: 'KR', TWD: 'TW', NZD: 'NZ' };
+  var RAW = {}, VIEW = {}, SC = { ver: 0, off: 0, list: null, listVer: -1 };
+  O.raw = function (k) { return RAW[k] || D[k]; };
+  O.unscoped = function (fn) { SC.off++; try { return fn(); } finally { SC.off--; } };
+  O.unscopedFn = function (fn) { return function () { var a = arguments, t = this; return O.unscoped(function () { return fn.apply(t, a); }); }; };
+  O.countryOf = function (bd) { return bd ? String(bd.country || '').trim().toUpperCase() || CUR_COUNTRY[bdCur(bd)] || 'MY' : O.mainCountry(); };
+  O.countryLabel = function (c) { return (D.countryName && D.countryName[c]) || c; };
+  O.defaultCurrencyFor = function (c) { var hit = 'MYR'; Object.keys(CUR_COUNTRY).some(function (k) { if (CUR_COUNTRY[k] === c) { hit = k; return true; } return false; }); return ['FR', 'IT', 'ES', 'IE', 'DE'].indexOf(c) >= 0 ? 'EUR' : hit; };
+  /* the countries in use (buildings that are not archived), most buildings first */
+  O.countries = function () {
+    if (SC.list && SC.listVer === SC.ver) return SC.list;
+    var n = {};
+    (RAW.buildings || []).forEach(function (bd) { if (!bd.archived) { var c = O.countryOf(bd); n[c] = (n[c] || 0) + 1; } });
+    var list = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a === 'MY' ? -1 : b === 'MY' ? 1 : a.localeCompare(b)); });
+    SC.list = list.length ? list : ['MY']; SC.listVer = SC.ver; return SC.list;
+  };
+  O.mainCountry = function () { return O.countries()[0]; };
+  O.multiCountry = function () { return O.countries().length > 1; };
+  function countryKey() { return 'viewCountry:' + (O.state && O.state.workspace || ''); }
+  O.viewCountry = function () {
+    if (SC.off || !O._started || !O.multiCountry()) return '';
+    var c = O.store.get(countryKey(), ''); return O.countries().indexOf(c) >= 0 ? c : '';
+  };
+  /* true when x (unit, booking, record or id) is in the country on screen; always true with all countries */
+  O.inView = function (x) { var c = O.viewCountry(); if (!c || x == null || x === '') return true; var bd = O.buildingOf(x); return bd ? O.countryOf(bd) === c : c === O.mainCountry(); };
+  O.setCountry = function (c) { O.store.set(countryKey(), String(c || '').toUpperCase()); SC.ver++; O.emit('country'); };
+  function belongs(k, x, c) {
+    if (k === 'buildings') return O.countryOf(x) === c;
+    var bd = O.buildingOf(x);
+    if (!bd && x.bookingId && D.booking) bd = O.buildingOf(D.booking(x.bookingId));
+    if (bd) return O.countryOf(bd) === c;
+    return EVERYWHERE[k] ? true : c === O.mainCountry();
+  }
+  function scopedView(k) {
+    var raw = RAW[k], c = O.viewCountry();
+    if (!c || !Array.isArray(raw)) return raw;
+    var v = VIEW[k];
+    if (v && v._ver === SC.ver && v._c === c && v._n === raw.length) return v;
+    v = O.unscoped(function () { return raw.filter(function (x) { return x && belongs(k, x, c); }); });
+    var AP = Array.prototype;
+    Object.defineProperties(v, {
+      _ver: { value: SC.ver }, _c: { value: c }, _n: { value: raw.length, writable: true },
+      push: { value: function () { AP.push.apply(raw, arguments); this._n = raw.length; return AP.push.apply(this, arguments); } },
+      unshift: { value: function () { AP.unshift.apply(raw, arguments); this._n = raw.length; return AP.unshift.apply(this, arguments); } },
+      splice: { value: function (start, del) {
+        var len = this.length, add = AP.slice.call(arguments, 2);
+        start = start < 0 ? Math.max(0, len + start) : Math.min(start || 0, len);
+        del = arguments.length < 2 ? len - start : Math.max(0, Math.min(del, len - start));
+        var after = this[start + del];
+        for (var i = start; i < start + del; i++) { var j = raw.indexOf(this[i]); if (j >= 0) raw.splice(j, 1); }
+        if (add.length) { var at = after ? raw.indexOf(after) : -1; AP.splice.apply(raw, [at >= 0 ? at : raw.length, 0].concat(add)); }
+        this._n = raw.length;
+        return AP.splice.apply(this, [start, del].concat(add));
+      } }
+    });
+    VIEW[k] = v; return v;
+  }
+  SCOPED.forEach(function (k) {
+    RAW[k] = Array.isArray(D[k]) ? D[k] : [];
+    Object.defineProperty(D, k, { configurable: true, enumerable: true, get: function () { return scopedView(k); }, set: function (v) { RAW[k] = v; SC.ver++; } });
+  });
+  O.on('data', function () { SC.ver++; });
+  O.on('remote', function () { SC.ver++; });
+  O.building = function (id) { var a = RAW.buildings; if (!id || !a) return null; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; };
+  O.unitType = function (id) { var a = RAW.unitTypes; if (!id || !a) return null; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; };
+  /* the country picker in the top bar; empty with one country */
+  O.countrySwitchHTML = function () {
+    if (!O.multiCountry()) return '';
+    var v = O.viewCountry();
+    return '<label class="country-switch" title="Show one country"><select class="select select-sm" id="country-switch" aria-label="Country">' +
+      '<option value="">All countries</option>' + O.countries().map(function (c) { return '<option value="' + O.esc(c) + '"' + (c === v ? ' selected' : '') + '>' + O.esc(O.countryLabel(c)) + '</option>'; }).join('') + '</select></label>';
+  };
   /* the unit type of a unit (property or id), or null for an untyped unit */
   O.typeOf = function (p) { if (typeof p === 'string') p = D.propById[p]; return p && p.unitTypeId ? O.unitType(p.unitTypeId) : null; };
   O.unitsOfType = function (typeId, withArchived) { return D.properties.filter(function (p) { return p && p.unitTypeId === typeId && (withArchived || !p.archived); }).sort(function (a, b) { return O.assign.naturalCompare(a.unitNo || a.name, b.unitNo || b.name); }); };
@@ -1204,7 +1284,7 @@
   };
   O.invoice.markPaid = function (b, method) {
     if (b.paidAt) return;
-    var max = D.bookings.reduce(function (m, x) { return x.receiptNo ? Math.max(m, +((/(\d+)\D*$/.exec(x.receiptNo) || [0, 0])[1])) : m; }, 1000);
+    var max = O.raw('bookings').reduce(function (m, x) { return x.receiptNo ? Math.max(m, +((/(\d+)\D*$/.exec(x.receiptNo) || [0, 0])[1])) : m; }, 1000);
     b.paidAt = D.TODAY; b.receiptNo = 'RCP-' + D.TODAY.slice(0, 4) + '-' + (max + 1); b.payMethod = method || 'Bank transfer';
     if (b.status === 'pending') b.status = 'confirmed';
     O.emit('data', { type: 'payment', bookingId: b.id });
@@ -1446,14 +1526,15 @@
   };
 
   /* bookings move along as time passes: confirmed -> in-house after the check-in day, -> checked out after check-out time */
-  O.rollStatuses = function () {
+  O.rollStatuses = O.unscopedFn(function () {
     var N = D.NOW, T = D.TODAY;
     D.bookings.forEach(function (b) {
       if (b.status !== 'confirmed' && b.status !== 'checked_in') return;
       if (N >= b.checkOut + 'T' + (b.checkOutTime || '11:00')) { b.status = 'checked_out'; if (b.codeStatus && b.codeStatus !== 'cancelled') b.codeStatus = 'expired'; }
       else if (b.status === 'confirmed' && b.checkIn < T) b.status = 'checked_in';
     });
-  };
+  });
+
 
   /* background jobs (create turnover tasks, reminders...). Pages register at load:
      O.automation.register('turnovers', function (reason) { ...mutate D in place, deterministic ids so two devices never duplicate... })
@@ -1461,7 +1542,7 @@
   var JOBS = [];
   O.automation = {
     register: function (name, fn) { JOBS = JOBS.filter(function (j) { return j[0] !== name; }); JOBS.push([name, fn]); },
-    run: function (reason) { if (!O.sync.canWrite()) return; JOBS.forEach(function (j) { try { j[1](reason || 'manual'); } catch (e) { console.error('automation ' + j[0], e); } }); }
+    run: function (reason) { if (!O.sync.canWrite()) return; O.unscoped(function () { JOBS.forEach(function (j) { try { j[1](reason || 'manual'); } catch (e) { console.error('automation ' + j[0], e); } }); }); }
   };
 
   /* ===================================================================
@@ -1520,7 +1601,8 @@
     });
     return out;
   }
-  O.reindex = function () { /* D.propById / D.itemById follow D.properties / D.invItems (same objects) */
+  O.reindex = function () { O.unscoped(reindex); };
+  function reindex() { /* D.propById / D.itemById follow D.properties / D.invItems (same objects) */
     Object.keys(D.propById).forEach(function (k) { delete D.propById[k]; }); D.properties.forEach(function (p) { D.propById[p.id] = p; });
     if (D.itemById) { Object.keys(D.itemById).forEach(function (k) { delete D.itemById[k]; }); D.invItems.forEach(function (x) { D.itemById[x.id] = x; }); }
   };
@@ -1572,6 +1654,7 @@
     });
     return { rows: rows, blobs: blobs };
   }
+  snapshotAll = O.unscopedFn(snapshotAll); applyRows = O.unscopedFn(applyRows); diff = O.unscopedFn(diff);
   function setStatus(st, err) { S.status = st; S.error = err || null; O.emit('sync'); }
   S.flush = function () {
     clearTimeout(S._timer); S._timer = null;
@@ -1617,15 +1700,15 @@
   window.addEventListener('beforeunload', function (e) { if (S._writing || S._timer) { S.flush(); e.preventDefault(); e.returnValue = ''; } });
 
   /* the built-in demo, kept so a fresh workspace can load it later (server mode) */
-  S.captureDemo = function () {
+  S.captureDemo = O.unscopedFn(function () {
     var out = {}; Object.keys(REG).forEach(function (k) { if (REG[k].kind === 'demo' && D[k] !== undefined) out[k] = clone(D[k]); });
     S._demo = out; return out;
-  };
+  });
   /* start: load from the adapter, merge, remember what is saved, then keep saving */
   S.start = function () {
     var A = S.adapter || (S.adapter = O.localAdapter());
     setStatus('loading');
-    return Promise.resolve(A.load()).then(function (res) {
+    return Promise.resolve(A.load()).then(O.unscopedFn(function (res) {
       res = res || {};
       if (A.replace) {
         /* the server holds the whole workspace: start from empty demo collections and defaults */
@@ -1644,7 +1727,8 @@
       S.started = true;
       setStatus(A.name === 'local' ? 'local' : S.readOnly ? 'readonly' : 'saved');
       if (A.subscribe) S._unsub = A.subscribe(S.remote);
-    });
+      SC.ver++;
+    }));
   };
 
   /* local adapter: this browser's storage, layered over the built-in demo. Other tabs see changes through 'storage' events. */
@@ -1829,8 +1913,8 @@
     try { def.render(root, ctx); }
     catch (e) { console.error(e); root.innerHTML = U.empty('Something went wrong showing this section: ' + e.message, '⚠'); }
   };
-  ['theme', 'viewer', 'lang', 'workspace', 'data'].forEach(function (evt) {
-    O.on(evt, function () { if (!O._started) return; if (evt !== 'data') paintShell(); if (evt === 'data') { paintBadges(); paintTabs(); } var def = O.pages[O.state.page]; if (evt === 'data' && def && def.noDataRerender) return; if (held && (evt === 'data' || evt === 'lang' || evt === 'theme')) { deferred = true; return; } O.render(false); });
+  ['theme', 'viewer', 'lang', 'workspace', 'country', 'data'].forEach(function (evt) {
+    O.on(evt, function () { if (!O._started) return; if (evt !== 'data') paintShell(); if (evt === 'data') { paintBadges(); paintTabs(); paintCountry(); } var def = O.pages[O.state.page]; if (evt === 'data' && def && def.noDataRerender) return; if (held && (evt === 'data' || evt === 'lang' || evt === 'theme')) { deferred = true; return; } O.render(false); });
   });
   O.on('sync', paintSync);
 
@@ -1901,7 +1985,12 @@
     O.$('#bell-menu').style.minWidth = '320px';
     O.$('#bell-btn .dot').hidden = !ns.length;
     O.$('#lock-btn').hidden = !O.can('guestapp.doorCodes');
-    paintTabs(); paintSync();
+    paintCountry(); paintTabs(); paintSync();
+  }
+  function paintCountry() {
+    var cs = O.$('#country-slot'); if (!cs) return;
+    var h = O.countrySwitchHTML(); if (cs._h === h) return; cs._h = h; cs.innerHTML = h;
+    var sel = O.$('#country-switch', cs); if (sel) sel.onchange = function () { O.setCountry(sel.value); };
   }
   /* local test mode: pick anyone on the team (one person per role) */
   function viewerChoices() { var seen = {}; return D.staff.filter(function (s) { if (s.status === 'left' || seen[s.role + (s.role === 'housekeeping' ? s.id : '')]) return false; seen[s.role + (s.role === 'housekeeping' ? s.id : '')] = 1; return true; }); }

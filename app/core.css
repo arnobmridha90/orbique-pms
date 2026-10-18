@@ -466,3 +466,6 @@ html.native .pg-website .wb-fullbar{padding-top:calc(10px + var(--sat)); padding
 /* currency picker on totals pages (only with buildings in more than one currency) */
 .cur-switch{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .cur-switch .select{width:auto;min-width:0}
+.country-switch .select{width:auto;min-width:0;max-width:180px}
+#country-slot:empty{display:none}
+@media (max-width:700px){.country-switch .select{max-width:112px;padding-left:8px}}
