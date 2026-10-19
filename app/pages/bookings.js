@@ -234,7 +234,7 @@
     var digits = q.replace(/\D/g, '');
     return digits.length >= 4 && String(b.guest.phone || '').replace(/\D/g, '').indexOf(digits) >= 0;
   }
-  function passStatus(b) { return !st.status.length || st.status.indexOf(b.status) >= 0; }
+  function passStatus(b) { return st.status.length ? st.status.indexOf(b.status) >= 0 : b.status !== 'cancelled'; } /* cancelled bookings show only with the Cancelled filter */
   function passPlat(b) { return !st.plat || b.channel === st.plat; }
   function passAction(b) { return !st.action || needsAction(b); }
   function baseList() { return D.bookings.filter(function (b) { return (!st.prop || b.propertyId === st.prop) && ((st.q && st.q.trim()) || inRange(b)) && matchQ(b); }); } /* a search looks at every date, not just the range */
@@ -354,9 +354,10 @@
         var forStatus = base.filter(function (b) { return passPlat(b) && passAction(b); });
         var forAction = base.filter(function (b) { return passStatus(b) && passPlat(b); });
         var rows = base.filter(function (b) { return passStatus(b) && passPlat(b) && passAction(b); });
-        var L = rows.filter(live), cancelled = rows.length - L.length;
+        var L = rows.filter(live), cancelled = st.status.length ? rows.length - L.length : 0;
+        var hiddenCx = st.status.length ? 0 : forStatus.filter(function (b) { return !live(b); }).length;
 
-        var chips = chip('data-st', 'all', !st.status.length, 'All', forStatus.length) + STATUS_ORDER.map(function (s) {
+        var chips = chip('data-st', 'all', !st.status.length, 'All', forStatus.filter(live).length) + STATUS_ORDER.map(function (s) {
           var n = forStatus.filter(function (b) { return b.status === s; }).length;
           return chip('data-st', s, st.status.indexOf(s) >= 0, '<i class="sw" style="background:var(--st-' + ST_VAR[s] + ')"></i>' + esc(U.statusLabel(s)), n);
         }).join('') + chip('data-action', '1', st.action, O.icon('alert') + 'Needs action', forAction.filter(needsAction).length, ' warnchip', actionTitle());
@@ -415,7 +416,7 @@
         dyn.innerHTML =
           '<div class="bk-chips">' + chips + '</div>' +
           (D.bookings.length ? '<div class="bk-sum"><div class="txt"><b>' + fmt.plural(L.length, 'booking') + '</b> ' + (st.q && st.q.trim() ? 'matching your search, any dates' : matchTxt + ' <b>' + esc(rangeText()) + '</b>') +
-            (cancelled ? ' <span class="muted">+ ' + cancelled + ' cancelled</span>' : '') + statsLink + '</div>' +
+            (cancelled ? ' <span class="muted">+ ' + cancelled + ' cancelled</span>' : '') + (hiddenCx ? ' · <button type="button" class="bk-link" data-st="cancelled" title="Cancelled bookings are hidden. Show them">' + fmt.plural(hiddenCx, 'cancelled booking') + ' hidden</button>' : '') + statsLink + '</div>' +
             (filtersActive() ? '<button type="button" class="btn btn-ghost btn-sm" data-act="clear">' + O.icon('x') + 'Clear filters</button>' : '') +
             '<button type="button" class="btn btn-ghost btn-sm xp" data-act="expand"' + (anyClosed ? '' : ' disabled') + '>Expand all</button>' +
             '<button type="button" class="btn btn-ghost btn-sm xp" data-act="collapse"' + (anyOpen ? '' : ' disabled') + '>Collapse all</button></div>' : '') +
