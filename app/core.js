@@ -1913,7 +1913,7 @@
     O.$('#tb-title').textContent = O.t(id);
     O.$('#tb-desc').textContent = (def && def.desc) || '';
     document.title = O.t(id) + ' · ' + O.ws().name;
-    actions.innerHTML = '';
+    actions.innerHTML = ''; actions.onclick = null; /* a page's header click handler must not fire on the next page */
     root.className = 'page-root';
     if (O.OWNER_ONLY[id] && !O.isOwner()) { root.innerHTML = U.locked(O.t(id)); return; }
     if (!O.allowed(id)) { root.innerHTML = U.locked(O.t(id), { reason: 'permission' }); return; } /* Staff Access */
