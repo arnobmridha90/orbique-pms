@@ -8,6 +8,13 @@
  *   media       {conversationId, index}         inbox viewer   a file the guest sent on WhatsApp: {mime, name, data (base64)}
  *   whatsapp-connect    {phoneNumberId}         owner          this workspace answers on that WhatsApp business number
  *   whatsapp-disconnect                         owner
+ *   sites-on                                    owner          switch on booking-site messages and reviews (the Channex
+ *                                                              Messaging & Reviews app) for every connected building, then
+ *                                                              fetch the reviews and recent conversations already there
+ *   review-reply        {reviewId, text}        reviews.reply  the public reply to a booking-site review
+ *
+ * `send` also takes via 'email': the reply goes from the workspace's Orbique address (config.email.address), so the
+ * guest's answer comes back into the same conversation.
  *
  * Sign-in: "Authorization: Bearer <Supabase access token>"; the caller must be an active member of an active workspace.
  * Demo workspaces never send anything. Tokens and keys never leave the server; nothing here returns them.
@@ -15,17 +22,21 @@
 import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, conflict, id as idField, uuid as uuidField } from './_lib/http.js';
 import { requireAdminClient, caller, getOrg, membership } from './_lib/supabase.js';
 import { channexConfig } from './_lib/channex.js';
-import { must, record, blob } from './_lib/channex-db.js';
+import { must, record, blob, tracked } from './_lib/channex-db.js';
 import { waConfig, fetchMedia, phoneNumberInfo, WhatsAppError } from './_lib/whatsapp.js';
 import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from './_lib/translate.js';
-import { canInbox, sendReply, patchMsg, numberOf, inboxSettings } from './_lib/inbox.js';
+import { canInbox, sendReply, patchMsg, numberOf, inboxSettings, receiveChannex } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
+import { inboundConfig, addressFor } from './_lib/email-in.js';
+import { pullReviews, replyReview } from './_lib/reviews.js';
 
+export const SITES_BUDGET_MS = 15000; // Vercel stops api functions at 20 s (vercel.json)
+export const BACKFILL_THREADS = 15;
 export const MEDIA_MAX = 3 * 1024 * 1024; // base64 grows it by a third; Vercel answers at most 4.5 MB
 
-// Booking-site chat needs Channex's paid Messages app, which is not used: guests are reached on WhatsApp.
-// Switch it back on here (and add the message events to WEBHOOK_EVENTS in channex.js) if that changes.
-export const CHANNEX_MESSAGES = false;
+// Booking-site chat and reviews through Channex's Messaging & Reviews app (switched on 2026-10-19). A building without
+// the app answers 403, which the inbox explains; `sites-on` installs it.
+export const CHANNEX_MESSAGES = true;
 function channexMessages(cx, orgId) { return CHANNEX_MESSAGES && allowedOrg(cx, orgId); }
 
 async function workspace(sb, body, me, need) {
@@ -35,7 +46,7 @@ async function workspace(sb, body, me, need) {
   const org = await getOrg(sb, orgId);
   if (org.status !== 'active') throw forbidden('This workspace is paused. Please contact Orbique.');
   if (need === 'owner') { if (m.role !== 'owner') throw forbidden('Only the account owner of this workspace can do that.'); }
-  else if (!(await canInbox(sb, orgId, m, need || 'inbox'))) throw forbidden(need === 'inbox.send' ? 'Your access does not include messaging guests.' : 'Your access does not include the guest inbox.');
+  else if (!(await canInbox(sb, orgId, m, need || 'inbox'))) throw forbidden(need === 'inbox.send' ? 'Your access does not include messaging guests.' : need === 'reviews.reply' ? 'Your access does not include replying to reviews.' : 'Your access does not include the guest inbox.');
   return { org, member: m };
 }
 
@@ -70,12 +81,19 @@ async function config(sb, body, me) {
   const num = await numberOf(sb, ws.org.id);
   const cx = channexConfig();
   const settings = await inboxSettings(sb, ws.org.id);
+  const demo = await isDemo(sb, ws.org.id);
+  const em = inboundConfig();
+  let address = null;
+  if (!demo && em.domain) { try { address = await addressFor(sb, em, ws.org, me.id); } catch (e) { console.error('[messages] email address:', e && e.message); } }
+  const sites = await blob(sb, ws.org.id, 'inboxSites').catch(() => null);
   return {
     whatsapp: { configured: wa.configured, number: num ? { phone: num.display_phone || null, name: num.verified_name || null } : null },
     channex: channexMessages(cx, ws.org.id),
     translate: translateConfig().configured,
     lang: settings.lang, autoTranslate: settings.autoTranslate,
-    demo: await isDemo(sb, ws.org.id)
+    email: { configured: em.configured, address, reply: !!em.key && !!address },
+    sites: sites && typeof sites === 'object' ? { on: !!sites.on, at: sites.at || null, buildings: Array.isArray(sites.buildings) ? sites.buildings : [] } : null,
+    demo
   };
 }
 
@@ -84,14 +102,20 @@ async function sendAction(sb, body, me) {
   if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is sent to guests.');
   const conv = await conversation(sb, ws.org.id, body.conversationId);
   const booking = conv.bookingId ? await record(sb, ws.org.id, 'bookings', String(conv.bookingId)) : null;
-  const via = body.via === 'whatsapp' || body.via === 'channex' ? body.via : null;
+  const via = body.via === 'whatsapp' || body.via === 'channex' || body.via === 'email' ? body.via : null;
   if (!via) throw bad('bad-via', 'Choose how to send it.');
   const cx = channexConfig();
   if (via === 'channex' && !channexMessages(cx, ws.org.id)) throw forbidden('Booking site messages are not switched on for this workspace yet.');
+  let fromAddress = null;
+  if (via === 'email') {
+    const em = inboundConfig();
+    if (!em.key || !em.domain) throw new ApiError(503, 'not-configured', 'Email is not set up on the server yet.');
+    fromAddress = await addressFor(sb, em, ws.org, me.id);
+  }
   const data = await sendReply(sb, {
     orgId: ws.org.id, conv, booking, via, text: typeof body.text === 'string' ? body.text : '',
     orig: typeof body.orig === 'string' ? body.orig.slice(0, 4096) : null, origLang: body.origLang, lang: body.lang,
-    staffId: ws.member.staff_id || null, userId: me.id, channexConfig: cx
+    staffId: ws.member.staff_id || null, userId: me.id, channexConfig: cx, fromAddress, fromName: ws.org.name
   });
   return { conversation: { id: conv.id, data } };
 }
@@ -170,9 +194,79 @@ async function disconnectNumber(sb, body, me) {
   return { number: null };
 }
 
+/* ---------- booking-site messages and reviews (Channex Messaging & Reviews) ---------- */
+
+const NO_TRANSLATE = { configured: false };
+const relId = (o, k) => (o && o.relationships && o.relationships[k] && o.relationships[k].data ? o.relationships[k].data.id : null);
+
+/** The building's recent booking-site conversations, so chats from before the switch-on show up too. -> messages stored */
+async function pullThreads(sb, cx, prop, userId, deadline) {
+  const res = await tracked(sb, cx, { method: 'GET', path: '/message_threads', query: { 'filter[property_id]': prop.channex_property_id, 'pagination[limit]': 50, order_by: 'last_message_received_at', order_direction: 'desc' }, orgId: prop.org_id, propertyId: prop.channex_property_id, source: 'messages', byUser: userId });
+  const since = Date.now() - 90 * 86400000;
+  const threads = (Array.isArray(res && res.data) ? res.data : [])
+    .filter((t) => !relId(t, 'property') || relId(t, 'property') === prop.channex_property_id)
+    .filter((t) => { const a = t.attributes || {}; const at = Date.parse(a.last_message_received_at || a.updated_at || ''); return !Number.isFinite(at) || at >= since; })
+    .slice(0, BACKFILL_THREADS);
+  let n = 0;
+  for (const t of threads) {
+    if (Date.now() > deadline - 2000) break;
+    const r = await tracked(sb, cx, { method: 'GET', path: '/message_threads/' + t.id + '/messages', query: { 'pagination[limit]': 50, order_by: 'inserted_at', order_direction: 'desc' }, orgId: prop.org_id, propertyId: prop.channex_property_id, source: 'messages', byUser: userId });
+    const list = (Array.isArray(r && r.data) ? r.data : []).map((m) => Object.assign({ id: m.id }, m.attributes || {}))
+      .sort((a, b) => (String(a.inserted_at) < String(b.inserted_at) ? -1 : 1));
+    const provider = t.attributes && t.attributes.provider;
+    for (const m of list) {
+      const out = await receiveChannex(sb, prop, 'message', Object.assign({}, m, { message_thread_id: t.id, booking_id: relId(t, 'booking'), ota_name: provider }), { translateConfig: NO_TRANSLATE, baseUrl: cx.baseUrl });
+      if (out.status === 'stored') n++;
+    }
+  }
+  return n;
+}
+
+async function sitesOn(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'owner');
+  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is connected to the booking sites.');
+  const cx = channexConfig();
+  if (!allowedOrg(cx, ws.org.id)) throw forbidden('Channel connections are not switched on for this workspace yet. Please contact Orbique.');
+  const props = must(await sb.from('channex_properties').select('org_id, env, building_id, channex_property_id, status').eq('org_id', ws.org.id).eq('env', cx.env).neq('status', 'disconnected'), 'load buildings') || [];
+  if (!props.length) throw bad('no-buildings', 'No building is connected to the channel manager yet. Connect one on the Channels page first.');
+  const deadline = Date.now() + SITES_BUDGET_MS;
+  const inst = await tracked(sb, cx, { method: 'GET', path: '/applications/installed', query: { 'pagination[limit]': 100 }, orgId: ws.org.id, source: 'apps', byUser: me.id });
+  const have = new Set((Array.isArray(inst && inst.data) ? inst.data : []).map((r) => r.attributes || {}).filter((a) => a.application_code === 'channex_messages').map((a) => a.property_id));
+  const out = [];
+  for (const p of props) {
+    const row = { buildingId: p.building_id, installed: have.has(p.channex_property_id), reviews: 0, messages: 0, error: null };
+    if (!row.installed) {
+      try {
+        await tracked(sb, cx, { method: 'POST', path: '/applications/install', body: { application_installation: { property_id: p.channex_property_id, application_code: 'channex_messages' } }, orgId: ws.org.id, propertyId: p.channex_property_id, source: 'apps', byUser: me.id });
+        row.installed = true; row.added = true;
+      } catch (e) {
+        row.error = 'Channex did not switch on the Messaging & Reviews app: ' + String(e && e.message || e).slice(0, 200);
+        out.push(row);
+        continue;
+      }
+    }
+    try { if (Date.now() < deadline - 3000) row.reviews = (await pullReviews(sb, cx, p, { byUser: me.id })).saved; } catch (e) { row.error = 'Reviews could not be fetched yet: ' + String(e && e.message || e).slice(0, 200); }
+    try { if (Date.now() < deadline - 3000) row.messages = await pullThreads(sb, cx, p, me.id, deadline); } catch (e) { row.error = row.error || 'Earlier conversations could not be fetched yet: ' + String(e && e.message || e).slice(0, 200); }
+    out.push(row);
+  }
+  const saved = { on: out.some((r) => r.installed), at: new Date().toISOString(), buildings: out.map((r) => ({ buildingId: r.buildingId, installed: r.installed, error: r.error })) };
+  must(await sb.from('blobs').upsert({ org_id: ws.org.id, key: 'inboxSites', data: { v: saved } }, { onConflict: 'org_id,key' }), 'save settings');
+  return { buildings: out, sites: saved };
+}
+
+async function reviewReplyAction(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'reviews.reply');
+  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is posted to the booking sites.');
+  const cx = channexConfig();
+  if (!channexMessages(cx, ws.org.id)) throw forbidden('Booking-site reviews are not switched on for this workspace yet.');
+  const review = await replyReview(sb, cx, ws.org.id, body.reviewId, body.text, ws.member.staff_id || null, { userId: me.id });
+  return { review: { id: review.id, data: review } };
+}
+
 const ACTIONS = {
   config, send: sendAction, translate: translateAction, preview, media,
-  'whatsapp-connect': connectNumber, 'whatsapp-disconnect': disconnectNumber
+  'whatsapp-connect': connectNumber, 'whatsapp-disconnect': disconnectNumber,
+  'sites-on': sitesOn, 'review-reply': reviewReplyAction
 };
 
 export default async function handler(req, res) {

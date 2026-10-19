@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compressValues, diffValues, backoffMs, restrictionValue, planRate, toItems, markDates, stableKey, rejectedItems, datesText, BACKOFF_MAX_MS } from '../../api/_lib/channex-sync.js';
 import { propertyBody, roomTypeBody, ratePlanBody, occupancy, groupTitle, buildingProblems, propertyType, PROPERTY_TYPES, PROPERTY_SETTINGS } from '../../api/_lib/channex-setup.js';
-import { allowedOrg, webhookBody, appUrl, IFRAME_CHANNELS } from '../../api/channex.js';
+import { allowedOrg, webhookBody, appUrl, IFRAME_CHANNELS, WEBHOOK_EVENTS } from '../../api/channex.js';
 import { todayMY, addDays } from '../../api/_lib/channex-db.js';
 
 const row = (target_id, date, value) => ({ target_id, date, value });
@@ -251,7 +251,8 @@ test('allowlist: listed orgs only; empty list allows none in staging and all in 
 test('webhook body per plan: global, active, data, token header, signing key when set', () => {
   const w = webhookBody({ webhookToken: 'tok' }, 'https://orbique.example', { CHANNEX_SIGNING_KEY_ID: 'sk-1' });
   assert.equal(w.callback_url, 'https://orbique.example/api/channex-webhook');
-  assert.equal(w.event_mask, 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;new_channel;updated_channel;disconnect_channel;disconnect_listing');
+  assert.equal(w.event_mask, WEBHOOK_EVENTS);
+  assert.ok(w.event_mask.split(';').includes('message') && w.event_mask.split(';').includes('review'));
   assert.equal(w.is_global, true); assert.equal(w.is_active, true); assert.equal(w.send_data, true); assert.equal(w.property_id, null);
   assert.deepEqual(w.headers, { 'X-Orbique-Webhook-Token': 'tok' });
   assert.equal(w.is_signed, true); assert.equal(w.signing_key_id, 'sk-1');
