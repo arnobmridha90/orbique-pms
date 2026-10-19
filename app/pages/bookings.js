@@ -237,7 +237,7 @@
   function passStatus(b) { return !st.status.length || st.status.indexOf(b.status) >= 0; }
   function passPlat(b) { return !st.plat || b.channel === st.plat; }
   function passAction(b) { return !st.action || needsAction(b); }
-  function baseList() { return D.bookings.filter(function (b) { return (!st.prop || b.propertyId === st.prop) && inRange(b) && matchQ(b); }); }
+  function baseList() { return D.bookings.filter(function (b) { return (!st.prop || b.propertyId === st.prop) && ((st.q && st.q.trim()) || inRange(b)) && matchQ(b); }); } /* a search looks at every date, not just the range */
   function filtersActive() { return !!(st.status.length || st.plat || st.action || (st.q && st.q.trim())); }
   function filterCount() { return st.status.length + (st.plat ? 1 : 0) + (st.action ? 1 : 0) + (st.prop ? 1 : 0) + (st.match !== 'stay' ? 1 : 0); }
 
@@ -414,7 +414,7 @@
 
         dyn.innerHTML =
           '<div class="bk-chips">' + chips + '</div>' +
-          (D.bookings.length ? '<div class="bk-sum"><div class="txt"><b>' + fmt.plural(L.length, 'booking') + '</b> ' + matchTxt + ' <b>' + esc(rangeText()) + '</b>' +
+          (D.bookings.length ? '<div class="bk-sum"><div class="txt"><b>' + fmt.plural(L.length, 'booking') + '</b> ' + (st.q && st.q.trim() ? 'matching your search, any dates' : matchTxt + ' <b>' + esc(rangeText()) + '</b>') +
             (cancelled ? ' <span class="muted">+ ' + cancelled + ' cancelled</span>' : '') + statsLink + '</div>' +
             (filtersActive() ? '<button type="button" class="btn btn-ghost btn-sm" data-act="clear">' + O.icon('x') + 'Clear filters</button>' : '') +
             '<button type="button" class="btn btn-ghost btn-sm xp" data-act="expand"' + (anyClosed ? '' : ' disabled') + '>Expand all</button>' +
