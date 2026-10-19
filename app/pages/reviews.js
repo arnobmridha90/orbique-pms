@@ -382,7 +382,7 @@
       reply = '<div class="rv-compose"><div class="rc-head"><label for="rv-t-' + r.id + '">' + (r.reply ? 'Edit your public reply on ' : 'Public reply on ') + esc(U.platName(r.platform)) + '</label>' +
         (isSug ? '<span class="sug">' + O.icon('sparkle') + 'Suggested from the rating and what ' + esc(greetName(r.guest)) + ' wrote</span>' : '') + '<span class="cc" data-cc="' + r.id + '">' + text.length + ' characters</span></div>' +
         '<textarea class="textarea" id="rv-t-' + r.id + '" data-draft="' + r.id + '" rows="4">' + esc(text) + '</textarea>' +
-        '<div class="rc-acts"><button type="button" class="btn btn-primary btn-sm" data-act="post" data-id="' + r.id + '">' + O.icon('send') + (r.reply ? 'Update reply' : 'Post reply') + '</button>' +
+        '<div class="rc-acts"><button type="button" class="btn btn-primary btn-sm" data-act="post" data-id="' + r.id + '"' + (st.busy === r.id ? ' disabled' : '') + '>' + O.icon('send') + (st.busy === r.id ? 'Posting…' : r.reply ? 'Update reply' : 'Post reply') + '</button>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-act="another" data-id="' + r.id + '">' + O.icon('refresh') + 'Another suggestion</button>' +
         (r.reply ? '<button type="button" class="btn btn-ghost btn-sm" data-act="canceledit" data-id="' + r.id + '">Cancel</button>' : '') +
         '<span class="grow"></span>' +
@@ -437,11 +437,24 @@
 
   /* ------------------------------------------------------------------ actions */
   function findReview(id) { return D.reviews.filter(function (r) { return r.id === id; })[0]; }
+  var ctx0 = null;
   function post(r, text) {
     if (!canReply()) { U.toast(NO_REPLY, 'bad'); return; }
     text = (text || '').trim();
     if (text.length < 10) { U.toast('Write a reply of at least 10 characters first', 'bad'); return; }
     var was = !!r.reply;
+    /* a review that came from a booking site through Channex: the reply is posted there first (api/messages.js) */
+    if (r.cx && O.auth && O.auth.inbox && O.sync.adapter && O.sync.adapter.name === 'server') {
+      if (st.busy) return;
+      st.busy = r.id; ctx0 && ctx0.rerender && ctx0.rerender();
+      O.auth.inbox('review-reply', { reviewId: r.id, text: text }).then(function (res) {
+        if (res && res.review) O.sync.remote([{ coll: 'reviews', id: res.review.id, data: res.review.data, deleted: false }], []);
+        delete st.drafts[r.id]; delete st.editing[r.id];
+        if (st.reply === 'needs') st.keep[r.id] = true;
+        U.toast((was ? 'Reply updated on ' : 'Reply posted on ') + U.platName(r.platform) + ' for ' + r.guest);
+      }, function (e) { U.toast(e.message || 'The reply was not posted. Please try again.', 'bad'); }).then(function () { st.busy = null; if (ctx0 && ctx0.rerender) ctx0.rerender(); });
+      return;
+    }
     r.reply = { text: text, date: D.TODAY, by: O.state.viewer };
     delete st.drafts[r.id]; delete st.editing[r.id];
     if (st.reply === 'needs') st.keep[r.id] = true; /* stays on screen (as replied) until the filters change */
@@ -528,6 +541,7 @@
   O.page('reviews', {
     desc: 'Every platform in one place: filter, reply and spot what to fix',
     render: function (root, ctx) {
+      ctx0 = ctx;
       var pr = ctx.params || {};
       syncDates();
       relink();

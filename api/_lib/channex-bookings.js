@@ -25,13 +25,16 @@ import G from './shared/guestmsg.cjs';
 import { channexConfig, channelView, ChannexError } from './channex.js';
 import { must, records, tracked, addAlert, todayMY, addDays, daysBetween, isIso } from './channex-db.js';
 import { CONNECTED } from './channex-sync.js';
-import { MESSAGE_EVENTS, receiveChannex } from './inbox.js';
+import { MESSAGE_EVENTS, receiveChannex, postNotice } from './inbox.js';
+import { saveReview } from './reviews.js';
 
 export const FEED_EVERY_MS = 15 * 60 * 1000;
 export const EVENT_RETRY_AFTER_MS = 60 * 1000;   // the webhook handles an event inline; the worker picks up what is left
 export const EVENT_RETRY_DAYS = 7;
 export const REASSIGN_DAYS = 14;
 const LIVE_STATUSES = ['confirmed', 'checked_in', 'checked_out', 'pending'];
+const REVIEW_EVENTS = ['review', 'updated_review'];
+const WARNING_EVENTS = ['sync_warning', 'rate_error', 'channel_removal_warning', 'property_removal_warning'];
 const BOOKING_EVENTS = ['booking', 'booking_new', 'booking_modification', 'booking_cancellation', 'booking_unmapped_room', 'booking_unmapped_rate', 'non_acked_booking'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (v) => typeof v === 'string' && UUID.test(v);
@@ -716,8 +719,28 @@ export async function processEvent(sb, ev, opts = {}) {
       const prop = await propertyRow(sb, cfg, propertyId);
       if (!prop) status = 'ignored';
       else {
-        result = await receiveChannex(sb, prop, ev.event, p, { now: opts.now });
+        result = await receiveChannex(sb, prop, ev.event, p, { now: opts.now, baseUrl: cfg.baseUrl });
         if (result.status === 'ignored') status = 'ignored';
+      }
+    } else if (REVIEW_EVENTS.includes(ev.event)) {
+      // reviews (the Messaging & Reviews app): into the Reviews page, and a line in the inbox for a new one
+      const prop = await propertyRow(sb, cfg, propertyId);
+      if (!prop) status = 'ignored';
+      else {
+        result = await saveReview(sb, prop, p, { notice: (s2, orgId, n) => postNotice(s2, orgId, n, { now: opts.now }) });
+        if (result.status === 'ignored') status = 'ignored';
+      }
+    } else if (WARNING_EVENTS.includes(ev.event)) {
+      // a booking site's warnings: an alert on the Channels page and a line in the inbox
+      const prop = await propertyRow(sb, cfg, propertyId);
+      if (!prop) status = 'ignored';
+      else {
+        const site = clean(p.channel_name || p.channel || p.property_name || 'A booking site', 60);
+        const msg = ev.event === 'channel_removal_warning' ? `${site} will be removed from the channel manager${p.removal_date ? ' on ' + clean(p.removal_date, 10) : ''}${p.days_left !== undefined ? ' (' + clean(p.days_left, 4) + ' days left)' : ''}. Check the channel in Channex.`
+          : ev.event === 'property_removal_warning' ? `The building ${site} will be removed from the channel manager${p.removal_date ? ' on ' + clean(p.removal_date, 10) : ''}. Check the Channex account.`
+          : `${site} reported a ${ev.event === 'rate_error' ? 'problem with a rate' : 'warning'} on the last sync${p.error_type || p.message ? ': ' + clean(p.error_type || p.message, 200) : ''}.`;
+        await addAlert(sb, { orgId: prop.org_id, kind: ev.event === 'channel_removal_warning' || ev.event === 'property_removal_warning' ? 'channel_disconnected' : 'rate_warning', message: msg, ref: { key: ev.event + ':' + (p.channel_id || propertyId), channelId: p.channel_id || null, propertyId } });
+        result = await postNotice(sb, prop.org_id, { feed: 'channex', via: 'channex', xid: 'cx:' + ev.event + ':' + (p.live_feed_event_id || ev.id), text: msg }, { now: opts.now });
       }
     } else status = 'ignored';
     await markEvent(sb, ev.id, status, null);

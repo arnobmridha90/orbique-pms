@@ -23,7 +23,9 @@ import { setupBuilding, loadBuilding, buildingProblems, brandContact } from './_
 import { runWorker, forceMarks, resendRejected, CONNECTED } from './_lib/channex-sync.js';
 
 export const IFRAME_CHANNELS = 'BDC,AGO,ABB,EXP,CTP';
-export const WEBHOOK_EVENTS = 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;new_channel;updated_channel;disconnect_channel;disconnect_listing';
+// bookings, channel changes and errors; guest messages, inquiries, requests and reviews (the Messaging & Reviews app);
+// the booking sites' warnings. 'booking' already covers booking_new / booking_modification / booking_cancellation.
+export const WEBHOOK_EVENTS = 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;sync_warning;rate_error;new_channel;updated_channel;disconnect_channel;disconnect_listing;channel_removal_warning;property_removal_warning;message;inquiry;reservation_request;alteration_request;accepted_reservation;declined_reservation;review;updated_review;message_thread_booking_assigned';
 const FULL_SYNC_GAP_MS = 5 * 60 * 1000; // a guard against double clicks: Channex asks that a full sync be possible at any time
 const FLUSH_GAP_MS = 2000;
 const TOKEN_LIFE_MS = 15 * 60 * 1000;

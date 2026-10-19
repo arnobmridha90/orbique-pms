@@ -54,7 +54,7 @@ jobs:
       - name: API functions load
         run: |
           node --input-type=module -e "
-            for (const f of ['health', 'account', 'channex', 'channex-worker', 'channex-webhook', 'alerts']) {
+            for (const f of ['health', 'account', 'channex', 'channex-worker', 'channex-webhook', 'alerts', 'messages', 'whatsapp-webhook', 'email-inbound']) {
               const m = await import('./api/' + f + '.js');
               if (typeof m.default !== 'function') throw new Error('api/' + f + '.js has no default export');
             }
@@ -62,6 +62,9 @@ jobs:
 
       - name: Channex tests (node --test)
         run: node --test tests/channex/*.test.mjs
+
+      - name: Inbox tests (WhatsApp, booking sites, email, reviews)
+        run: node --test tests/inbox/*.test.mjs
 
       - name: Local build (single file)
         run: node scripts/build.mjs --local --out "$RUNNER_TEMP/orbique.html"

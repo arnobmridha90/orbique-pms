@@ -6,8 +6,10 @@
  *   pickBooking(bookings, phone, today)         the stay a number belongs to: in house, else the next, else the last
  *   receiveWhatsApp(sb, m, opts)                one incoming WhatsApp message (parseWebhook) -> stored
  *   receiveWhatsAppStatus(sb, s)                sent / delivered / read / failed ticks
- *   receiveChannex(sb, prop, event, payload, opts)  Channex message, inquiry, reservation_request, thread assigned
- *   sendReply(sb, ctx)                          one reply on WhatsApp or the booking site, then stored
+ *   receiveChannex(sb, prop, event, payload, opts)  Channex message, inquiry, reservation_request, alteration_request,
+ *                                               accepted / declined reservation, thread assigned
+ *   postNotice(sb, orgId, n, opts)              a platform notification: in the booking's chat, else the platform's feed
+ *   sendReply(sb, ctx)                          one reply on WhatsApp, the booking site or email, then stored
  *   canInbox(sb, orgId, member, key)            the app's permission rules (O.can) for inbox.send / inbox.notes
  *
  * Message times are written the way the app writes them: Malaysia time 'YYYY-MM-DDTHH:MM'.
@@ -18,6 +20,7 @@ import { must, records, blob, tracked, todayMY, addDays } from './channex-db.js'
 import { ChannexError } from './channex.js';
 import { waConfig, sendText, WINDOW_MS, WhatsAppError } from './whatsapp.js';
 import { translateConfig, translate, langCode } from './translate.js';
+import { inboundConfig, sendEmail } from './email-in.js';
 
 export const myt = (ms) => new Date(ms + 8 * 3600000).toISOString().slice(0, 16);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -25,7 +28,9 @@ const clip = (v, n) => (typeof v === 'string' ? v : v === undefined || v === nul
 const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 export const MAX_TEXT = 4096;
 export const OTA_VIA = { booking: 'booking', airbnb: 'airbnb', expedia: 'expedia' };
-export const VIA_NAME = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site' };
+export const VIA_NAME = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site', email: 'email', agoda: 'Agoda', tripcom: 'Trip.com' };
+/* the conversations that hold a platform's notifications no booking matched (feed key -> the name shown) */
+export const FEED_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', tripcom: 'Trip.com', expedia: 'Expedia', channex: 'Channel manager', email: 'Email' };
 
 /* ---------- phone numbers ---------- */
 
@@ -90,7 +95,7 @@ export async function inboxSettings(sb, orgId) {
 }
 
 /** {lang, tr} for a guest's message in the team's language, or {} (no key, same language, or it failed / took too long). */
-async function translated(text, settings, opts = {}) {
+export async function translated(text, settings, opts = {}) {
   const cfg = opts.translateConfig || translateConfig();
   if (!cfg.configured || !settings.autoTranslate || !String(text || '').trim()) return {};
   try {
@@ -154,7 +159,40 @@ export async function receiveWhatsAppStatus(sb, s) {
 
 /* ---------- Channex in ---------- */
 
-export const MESSAGE_EVENTS = ['message', 'inquiry', 'reservation_request', 'message_thread_booking_assigned'];
+export const MESSAGE_EVENTS = ['message', 'inquiry', 'reservation_request', 'alteration_request', 'accepted_reservation', 'declined_reservation', 'message_thread_booking_assigned'];
+
+/* ---------- notifications ---------- */
+
+/**
+ * One platform notification as a line in the inbox: in the booking's conversation when there is a booking, else in the
+ * platform's notifications feed ('airbnb', 'booking', 'agoda', 'tripcom', 'expedia', 'channex', 'email').
+ *   n {bookingId, feed, via, xid (once only), text, subject, body, link {page, id}, unread (default 1)}
+ * -> {status: 'stored'|'duplicate'|'ignored', conversationId?}
+ */
+export async function postNotice(sb, orgId, n, opts = {}) {
+  const now = opts.now || Date.now();
+  const text = clip(n.text, 1000);
+  if (!text) return { status: 'ignored' };
+  if (n.xid && (await stored(sb, orgId, n.xid))) return { status: 'duplicate' };
+  const feed = FEED_NAME[n.feed] ? n.feed : 'channex';
+  const convId = n.bookingId
+    ? await findConv(sb, orgId, 'nk', 'bk:' + n.bookingId, n.bookingId, {}, now)
+    : await findConv(sb, orgId, 'feed', feed, null, { kind: 'feed', contact: { name: FEED_NAME[feed] + ' notifications', phone: null } }, now);
+  if (!convId) return { status: 'ignored' };
+  const msg = { from: 'system', text, time: myt(n.at || now), via: n.via || feed };
+  if (n.xid) msg.xid = n.xid;
+  if (n.subject) msg.subject = clip(n.subject, 300);
+  if (n.body) msg.body = clip(n.body, MAX_TEXT);
+  if (n.link && typeof n.link.page === 'string') msg.link = { page: clip(n.link.page, 30), id: clip(n.link.id, 80) || undefined };
+  const v = await appendMsg(sb, orgId, convId, msg, n.unread === 0 ? 0 : 1, null);
+  return { status: v ? 'stored' : 'duplicate', conversationId: convId };
+}
+
+const NOTICE_TEXT = {
+  alteration_request: (site, who) => `${who || 'The guest'} asked ${site} to change the reservation. Accept or decline it on ${site}.`,
+  accepted_reservation: (site, who) => `The reservation request${who ? ' from ' + who : ''} was accepted on ${site}.`,
+  declined_reservation: (site, who) => `The reservation request${who ? ' from ' + who : ''} was declined on ${site}.`
+};
 
 /** The Orbique booking (records) for a Channex booking id, or null. */
 async function bookingForChannex(sb, orgId, channexBookingId) {
@@ -181,9 +219,11 @@ function channexTime(p, now) {
   return Number.isFinite(t) ? t : now;
 }
 
-function attachmentsOf(p) {
+function attachmentsOf(p, base) {
   const list = Array.isArray(p.attachments) ? p.attachments : [];
+  const host = String(base || '').replace(/\/api\/v1\/?$/, '');
   return list.map((a) => (typeof a === 'string' ? { url: a } : isObj(a) ? { url: a.url || a.file || a.link, name: a.file_name || a.name, mime: a.content_type || a.type } : null))
+    .map((a) => (a && typeof a.url === 'string' && /^\//.test(a.url) && /^https:\/\//.test(host) ? Object.assign(a, { url: host + a.url }) : a)) // Channex sends links relative to its site
     .filter((a) => a && typeof a.url === 'string' && /^https:\/\//.test(a.url)).slice(0, 10);
 }
 
@@ -202,25 +242,51 @@ export async function receiveChannex(sb, prop, event, p, opts = {}) {
     if (!thread || !b) return { status: 'ignored' };
     return { status: 'stored', conversationId: await findConv(sb, orgId, 'cx', thread, b.id, extra, now) };
   }
-  if (!thread && !b) return { status: 'ignored' };
-  const name = clip(p.guest_name || (isObj(p.customer) && [p.customer.name, p.customer.surname].filter(Boolean).join(' ')) || '', 80);
+  const det = isObj(p.booking_details) ? p.booking_details : isObj(p.bms) ? p.bms : {};
+  const cust = isObj(p.customer) ? p.customer : isObj(det.customer) ? det.customer : null;
+  const name = clip(p.guest_name || det.guest_name || (cust && [cust.name, cust.surname].filter(Boolean).join(' ')) || '', 80);
+  const at0 = channexTime(p, now);
+  if (NOTICE_TEXT[event]) {
+    const text = NOTICE_TEXT[event](VIA_NAME[via] === 'the booking site' ? 'the booking site' : VIA_NAME[via], name);
+    const xid = 'cx:' + event + ':' + (p.id || p.live_feed_event_id || p.booking_id || thread || createHash('sha256').update(JSON.stringify(p)).digest('hex').slice(0, 24));
+    if (thread) {
+      const cid = await findConv(sb, orgId, 'cx', thread, b && b.id, Object.assign({}, extra, { contact: { name: name || 'Guest from ' + VIA_NAME[via], phone: null } }), now);
+      if (!cid) return { status: 'ignored' };
+      const v = await appendMsg(sb, orgId, cid, { from: 'system', text, time: myt(at0), via, xid }, 1, null);
+      return { status: v ? 'stored' : 'duplicate', conversationId: cid };
+    }
+    return postNotice(sb, orgId, { bookingId: b && b.id, feed: via === 'channex' ? 'channex' : via, via, xid, text, at: at0 }, { now });
+  }
+  if (!thread && !b) {
+    if (event === 'inquiry' || event === 'reservation_request') {
+      const what = event === 'inquiry' ? 'New inquiry' : 'New reservation request';
+      const xid = 'cx:' + event + ':' + (p.id || p.live_feed_event_id || createHash('sha256').update(JSON.stringify(p)).digest('hex').slice(0, 24));
+      return postNotice(sb, orgId, { feed: via === 'channex' ? 'airbnb' : via, via, xid, text: `${what} on ${VIA_NAME[via] === 'the booking site' ? 'Airbnb' : VIA_NAME[via]}${name ? ' from ' + name : ''}. Answer it on the site.`, at: at0 }, { now });
+    }
+    return { status: 'ignored' };
+  }
   extra.contact = { name: name || 'Guest from ' + VIA_NAME[via], phone: null };
   const convId = thread ? await findConv(sb, orgId, 'cx', thread, b && b.id, extra, now) : await findConv(sb, orgId, 'cx', 'booking:' + p.booking_id, b.id, extra, now);
   if (!convId) return { status: 'ignored' };
   const at = channexTime(p, now);
   if (event === 'inquiry' || event === 'reservation_request') {
     const what = event === 'inquiry' ? 'New inquiry' : 'New reservation request';
-    const dates = p.checkin_date && p.checkout_date ? `, ${clip(p.checkin_date, 10)} to ${clip(p.checkout_date, 10)}` : '';
+    const cin = p.checkin_date || det.checkin_date || det.arrival_date, cout = p.checkout_date || det.checkout_date || det.departure_date;
+    const dates = cin && cout ? `, ${clip(cin, 10)} to ${clip(cout, 10)}` : '';
     const xid = 'cx:' + event + ':' + (p.id || p.booking_id || thread);
     const v = await appendMsg(sb, orgId, convId, { from: 'system', text: `${what} on ${VIA_NAME[via]}${name ? ' from ' + name : ''}${dates}. Reply here to answer.`, time: myt(at), via, xid }, 1, null);
     return { status: v ? 'stored' : 'duplicate', conversationId: convId };
   }
   const text = clip(p.message, MAX_TEXT);
-  const files = attachmentsOf(p);
+  const files = attachmentsOf(p, opts.baseUrl);
   if (!text && !files.length) return { status: 'ignored' };
   const id = p.id || p.message_id || p.ota_message_id || createHash('sha256').update([thread, p.booking_id, p.message, p.inserted_at || p.created_at].join('|')).digest('hex').slice(0, 32);
   const xid = 'cx:' + id;
   if (await stored(sb, orgId, xid)) return { status: 'duplicate', conversationId: convId };
+  if (p.sender === 'system') {
+    const v = await appendMsg(sb, orgId, convId, { from: 'system', text: clip(text || 'The booking site sent a file.', 1000), time: myt(at), via, xid }, 1, null);
+    return { status: v ? 'stored' : 'duplicate', conversationId: convId };
+  }
   const fromGuest = !p.sender || p.sender === 'guest';
   const out = [];
   if (text) out.push({ from: fromGuest ? 'guest' : 'staff', type: 'text', text, time: myt(at), via, xid });
@@ -241,14 +307,18 @@ export async function receiveChannex(sb, prop, event, p, opts = {}) {
 
 /* ---------- permissions (the same rules as O.can in app/core.js) ---------- */
 
-const SECTION_DEFAULT = { ops: 'edit', housekeeping: 'edit', frontdesk: 'edit', maintenance: 'view', accountant: 'none' };
+const SECTION_DEFAULT = {
+  inbox: { ops: 'edit', housekeeping: 'edit', frontdesk: 'edit', maintenance: 'view', accountant: 'none' },
+  reviews: { ops: 'edit', frontdesk: 'edit' }
+};
 const ACTION_DEFAULT = {
   'inbox.send': ['ops', 'housekeeping', 'frontdesk'],
-  'inbox.notes': ['ops', 'housekeeping', 'frontdesk']
+  'inbox.notes': ['ops', 'housekeeping', 'frontdesk'],
+  'reviews.reply': ['ops', 'frontdesk']
 };
 const LV = { none: 0, view: 1, edit: 2 };
 
-/** Whether this member may do key ('inbox' = see the inbox, 'inbox.send', 'inbox.notes'). */
+/** Whether this member may do key ('inbox' = see the inbox, 'inbox.send', 'inbox.notes', 'reviews.reply'). */
 export async function canInbox(sb, orgId, member, key) {
   if (!member || member.status !== 'active') return false;
   if (member.role === 'owner') return true;
@@ -257,9 +327,10 @@ export async function canInbox(sb, orgId, member, key) {
   if (meta && meta.status === 'suspended') return false;
   const ov = meta && isObj(meta.overrides) ? meta.overrides : {};
   const rp = isObj(rolePerms) ? rolePerms[member.role] : null;
-  const section = 'section:inbox' in ov ? ov['section:inbox'] || 'none'
-    : rp && isObj(rp.sections) && 'inbox' in rp.sections ? rp.sections.inbox : SECTION_DEFAULT[member.role] || 'none';
-  if (key === 'inbox') return LV[section] >= 1;
+  const sec = key.split('.')[0] === 'reviews' ? 'reviews' : 'inbox';
+  const section = ('section:' + sec) in ov ? ov['section:' + sec] || 'none'
+    : rp && isObj(rp.sections) && sec in rp.sections ? rp.sections[sec] : SECTION_DEFAULT[sec][member.role] || 'none';
+  if (key === sec) return LV[section] >= 1;
   if (LV[section] < 2) return false;
   if (key in ov) return !!ov[key];
   if (rp && isObj(rp.actions) && key in rp.actions) return !!rp.actions[key];
@@ -349,6 +420,14 @@ export async function sendReply(sb, ctx) {
     msg.xid = 'cx:' + id;
     if (!ctx.conv.cx && isUuid(tid)) patch.cx = tid;
     if (!ctx.conv.cxBooking && r.channex.booking) patch.cxBooking = r.channex.booking;
+  } else if (ctx.via === 'email') {
+    const to = typeof ctx.conv.em === 'string' && /^[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}$/i.test(ctx.conv.em) ? ctx.conv.em : '';
+    if (!to) throw bad('no-email', 'This conversation did not come by email, so there is no address to answer.');
+    const cfg = ctx.emailConfig || inboundConfig();
+    if (!ctx.fromAddress) throw new ApiError(503, 'not-configured', 'Email is not set up for this workspace yet (Guest inbox, Settings).');
+    const id = await sendEmail(cfg, { fromName: ctx.fromName, from: ctx.fromAddress, to, subject: ctx.conv.emSubject, text, inReplyTo: ctx.conv.emRef }, { fetch: ctx.fetch });
+    msg.via = 'email';
+    msg.xid = 'em:out:' + (id || createHash('sha256').update(to + now + text).digest('hex').slice(0, 32));
   } else {
     throw bad('bad-via', 'Choose how to send it.');
   }

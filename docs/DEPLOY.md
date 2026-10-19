@@ -277,6 +277,19 @@ template**: category **Utility**, name `booking_alert`, language English, body
 (WhatsApp does not accept a template that starts or ends with a value.) Use samples such as `New booking · Airbnb` and `Ana, 2 guests · 2 Nov to 5 Nov (3 nights) · Vortex KLCC 43-6`. Alerts go
 out by WhatsApp once Meta approves it.
 
+## Booking-site messages, reviews and booking email
+
+**Booking-site messages and reviews (Channex Messaging & Reviews).** Two-way chat with Booking.com, Airbnb and Expedia guests, their inquiries and requests, and their reviews (read and reply). Channex bills the app to the Channex account (about USD 0.50 per unit a month).
+1. After a deploy that changes the webhook events, open Platform admin, Channel manager and press the setup button once, so Channex's webhook also sends messages, reviews and warnings.
+2. The workspace owner opens Guest inbox, Settings, Booking sites and presses **Switch on messages and reviews**. That installs the app on every connected building and fetches the reviews and recent conversations already there.
+Agoda and Trip.com do not offer messages through Channex; their emails come in through the booking email below.
+
+**Booking email (Resend Inbound).** Every workspace gets its own Orbique address (shown in Guest inbox, Settings, Booking email). The operator forwards their booking mailbox (for example bookings@theircompany.com) to it. Guests' emails become chats that can be answered by email; the booking sites' emails (bookings, changes, payouts, reviews, account notices) become updates on the stay, or under Email & updates.
+1. Resend, Domains, the sending domain (the one in ALERT_EMAIL_FROM): switch on **Receiving** and add the MX record Resend shows to the domain's DNS (on Vercel: Domains, the domain, DNS records). It must be the domain's only MX record, or the one with the lowest priority.
+2. Resend, Webhooks, **Add webhook**: endpoint `https://<your site>/api/email-inbound`, event `email.received`. Copy its signing secret.
+3. Vercel, Settings, Environment Variables (Production): `RESEND_WEBHOOK_SECRET` = that secret (starts with `whsec_`). The `RESEND_API_KEY` already used for alerts must have **Full access** (a sending-only key cannot read received emails). Optional: `INBOUND_EMAIL_DOMAIN` when receiving uses another domain than ALERT_EMAIL_FROM.
+4. Redeploy. Send a test email to the workspace's address; it shows under Guest inbox, Email & updates.
+
 ## Updating Orbique later
 
 Every change merged into the main branch on GitHub deploys automatically. Database changes are applied during that

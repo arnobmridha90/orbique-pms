@@ -45,7 +45,7 @@
     if (!c.assigneeId) { var sm = c.messages.filter(function (m) { return m.from === 'staff' && m.staffId; }).pop(); c.assigneeId = sm ? sm.staffId : 's4'; }
   });
 
-  var st = { sel: null, view: 'list', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
+  var st = { sel: null, view: 'list', tab: 'guests', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
   var player = { key: null, audio: null, raf: 0, t0: 0, dur: 0 };
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var VARS = [['guest_first', 'Guest first name'], ['property', 'Property'], ['wifi_name', 'Wi-Fi name'], ['wifi_password', 'Wi-Fi password'], ['parking', 'Parking'], ['checkin_time', 'Check-in time'], ['checkout_time', 'Check-out time'], ['door_code', 'Door code']];
@@ -146,6 +146,24 @@
 .pg-inbox .sysm{align-self:center;max-width:82%;margin:6px 0;background:var(--surface);border:1px solid var(--border);color:var(--text-2);font-size:12px;padding:5px 12px;border-radius:8px;text-align:center;display:flex;align-items:center;gap:7px;line-height:1.4;}
 .pg-inbox .sysm svg{width:14px;height:14px;color:var(--muted);}
 .pg-inbox .sysm .t{color:var(--faint);font-size:11px;white-space:nowrap;}
+.pg-inbox .sysm.rich{text-align:left;align-items:flex-start;max-width:92%;}
+.pg-inbox .sysm.rich svg{margin-top:2px;}
+.pg-inbox .sysm .lk{display:inline;margin-left:6px;font-weight:700;color:var(--brand-text);background:none;border:0;padding:0;cursor:pointer;font-size:12px;}
+.pg-inbox .sysb{margin-top:4px;}
+.pg-inbox .sysb summary{cursor:pointer;color:var(--brand-text);font-weight:700;}
+.pg-inbox .sysb-t{margin-top:6px;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;background:var(--surface-2);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;}
+.pg-inbox .sysb-t a,.pg-inbox .txt a{color:var(--brand-text);text-decoration:underline;}
+.pg-inbox .bub .subj{font-weight:700;font-size:12px;margin-bottom:3px;}
+.pg-inbox .bub .efiles{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);margin-top:5px;}
+.pg-inbox .bub .efiles svg{width:12px;height:12px;}
+.pg-inbox .ib-tabs{display:flex;gap:4px;margin:0 12px 8px;padding:3px;border-radius:10px;background:var(--surface-2);}
+.pg-inbox .ib-tabs button{flex:1;border:0;background:none;border-radius:8px;padding:6px 8px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;}
+.pg-inbox .ib-tabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.pg-inbox .ib-tabs .n{background:var(--brand);color:#fff;border-radius:9px;padding:0 6px;font-size:10.5px;line-height:16px;}
+.pg-inbox .cv-feed{display:inline-flex;width:36px;height:36px;border-radius:50%;align-items:center;justify-content:center;background:var(--surface-2);}
+.pg-inbox .cv-feed.lg{width:44px;height:44px;}
+.pg-inbox .cv-feed .plat-ic{position:static;width:24px;height:24px;font-size:11px;box-shadow:none;}
+.pg-inbox .cv-feed svg{width:18px;height:18px;color:var(--muted);}
 .pg-inbox .msg{display:flex;flex-direction:column;max-width:min(560px,78%);}
 .pg-inbox .msg.in{align-self:flex-start;}
 .pg-inbox .msg.out, .pg-inbox .msg.inote{align-self:flex-end;}
@@ -377,13 +395,15 @@
     ['th', 'Thai'], ['vi', 'Vietnamese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'], ['pt', 'Portuguese'],
     ['ru', 'Russian'], ['tr', 'Turkish'], ['nl', 'Dutch'], ['fa', 'Persian'], ['ur', 'Urdu'], ['tl', 'Filipino'], ['my', 'Burmese'], ['km', 'Khmer'], ['ne', 'Nepali']];
   function langName(code) { for (var i = 0; i < LANGS.length; i++) if (LANGS[i][0] === code) return LANGS[i][1]; return code ? String(code).toUpperCase() : ''; }
-  var VIA = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site', guestapp: 'Guest app' };
+  var VIA = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site', guestapp: 'Guest app', email: 'Email', agoda: 'Agoda', tripcom: 'Trip.com' };
+  var FEED_PLAT = { airbnb: 'airbnb', booking: 'booking', agoda: 'agoda', tripcom: 'ctrip', expedia: 'expedia' };
   var DAY_MS = 24 * 3600 * 1000;
   var live = { org: null, cfg: null, loading: false, busy: {}, media: {}, via: {}, xl: {}, origOpen: {} };
   function server() { return !!(O.auth && O.auth.enabled && O.auth.enabled() && O.sync.adapter && O.sync.adapter.name === 'server' && O.auth.orgId && O.auth.orgId() && O.auth.inbox); }
   function liveCfg() { return server() && live.org === O.auth.orgId() ? live.cfg : null; }
   /* live sending is on when the workspace has WhatsApp connected or booking-site messages switched on (and is not a demo) */
-  function liveOn() { var c = liveCfg(); return !!(c && !c.demo && ((c.whatsapp.configured && c.whatsapp.number) || c.channex)); }
+  function liveOn() { var c = liveCfg(); return !!(c && !c.demo && ((c.whatsapp.configured && c.whatsapp.number) || c.channex || emailOn())); }
+  function emailOn() { var c = liveCfg(); return !!(c && !c.demo && c.email && c.email.reply); }
   function loadLive(after) {
     if (!server() || live.loading) return;
     if (live.org === O.auth.orgId() && live.cfg) { if (after) after(); return; }
@@ -405,8 +425,10 @@
       var name = VIA[ch] && /^(booking|airbnb|expedia)$/.test(ch) ? VIA[ch] : c.ota || 'the booking site';
       out.push({ via: 'channex', label: name + ' chat', open: true, why: '' });
     }
+    if (emailOn() && c.em) out.push({ via: 'email', label: 'Email' + (canContacts() || !b ? ' to ' + c.em : ''), open: true, why: '' });
     var last = null; for (var i = c.messages.length - 1; i >= 0; i--) if (c.messages[i].from === 'guest' && c.messages[i].via) { last = c.messages[i].via; break; }
-    if (last && last !== 'whatsapp') out = out.filter(function (x) { return x.via === 'channex'; }).concat(out.filter(function (x) { return x.via !== 'channex'; }));
+    var lead = last === 'email' ? 'email' : last && last !== 'whatsapp' ? 'channex' : null;
+    if (lead) out = out.filter(function (x) { return x.via === lead; }).concat(out.filter(function (x) { return x.via !== lead; }));
     return out;
   }
   function routeOf(c) {
@@ -428,7 +450,14 @@
     O.sync.remote([{ coll: 'conversations', id: conv.id, data: conv.data, deleted: false }], []);
   }
   /* chats from numbers / booking-site threads no booking matched yet */
-  function loose() { return D.conversations.filter(function (c) { return !c.bookingId && c.contact && c.messages && c.messages.length; }); }
+  function loose() { return D.conversations.filter(function (c) { return !c.bookingId && !c.kind && c.contact && c.messages && c.messages.length; }); }
+  /* email from people no booking matched, and each booking site's notifications (the Updates tab) */
+  function upds() {
+    return D.conversations.filter(function (c) { return !c.bookingId && (c.kind === 'email' || c.kind === 'feed') && c.messages && c.messages.length; })
+      .sort(function (a, b) { if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1; return lastTime(a) < lastTime(b) ? 1 : -1; });
+  }
+  function isUpd(c) { return !!c && !c.bookingId && (c.kind === 'email' || c.kind === 'feed'); }
+  function updName(c) { return (c.contact && c.contact.name) || c.em || 'Email'; }
 
   function prop(id) { return D.propById[id] || { id: id, name: 'Removed property', short: 'Removed property', wifi: ['', ''], parking: '' }; }
   function bk(c) { return D.booking(c.bookingId); }
@@ -471,7 +500,7 @@
       return lastTime(a) < lastTime(b) ? 1 : lastTime(a) > lastTime(b) ? -1 : 0;
     });
   }
-  function conv(id) { return convs().filter(function (c) { return c.id === id; })[0] || null; }
+  function conv(id) { return convs().filter(function (c) { return c.id === id; })[0] || upds().filter(function (c) { return c.id === id; })[0] || null; }
   function listTime(iso) {
     var day = iso.slice(0, 10), n = d.diff(day, D.TODAY);
     if (n === 0) return fmt.time(iso);
@@ -620,10 +649,20 @@
     var filters = [['all', 'All', null], ['unread', 'Unread', fc.unread], ['today', 'Arriving today', fc.today], ['inhouse', 'In-house', fc.inhouse]].map(function (f) {
       return '<button type="button" class="chip' + (st.filter === f[0] ? ' on' : '') + '" data-filter="' + f[0] + '" aria-pressed="' + (st.filter === f[0]) + '">' + f[1] + (f[2] != null ? ' <span class="n">' + f[2] + '</span>' : '') + '</button>';
     }).join('');
+    var nu = upds().filter(function (c) { return c.unread > 0; }).length, ng = convs().filter(function (c) { return c.unread > 0; }).length;
+    var tabs = '<div class="ib-tabs" role="tablist" aria-label="Show">' +
+      '<button type="button" role="tab" data-tab="guests" aria-selected="' + (st.tab !== 'updates') + '" class="' + (st.tab !== 'updates' ? 'on' : '') + '">Guests' + (ng ? ' <span class="n">' + ng + '</span>' : '') + '</button>' +
+      '<button type="button" role="tab" data-tab="updates" aria-selected="' + (st.tab === 'updates') + '" class="' + (st.tab === 'updates' ? 'on' : '') + '">Email &amp; updates' + (nu ? ' <span class="n">' + nu + '</span>' : '') + '</button></div>';
+    if (st.tab === 'updates') {
+      return '<div class="ib-lhead"><h2>Chats</h2></div>' + tabs +
+        '<div class="ib-tools"><label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search email and updates" aria-label="Search email and updates" value="' + esc(st.q) + '"></label></div>' +
+        '<div class="ib-rows">' + rowsHTML() + '</div>' +
+        '<div class="ib-lfoot">' + footHTML() + '</div>';
+    }
     return '<div class="ib-lhead"><h2>Chats</h2>' +
       (canSend() ? '<button type="button" class="ib-ic" data-act="newchat" title="New conversation" aria-label="New conversation">' + O.icon('plus') + '</button>' : '') +
       (canQR() ? '<button type="button" class="ib-ic" data-act="manage" title="Quick replies" aria-label="Manage quick replies">' + O.icon('sparkle') + '</button>' : '') + '</div>' +
-      '<div class="ib-tools"><label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search chats" aria-label="Search guests, units or messages" value="' + esc(st.q) + '"></label>' +
+      tabs + '<div class="ib-tools"><label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search chats" aria-label="Search guests, units or messages" value="' + esc(st.q) + '"></label>' +
       propSelectHTML() + '</div>' +
       '<div class="ib-filters" role="group" aria-label="Filter chats">' + filters + '</div>' +
       '<div class="ib-loose-wrap">' + looseHTML() + '</div>' +
@@ -638,7 +677,8 @@
     var parts = [];
     if (cfg.whatsapp.configured && cfg.whatsapp.number) parts.push('WhatsApp ' + (cfg.whatsapp.number.phone || ''));
     if (cfg.channex) parts.push('Booking.com, Airbnb and Expedia');
-    return O.icon('whatsapp') + '<span>' + (parts.length ? 'Live: ' + esc(parts.join(' and ')) : 'Sending is not connected yet.') + '</span>' + set;
+    if (cfg.email && cfg.email.configured && cfg.email.address) parts.push('email');
+    return O.icon('whatsapp') + '<span>' + (parts.length ? 'Live: ' + esc(parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0]) : 'Sending is not connected yet.') + '</span>' + set;
   }
   function looseHTML() {
     var n = loose().length; if (!n) return '';
@@ -651,7 +691,33 @@
     return '<label class="sr-only" for="ib-prop">Property</label><select id="ib-prop" class="select ib-propsel' + (st.prop ? ' on' : '') + '" data-f="prop" title="Show chats for one property">' +
       '<option value="">All properties</option>' + opts.map(function (p) { return '<option value="' + p.id + '"' + (p.id === st.prop ? ' selected' : '') + '>' + esc(p.short) + (n[p.id] ? ' (' + n[p.id] + ')' : '') + '</option>'; }).join('') + '</select>';
   }
+  function visibleUpds() {
+    var q = st.q.toLowerCase();
+    return upds().filter(function (c) {
+      if (!q) return true;
+      var hay = updName(c) + ' ' + (c.em || '') + ' ' + c.messages.map(function (m) { return (m.subject || '') + ' ' + (m.text || ''); }).join(' ');
+      return hay.toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  function updRowHTML(c) {
+    var m = lastMsg(c), unread = c.unread > 0, feed = c.kind === 'feed';
+    var av = feed ? '<span class="cv-feed">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c));
+    var sub = feed ? 'Notifications' : 'Email' + (c.ota ? ' via ' + c.ota : '');
+    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text)) : '';
+    return '<button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(updName(c) + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
+      '<span class="cv-av">' + av + '</span>' +
+      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
+      '<span class="cv-l2"><span class="cv-st">' + esc(sub) + '</span></span>' +
+      '<span class="cv-l3"><span class="cv-prev">' + prev + '</span>' + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>';
+  }
   function rowsHTML() {
+    if (st.tab === 'updates') {
+      var ul = visibleUpds();
+      if (ul.length) return ul.map(updRowHTML).join('');
+      var cfg0 = liveCfg();
+      return '<div class="ib-empty">' + U.empty(st.q ? 'Nothing matches "' + st.q + '".' : 'No email or booking-site updates yet.' + (cfg0 && cfg0.email && cfg0.email.address ? ' Forward your booking email to ' + cfg0.email.address + ' to see it here.' : ''), '∅') +
+        (st.q ? '<button type="button" class="btn btn-ghost" data-act="clearq">Clear the search</button>' : (O.auth && O.auth.role && O.auth.role() === 'owner') || canEdit() ? '<button type="button" class="btn btn-ghost" data-act="livesettings">Set up email</button>' : '') + '</div>';
+    }
     var list = visibleConvs();
     if (list.length) return list.map(rowHTML).join('');
     /* one sentence plus the main action */
@@ -693,6 +759,31 @@
         : '<button type="button" class="ib-ic" disabled title="Your access does not include guest phone numbers" aria-label="Call ' + esc(b.guest.name) + ' (not available)">' + O.icon('whatsapp') + '</button>') +
       (menu ? '<div class="ib-more"><button type="button" class="ib-ic" data-act="more" aria-haspopup="true" aria-label="More options">' + O.icon('more') + '</button><div class="ib-menu" role="menu">' + menu + '</div></div>' : '') +
       '</div></header>';
+  }
+  function updHeadHTML(c) {
+    var feed = c.kind === 'feed';
+    var who = (feed ? '<span class="cv-feed lg">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c), 'lg')) +
+      '<span class="ib-who-t"><span class="ib-who-n"><span class="ib-nm">' + esc(updName(c)) + '</span></span>' +
+      '<span class="ib-who-s"><span>' + esc(feed ? 'Notifications from the site, read only' : (c.em || '') + (c.ota ? ' · through ' + c.ota : '')) + '</span></span></span>';
+    var menu = canEdit() ? '<button type="button" data-act="unread">' + O.icon('chat') + 'Mark as unread</button><button type="button" data-act="pin">' + PIN_SVG + (c.pinned ? 'Unpin' : 'Pin to top') + '</button>' : '';
+    return '<header class="ib-head">' +
+      '<button type="button" class="ib-ic ib-back" data-act="back" aria-label="Back to chats">' + O.icon('left') + '</button>' +
+      '<div class="ib-who static">' + who + '</div><div class="ib-hacts">' +
+      (menu ? '<div class="ib-more"><button type="button" class="ib-ic" data-act="more" aria-haspopup="true" aria-label="More options">' + O.icon('more') + '</button><div class="ib-menu" role="menu">' + menu + '</div></div>' : '') +
+      '</div></header>';
+  }
+  function updComposerHTML(c) {
+    if (c.kind !== 'email') return '';
+    if (!canSend()) return '<div class="ib-compose"><div class="ib-ro">' + O.icon('lock') + '<span>You can read this email. Replying is not part of your access.</span></div></div>';
+    if (!emailOn()) return '<div class="ib-compose"><div class="ib-ro">' + O.icon('alert') + '<span>Replying by email is not set up yet. Reply from your own mailbox for now.</span></div></div>';
+    var draft = st.drafts[c.id] || '';
+    return '<div class="ib-compose"><div class="cmp-top"><span class="cmp-hint only"><span class="cmp-route">' + O.icon('chat') + '<span class="ellipsis">Email to ' + esc(c.em) + '</span></span></span></div>' +
+      '<div class="cmp-bar"><div class="cmp-box"><label class="sr-only" for="ib-input">Message</label><textarea id="ib-input" rows="1" data-f="msg" title="Enter sends, Shift + Enter adds a new line" placeholder="Reply to ' + esc(updName(c)) + '">' + esc(draft) + '</textarea></div>' +
+      '<button type="button" class="round go" data-act="send" aria-label="Send">' + O.icon('send') + '</button></div></div>';
+  }
+  /* links in emails (a forwarding confirmation, a payout statement) open in a new tab; everything else stays text */
+  function linkify(text) {
+    return esc(text).replace(/https?:\/\/[^\s<>"')]+/g, function (u) { var clean = u.replace(/&amp;/g, '&'); return '<a href="' + esc(clean) + '" target="_blank" rel="noopener noreferrer nofollow">' + u + '</a>'; });
   }
   /* arrival readiness chips; once the guest is in-house the turnover chip no longer applies */
   function readyHTML(b) {
@@ -764,7 +855,11 @@
       var day = m.time.slice(0, 10);
       if (day !== prevDay) { out.push('<div class="day">' + esc(dayLabel(day)) + '</div>'); prevDay = day; prevKey = null; }
       if (i === firstUnread) { out.push('<div class="unread-div" role="separator">' + fmt.plural(mark.n, 'unread message') + '</div>'); prevKey = null; }
-      if (m.from === 'system') { out.push('<div class="sysm">' + O.icon('alert') + '<span>' + esc(m.text) + '</span><span class="t">' + fmt.time(m.time) + '</span></div>'); prevKey = null; return; }
+      if (m.from === 'system') {
+        var extra = (m.body ? '<details class="sysb"><summary>' + (m.subject ? 'Show the email' : 'Show more') + '</summary><div class="sysb-t">' + linkify(m.body) + '</div></details>' : '') +
+          (m.link && m.link.page ? '<button type="button" class="lk" data-golink="' + i + '">' + (m.link.page === 'reviews' ? 'Open the review' : 'Open') + '</button>' : '');
+        out.push('<div class="sysm' + (extra ? ' rich' : '') + '">' + O.icon(m.via === 'email' ? 'chat' : 'alert') + '<span>' + esc(m.text) + extra + '</span><span class="t">' + fmt.time(m.time) + '</span></div>'); prevKey = null; return;
+      }
       var side = m.from === 'guest' ? 'in' : m.from === 'note' ? 'inote' : 'out';
       var key = side + (m.staffId || '');
       var gapMin = prevTime ? (Date.parse(m.time + ':00Z') - Date.parse(prevTime + ':00Z')) / 60000 : 99;
@@ -776,10 +871,11 @@
       else if (side === 'out' && first) who = '<div class="who">' + esc((staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       var status = side === 'out' ? msgStatus(c, i) : null;
       var meta = '<span class="meta">' + (m.via && VIA[m.via] && side === 'in' ? '<span class="mvia">' + esc(VIA[m.via]) + '</span>' : '') + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
+      if (m.via === 'email' && side === 'in' && (m.subject || (m.files && m.files.length))) inner = { html: (m.subject ? '<div class="subj">' + esc(m.subject) + '</div>' : '') + inner.html + (m.files && m.files.length ? '<div class="efiles">' + O.icon('clip') + 'In the original email: ' + esc(m.files.join(', ')) + '</div>' : '') };
       var cls = 'bub' + (inner.media ? ' media' + (inner.cap ? ' hascap' : '') + (m.type === 'file' || inner.file ? ' isfile' : '') : '') + (inner.voice ? ' vbub' : '');
       out.push('<div class="msg ' + side + (first ? ' first' : '') + '" data-i="' + i + '"><div class="' + cls + '">' + who + inner.html + (inner.voice ? meta.replace('class="meta"', 'class="meta"') : meta) + '</div>' +
         (side === 'out' && status === 'failed' ? '<div class="via bad">Not delivered' + (m.error ? ': ' + esc(m.error) : '') + '</div>'
-          : side === 'out' && i === c.messages.length - 1 ? '<div class="via">' + (status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent') + ' · ' + (m.via && m.via !== 'whatsapp' ? esc(VIA[m.via] || 'the booking site') + ' chat' : 'WhatsApp to ' + esc(m.via ? (c.wa && canContacts() ? '+' + c.wa : phoneOf(b)) : phoneOf(b))) + '</div>' : '') + '</div>');
+          : side === 'out' && i === c.messages.length - 1 ? '<div class="via">' + (status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent') + ' · ' + (m.via === 'email' ? 'Email to ' + esc(c.em || '') : m.via && m.via !== 'whatsapp' ? esc(VIA[m.via] || 'the booking site') + ' chat' : 'WhatsApp to ' + esc(m.via ? (c.wa && canContacts() ? '+' + c.wa : phoneOf(b)) : phoneOf(b))) + '</div>' : '') + '</div>');
     });
     return out.join('');
   }
@@ -993,13 +1089,13 @@
         var c0 = D.conversations.filter(function (c) { return c.bookingId === pr.bookingId; })[0], b0 = D.booking(pr.bookingId);
         if (!c0 && b0 && canSend()) { c0 = { id: O.uid('C'), bookingId: pr.bookingId, unread: 0, messages: [], createdAt: nowISO(), assigneeId: O.state.viewer }; D.conversations.push(c0); }
         if (c0 && conv(c0.id)) {
-          st.sel = c0.id; st.view = 'chat'; st.filter = 'all'; st.q = '';
+          st.sel = c0.id; st.view = 'chat'; st.filter = 'all'; st.q = ''; st.tab = 'guests';
           if (st.prop && b0 && b0.propertyId !== st.prop) { st.prop = ''; O.store.set('inbox:prop', ''); } /* the chat asked for must be in the list */
         } else if (b0 && !canSend()) U.toast('There is no chat with ' + b0.guest.name + ' yet, and messaging guests is not part of your access', 'bad');
         ctx.params = {};
       } else if (ctx.fresh) { st.view = 'list'; }
       pruneEmpty(st.sel);
-      if (!st.sel || !conv(st.sel)) { st.sel = isPhone() ? null : (visibleConvs()[0] || {}).id || null; }
+      if (!st.sel || !conv(st.sel)) { st.sel = isPhone() ? null : ((st.tab === 'updates' ? visibleUpds() : visibleConvs())[0] || {}).id || null; }
 
       root.innerHTML = '<div class="pg-inbox"><div class="ib' + (st.view === 'chat' && st.sel ? ' show-chat' : '') + '"><section class="ib-list" aria-label="Chats">' + listHTML() + '</section><section class="ib-chat" aria-label="Conversation"></section></div></div>';
       var page = O.$('.pg-inbox', root), ib = O.$('.ib', page), chat = O.$('.ib-chat', page), listEl = O.$('.ib-list', page);
@@ -1014,10 +1110,19 @@
 
       /* ---------- painting ---------- */
       function paintRows() { O.$('.ib-rows', listEl).innerHTML = rowsHTML(); }
+      function paintTabs() { var t = O.$('.ib-tabs', listEl); if (!t) return; var w = document.createElement('div'); w.innerHTML = listHTML(); var nt = O.$('.ib-tabs', w); if (nt) t.outerHTML = nt.outerHTML; }
       function paintFilters() { var fc = filterCounts(); O.$$('[data-filter]', listEl).forEach(function (b) { b.classList.toggle('on', b.dataset.filter === st.filter); b.setAttribute('aria-pressed', b.dataset.filter === st.filter); var n = O.$('.n', b); if (n) n.textContent = fc[b.dataset.filter]; }); }
       function paintChat(full) {
         var c = conv(st.sel);
         if (!c) { chat.innerHTML = '<div class="ib-none"><span class="art">' + O.icon('chat') + '</span>' + (convs().length ? '<h3>Choose a chat</h3><div>Pick a guest on the left to read and reply. Messages, photos, files and voice notes all live in one thread per stay.</div>' : '<h3>Guest chats show up here</h3><div>When a guest books or messages you, their chat opens here with the stay details next to it.</div>') + '</div>'; return; }
+        if (isUpd(c)) {
+          if (full || !O.$('.ib-thread', chat)) {
+            chat.innerHTML = updHeadHTML(c) + '<div class="ib-thread" role="log" aria-live="polite" aria-label="Messages"></div>' + updComposerHTML(c);
+            wireComposer(); paintThread(true); return;
+          }
+          var uh = O.$('.ib-head', chat); uh.outerHTML = updHeadHTML(c);
+          paintThread(false); return;
+        }
         if (full || !O.$('.ib-thread', chat)) {
           chat.innerHTML = headHTML(c) + stayHTML(c) + '<div class="ib-thread" role="log" aria-live="polite" aria-label="Messages"></div>' + composerHTML(c);
           wireComposer();
@@ -1041,7 +1146,7 @@
         if (toBottom || atBottom) th.scrollTop = th.scrollHeight;
       }
       function paintSendBtn() {
-        var c = conv(st.sel); if (!c || st.rec) return;
+        var c = conv(st.sel); if (!c || st.rec || isUpd(c)) return;
         var ta = O.$('#ib-input', chat), bar = O.$('.cmp-bar', chat); if (!bar) return;
         var has = (ta && ta.value.trim()) || (st.pending[c.id] || []).length;
         var btn = O.$('.round.go', bar); if (!btn) return;
@@ -1060,8 +1165,8 @@
         });
       }
       function rebuildComposer() {
-        var c = conv(st.sel), old = O.$('.ib-compose', chat); if (!c || !old) return;
-        old.outerHTML = composerHTML(c); wireComposer();
+        var c = conv(st.sel), old = O.$('.ib-compose', chat); if (!c || !old) { if (c && isUpd(c) && !old && updComposerHTML(c)) chat.insertAdjacentHTML('beforeend', updComposerHTML(c)); return; }
+        old.outerHTML = isUpd(c) ? updComposerHTML(c) : composerHTML(c); wireComposer();
       }
 
       /* ---------- selecting chats ---------- */
@@ -1071,7 +1176,7 @@
         if (st.sel !== id) { st.mode = 'reply'; delete st.unreadMark[st.sel]; pruneEmpty(id); }
         st.sel = id; st.view = 'chat'; ib.classList.add('show-chat');
         if (c.unread) { st.unreadMark[id] = { i: Math.max(0, c.messages.length - c.unread), n: c.unread }; c.unread = 0; }
-        paintRows(); paintFilters(); paintChat(true);
+        paintRows(); paintFilters(); paintTabs(); paintChat(true);
         if (focus !== false && !isPhone()) { var ta = O.$('#ib-input', chat); if (ta) ta.focus(); }
         O.emit('data', { type: 'inbox-read', id: id });
       }
@@ -1225,6 +1330,22 @@
         O.emit('data', { type: 'inbox-link', id: t.id });
         return t.id;
       }
+      function sitesHTML() {
+        var cfg = liveCfg() || {}, s0 = cfg.sites, owner = O.auth.role && O.auth.role() === 'owner';
+        var on = s0 && s0.on, errs = s0 ? s0.buildings.filter(function (x) { return x.error; }) : [];
+        return '<div class="small">' + (on ? 'On: guest messages, inquiries and reviews from Booking.com, Airbnb and Expedia come into this inbox and the Reviews page, and replies go back to the site.' + (s0.at ? ' Switched on ' + esc(fmt.dateTime(String(s0.at).slice(0, 16))) + '.' : '')
+          : 'Bring guest messages, inquiries and reviews from Booking.com, Airbnb and Expedia into Orbique, and answer them here. This switches on Channex\'s Messaging & Reviews app for your connected buildings (Channex bills it to your Channex account: about USD 0.50 per unit a month).') + ' Agoda and Trip.com do not offer messages through the channel manager; their emails can come in through your booking email below.</div>' +
+          (errs.length ? '<div class="note">' + errs.map(function (x) { return esc(x.error); }).join('<br>') + '</div>' : '') +
+          (owner ? '<div><button type="button" class="btn ' + (on ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-sites="on">' + (on ? 'Check again and fetch reviews' : 'Switch on messages and reviews') + '</button></div>' : on ? '' : '<div class="note">Ask the account owner to switch this on.</div>');
+      }
+      function emailHTML() {
+        var cfg = liveCfg() || {}, em = cfg.email || {};
+        if (!em.address) return '<div class="note">Email is not set up on the server yet. Orbique needs receiving switched on for its email domain in Resend (see Putting Orbique online, Booking email).</div>';
+        return '<div class="small">Every email sent to this address comes into the inbox: guests\' emails as chats you can answer, and the booking sites\' emails (new bookings, changes, payouts, reviews) as updates on the stay, or under Email &amp; updates.</div>' +
+          '<div class="row-flex"><code class="grow" style="user-select:all;word-break:break-all">' + esc(em.address) + '</code><button type="button" class="btn btn-ghost btn-sm" data-copy="' + esc(em.address) + '">Copy</button></div>' +
+          '<div class="small"><b>How to set it up:</b> use one email for all your bookings, for example bookings@yourcompany.com. Give it to Booking.com, Airbnb, Agoda, Trip.com and Expedia as the reservation email. Then, in that mailbox, forward every email to the address above (Gmail: Settings, Forwarding and POP/IMAP, Add a forwarding address; the confirmation email Gmail sends shows up under Email &amp; updates, so you can confirm it from here).</div>' +
+          (em.configured ? '' : '<div class="note">Receiving is not finished on the server yet (RESEND_WEBHOOK_SECRET), so emails do not arrive yet.</div>');
+      }
       function settingsModal() {
         var cfg = liveCfg() || { whatsapp: {} }, owner = O.auth.role && O.auth.role() === 'owner', wa = cfg.whatsapp || {};
         var setv = D.inboxSettings || {}, lang = setv.lang || cfg.lang || 'en', auto = setv.autoTranslate !== false;
@@ -1237,10 +1358,24 @@
           : '<div class="note">Translation is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).</div>';
         var body = O.html('<div class="stack"><div class="section-title" style="margin-top:0">WhatsApp</div>' + waHTML +
           '<div class="section-title">Translation</div>' + trHTML +
-          (cfg.channex ? '<div class="section-title">Booking sites</div><div class="small">Messages from Booking.com, Airbnb and Expedia arrive here once the Messages app is switched on for the building in Channex. Agoda and Trip.com do not offer messages through the channel manager.</div>' : '') + '</div>');
+          (cfg.channex ? '<div class="section-title">Booking sites</div>' + sitesHTML() : '') +
+          '<div class="section-title">Booking email</div>' + emailHTML() + '</div>');
         var mod = U.modal({ title: 'Inbox settings', body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
         function reload() { live.cfg = null; live.org = null; loadLive(function () { repaintLive(); }); }
         body.addEventListener('click', function (e) {
+          var cp = e.target.closest('[data-copy]');
+          if (cp) { var val = cp.dataset.copy; (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(val) : Promise.reject()).then(function () { U.toast('Address copied'); }, function () { U.toast('Select the address and copy it', 'bad'); }); return; }
+          var sx = e.target.closest('[data-sites]');
+          if (sx) {
+            sx.disabled = true; sx.textContent = 'Switching on and fetching reviews…';
+            O.auth.inbox('sites-on').then(function (r) {
+              var n = r.buildings.reduce(function (a, x) { return { rv: a.rv + (x.reviews || 0), ms: a.ms + (x.messages || 0) }; }, { rv: 0, ms: 0 });
+              var bad = r.buildings.filter(function (x) { return x.error; });
+              U.toast(bad.length ? bad[0].error : 'Messages and reviews are on. ' + fmt.plural(n.rv, 'review') + ' and ' + fmt.plural(n.ms, 'earlier message') + ' came in.', bad.length ? 'bad' : 'ok');
+              mod.close(); reload();
+            }, function (er) { sx.disabled = false; sx.textContent = 'Switch on messages and reviews'; U.toast(er.message, 'bad'); });
+            return;
+          }
           var x = e.target.closest('[data-wa]'); if (!x) return;
           x.disabled = true;
           var call = x.dataset.wa === 'on' ? O.auth.inbox('whatsapp-connect', { phoneNumberId: (O.$('#ib-pnid', body).value || '').trim() }) : O.auth.inbox('whatsapp-disconnect');
@@ -1379,7 +1514,7 @@
         return repliesFor(bk(c).propertyId).filter(function (r) { return !q || r.title.toLowerCase().indexOf(q) >= 0 || r.text.toLowerCase().indexOf(q) >= 0; }).slice(0, 6);
       }
       function paintSlash() {
-        var c = conv(st.sel), ta = O.$('#ib-input', chat), comp = O.$('.ib-compose', chat); if (!c || !ta || !comp) return;
+        var c = conv(st.sel), ta = O.$('#ib-input', chat), comp = O.$('.ib-compose', chat); if (!c || !ta || !comp || isUpd(c)) return;
         var old = O.$('.slash', comp); if (old) old.remove();
         var m = canSend() ? /^\/(\S*)$/.exec(ta.value) : null; /* quick replies are guest messages */
         if (!m) { st.slash = null; return; }
@@ -1431,6 +1566,13 @@
         if ((x = e.target.closest('[data-go]'))) { O.go(x.dataset.go); return; }
         if ((x = e.target.closest('[data-conv]'))) { select(x.dataset.conv); return; }
         if ((x = e.target.closest('[data-filter]'))) { st.filter = x.dataset.filter; paintFilters(); paintRows(); return; }
+        if ((x = e.target.closest('[data-tab]'))) {
+          if (st.tab === x.dataset.tab) return;
+          st.tab = x.dataset.tab; st.q = ''; listEl.innerHTML = listHTML();
+          if (!isPhone()) { var f0 = (st.tab === 'updates' ? visibleUpds() : visibleConvs())[0]; if (f0) select(f0.id, false); else { st.sel = null; paintChat(true); } }
+          return;
+        }
+        if ((x = e.target.closest('[data-golink]'))) { var gm = c && c.messages[+x.dataset.golink]; if (gm && gm.link && O.allowed(gm.link.page)) O.go(gm.link.page, gm.link.id ? { id: gm.link.id } : {}); return; }
         if ((x = e.target.closest('[data-qr]'))) { useQuickReply(x.dataset.qr); return; }
         if ((x = e.target.closest('[data-play]'))) { togglePlay(x.dataset.play); return; }
         if ((x = e.target.closest('[data-xl]'))) { translateMsg(x.dataset.xl); return; }
@@ -1455,7 +1597,7 @@
         if (act === 'loose') { looseModal(); return; }
         if (act === 'allprops') { setProp(''); return; }
         if (act === 'clearq') { st.q = ''; var qx = O.$('[data-f=q]', listEl); if (qx) qx.value = ''; paintRows(); return; }
-        if (act === 'manage') { var mm = O.$('.ib-menu.open', page); if (mm) mm.classList.remove('open'); manageQuickReplies(c ? bk(c).propertyId : null, function () { O.emit('data', { type: 'quickreplies' }); }); }
+        if (act === 'manage') { var mm = O.$('.ib-menu.open', page); if (mm) mm.classList.remove('open'); manageQuickReplies(c && bk(c) ? bk(c).propertyId : null, function () { O.emit('data', { type: 'quickreplies' }); }); }
         if (!c) return;
         var b = bk(c);
         if (act === 'back') { st.view = 'list'; ib.classList.remove('show-chat'); delete st.unreadMark[c.id]; if (st.rec) cancelRecording(false, 'Recording discarded'); return; }
@@ -1463,7 +1605,7 @@
         if (act === 'lock') { if (canCodes()) O.lock.change({ bookingId: b.id, propertyId: b.propertyId }); return; }
         if (act === 'more') { O.$('.ib-menu', chat).classList.toggle('open'); return; }
         if ((act === 'unread' || act === 'pin') && !canEdit()) { U.toast('Your access to the inbox is read only', 'bad'); return; }
-        if (act === 'unread') { c.unread = Math.max(1, c.unread || 0); delete st.unreadMark[c.id]; if (st.rec) cancelRecording(true); st.sel = null; st.view = 'list'; ib.classList.remove('show-chat'); paintRows(); paintFilters(); paintChat(true); U.toast('Chat with ' + b.guest.name + ' marked as unread'); O.emit('data', { type: 'inbox-unread' }); return; }
+        if (act === 'unread') { c.unread = Math.max(1, c.unread || 0); delete st.unreadMark[c.id]; if (st.rec) cancelRecording(true); st.sel = null; st.view = 'list'; ib.classList.remove('show-chat'); paintRows(); paintFilters(); paintChat(true); U.toast((b ? 'Chat with ' + b.guest.name : updName(c)) + ' marked as unread'); O.emit('data', { type: 'inbox-unread' }); return; }
         if (act === 'pin') { c.pinned = !c.pinned; paintRows(); paintChat(false); U.toast(c.pinned ? 'Chat pinned to the top' : 'Chat unpinned'); return; }
         if (act === 'invoice') { if (O.can('invoices.send')) O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); else U.toast('Your access does not include sending invoices and receipts', 'bad'); return; }
         if (act === 'attach') { O.$('.att-menu', chat).classList.toggle('open'); return; }
@@ -1518,7 +1660,7 @@
           st.unreadMark[oc.id] = { i: Math.max(0, oc.messages.length - oc.unread), n: oc.unread }; oc.unread = 0;
           O.emit('data', { type: 'inbox-read', id: oc.id }); return;
         }
-        paintFilters(); paintRows();
+        paintFilters(); paintRows(); paintTabs();
         if (oc && liveOn()) { var sig = JSON.stringify(routesFor(oc).map(function (r) { return [r.via, r.open]; })); if (chat.dataset.rsig && chat.dataset.rsig !== sig) rebuildComposer(); chat.dataset.rsig = sig; }
         if (conv(st.sel)) paintChat(false); else if (st.sel) { st.sel = null; paintChat(true); }
         if (p && p.type === 'quickreplies') { var w = O.$('.qr-wrap', chat), c = conv(st.sel); if (w && c) w.innerHTML = qrBarHTML(c); }
