@@ -173,8 +173,20 @@ export function htmlText(html) {
     .replace(/[ \t ]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/* marketing mailers (Trip.com and others) start the text part with "[https://…/open.gif?…]" image and tracking links,
+   which can fill the whole message before the code or booking details; drop those and shorten very long links */
+const LONG_URL = 200;
+export function tidyLinks(t) {
+  return String(t || '')
+    .replace(/\[(https?:\/\/[^\]\s]*)\]/gi, (m0, u) => (/\.(gif|png|jpe?g|webp|bmp)(\?|$)/i.test(u) || u.length > LONG_URL ? ' ' : m0))
+    .replace(/\(?(https?:\/\/[^\s<>()"']{200,})\)?/gi, (m0, u) => '(' + u.slice(0, u.indexOf('/', 8) > 0 ? u.indexOf('/', 8) : 40) + '/…)')
+    .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n');
+}
+
 export function bodyText(email) {
-  const t = typeof email.text === 'string' && email.text.trim() ? email.text : htmlText(email.html);
+  const raw = typeof email.text === 'string' && email.text.trim() ? email.text : '';
+  let t = tidyLinks(raw).trim();
+  if (!t && email.html) t = tidyLinks(htmlText(email.html.replace(/<img\b[^>]*>/gi, ' ')));
   return String(t || '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
 }
 

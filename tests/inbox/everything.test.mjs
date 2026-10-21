@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { verifySvix, classify, htmlText, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig } from '../../api/_lib/email-in.js';
+import { verifySvix, classify, htmlText, bodyText, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig } from '../../api/_lib/email-in.js';
 import { reviewRecord, starsOf, platformOf } from '../../api/_lib/reviews.js';
 import { postNotice, receiveChannex, sendReply, canInbox } from '../../api/_lib/inbox.js';
 import { handleEvent } from '../../api/email-inbound.js';
@@ -70,6 +70,16 @@ test('html to text keeps links and drops scripts; quoted replies are cut', () =>
   assert.equal(stripQuoted('Thanks, see you at 3pm\n\nOn Mon, 19 Oct 2026 at 10:00, Otto <x@y.com> wrote:\n> earlier'), 'Thanks, see you at 3pm');
   assert.equal(stripQuoted('Yes\n-----Original Message-----\nFrom: a'), 'Yes');
   assert.equal(stripQuoted('> only quoted'), '> only quoted');
+});
+
+test('tracking-image links at the top of an email do not push the content out', () => {
+  const gif = 'http://www.trip.com/forward/middlepages/channel/openEdm.gif?bizData=' + 'e'.repeat(3000);
+  const t = bodyText({ text: '[' + gif + '][' + gif + ']\nYour Trip eBooking verification code is 482913\nHelp [https://trip.com/help]\nOpen https://ebooking.trip.com/x?' + 'q'.repeat(400) });
+  assert.match(t, /^Your Trip eBooking verification code is 482913/);
+  assert.match(t, /Help \[https:\/\/trip\.com\/help\]/);
+  assert.match(t, /Open \(https:\/\/ebooking\.trip\.com\/…\)/);
+  assert.ok(t.length < 200);
+  assert.equal(bodyText({ text: '', html: '<img src="' + gif + '"><p>Code: 1234</p>' }), 'Code: 1234');
 });
 
 test('booking match: reservation number in the subject or text, else the guest email', () => {
