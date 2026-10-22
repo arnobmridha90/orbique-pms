@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { verifySvix, classify, htmlText, bodyText, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig } from '../../api/_lib/email-in.js';
+import { verifySvix, classify, htmlText, bodyText, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig, addressFor } from '../../api/_lib/email-in.js';
 import { reviewRecord, starsOf, platformOf } from '../../api/_lib/reviews.js';
 import { postNotice, receiveChannex, sendReply, canInbox } from '../../api/_lib/inbox.js';
 import { handleEvent } from '../../api/email-inbound.js';
@@ -223,4 +223,23 @@ test('permissions: front desk may reply to reviews, housekeeping may not', async
   assert.equal(await canInbox(sb, ORG, { status: 'active', role: 'frontdesk' }, 'reviews.reply'), true);
   assert.equal(await canInbox(sb, ORG, { status: 'active', role: 'housekeeping' }, 'reviews.reply'), false);
   assert.equal(await canInbox(sb, ORG, { status: 'active', role: 'housekeeping' }, 'inbox.send'), true);
+});
+
+test('email address: replies go from the workspace\'s own address when it has one, else its Orbique one', async () => {
+  const org = { id: ORG, name: 'Kozi' };
+  const cfg = { domain: 'orbiquepms.com' };
+  let rows = [{ address: 'kozi-mtez@orbiquepms.com', kind: 'orbique' }, { address: 'hello@staykozi.com', kind: 'own' }];
+  const inserts = [];
+  const sb = fakeSb({ handler: (t, ops) => {
+    if (t !== 'inbound_addresses') return { data: [], error: null };
+    if (ops.some((o) => o[0] === 'insert')) { inserts.push(ops[0][1]); rows = [Object.assign({ kind: 'orbique' }, ops[0][1])]; return { data: [{ address: ops[0][1].address }], error: null }; }
+    assert.equal(op(ops, 'eq', 'org_id'), ORG);
+    return { data: rows, error: null };
+  } });
+  assert.equal(await addressFor(sb, cfg, org), 'hello@staykozi.com');
+  rows = [{ address: 'kozi-mtez@orbiquepms.com', kind: 'orbique' }];
+  assert.equal(await addressFor(sb, cfg, org), 'kozi-mtez@orbiquepms.com');
+  rows = [];
+  assert.match(await addressFor(sb, cfg, org, 'u1'), /^kozi-[a-z0-9x]{4}@orbiquepms\.com$/);
+  assert.equal(inserts.length, 1); assert.equal(inserts[0].kind, undefined);
 });
