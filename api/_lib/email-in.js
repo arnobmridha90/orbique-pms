@@ -5,7 +5,7 @@
  *
  *   inboundConfig(env)                       {configured, key, webhookSecret, domain, baseUrl}
  *   verifySvix(secret, raw, headers, now)    Resend signs its webhooks the Svix way
- *   addressFor(sb, cfg, org, userId)         the workspace's address (made the first time)
+ *   addressFor(sb, cfg, org, userId)         the address replies go from: its own one, else its Orbique one (made the first time)
  *   orgForAddresses(sb, list)                which workspace one of these addresses belongs to
  *   classify(email)                          {platform, kind: 'message' | 'notice', replyTo, name}
  *   bodyText(email), stripQuoted(text)       the readable text of an email
@@ -70,19 +70,25 @@ export function slugOf(name) {
   return s && !RESERVED.test(s) ? s : 'team';
 }
 
-/** The workspace's Orbique address: {address} (created the first time, with a short random part so it is not guessed). */
+/** The address the workspace answers email from: its own address (kind 'own', 0013) when it has one, else its
+ * Orbique address (created the first time, with a short random part so it is not guessed). */
 export async function addressFor(sb, cfg, org, userId) {
-  const got = must(await sb.from('inbound_addresses').select('address').eq('org_id', org.id).maybeSingle(), 'load email address');
-  if (got) return got.address;
+  const mine = async () => {
+    const rows = must(await sb.from('inbound_addresses').select('address, kind').eq('org_id', org.id), 'load email address') || [];
+    const own = rows.find((r) => r.kind === 'own');
+    return (own || rows[0] || {}).address || null;
+  };
+  const got = await mine();
+  if (got) return got;
   if (!cfg.domain) return null;
   for (let i = 0; i < 5; i++) {
     const tail = randomBytes(4).toString('base64').replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 4).padEnd(4, 'x');
     const address = slugOf(org.name) + '-' + tail + '@' + cfg.domain;
     const ins = await sb.from('inbound_addresses').insert({ address, org_id: org.id, created_by: userId || null }).select('address');
     if (!ins.error && ins.data && ins.data[0]) return ins.data[0].address;
-    // another request made one at the same moment (org_id is unique), or the name was taken: look again / try again
-    const again = must(await sb.from('inbound_addresses').select('address').eq('org_id', org.id).maybeSingle(), 'load email address');
-    if (again) return again.address;
+    // another request made one at the same moment (one per kind per workspace), or the name was taken: look again / try again
+    const again = await mine();
+    if (again) return again;
   }
   throw new ApiError(500, 'server', 'Could not make an email address for this workspace. Please try again.');
 }

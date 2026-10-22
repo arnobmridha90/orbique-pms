@@ -290,6 +290,15 @@ Agoda and Trip.com do not offer messages through Channex; their emails come in t
 3. Vercel, Settings, Environment Variables (Production): `RESEND_WEBHOOK_SECRET` = that secret (starts with `whsec_`). The `RESEND_API_KEY` already used for alerts must have **Full access** (a sending-only key cannot read received emails). Optional: `INBOUND_EMAIL_DOMAIN` when receiving uses another domain than ALERT_EMAIL_FROM.
 4. Redeploy. Send a test email to the workspace's address; it shows under Guest inbox, Email & updates.
 
+**A workspace's own address (for example hello@staykozi.com).** Instead of forwarding, a workspace can receive its own
+address straight into the inbox; email replies to guests then go out from that address.
+1. Resend, Domains, **Add domain** (the workspace's domain): add every DNS record Resend shows (MX for receiving, the
+   DKIM/SPF records for sending) and wait until Resend shows it verified, with **Receiving** switched on. The webhook
+   above already covers every domain in the Resend account.
+2. Orbique adds the address (Supabase, SQL Editor):
+   `insert into public.inbound_addresses (address, org_id, kind) values ('hello@staykozi.com', '<the org id>', 'own');`
+   The workspace keeps its Orbique address too, so booking sites already set up with it still work.
+
 ## Updating Orbique later
 
 Every change merged into the main branch on GitHub deploys automatically. Database changes are applied during that
