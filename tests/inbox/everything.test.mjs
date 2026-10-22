@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { verifySvix, classify, htmlText, bodyText, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig, addressFor } from '../../api/_lib/email-in.js';
+import { verifySvix, classify, htmlText, bodyText, codeIn, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig, addressFor } from '../../api/_lib/email-in.js';
 import { reviewRecord, starsOf, platformOf } from '../../api/_lib/reviews.js';
 import { postNotice, receiveChannex, sendReply, canInbox } from '../../api/_lib/inbox.js';
 import { handleEvent } from '../../api/email-inbound.js';
@@ -242,4 +242,12 @@ test('email address: replies go from the workspace\'s own address when it has on
   rows = [];
   assert.match(await addressFor(sb, cfg, org, 'u1'), /^kozi-[a-z0-9x]{4}@orbiquepms\.com$/);
   assert.equal(inserts.length, 1); assert.equal(inserts[0].kind, undefined);
+});
+
+test('a verification code shows without opening the email', () => {
+  const body = "(https://www.trip.com/x)\n\nYour eBooking Verification Code\n\nDear Partner\n\nHere's your verification code:\n\n741225\n\nThis code is valid for 10 minutes.\n\n+44-20-3929-3737\nCopyright 2002-2026";
+  assert.equal(codeIn('Your Trip eBooking verification code', body), '741225');
+  assert.equal(codeIn('Agoda: one-time passcode', 'Your OTP is 4821. It expires soon.'), '4821');
+  assert.equal(codeIn('New booking 12345678', 'Booking 12345678 for 2 nights'), null);
+  assert.equal(codeIn('Your login code', 'Call us on 2026 or visit'), null);
 });

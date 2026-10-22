@@ -196,6 +196,15 @@ export function bodyText(email) {
   return String(t || '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
 }
 
+/** A sign-in or verification code in the email ("Here's your verification code: 741225"), so it shows without opening the email. */
+const CODE_EMAIL = /verif|\bcode\b|\botp\b|one[- ]time|passcode|security code|sign[- ]?in|log[- ]?in/i;
+export function codeIn(subject, text) {
+  if (!CODE_EMAIL.test(String(subject || ''))) return null;
+  const t = String(text || '').replace(/\(?https?:\/\/\S+/g, ' ');
+  const m = t.match(/(?:code|otp|passcode|pin)\b[^0-9\n]{0,40}(?:\n\s*){0,3}\b(\d{4,8})\b/i) || t.match(/^\s*(\d{4,8})\s*$/m);
+  return m ? m[1] : null;
+}
+
 /** The new part of a reply: without the quoted earlier email ("On … wrote:", "> …", "-----Original Message-----"). */
 export function stripQuoted(text) {
   const lines = String(text || '').split('\n');
@@ -307,7 +316,7 @@ export async function receiveEmail(sb, orgId, email, opts = {}) {
     const site = c.platform ? { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', tripcom: 'Trip.com', expedia: 'Expedia' }[c.platform] : (c.name || c.from || 'Email');
     const r = await k.postNotice(sb, orgId, {
       bookingId: b && b.id, feed: c.platform || 'email', via: 'email', xid, at,
-      text: site + ': ' + subject, subject, body: clip(full, MAX_TEXT) + (files.length ? '\n\nAttachments (in the original email): ' + files.join(', ') : '')
+      text: site + ': ' + subject + (codeIn(subject, full) ? ' · Code ' + codeIn(subject, full) : ''), subject, body: clip(full, MAX_TEXT) + (files.length ? '\n\nAttachments (in the original email): ' + files.join(', ') : '')
     }, { now });
     return Object.assign({ kind: 'notice', bookingId: b ? b.id : null }, r);
   }
