@@ -1,0 +1,183 @@
+---
+// A city: where we have buildings, the landmarks from our windows, the city in numbers that
+// travellers need, and the guides. New buildings in the city appear from DESTINATIONS.
+import Layout from '@shared/components/Layout.astro';
+import PageHead from '@shared/components/PageHead.astro';
+import Search from '@shared/components/Search.astro';
+import Photo from '@shared/components/Photo.astro';
+import GuidesStrip from '@shared/components/GuidesStrip.astro';
+import { BRAND, DESTINATIONS, GUIDES, LANDMARKS, PROPERTY, SUITES, VIEW_PHOTOS } from '@shared/data/kozi';
+import { ICONS } from '@shared/data/icons';
+import { crumbsLd, lodgingLd } from '@shared/lib/seo';
+
+const city = DESTINATIONS.find((d) => d.id === 'kuala-lumpur')!;
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: city.city, path: city.path }];
+const covers: Record<string, { key: string; alt: string }> = { 'vortex-klcc': { key: 'boutique/03-bedroom-1-view', alt: 'The main bedroom of the Boutique Suite, with the city outside' } };
+const marks = LANDMARKS.map((l) => ({ ...l, shot: VIEW_PHOTOS[l.id][0] }));
+const mdac = GUIDES.find((g) => g.slug.startsWith('mdac'))!;
+const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
+const facts = [
+  { icon: 'clock', k: 'Local time', v: 'UTC+8 all year, with no daylight saving.', live: true },
+  { icon: 'card', k: 'Money', v: 'Malaysian ringgit (RM). Cards and e-wallets work in most shops and restaurants; keep some cash for street food.' },
+  { icon: 'sun', k: 'Weather', v: 'Warm all year, usually in the mid-20s to low 30s °C, with showers that often come in the afternoon.' },
+  { icon: 'plug', k: 'Plugs', v: 'Type G, the UK-style three-pin plug, at 240 volts.' },
+  { icon: 'globe', k: 'Language', v: "Malay is the national language, and English is widely spoken. You'll also hear Chinese and Tamil." },
+  { icon: 'train', k: 'Getting around', v: 'Trains and the monorail for the centre, and Grab, the ride-hailing app, at any hour.' },
+];
+const destination = {
+  '@context': 'https://schema.org', '@type': 'TouristDestination', name: 'Kuala Lumpur', url: `${BRAND.my}${city.path}`,
+  containedInPlace: { '@type': 'Country', name: 'Malaysia' },
+  includesAttraction: LANDMARKS.map((l) => ({ '@type': 'TouristAttraction', name: l.name })),
+};
+---
+<Layout site="my" title="Where to stay in Kuala Lumpur: two-bedroom suites near KLCC | Kozi" over
+  description="Stay in Kuala Lumpur's Golden Triangle, between KLCC and Bukit Bintang: Kozi two-bedroom suites at Vortex KLCC, the landmarks from our windows, and what to know before you fly."
+  jsonld={[crumbsLd(BRAND.my, crumbs), destination, lodgingLd]}>
+  <PageHead crumbs={crumbs} eyebrow="Malaysia" seed={2}>
+    <Fragment slot="title">Kuala <em>Lumpur.</em></Fragment>
+    <Fragment slot="lede">Malaysia's capital, where the Petronas Twin Towers, the street food of Jalan Alor and the malls of Bukit Bintang are a short ride apart. Kozi is in the Golden Triangle, between KLCC and Bukit Bintang.</Fragment>
+    <div class="ct-search"><Search id="city-search" /></div>
+  </PageHead>
+
+  <section class="wrap ct-stay" aria-labelledby="ct-stay-h">
+    <div class="ct-head">
+      <p class="eyebrow" data-reveal>Where we are</p>
+      <h2 id="ct-stay-h" class="display h2" data-split>Stay in the <em>Golden Triangle.</em></h2>
+    </div>
+    <ul class="ct-bs" role="list">
+      {city.buildings.map((b) => (
+        <li data-reveal>
+          <a class="ct-b" href={`${city.path}${b.id}/`}>
+            <div class="ct-b-media"><Photo k={covers[b.id].key} alt={covers[b.id].alt} sizes="(max-width: 900px) 92vw, 58vw" widths={[640, 960, 1280]} /></div>
+            <div class="ct-b-body">
+              <p class="ct-b-area">{b.area}</p>
+              <h3 class="display ct-b-name">{b.name}</h3>
+              <p class="ct-b-line">Two-bedroom suites with two bathrooms and a full kitchen, at {PROPERTY.building} on Jalan Sultan Ismail.</p>
+              <ul class="ct-b-suites" role="list">
+                {['boutique', 'premium', 'standard'].map((id) => { const s = SUITES.find((x) => x.id === id)!; return <li><b>{s.name}</b><span>{s.levels}</span></li>; })}
+              </ul>
+              <p class="ct-b-from" data-from data-types="boutique,premium,standard"><span>From</span> <b data-from-rate>&nbsp;</b> <span>a night</span><small data-from-mem></small></p>
+              <span class="btn ct-b-go">See the building <span class="arr" aria-hidden="true">→</span></span>
+            </div>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <section class="ct-marks" aria-labelledby="ct-marks-h">
+    <div class="wrap">
+      <div class="ct-head">
+        <p class="eyebrow eyebrow-light" data-reveal>From our windows</p>
+        <h2 id="ct-marks-h" class="display h2" data-split>The city's icons, <em>outside.</em></h2>
+        <p class="ct-marks-lede" data-reveal>Real photos from our suites. Which landmark you see depends on the suite, and every suite page says what its windows face.</p>
+      </div>
+      <ul class="ct-ms" role="list">
+        {marks.map((m, i) => (
+          <li class="ct-m" data-reveal style={`--d:${i * 90}`}>
+            <div class="ct-m-media"><Photo k={m.shot.key} alt={m.shot.alt} sizes="(max-width: 760px) 84vw, 31vw" widths={[480, 720, 960]} /></div>
+            <h3 class="display">{m.name}</h3>
+            <p>{m.line}</p>
+            <p class="ct-m-from">{m.shot.from}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="wrap ct-know" aria-labelledby="ct-know-h">
+    <div class="ct-know-head">
+      <div>
+        <p class="eyebrow" data-reveal>Kuala Lumpur at a glance</p>
+        <h2 id="ct-know-h" class="display h3" data-split>Good to know <em>before you land.</em></h2>
+      </div>
+      <div class="ct-now" data-reveal>
+        <p class="ct-now-k">Right now in Kuala Lumpur</p>
+        <p class="ct-now-t" data-kl-clock>&nbsp;</p>
+        <p class="ct-now-l" data-kl-line>&nbsp;</p>
+      </div>
+    </div>
+    <ul class="ct-facts" role="list">
+      {facts.map((f, i) => (
+        <li data-reveal style={`--d:${i * 60}`}><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><b>{f.k}</b><span>{f.v}</span></li>
+      ))}
+      <li data-reveal style="--d:360"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.doc} /><b>Arrival card</b><span>Most visitors fill in the free MDAC online in the 3 days before they land. <a href={`/guides/${mdac.slug}/`}>Our guide</a></span></li>
+      <li data-reveal style="--d:420"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.plane} /><b>From the airport</b><span>The KLIA Ekspres reaches KL Sentral in about 28 minutes. <a href={`/guides/${klia.slug}/`}>Train, Grab or taxi</a></span></li>
+    </ul>
+  </section>
+
+  <GuidesStrip />
+</Layout>
+
+<style is:global>
+  .ct-search { margin-top: clamp(26px, 4cqh, 44px); max-width: 920px; }
+  .ct-head { margin-bottom: clamp(36px, 5vw, 64px); }
+  .ct-head .h2 { margin-top: 22px; max-width: 9.2em; }
+  .ct-stay { padding: clamp(90px, 11vw, 160px) 0 clamp(80px, 10vw, 140px); }
+  .ct-bs { list-style: none; margin: 0; padding: 0; display: grid; gap: 24px; }
+  .ct-b { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); border-radius: 30px; overflow: hidden; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line);
+    transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
+  .ct-b:active { transform: scale(0.995); }
+  .ct-b-media { position: relative; min-height: 460px; background: var(--sand); }
+  .ct-b-media picture, .ct-b-media img { width: 100%; height: 100%; }
+  .ct-b-media img { position: absolute; inset: 0; object-fit: cover; transition: transform 1200ms var(--ease-out); }
+  .ct-b-body { padding: clamp(28px, 3.4vw, 52px); display: grid; align-content: center; gap: 14px; }
+  .ct-b-area { margin: 0; font: 650 11px/1.4 var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber-deep); }
+  .ct-b-name { font-size: clamp(34px, 3.6vw, 54px); line-height: 1; }
+  .ct-b-line { margin: 0; color: var(--ink-2); max-width: 23em; }
+  .ct-b-suites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; }
+  .ct-b-suites li { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  .ct-b-suites b { font-weight: 650; } .ct-b-suites span { color: var(--muted); }
+  .ct-b-from { margin: 6px 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; color: var(--muted); font-size: 15px; opacity: 0; transition: opacity 400ms ease; }
+  .ct-b-from.is-ready { opacity: 1; }
+  .ct-b-from b { font: 400 30px/1 var(--display); font-variation-settings: var(--soft); color: var(--ink); letter-spacing: -0.01em; }
+  .ct-b-from small { flex-basis: 100%; min-height: 1.45em; font-size: 13.5px; font-weight: 600; color: var(--amber-deep); }
+  .ct-b-go { justify-self: start; margin-top: 10px; }
+  @media (hover: hover) and (pointer: fine) {
+    .ct-b:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 40px 80px -50px rgb(43 38 34 / 0.55); }
+    .ct-b:hover .ct-b-media img { transform: scale(1.03); }
+    .ct-b:hover .ct-b-go { background: var(--ink-2); }
+    .ct-b:hover .ct-b-go .arr { transform: translateX(3px); }
+  }
+
+  .ct-marks { background: radial-gradient(120% 90% at 15% 0%, #2a2338 0%, var(--night) 60%); color: var(--cream); padding: clamp(96px, 12vw, 170px) 0; }
+  .ct-marks .display em { color: var(--amber-hi); }
+  .ct-marks-lede { margin: 22px 0 0; max-width: 29.9em; color: rgb(246 239 228 / 0.76); }
+  .ct-ms { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(16px, 2vw, 28px); }
+  .ct-m-media { aspect-ratio: 4 / 5; border-radius: 22px; overflow: hidden; background: #1d1a24; margin-bottom: 20px; }
+  .ct-m-media picture, .ct-m-media img { width: 100%; height: 100%; }
+  .ct-m-media img { object-fit: cover; }
+  .ct-m h3 { font-size: clamp(26px, 2.3vw, 34px); }
+  .ct-m p { margin: 8px 0 0; color: rgb(246 239 228 / 0.76); font-size: 15.5px; }
+  .ct-m .ct-m-from { margin-top: 12px; font: 600 12px/1 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber-hi); }
+
+  .ct-know { padding: clamp(90px, 11vw, 160px) 0; }
+  .ct-know-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; flex-wrap: wrap; margin-bottom: clamp(40px, 5vw, 64px); }
+  .ct-know-head .h3 { margin-top: 20px; }
+  .ct-now { text-align: right; }
+  .ct-now-k { margin: 0; font: 650 10.5px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .ct-now-t { margin: 10px 0 0; font: 330 clamp(40px, 4.4vw, 64px)/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .ct-now-l { margin: 8px 0 0; font-size: 15px; color: var(--ink-2); }
+  .ct-facts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+  .ct-facts li { display: grid; align-content: start; gap: 6px; padding: 28px 26px 30px 0; border-bottom: 1px solid var(--line); }
+  .ct-facts svg { width: 26px; height: 26px; margin-bottom: 8px; fill: none; stroke: var(--amber-deep); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .ct-facts b { font-weight: 650; }
+  .ct-facts span { font-size: 15px; line-height: 1.55; color: var(--ink-2); }
+  .ct-facts a { font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--amber); white-space: nowrap; }
+
+  @media (max-width: 1100px) { .ct-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 900px) {
+    .ct-b { grid-template-columns: 1fr; }
+    .ct-b-media { min-height: 0; aspect-ratio: 16 / 10; }
+    .ct-now { text-align: left; }
+  }
+  @media (max-width: 760px) {
+    .ct-ms { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 82%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+      margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); scroll-padding: 0 var(--gutter); }
+    .ct-ms::-webkit-scrollbar { display: none; }
+    .ct-m { scroll-snap-align: start; }
+    .ct-facts { grid-template-columns: 1fr; }
+    .ct-facts li { grid-template-columns: 26px 1fr; column-gap: 16px; padding: 20px 0; }
+    .ct-facts svg { grid-row: span 2; margin: 0; }
+  }
+</style>

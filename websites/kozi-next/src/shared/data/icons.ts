@@ -1,0 +1,28 @@
+// Line icons (24 x 24, drawn with a stroke) used across the site.
+export const ICONS: Record<string, string> = {
+  bed: '<path d="M3 18v-6.5A2.5 2.5 0 0 1 5.5 9h13a2.5 2.5 0 0 1 2.5 2.5V18M3 15h18M3 18v2M21 18v2"/><path d="M6 9V6.5A1.5 1.5 0 0 1 7.5 5h3A1.5 1.5 0 0 1 12 6.5V9M12 9V6.5A1.5 1.5 0 0 1 13.5 5h3A1.5 1.5 0 0 1 18 6.5V9"/>',
+  kitchen: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 10h16"/><circle cx="9" cy="6.5" r="1"/><circle cx="15" cy="6.5" r="1"/><path d="M8 14h8M8 17h5"/>',
+  washer: '<rect x="4" y="3" width="16" height="18" rx="2.5"/><circle cx="12" cy="13" r="4.5"/><path d="M9.5 13.5c1-.8 2-.8 3 0s2 .8 3 0"/><path d="M7 6.5h3"/>',
+  wifi: '<path d="M2.5 9.5a14 14 0 0 1 19 0M5.5 12.8a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19" r="1.1"/>',
+  key: '<circle cx="8" cy="15" r="4.5"/><path d="M11.3 11.7 20 3M16.5 6.5l2.5 2.5M14 9l2 2"/>',
+  chat: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h-1A.5.5 0 0 1 4 15.5Z"/><path d="M8 8.5h8M8 11.5h5"/>',
+
+  queen: '<path d="M3 19v-7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7M3 16h18"/><rect x="5.5" y="6" width="5.5" height="4" rx="1.4"/><rect x="13" y="6" width="5.5" height="4" rx="1.4"/>',
+  single: '<path d="M6 19v-7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v7M6 16h12"/><rect x="8.5" y="6" width="7" height="4" rx="1.4"/>',
+  bath: '<path d="M4 12h16v2.5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z"/><path d="M6 12V6a2 2 0 0 1 3.6-1.2M8 19.5 7 21M16 19.5l1 1.5"/>',
+  guests: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9.5" r="2.5"/><path d="M15.8 14.2A4.5 4.5 0 0 1 21 18.6"/>',
+  level: '<path d="M4 21V5l8-2v18M12 7l8 2v12M4 21h16M8 8h1M8 12h1M8 16h1M15 12h1M15 16h1"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.4"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  card: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h4"/>',
+  shield: '<path d="M12 3 5 6v5.5c0 4.3 3 7.8 7 9.5 4-1.7 7-5.2 7-9.5V6Z"/><path d="m9 12 2 2 4-4"/>',
+  leaf: '<path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14Z"/><path d="M5 19 13 11"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+  plug: '<path d="M8 3v5M16 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0Z"/><path d="M12 17v4"/>',
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.9 2.6 14.1 0 17M12 3.5c-2.6 2.9-2.6 14.1 0 17"/>',
+  train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l1.5-4M15 21l-1.5-4"/><circle cx="9" cy="14" r=".9"/><circle cx="15" cy="14" r=".9"/>',
+  plane: '<path d="M21 4.5c-.6-.6-1.9-.4-2.9.6L14.5 8.7 5.5 6 4 7.5l7.3 4.2-3.6 3.6-2.6-.5L4 15.9l3.1 1.4 1.4 3.1 1.1-1.1-.5-2.6 3.6-3.6 4.2 7.3 1.5-1.5-2.7-9 3.6-3.6c1-1 1.2-2.3.6-2.9Z"/>',
+  doc: '<path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v4h4M9 12h6M9 16h4"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/>',
+};

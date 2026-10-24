@@ -1,0 +1,85 @@
+---
+// The top of an inner page: the live Kuala Lumpur sky behind the title (colours only, no canvas),
+// with the skyline along the bottom and a breadcrumb above. The header floats over it.
+import { buildSkyline, VB } from '@shared/lib/skyline';
+import type { Crumb } from '@shared/lib/seo';
+import { maskWords } from '@shared/lib/words';
+// pin: a label on our window in the skyline (building pages), linking where it says
+interface Props { crumbs?: Crumb[]; eyebrow?: string; seed?: number; size?: 'tall' | 'short'; id?: string; pin?: { href: string; title: string; sub: string } }
+const { crumbs = [], eyebrow, seed = 5, size = 'tall', id = 'pg-h', pin } = Astro.props;
+const sky = buildSkyline(seed, { id: `pg${seed}` });
+const at = { left: ((sky.kozi.x + 3.5) / VB.w) * 100, top: ((sky.kozi.y + 4.5) / VB.h) * 100 };
+const title = maskWords(await Astro.slots.render('title'));
+---
+<section class:list={['pg', `pg-${size}`]} data-page-hero aria-labelledby={id}>
+  <div class="pg-city" aria-hidden="true"><div class="city-box pg-box"><Fragment set:html={sky.svg} /></div></div>
+  <div class="pg-ground" aria-hidden="true"></div>
+  {pin && (
+    <div class="pg-pins">
+      <div class="city-box pg-box">
+        <a class="kozi-pin" href={pin.href} style={`left:${at.left.toFixed(3)}%;top:${at.top.toFixed(3)}%`}>
+          <span class="kp-line" aria-hidden="true"></span>
+          <span class="kp-label"><b>{pin.title}</b><small>{pin.sub} <span aria-hidden="true">→</span></small></span>
+        </a>
+      </div>
+    </div>
+  )}
+  <div class="wrap pg-copy">
+    {crumbs.length > 0 && (
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>
+          {crumbs.map((c, i) => (
+            <li>{c.path && i < crumbs.length - 1 ? <a href={c.path}>{c.name}</a> : <span aria-current="page">{c.name}</span>}</li>
+          ))}
+        </ol>
+      </nav>
+    )}
+    {eyebrow && <p class="eyebrow pg-eyebrow">{eyebrow}</p>}
+    <h1 id={id} class="display pg-h" set:html={title} />
+    {Astro.slots.has('lede') && <p class="pg-lede"><slot name="lede" /></p>}
+    <slot />
+  </div>
+</section>
+
+<style is:global>
+  .pg { --ink-now: var(--ink); --accent-now: var(--amber-deep);
+    position: relative; isolation: isolate; overflow: hidden; container-type: size; color: var(--ink-now);
+    height: clamp(560px, 78svh, 860px); background: linear-gradient(to top, var(--hor) 26%, var(--zen)); transition: color 600ms ease; }
+  .pg-short { height: clamp(460px, 60svh, 660px); }
+  :root[data-ink='light'] .pg { --ink-now: var(--cream); --accent-now: var(--amber-hi); }
+  .pg-city { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+  .pg-pins { position: absolute; inset: 0; pointer-events: none; }
+  /* a lower, wider skyline than the homepage, so the title has the sky to itself */
+  .pg-box { --W: max(100cqw, 180cqh); bottom: calc(var(--W) * -0.085); }
+  .pg-short .pg-box { --W: max(100cqw, 210cqh); bottom: calc(var(--W) * -0.1); }
+  .pg .kozi-pin { --kp-h: 64px; }
+  /* the pin draws itself up from our window once the page opens */
+  .pg .kp-line { animation: pg-line 700ms var(--ease-out) 300ms backwards; }
+  .pg .kp-label { animation: pg-label 500ms var(--ease-out) 750ms backwards; }
+  @keyframes pg-line { from { transform: scaleY(0); } }
+  @keyframes pg-label { from { opacity: 0; transform: translateY(6px); } }
+  @keyframes pg-fade { from { opacity: 0; } }
+  .pg-ground { position: absolute; inset: auto 0 0; height: 22%; z-index: -1; pointer-events: none;
+    background: linear-gradient(to top, color-mix(in srgb, var(--sk4) 90%, transparent), transparent); }
+  .pg-copy { padding-top: calc(var(--hd-h) + clamp(28px, 6cqh, 72px)); }
+  .pg .eyebrow { color: var(--accent-now); }
+  .pg-eyebrow { margin-top: 26px; }
+  .pg-h { font-size: clamp(46px, min(7.4vw, 10cqh), 118px); margin: 20px 0 0; max-width: 8.05em; }
+  .pg-h em { color: var(--accent-now); }
+  /* the title's words rise out of their own masks as the page opens */
+  .pg-h .wm { display: inline-block; vertical-align: top; overflow: clip; overflow-clip-margin: 0.16em; }
+  .pg-h .wm > span { display: inline-block; }
+  .js:not(.rm) .pg-h .wm > span { animation: pg-word 1100ms var(--ease-out) backwards; animation-delay: calc(60ms + var(--i) * 55ms); }
+  @keyframes pg-word { from { transform: translateY(112%); } }
+  .pg-lede { margin: 22px 0 0; max-width: 31.05em; font-size: clamp(17px, 1.3vw, 20px); line-height: 1.55; opacity: 0.86; }
+  /* on a phone the title can wrap to any height, so the band grows with it and the skyline sits under the words */
+  @media (prefers-reduced-motion: reduce) {
+    .pg .kp-line { animation: none; }
+    .pg .kp-label { animation: pg-fade 300ms ease 200ms backwards; }
+  }
+  @media (max-width: 760px) {
+    .pg, .pg-short { container-type: inline-size; height: auto; padding-bottom: 58vw; }
+    .pg-box, .pg-short .pg-box { --W: 250cqw; bottom: calc(var(--W) * -0.075); }
+    .pg-h { font-size: clamp(42px, 12vw, 60px); }
+  }
+</style>

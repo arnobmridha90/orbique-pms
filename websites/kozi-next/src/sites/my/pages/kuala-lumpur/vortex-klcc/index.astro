@@ -1,0 +1,115 @@
+---
+// A building: our window marked in the live skyline, the tower itself, its three suite types,
+// what is around it, and the member price. Every building page follows this shape.
+import Layout from '@shared/components/Layout.astro';
+import PageHead from '@shared/components/PageHead.astro';
+import Photo from '@shared/components/Photo.astro';
+import Suites from '@shared/components/Suites.astro';
+import Direct from '@shared/components/Direct.astro';
+import { BRAND, NEARBY, POLICIES, PROPERTY, SUITES } from '@shared/data/kozi';
+import { ICONS } from '@shared/data/icons';
+import { crumbsLd, lodgingLd, orgLd, suiteLd } from '@shared/lib/seo';
+
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Kuala Lumpur', path: '/kuala-lumpur/' }, { name: PROPERTY.name, path: PROPERTY.path }];
+const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('Vortex Suites KLCC, Jalan Sultan Ismail, Kuala Lumpur');
+const facts = [
+  { icon: 'pin', k: 'Address', v: `${PROPERTY.building}, ${PROPERTY.address}` },
+  { icon: 'key', k: 'Check-in', v: `From ${PROPERTY.checkIn}, with your own door code. It reaches you 30 minutes before.` },
+  { icon: 'clock', k: 'Check-out', v: `By ${PROPERTY.checkOut}.` },
+  { icon: 'shield', k: 'Security', v: '24-hour security in the building.' },
+  { icon: 'card', k: 'Pool and gym', v: 'In the building, for a fee. They are not included in the price of a stay.' },
+  { icon: 'train', k: 'Getting around', v: 'Raja Chulan monorail station is nearby, and Grab rides are easy to get at any hour.' },
+];
+---
+<Layout site="my" title="Kozi @ Vortex KLCC: two-bedroom suites in Kuala Lumpur" over
+  description="Kozi @ Vortex KLCC: two-bedroom suites with two bathrooms and a full kitchen at Vortex Suites KLCC on Jalan Sultan Ismail, between KLCC and Bukit Bintang. Live prices and member deals."
+  jsonld={[crumbsLd(BRAND.my, crumbs), orgLd, lodgingLd, ...SUITES.filter((s) => s.hasPhotos).map((s) => suiteLd(s))]}>
+  <PageHead crumbs={crumbs} eyebrow="Kuala Lumpur · Golden Triangle" seed={5} pin={{ href: '#suites', title: PROPERTY.name, sub: 'Our suites, levels 26 to 47' }}>
+    <Fragment slot="title">Kozi @ <em>Vortex KLCC.</em></Fragment>
+    <Fragment slot="lede">Two-bedroom suites with two bathrooms and a full kitchen at {PROPERTY.building}, on Jalan Sultan Ismail between KLCC and Bukit Bintang.</Fragment>
+    <div class="bd-cta">
+      <a class="btn bd-go" href="/stays/">Check prices <span class="arr" aria-hidden="true">→</span></a>
+      <p class="bd-from" data-from data-types="boutique,premium,standard"><span>From</span> <b data-from-rate>&nbsp;</b> <span>a night</span><small data-from-mem></small></p>
+    </div>
+  </PageHead>
+
+  <section class="wrap bd-about" aria-labelledby="bd-about-h">
+    <figure class="bd-photo" data-reveal>
+      <Photo k="building/Vortex-KLCC-skyline-view-2017" alt="Vortex Suites KLCC, a rounded glass tower, among the towers of the Golden Triangle" sizes="(max-width: 900px) 92vw, 40vw" widths={[480, 720, 960, 1350]} />
+      <figcaption>Photo: Renek78, <a href="https://commons.wikimedia.org/wiki/File:Vortex_Suites_KLCC,_Kuala_Lumpur.jpg" rel="noopener">Wikimedia Commons</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="noopener license">CC BY-SA 4.0</a></figcaption>
+    </figure>
+    <div class="bd-copy">
+      <p class="eyebrow" data-reveal>The building</p>
+      <h2 id="bd-about-h" class="display h3" data-split>The rounded glass tower on <em>Jalan Sultan Ismail.</em></h2>
+      <p class="bd-p" data-reveal>Our suites are on levels 26 to 47 of {PROPERTY.building}, in the Golden Triangle. Every one has two bedrooms, two bathrooms, a full kitchen and its own washing machine, so a family or a group of friends can settle in for a weekend or a month.</p>
+      <ul class="bd-facts" role="list">
+        {facts.map((f, i) => (
+          <li data-reveal style={`--d:${i * 50}`}><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><div><b>{f.k}</b><span>{f.v}</span></div></li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <Suites />
+
+  <section class="wrap bd-near" aria-labelledby="bd-near-h">
+    <div class="bd-near-copy">
+      <p class="eyebrow" data-reveal>Around Vortex</p>
+      <h2 id="bd-near-h" class="display h3" data-split>Between KLCC and <em>Bukit Bintang.</em></h2>
+      <p class="bd-p" data-reveal>Walk to Pavilion KL for shopping, to the Petronas Twin Towers and KLCC Park, and to the street food of Jalan Alor and the bars of Changkat Bukit Bintang.</p>
+      <a class="btn ghost bd-map" href={maps} rel="noopener" target="_blank" data-reveal><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.pin} />Open in Google Maps <span aria-hidden="true">↗</span></a>
+    </div>
+    <ol class="bd-list" role="list">
+      {NEARBY.map((n, i) => (
+        <li data-reveal style={`--d:${i * 60}`}><span class="bd-n" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><div><b>{n.name}</b><span>{n.what}</span></div></li>
+      ))}
+    </ol>
+    <p class="bd-rules" data-reveal>{POLICIES.rules} {POLICIES.tax}</p>
+  </section>
+
+  <Direct />
+</Layout>
+
+<style is:global>
+  .bd-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 26px; margin-top: clamp(26px, 4cqh, 40px); }
+  :root[data-ink='light'] .pg .bd-go { background: var(--cream); color: var(--ink); }
+  /* a set width, so the price filling in can't move it under the button after the page has drawn */
+  .bd-from { flex: 1 1 15rem; margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 15px; opacity: 0; transition: opacity 400ms ease; }
+  .bd-from.is-ready { opacity: 1; }
+  .bd-from > span { opacity: 0.75; }
+  .bd-from b { font: 400 30px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; }
+  .bd-from small { flex-basis: 100%; min-height: 1.45em; font-size: 13.5px; font-weight: 600; color: var(--accent-now); } /* room kept for the member line */
+
+  .bd-about { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: clamp(40px, 7vw, 120px); align-items: center; padding: clamp(90px, 11vw, 160px) 0; }
+  .bd-photo { margin: 0; }
+  .bd-photo picture, .bd-photo img { display: block; width: 100%; }
+  .bd-photo img { height: auto; aspect-ratio: 4 / 5.2; object-fit: cover; object-position: 50% 18%; border-radius: 28px; background: var(--sand); }
+  .bd-photo figcaption { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+  .bd-photo figcaption a { border-bottom: 1px solid var(--line); }
+  .bd-copy .h3 { margin-top: 20px; max-width: 10.35em; }
+  .bd-p { margin: 22px 0 0; max-width: 31.05em; color: var(--ink-2); font-size: 17.5px; }
+  .bd-facts { list-style: none; margin: 34px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+  .bd-facts li { display: grid; grid-template-columns: 24px 1fr; gap: 14px; padding: 18px 0; border-top: 1px solid var(--line); }
+  .bd-facts svg, .bd-map svg { width: 22px; height: 22px; fill: none; stroke: var(--amber-deep); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .bd-facts b { display: block; font-weight: 650; }
+  .bd-facts span { display: block; margin-top: 3px; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); }
+
+  .bd-near { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px clamp(40px, 7vw, 120px); align-items: start; padding: clamp(90px, 11vw, 160px) 0; }
+  .bd-near-copy .h3 { margin-top: 20px; }
+  .bd-map { margin-top: 30px; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  .bd-map svg { stroke: currentColor; }
+  @media (hover: hover) and (pointer: fine) { .bd-map:hover { background: rgb(43 38 34 / 0.05); } }
+  .bd-list { list-style: none; margin: 0; padding: 0; display: grid; }
+  .bd-list li { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 20px 0; border-top: 1px solid var(--line); }
+  .bd-list li:last-child { border-bottom: 1px solid var(--line); }
+  .bd-n { font: 400 24px/1 var(--display); font-variation-settings: var(--soft); color: var(--amber-deep); padding-top: 2px; }
+  .bd-list b { display: block; font: 400 22px/1.2 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; }
+  .bd-list span { display: block; margin-top: 3px; font-size: 15px; color: var(--muted); }
+  .bd-rules { grid-column: 1 / -1; margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+
+  @media (max-width: 900px) {
+    .bd-about, .bd-near { grid-template-columns: 1fr; }
+    .bd-photo img { aspect-ratio: 4 / 4.6; }
+  }
+  @media (max-width: 760px) { .bd-facts { grid-template-columns: 1fr; } }
+</style>

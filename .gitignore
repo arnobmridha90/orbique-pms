@@ -16,3 +16,4 @@ mobile/www/
 *.p12
 *.mobileprovision
 !websites/kozi/**/*.png
+!websites/kozi-next/**/*.png

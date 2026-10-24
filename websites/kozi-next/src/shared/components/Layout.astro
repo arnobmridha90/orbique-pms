@@ -1,0 +1,85 @@
+---
+import '@shared/styles/base.css';
+import '@shared/styles/ui.css';
+import Header from './Header.astro';
+import Footer from './Footer.astro';
+import Logo from './Logo.astro';
+import Member from './Member.astro';
+import { BRAND } from '@shared/data/kozi';
+import fraunces from '@assets/fonts/fraunces-kozi-normal.woff2?url';
+import inter from '@fontsource-variable/inter-tight/files/inter-tight-latin-wght-normal.woff2?url';
+
+interface Props {
+  site: 'my' | 'com';
+  title: string;
+  description: string;
+  image?: string;
+  jsonld?: Record<string, unknown>[];
+  alternates?: { lang: string; href: string }[];
+  noindex?: boolean;
+  over?: boolean;    // the page opens with a full-bleed hero under a see-through header
+  intro?: boolean;   // play the logo intro (once per visit)
+  ink?: 'light' | 'dark'; // a page whose top is always dark or light, whatever the sky over Kuala Lumpur
+}
+const { site, title, description, image = `/og-${site}.jpg`, jsonld = [], alternates = [], over = false, intro = false, ink } = Astro.props;
+// a preview build keeps every page out of search
+const noindex = Astro.props.noindex || import.meta.env.PUBLIC_NOINDEX === '1';
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const og = new URL(image, `${BRAND[site]}/`).href;
+---
+<!doctype html>
+<html lang={site === 'my' ? 'en-MY' : 'en'} data-ink={ink ?? 'dark'} data-ink-fixed={ink ? '' : undefined}>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <link rel="canonical" href={canonical} />
+  {alternates.map((a) => <link rel="alternate" hreflang={a.lang} href={a.href} />)}
+  {noindex && <meta name="robots" content="noindex" />}
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Kozi" />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:url" content={canonical} />
+  <meta property="og:image" content={og} />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="theme-color" content="#f6efe4" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="preload" href={fraunces} as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href={inter} as="font" type="font/woff2" crossorigin />
+  <script is:inline>
+    // Before first paint: mark JS, remember reduced motion, reuse this tab's live sky, skip a seen intro.
+    (function () {
+      var d = document.documentElement, rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      d.classList.add('js'); if (rm) d.classList.add('rm');
+      try {
+        var c = JSON.parse(sessionStorage.getItem('kozi-sky') || 'null');
+        if (c && Date.now() - c.t < 6e5) { for (var k in c.v) d.style.setProperty(k, c.v[k]); if (!d.hasAttribute('data-ink-fixed')) d.dataset.ink = c.ink; }
+        if (rm || sessionStorage.getItem('kozi-intro')) d.classList.add('no-intro');
+      } catch (e) { d.classList.add('no-intro'); }
+      setTimeout(function () { if (!window.__kozi) d.classList.add('js-late'); }, 4000);
+    })();
+  </script>
+  {jsonld.map((j) => <script type="application/ld+json" set:html={JSON.stringify(j)} />)}
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  {intro && (
+    <div class="intro" data-intro aria-hidden="true">
+      <div class="intro-mark"><Logo id="intro" /></div>
+      <button type="button" class="intro-skip" data-intro-skip tabindex="-1">Skip</button>
+    </div>
+  )}
+  <Header site={site} over={over} />
+  <main id="main"><slot /></main>
+  <Footer site={site} />
+  {site === 'my' && <Member />}
+  <slot name="end" />
+  <script>
+    import { boot } from '@shared/scripts/app';
+    boot();
+  </script>
+</body>
+</html>

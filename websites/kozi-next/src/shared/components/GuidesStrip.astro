@@ -1,0 +1,47 @@
+---
+import { GUIDES } from '@shared/data/kozi';
+import Photo from './Photo.astro';
+---
+<section class="gd" aria-labelledby="gd-h">
+  <div class="wrap">
+    <div class="gd-head">
+      <div>
+        <p class="eyebrow" data-reveal>Before you fly</p>
+        <h2 id="gd-h" class="display h2" data-split>Guides for <em>Kuala Lumpur.</em></h2>
+      </div>
+      <a class="gd-all" href="/guides/" data-reveal>All guides <span aria-hidden="true">→</span></a>
+    </div>
+    <ul class="gd-list" role="list">
+      {GUIDES.map((g, i) => (
+        <li data-reveal style={`--d:${i * 90}`}>
+          <a class="gd-card" href={`/guides/${g.slug}/`}>
+            <div class="gd-media"><Photo k={g.photo} alt="" sizes="(max-width: 760px) 84vw, 31vw" widths={[480, 720]} /></div>
+            <p class="gd-tag">{g.tag}</p>
+            <h3 class="gd-title">{g.title}</h3>
+            <p class="gd-line">{g.line}</p>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style is:global>
+  .gd { background: var(--paper); padding: clamp(96px, 12vw, 170px) 0; }
+  .gd-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: clamp(40px, 5vw, 70px); }
+  .gd-head .h2 { margin-top: 22px; }
+  .gd-all { font-weight: 600; white-space: nowrap; border-bottom: 1px solid var(--ink); padding-bottom: 3px; }
+  .gd-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2vw, 28px); }
+  .gd-media { aspect-ratio: 3 / 2; border-radius: 18px; overflow: hidden; background: var(--sand); }
+  .gd-media img { width: 100%; height: 100%; object-fit: cover; transition: transform 1200ms var(--ease-out); }
+  .gd-tag { margin: 18px 0 6px; font: 600 11px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--amber-deep); }
+  .gd-title { margin: 0; font: 400 clamp(22px, 1.9vw, 28px)/1.15 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.012em; }
+  .gd-line { margin: 8px 0 0; color: var(--ink-2); font-size: 15.5px; }
+  @media (hover: hover) and (pointer: fine) { .gd-card:hover .gd-media img { transform: scale(1.04); } }
+  @media (max-width: 760px) {
+    .gd-list { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 82%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); scroll-padding: 0 var(--gutter); }
+    .gd-list::-webkit-scrollbar { display: none; }
+    .gd-list li { scroll-snap-align: start; }
+    .gd-head { flex-direction: column; align-items: flex-start; }
+  }
+</style>

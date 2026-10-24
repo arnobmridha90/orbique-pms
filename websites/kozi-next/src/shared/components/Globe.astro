@@ -1,0 +1,27 @@
+---
+// The Earth lit as it is right now, with Kozi's cities on it (staykozi.com). The page places the
+// stage; the nearest [data-globe] ancestor runs it, and any [data-fly] inside that turns it to a city.
+import { BRAND, DESTINATIONS } from '@shared/data/kozi';
+---
+<div class="gh-stage">
+  <canvas class="gh-canvas" data-globe-canvas aria-hidden="true"></canvas>
+  {DESTINATIONS.map((d) => (
+    <a class="gh-spot" data-spot data-lat={d.geo.lat} data-lon={d.geo.lon} data-tz={d.tz} href={`${BRAND.my}${d.path}`} tabindex="-1" aria-hidden="true">
+      <span><b>{d.city}</b><small>{d.country}<i data-spot-time></i></small></span>
+    </a>
+  ))}
+</div>
+
+<style is:global>
+  .gh-stage { position: relative; aspect-ratio: 1; opacity: 0; transition: opacity 1400ms ease; }
+  [data-globe].is-ready .gh-stage { opacity: 1; }
+  .gh-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: pan-y; }
+  [data-globe].is-dragging .gh-canvas { cursor: grabbing; }
+  .gh-spot { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; }
+  .gh-spot span { position: absolute; left: 16px; top: -16px; display: grid; gap: 1px; padding: 8px 12px; white-space: nowrap; border-radius: 12px 12px 12px 3px; color: var(--cream);
+    background: rgb(14 15 28 / 0.78); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12); }
+  .gh-spot b { font: 600 13px/1.2 var(--sans); }
+  .gh-spot small { font: 500 11.5px/1.3 var(--sans); color: rgb(246 239 228 / 0.7); }
+  .gh-spot i { font-style: normal; font-variant-numeric: tabular-nums; }
+  .gh-spot i:not(:empty)::before { content: ' · '; }
+</style>

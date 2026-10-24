@@ -1,0 +1,34 @@
+---
+// The closing band on reading pages: one photo, one line, and the way to the suites.
+import Photo from './Photo.astro';
+import { PROPERTY } from '@shared/data/kozi';
+interface Props { k?: string; eyebrow?: string; base?: string } // base: another site's address, for links from staykozi.com
+const { k = 'premium-a/10-kl-tower-view-night', eyebrow = 'Stay with us', base = '' } = Astro.props;
+---
+<section class="sb" aria-labelledby="sb-h">
+  <div class="sb-media" aria-hidden="true"><Photo k={k} alt="" sizes="100vw" widths={[800, 1280, 1800, 2400]} /></div>
+  <div class="wrap sb-in">
+    <p class="eyebrow" data-reveal>{eyebrow}</p>
+    <h2 id="sb-h" class="display h2" data-split>Wake up <em>above the city.</em></h2>
+    <p class="sb-line" data-reveal>Two-bedroom suites with two bathrooms and a full kitchen at {PROPERTY.building}, between KLCC and Bukit Bintang.</p>
+    <div class="sb-cta" data-reveal>
+      <a class="btn amber" href={`${base}/stays/`}>Find your dates <span class="arr" aria-hidden="true">→</span></a>
+      <a class="btn ghost sb-ghost" href={`${base}${PROPERTY.path}`}>See the suites</a>
+    </div>
+  </div>
+</section>
+
+<style is:global>
+  .sb { position: relative; isolation: isolate; overflow: hidden; color: var(--cream); padding: clamp(120px, 16vw, 230px) 0 clamp(70px, 9vw, 120px); background: var(--night); }
+  .sb-media { position: absolute; inset: 0; z-index: -1; }
+  .sb-media picture, .sb-media img { width: 100%; height: 100%; }
+  .sb-media img { object-fit: cover; object-position: 50% 50%; }
+  .sb-media::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgb(14 12 18 / 0.86) 6%, rgb(14 12 18 / 0.3) 60%, rgb(14 12 18 / 0.12)), linear-gradient(to right, rgb(14 12 18 / 0.55), transparent 60%); }
+  .sb .eyebrow { color: var(--amber-hi); }
+  .sb .h2 { margin-top: 20px; max-width: 7.47em; }
+  .sb .display em { color: var(--amber-hi); }
+  .sb-line { margin: 22px 0 0; max-width: 26.45em; font-size: clamp(17px, 1.3vw, 20px); color: rgb(246 239 228 / 0.86); }
+  .sb-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+  .sb-ghost { color: var(--cream); box-shadow: inset 0 0 0 1px rgb(246 239 228 / 0.4); }
+  @media (hover: hover) and (pointer: fine) { .sb-ghost:hover { background: rgb(246 239 228 / 0.1); } }
+</style>

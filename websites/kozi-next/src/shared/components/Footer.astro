@@ -1,0 +1,77 @@
+---
+import Logo from './Logo.astro';
+import { BRAND, GUIDES, PROPERTY } from '@shared/data/kozi';
+interface Props { site: 'my' | 'com' }
+const { site } = Astro.props;
+const base = site === 'my' ? '' : BRAND.my;
+const year = new Date().getFullYear();
+---
+<footer class="ft" data-ft>
+  <div class="wrap ft-top">
+    <div class="ft-brand">
+      <Logo id="ft" class="ft-logo" />
+      <p class="ft-tag display">Exceptional spaces.<br /><em>Memorable stays.</em></p>
+    </div>
+    <div class="ft-now" aria-live="off">
+      <p class="ft-k">Right now in Kuala Lumpur</p>
+      <p class="ft-clock" data-kl-clock>&nbsp;</p>
+      <p class="ft-sun"><span>Sunrise <b data-kl-rise>&nbsp;</b></span><span>Sunset <b data-kl-set>&nbsp;</b></span></p>
+    </div>
+  </div>
+  <div class="wrap ft-cols">
+    <nav aria-label="Stay">
+      <p class="ft-k">Stay</p>
+      <a href={`${base}/kuala-lumpur/`}>Kuala Lumpur</a>
+      <a href={`${base}${PROPERTY.path}`}>{PROPERTY.name}</a>
+      <a href={`${base}/stays/`}>All suites</a>
+    </nav>
+    <nav aria-label="Plan">
+      <p class="ft-k">Plan your trip</p>
+      {GUIDES.map((g) => <a href={`${base}/guides/${g.slug}/`}>{g.title}</a>)}
+    </nav>
+    <nav aria-label="Kozi">
+      <p class="ft-k">Kozi</p>
+      <a href={`${base}/#direct`}>Book direct</a>
+      <a href={`${base}/contact/`}>Contact</a>
+      <a href={`${BRAND.com}/`}>Kozi worldwide</a>
+    </nav>
+    <div>
+      <p class="ft-k">Say hello</p>
+      <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a>
+      <a href={BRAND.instagram} rel="noopener">Instagram</a>
+      <a href={BRAND.facebook} rel="noopener">Facebook</a>
+    </div>
+  </div>
+  <div class="wrap ft-base">
+    <span>© {year} Kozi, a brand of {BRAND.company} · <a href={`${base}/credits/`}>Photo credits</a></span>
+    <span>We speak English, Bahasa Malaysia and Bahasa Indonesia.</span>
+  </div>
+</footer>
+
+<style is:global>
+  .ft { position: relative; background: var(--night); color: var(--cream); padding: clamp(72px, 10vw, 140px) 0 calc(28px + env(safe-area-inset-bottom, 0px)); overflow: hidden; }
+  .ft::before { content: ''; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, rgb(240 184 96 / 0.5), transparent); }
+  .ft-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; flex-wrap: wrap; }
+  .ft-brand { display: flex; align-items: flex-end; gap: clamp(20px, 3vw, 40px); }
+  .ft-logo { width: clamp(96px, 11vw, 150px); color: var(--cream); flex: none; }
+  .ft-tag { font-size: clamp(30px, 3.6vw, 54px); line-height: 1; }
+  .ft-tag em { color: var(--amber-hi); }
+  .ft-k { margin: 0 0 14px; font: 600 11px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: rgb(246 239 228 / 0.55); }
+  .ft-now { text-align: right; }
+  .ft-clock { margin: 0; font: 330 clamp(44px, 5vw, 76px)/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .ft-sun { margin: 10px 0 0; display: flex; gap: 18px; justify-content: flex-end; font-size: 14px; color: rgb(246 239 228 / 0.7); }
+  .ft-sun b { color: var(--cream); font-weight: 600; }
+  .ft-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; margin-top: clamp(56px, 7vw, 96px); padding-top: 40px; border-top: 1px solid rgb(246 239 228 / 0.12); }
+  .ft-cols nav, .ft-cols > div { display: grid; align-content: start; gap: 10px; }
+  .ft-cols a { font-size: 15px; color: rgb(246 239 228 / 0.86); width: fit-content; transition: color 200ms ease; }
+  @media (hover: hover) and (pointer: fine) { .ft-cols a:hover { color: var(--amber-hi); } }
+  .ft-base { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 64px; font-size: 13px; color: rgb(246 239 228 / 0.5); }
+  .ft-base a { border-bottom: 1px solid rgb(246 239 228 / 0.25); transition: color 200ms ease; }
+  @media (hover: hover) and (pointer: fine) { .ft-base a:hover { color: var(--cream); } }
+  @media (max-width: 860px) {
+    .ft-cols { grid-template-columns: 1fr 1fr; }
+    .ft-now { text-align: left; }
+    .ft-sun { justify-content: flex-start; }
+  }
+  @media (max-width: 520px) { .ft-brand { flex-direction: column; align-items: flex-start; } }
+</style>

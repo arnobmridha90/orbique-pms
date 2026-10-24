@@ -1,0 +1,21 @@
+---
+// Not found: the live sky still shows, with three ways back.
+import Layout from '@shared/components/Layout.astro';
+import PageHead from '@shared/components/PageHead.astro';
+---
+<Layout site="my" title="Page not found | Kozi" description="This page could not be found." noindex over>
+  <PageHead eyebrow="Page not found" seed={11}>
+    <Fragment slot="title">This page has <em>checked out.</em></Fragment>
+    <Fragment slot="lede">The link may be old, or the page has moved. These will get you back on track.</Fragment>
+    <div class="nf-go">
+      <a class="btn nf-main" href="/">Back to the homepage <span class="arr" aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/stays/">Find a stay</a>
+      <a class="btn ghost" href="/guides/">Read the guides</a>
+    </div>
+  </PageHead>
+</Layout>
+
+<style is:global>
+  .nf-go { display: flex; flex-wrap: wrap; gap: 12px; margin-top: clamp(28px, 4cqh, 44px); }
+  :root[data-ink='light'] .pg .nf-main { background: var(--cream); color: var(--ink); }
+</style>

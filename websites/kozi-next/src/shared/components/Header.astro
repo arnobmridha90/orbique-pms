@@ -1,0 +1,100 @@
+---
+// The top bar. Over the live hero it is see-through and takes the sky's text colour;
+// once you scroll it settles onto paper, tucks away while you read down, returns when you scroll up.
+import Logo from './Logo.astro';
+import { BRAND } from '@shared/data/kozi';
+interface Props { site: 'my' | 'com'; over?: boolean }
+const { site, over = false } = Astro.props;
+const nav = site === 'my'
+  ? [{ href: '/stays/', label: 'Stays' }, { href: '/kuala-lumpur/', label: 'Kuala Lumpur' }, { href: '/guides/', label: 'Guides' }, { href: '/#direct', label: 'Book direct' }]
+  : [{ href: '/#destinations', label: 'Destinations' }, { href: '/#way', label: 'The Kozi way' }, { href: `${BRAND.my}/`, label: 'Malaysia' }];
+const here = Astro.url.pathname;
+---
+<header class="hd" data-hd data-over={over ? '' : undefined}>
+  <div class="hd-in">
+    <a class="hd-brand" href="/" aria-label="Kozi home"><Logo id="hd" /></a>
+    <nav class="hd-nav" aria-label="Main">
+      {nav.map((n) => <a href={n.href} aria-current={here === n.href ? 'page' : undefined}>{n.label}</a>)}
+    </nav>
+    <div class="hd-end">
+      {site === 'my' && (
+        <a class="hd-country" href={`${BRAND.com}/`} title="Kozi in other countries">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" /></svg><span>MY</span>
+        </a>
+      )}
+      {site === 'my' && <button type="button" class="hd-member" data-member-open><span data-member-label>Sign in</span></button>}
+      <a class="btn small hd-book" href={site === 'my' ? '/stays/' : `${BRAND.my}/stays/`}>Book a stay</a>
+      <button type="button" class="hd-menu" aria-expanded="false" aria-controls="menu" data-menu-btn><span class="sr-only">Menu</span><i aria-hidden="true"></i><i aria-hidden="true"></i></button>
+    </div>
+  </div>
+</header>
+
+<div class="menu" id="menu" data-menu aria-label="Menu" role="dialog" aria-modal="true" inert>
+  <nav class="menu-nav" aria-label="Menu">
+    {nav.map((n, i) => <a href={n.href} style={`--i:${i}`}>{n.label}</a>)}
+    {site === 'my' && <button type="button" style={`--i:${nav.length}`} data-member-open>Member sign in</button>}
+  </nav>
+  <div class="menu-foot" style={`--i:${nav.length + 1}`}>
+    <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a>
+    <span><a href={BRAND.instagram} rel="noopener">Instagram</a> · <a href={BRAND.facebook} rel="noopener">Facebook</a></span>
+  </div>
+</div>
+
+<style is:global>
+  :root { --hd-h: 76px; }
+  @media (max-width: 760px) { :root { --hd-h: 64px; } }
+  .hd { position: fixed; inset: 0 0 auto; z-index: 60; height: var(--hd-h); color: var(--ink);
+    transition: transform 320ms var(--ease-out), background-color 300ms ease, box-shadow 300ms ease, color 500ms ease; }
+  .hd[data-over] { color: var(--ink-now, var(--ink)); }
+  :root[data-ink='light'] .hd[data-over]:not([data-solid]) { color: var(--cream); }
+  .hd[data-solid] { background: rgb(246 239 228 / 0.84); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); box-shadow: 0 1px 0 var(--line); color: var(--ink); }
+  .hd[data-hidden] { transform: translateY(-100%); }
+  .hd-in { height: 100%; display: flex; align-items: center; gap: 28px; padding: 0 var(--gutter); max-width: calc(var(--maxw) + 2 * var(--gutter)); margin: 0 auto; }
+  .hd-brand { flex: none; display: block; width: 46px; height: 46px; margin-left: -4px; }
+  .hd-brand .logo { width: 100%; height: 100%; }
+  .hd-nav { display: flex; gap: 4px; margin-left: 10px; }
+  .hd-nav a { position: relative; padding: 9px 12px; border-radius: 999px; font: 550 14.5px/1 var(--sans); letter-spacing: -0.003em; transition: background-color 200ms ease; }
+  .hd-nav a[aria-current='page']::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 1.5px; background: currentColor; border-radius: 2px; }
+  .hd-end { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .hd-country, .hd-member { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 12px; border-radius: 999px; font: 600 13.5px/1 var(--sans); transition: background-color 200ms ease, transform 160ms var(--ease-out); }
+  .hd-country svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .hd-country:active, .hd-member:active { transform: scale(0.97); }
+  .btn.small { height: 42px; padding: 0 18px; font-size: 14px; }
+  .hd .hd-book { margin-left: 6px; }
+  :root[data-ink='light'] .hd[data-over]:not([data-solid]) .hd-book { background: var(--cream); color: var(--ink); }
+  @media (hover: hover) and (pointer: fine) {
+    .hd-nav a:hover, .hd-country:hover, .hd-member:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+  }
+  .hd-menu { display: none; position: relative; width: 44px; height: 44px; border-radius: 50%; }
+  .hd-menu i { position: absolute; left: 13px; right: 13px; height: 1.6px; background: currentColor; border-radius: 2px; transition: transform 260ms var(--ease-out); }
+  .hd-menu i:first-of-type { top: 18px; } .hd-menu i:last-of-type { top: 25px; }
+  .hd-menu[aria-expanded='true'] i:first-of-type { transform: translateY(3.5px) rotate(45deg); }
+  .hd-menu[aria-expanded='true'] i:last-of-type { transform: translateY(-3.5px) rotate(-45deg); }
+
+  .menu { position: fixed; inset: 0; z-index: 55; background: var(--night); color: var(--cream); padding: calc(var(--hd-h) + 28px) var(--gutter) calc(28px + env(safe-area-inset-bottom, 0px));
+    display: flex; flex-direction: column; justify-content: space-between; clip-path: inset(0 0 100% 0); transition: clip-path 420ms var(--ease-in-out); visibility: hidden; }
+  .menu[data-on] { clip-path: inset(0 0 0 0); visibility: visible; }
+  .menu:not([data-on]) { transition: clip-path 380ms var(--ease-in-out), visibility 0s 380ms; }
+  .menu-nav { display: grid; gap: 6px; }
+  .menu-nav a, .menu-nav button { text-align: left; font: 340 clamp(38px, 10vw, 64px)/1.05 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; padding: 6px 0;
+    opacity: 0; transform: translateY(18px); transition: opacity 300ms ease, transform 500ms var(--ease-out); }
+  .menu[data-on] .menu-nav a, .menu[data-on] .menu-nav button, .menu[data-on] .menu-foot { opacity: 1; transform: none; transition-delay: calc(140ms + var(--i) * 45ms); }
+  .menu-foot { display: grid; gap: 10px; font-size: 15px; color: rgb(246 239 228 / 0.72); opacity: 0; transform: translateY(18px); transition: opacity 300ms ease, transform 500ms var(--ease-out); }
+  :root.menu-open .hd { color: var(--cream) !important; background: transparent !important; box-shadow: none !important; backdrop-filter: none !important; transform: none !important; }
+  :root.menu-open .hd .hd-book { background: var(--cream); color: var(--ink); }
+
+  @media (max-width: 980px) {
+    .hd-nav, .hd-member, .hd-country { display: none; }
+    .hd-menu { display: block; }
+    .hd-in { gap: 12px; }
+  }
+  @media (max-width: 760px) {
+    .hd-brand { width: 40px; height: 40px; }
+    .btn.small.hd-book { height: 38px; padding: 0 14px; font-size: 13.5px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .menu, .menu:not([data-on]) { transition: opacity 200ms ease, visibility 0s 200ms; clip-path: none; opacity: 0; }
+    .menu[data-on] { opacity: 1; transition: opacity 200ms ease; }
+    .menu-nav a, .menu-nav button, .menu-foot { transform: none; }
+  }
+</style>
