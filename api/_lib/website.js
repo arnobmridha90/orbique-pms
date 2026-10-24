@@ -579,7 +579,7 @@ async function replaceHold(sb, orgId, old, stripe, opts) {
   const id = old.web && old.web.session;
   if (id && /^cs_[A-Za-z0-9_]+$/.test(id)) {
     const cur = await stripeCall(stripe, 'GET', '/v1/checkout/sessions/' + id, null, { fetch: opts.fetch });
-    if (cur.status === 'complete') throw conflict('already-paid', 'You have already paid for this stay. Please check your email for the confirmation.');
+    if (cur.status === 'complete') throw conflict('already-paid', 'You have already paid for this stay. Please check your email for the confirmation, or contact us.');
     if (cur.status === 'open') await stripeCall(stripe, 'POST', '/v1/checkout/sessions/' + id + '/expire', null, { fetch: opts.fetch });
   }
   await release(sb, orgId, old, 'replaced');
