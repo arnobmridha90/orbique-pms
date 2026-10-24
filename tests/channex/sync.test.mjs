@@ -168,6 +168,20 @@ test('buildingProblems: untagged units, empty types, missing plans and address',
   assert.deepEqual(buildingProblems(null, [], [], []), ['That building was not found.']);
 });
 
+test('buildingProblems: a single-unit listing type needs no units of its own, only a live unit of this building', () => {
+  const b = { id: 'BD', name: 'B', address: 'A', city: 'C', email: 'b@example.test', phone: '+60 3-1234 5678' };
+  const types = [{ id: 'T1', buildingId: 'BD', name: 'Premium' }, { id: 'L1', buildingId: 'BD', name: 'Premium · 26-3A', listingOf: 'u1' }];
+  const units = [{ id: 'u1', buildingId: 'BD', unitTypeId: 'T1', unitNo: '26-3A' }];
+  const plans = [{ id: 'P1', unitTypeId: 'T1', name: 'BAR' }, { id: 'P2', unitTypeId: 'L1', name: 'Airbnb' }];
+  assert.deepEqual(buildingProblems(b, types, units, plans), []);
+  const gone = buildingProblems(b, types, [Object.assign({}, units[0], { archived: true })], plans);
+  assert.ok(gone.some((x) => /listing of a unit that is missing or archived/.test(x)), gone.join('\n'));
+  const other = buildingProblems(b, types, units.concat([{ id: 'u9', buildingId: 'BX', unitTypeId: 'TX', unitNo: '1-1' }]), plans.concat([]), {});
+  assert.deepEqual(other, []);
+  const wrong = buildingProblems(b, [types[0], Object.assign({}, types[1], { listingOf: 'u9' })], units.concat([{ id: 'u9', buildingId: 'BX', unitTypeId: 'TX', unitNo: '1-1' }]), plans);
+  assert.ok(wrong.some((x) => /listing of 1-1, which is not a typed unit of this building/.test(x)), wrong.join('\n'));
+});
+
 test('buildingProblems: Channex needs an email and a phone before channels connect (building, else Brand)', () => {
   const types = [{ id: 'T1', buildingId: 'BD', name: 'Twin' }];
   const units = [{ id: 'u1', buildingId: 'BD', unitTypeId: 'T1' }];

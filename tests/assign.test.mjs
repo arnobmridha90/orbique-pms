@@ -151,3 +151,16 @@ test('reassignAll moves unlocked bookings off a blocked unit and fills holes, ne
   assert.equal(l.propertyId, 'u226');
   assert.equal(w.needsUnit, undefined);
 });
+
+test('typeAvailability listingOf: one unit\'s own listing is 1 while that unit is free and its type has a unit to sell', () => {
+  const units = [{ id: 'P1', unitTypeId: 'UT-P' }, { id: 'P2', unitTypeId: 'UT-P' }];
+  const run = (bookings, blocks, listingOf = 'P1') => A.typeAvailability({ unitTypeId: 'LT-1', listingOf, units, bookings, blocks: blocks || [], from: '2026-11-10', to: '2026-11-12' }).map((n) => n.availability).join('');
+  assert.equal(run([]), '111');
+  assert.equal(run([{ id: 'b1', propertyId: 'P1', unitTypeId: 'UT-P', status: 'confirmed', checkIn: '2026-11-10', checkOut: '2026-11-11' }]), '011');
+  assert.equal(run([{ id: 'b1', propertyId: 'P2', unitTypeId: 'UT-P', status: 'confirmed', checkIn: '2026-11-10', checkOut: '2026-11-11' }]), '111');
+  assert.equal(run([{ id: 'b1', propertyId: 'P2', unitTypeId: 'UT-P', status: 'confirmed', checkIn: '2026-11-10', checkOut: '2026-11-11' },
+    { id: 'b2', propertyId: null, unitTypeId: 'UT-P', status: 'confirmed', checkIn: '2026-11-10', checkOut: '2026-11-12' }]), '011');
+  assert.equal(run([{ id: 'b1', propertyId: 'P1', status: 'cancelled', checkIn: '2026-11-10', checkOut: '2026-11-13' }]), '111');
+  assert.equal(run([], [{ propertyId: 'P1', start: '2026-11-11', end: '2026-11-12' }]), '101');
+  assert.equal(run([], [], 'P9'), '000');
+});

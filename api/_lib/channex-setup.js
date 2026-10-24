@@ -160,8 +160,15 @@ export function buildingProblems(building, unitTypes, units, plans, contact = {}
   const untagged = live.filter((u) => u.buildingId === building.id && !typeIds.has(u.unitTypeId));
   if (untagged.length) out.push(`Choose a unit type for every unit in this building (${untagged.slice(0, 5).map((u) => str(u.unitNo || u.name || u.id)).join(', ')}${untagged.length > 5 ? ' and ' + (untagged.length - 5) + ' more' : ''}).`);
   for (const t of types) {
-    const n = live.filter((u) => u.unitTypeId === t.id).length;
-    if (!n) out.push(`"${str(t.name)}" has no units yet.`);
+    if (str(t.listingOf)) {
+      // one unit's own listing (Airbnb, Vrbo): no units of its own, it sells the unit it names
+      const u = live.find((x) => x.id === t.listingOf);
+      if (!u) out.push(`"${str(t.name)}" is the listing of a unit that is missing or archived.`);
+      else if (u.buildingId !== building.id || !typeIds.has(u.unitTypeId)) out.push(`"${str(t.name)}" is the listing of ${str(u.unitNo || u.name || u.id)}, which is not a typed unit of this building.`);
+    } else {
+      const n = live.filter((u) => u.unitTypeId === t.id).length;
+      if (!n) out.push(`"${str(t.name)}" has no units yet.`);
+    }
     const ps = plans.filter((p) => p.unitTypeId === t.id && !archived(p));
     if (!ps.length) out.push(`"${str(t.name)}" needs a rate plan.`);
     const pn = new Set();

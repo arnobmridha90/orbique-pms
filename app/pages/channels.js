@@ -129,7 +129,12 @@
         if (iso.slice(0, 7) !== r.month) { var p = planById(r.planId) || { id: r.planId, unitTypeId: r.unitTypeId }; var to = crGet(map, p, iso.slice(0, 7), true); if (!to.days[iso]) to.days[iso] = r.days[iso]; delete r.days[iso]; changed++; }
       });
     });
-    var plans = D.ratePlans.filter(function (p) { return p && !isArchived(p) && (p.primary || (p.follows && p.follows.planId)) && (!typeIds || typeIds.indexOf(p.unitTypeId) >= 0); });
+    /* a plan of the given types, or one that follows a plan of them (a unit's own listing follows its type's plan) */
+    function touched(p) {
+      for (var x = p, hops = 0; x && hops < 6; hops++, x = x.follows && x.follows.planId ? planById(x.follows.planId) : null) if (typeIds.indexOf(x.unitTypeId) >= 0) return true;
+      return false;
+    }
+    var plans = D.ratePlans.filter(function (p) { return p && !isArchived(p) && (p.primary || (p.follows && p.follows.planId)) && (!typeIds || touched(p)); });
     /* plans that follow another come after it */
     var order = [], seen = {};
     function visit(p, depth) { if (seen[p.id] || depth > 5) return; var f = p.follows && planById(p.follows.planId); if (f && plans.indexOf(f) >= 0) visit(f, depth + 1); seen[p.id] = 1; order.push(p); }
@@ -313,7 +318,11 @@
     var untagged = D.properties.filter(function (u) { return !isArchived(u) && u.buildingId === bid && !types.some(function (t) { return t.id === u.unitTypeId; }); });
     if (untagged.length) out.push('Choose a unit type for every unit in this building (' + untagged.slice(0, 5).map(function (u) { return u.unitNo || u.name || u.id; }).join(', ') + (untagged.length > 5 ? ' and ' + (untagged.length - 5) + ' more' : '') + ').');
     types.forEach(function (t) {
-      if (!unitCount(t.id)) out.push('"' + t.name + '" has no units yet.');
+      if (t.listingOf) {
+        var lu = D.properties.filter(function (u) { return u.id === t.listingOf && !isArchived(u); })[0];
+        if (!lu) out.push('"' + t.name + '" is the listing of a unit that is missing or archived.');
+        else if (lu.buildingId !== bid || !types.some(function (x) { return x.id === lu.unitTypeId; })) out.push('"' + t.name + '" is the listing of ' + (lu.unitNo || lu.name || lu.id) + ', which is not a typed unit of this building.');
+      } else if (!unitCount(t.id)) out.push('"' + t.name + '" has no units yet.');
       var ps = plansOf(t.id), names = {};
       if (!ps.length) out.push('"' + t.name + '" needs a rate plan.');
       ps.forEach(function (p) { var k = String(p.name || '').trim().toLowerCase(); if (names[k]) out.push('"' + t.name + '" has two rate plans called "' + p.name + '".'); names[k] = 1; });
@@ -342,7 +351,7 @@
       O.typesOf(bid, true).forEach(function (t) {
         var a = s.avail[t.id] = {};
         if (isArchived(t)) { d.range(T, last).forEach(function (iso) { a[iso] = 0; }); }
-        else O.assign.typeAvailability({ unitTypeId: t.id, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: T, to: last }).forEach(function (n) { a[n.date] = Math.max(0, n.availability); });
+        else O.assign.typeAvailability({ unitTypeId: t.id, listingOf: t.listingOf, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: T, to: last }).forEach(function (n) { a[n.date] = Math.max(0, n.availability); });
         plansOf(t.id, true).forEach(function (p) { var r = s.restr[p.id] = {}; d.range(T, last).forEach(function (iso) { r[iso] = restrictionValue(p, iso, map); }); });
       });
     });
@@ -648,6 +657,10 @@
   function planEditor(typeId, plan) {
     var t = O.unitType(typeId); if (!t) return;
     var cur = curOf(t.buildingId), others = plansOf(typeId).filter(function (p) { return !plan || p.id !== plan.id; });
+    /* a unit's own listing (Airbnb, Vrbo) can follow a plan of the unit's type */
+    var lu = t.listingOf ? (D.properties || []).filter(function (u) { return u.id === t.listingOf; })[0] : null, lt = lu && O.unitType(lu.unitTypeId);
+    if (lt && lt.id !== typeId) others = others.concat(plansOf(lt.id));
+    function optName(o) { return o.unitTypeId === typeId ? o.name : (O.unitType(o.unitTypeId) || {}).name + ' · ' + o.name; }
     var isNew = !plan, p = plan || { name: plansOf(typeId).length ? '' : 'Best Available Rate', meal: 'room_only', primary: !mainPlan(typeId), defaultRate: '', minStay: 1, maxStay: 0, follows: null };
     var f = p.follows || {};
     var body = O.html('<div class="stack">' +
@@ -657,7 +670,7 @@
       '<div class="form-grid"><div class="field"><label>Minimum stay (nights)</label><input class="input" name="min" type="number" min="1" step="1" value="' + esc(p.minStay || 1) + '"></div>' +
       '<div class="field"><label>Maximum stay (nights)</label><input class="input" name="max" type="number" min="0" step="1" value="' + esc(p.maxStay || 0) + '"><div class="hint">0 means no maximum.</div></div></div>' +
       '<label class="check"><input type="checkbox" name="primary"' + (p.primary ? ' checked' : '') + '><span><b>Main plan</b><br><span class="small muted">Its rate is the price of the ' + esc(t.name) + ' units in Pricing. One per unit type.</span></span></label>' +
-      (others.length ? '<div class="field"><label>Price follows another plan</label><div class="form-grid"><select class="select" name="fp"><option value="">No, it has its own rates</option>' + others.map(function (o) { return '<option value="' + esc(o.id) + '"' + (f.planId === o.id ? ' selected' : '') + '>' + esc(o.name) + '</option>'; }).join('') + '</select>' +
+      (others.length ? '<div class="field"><label>Price follows another plan</label><div class="form-grid"><select class="select" name="fp"><option value="">No, it has its own rates</option>' + others.map(function (o) { return '<option value="' + esc(o.id) + '"' + (f.planId === o.id ? ' selected' : '') + '>' + esc(optName(o)) + '</option>'; }).join('') + '</select>' +
         '<div class="row-flex"><select class="select" name="ft" style="width:auto"><option value="amount"' + (f.type !== 'pct' ? ' selected' : '') + '>plus ' + esc(cur) + '</option><option value="pct"' + (f.type === 'pct' ? ' selected' : '') + '>plus %</option></select><input class="input" name="fv" type="number" step="0.01" value="' + esc(f.value == null ? '' : f.value) + '" style="width:110px"></div></div><div class="hint">For example Bed & Breakfast = Best Available Rate plus 40. Use a minus number for a discount.</div></div>' : '') +
       '<div class="blk-sum bad" hidden></div></div>');
     function read() {

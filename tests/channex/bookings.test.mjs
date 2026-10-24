@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   revisionToBookings, mergeBooking, detectConflicts, channelOf, stripRevision, revisionAttrs, newBookingFields,
-  newBookingId, newDoorCode, newGuestToken, utcIso, myt, CHANNEL_KEYS, revisionNights
+  newBookingId, newDoorCode, newGuestToken, utcIso, myt, CHANNEL_KEYS, revisionNights, pinListing, keepOnListingUnit
 } from '../../api/_lib/channex-bookings.js';
 import { authentic, eventRow } from '../../api/channex-webhook.js';
 import { signature } from '../../api/_lib/channex.js';
@@ -221,4 +221,46 @@ test('revisionNights: old and new nights of the type sold and the unit\'s type, 
   // a booking of one type placed on a unit of another counts for both; unmapped types and bad dates are left out
   assert.deepEqual(revisionNights([], [{ unitTypeId: 'UT-T', propertyId: 'D-01', checkIn: '2026-11-05', checkOut: '2026-11-06' }, { unitTypeId: 'UT-X', propertyId: 'X-01', checkIn: '2026-11-05', checkOut: '2026-11-06' }, { unitTypeId: 'UT-T', checkIn: '2026-11-06', checkOut: '2026-11-06' }], units, mapped),
     [{ target_id: 'UT-D', date_from: '2026-11-05', date_to: '2026-11-05' }, { target_id: 'UT-T', date_from: '2026-11-05', date_to: '2026-11-05' }]);
+});
+
+test('a booking on a single-unit listing is filed under the real type and pinned, locked, to that unit', () => {
+  const ctx = {
+    types: [{ id: 'UT-P', name: 'Premium' }, { id: 'LT-1', name: 'Premium · 26-3A', listingOf: 'P-1' }],
+    units: [{ id: 'P-1', unitTypeId: 'UT-P' }, { id: 'P-2', unitTypeId: 'UT-P' }]
+  };
+  const inc = { id: 'B1', unitTypeId: 'LT-1', propertyId: null, status: 'confirmed', checkIn: '2026-11-10', checkOut: '2026-11-12' };
+  assert.equal(pinListing(inc, ctx), true);
+  assert.equal(inc.unitTypeId, 'UT-P');
+  assert.equal(inc.listingTypeId, 'LT-1');
+  const b = newBookingFields(inc);
+  b.needsUnit = true;
+  keepOnListingUnit(b, inc, '2026-11-01T10:00');
+  assert.equal(b.propertyId, 'P-1');
+  assert.deepEqual(b.assignment, { how: 'channel', by: 'system', at: '2026-11-01T10:00', locked: true });
+  assert.equal(b.needsUnit, undefined);
+  assert.equal(b.listingUnitId, undefined);
+
+  // a modification: staff moved it meanwhile; the channel's unit wins again, and listingTypeId is a channel key
+  const inc2 = { id: 'B1', unitTypeId: 'LT-1', propertyId: null, status: 'confirmed', checkIn: '2026-11-11', checkOut: '2026-11-13' };
+  pinListing(inc2, ctx);
+  const m = mergeBooking(Object.assign({}, b, { propertyId: 'P-2' }), inc2);
+  keepOnListingUnit(m, inc2, '2026-11-02T09:00');
+  assert.equal(m.propertyId, 'P-1');
+  assert.equal(m.unitTypeId, 'UT-P');
+  assert.equal(m.listingTypeId, 'LT-1');
+  assert.equal(m._typeChanged, undefined);
+
+  // an ordinary type is left alone
+  const plain = { id: 'B2', unitTypeId: 'UT-P', propertyId: null };
+  assert.equal(pinListing(plain, ctx), false);
+  assert.deepEqual(plain, { id: 'B2', unitTypeId: 'UT-P', propertyId: null });
+  const keep = { id: 'B2', unitTypeId: 'UT-P', propertyId: 'P-2', assignment: { how: 'auto', locked: false } };
+  keepOnListingUnit(keep, plain, 'x');
+  assert.equal(keep.propertyId, 'P-2');
+});
+
+test('revisionNights: a listing booking forgets the nights of its listing type too', () => {
+  const units = [{ id: 'P-1', unitTypeId: 'UT-P' }];
+  const out = revisionNights([], [{ unitTypeId: 'UT-P', listingTypeId: 'LT-1', propertyId: 'P-1', checkIn: '2026-11-10', checkOut: '2026-11-12' }], units, new Set(['UT-P', 'LT-1']));
+  assert.deepEqual(out.map((r) => r.target_id).sort(), ['LT-1', 'UT-P']);
 });

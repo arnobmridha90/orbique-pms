@@ -84,8 +84,26 @@ function gapScore(unitId, b, ctx) {
 function priority(u) { var n = Number(u.assignPriority); return u.assignPriority === '' || u.assignPriority == null || !isFinite(n) ? Infinity : n; }
 
 /* per night from..to (inclusive): how many units of the type can still be sold.
-   raw = free units (active, not blocked, no assigned live booking) - unassigned live bookings of the type; availability = max(0, raw) */
+   raw = free units (active, not blocked, no assigned live booking) - unassigned live bookings of the type; availability = max(0, raw)
+   listingOf: the type is one unit's own listing (Airbnb, Vrbo; as channex_type_availability in 0014): 1 on a night when that
+   unit is active and free and its real type still has a unit to sell, else 0 (raw never below 0) */
 function typeAvailability(o) {
+  if (o.listingOf) {
+    var lu = (o.units || []).filter(function (u) { return u && u.id === o.listingOf; })[0];
+    var base = lu && activeUnit(lu) && lu.unitTypeId ? typeAvailability({ unitTypeId: lu.unitTypeId, units: o.units, bookings: o.bookings, blocks: o.blocks, from: o.from, to: o.to, skipId: o.skipId }) : null;
+    var res = [], dd = o.from, k = 0;
+    while (dd <= o.to && k < 800) {
+      var nx = addDays(dd, 1), bn = base ? base[k] : null, v = 0;
+      if (bn && bn.availability >= 1) {
+        var taken = (o.bookings || []).some(function (b) { return b && b.id !== o.skipId && live(b) && b.propertyId === lu.id && b.checkIn <= dd && dd < b.checkOut; }) ||
+          (o.blocks || []).some(function (x) { return x && x.propertyId === lu.id && x.start < nx && dd < x.end; });
+        v = taken ? 0 : 1;
+      }
+      res.push({ date: dd, units: 1, free: v, unassigned: 0, raw: v, availability: v });
+      dd = nx; k++;
+    }
+    return res;
+  }
   var units = (o.units || []).filter(function (u) { return activeUnit(u) && u.unitTypeId === o.unitTypeId; });
   var ids = {}; units.forEach(function (u) { ids[u.id] = 1; });
   var out = [], day = o.from, n = 0;
