@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto';
 import { ApiError, conflict } from './http.js';
 import { channexConfig, ChannexError } from './channex.js';
 import { must, records, record, blob, archived, tracked, addAlert, todayMY, addDays, STATE_DAYS, selectAll } from './channex-db.js';
+import { foreignCurrency, fxFactor } from './fx.js';
 
 export const TIMEZONE = 'Asia/Kuala_Lumpur';
 export const PROPERTY_SETTINGS = Object.freeze({
@@ -330,7 +331,15 @@ export async function ensureRatePlan(sb, org, prop, plan, opts = {}) {
     if (row && !row.retired) must(await sb.from('channex_rate_plans').update({ retired: true }).eq('org_id', org.id).eq('env', cfg.env).eq('plan_id', plan.id), 'retire rate plan');
     return { row: row ? Object.assign({}, row, { retired: true }) : null, created: false };
   }
-  const body = ratePlanBody(plan, { propertyId: pid, roomTypeId: rt.room_type_id, occAdults: occupancy(opts.unitType || {}), currency: prop.currency });
+  // a plan sold in another currency (Vrbo takes no MYR): Channex fixes the currency when the plan is created, and the
+  // default rate is converted like the daily rates (api/_lib/channex-sync.js fxFactor)
+  const cur = foreignCurrency(plan, prop.currency);
+  let sold = plan;
+  if (cur) {
+    const fx = fxFactor(plan, prop.currency, await blob(sb, org.id, 'fxRates'));
+    sold = Object.assign({}, plan, { defaultRate: fx ? Math.round(Number(plan.defaultRate) * fx * 100) / 100 : plan.defaultRate });
+  }
+  const body = ratePlanBody(sold, { propertyId: pid, roomTypeId: rt.room_type_id, occAdults: occupancy(opts.unitType || {}), currency: cur || prop.currency });
   const h = hash(ratePlanUpdate(body));
   if (row && row.rate_plan_id && row.unit_type_id === plan.unitTypeId) {
     if (row.synced_hash !== h || row.retired) {
