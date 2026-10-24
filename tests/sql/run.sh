@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Database tests on a local Postgres (14+). Creates two throwaway databases, applies a Supabase stand-in and every
-# migration with scripts/migrate.mjs, re-applies 0006, 0007, 0009, 0010 and 0011 twice (they must be re-runnable), then runs the SQL
+# migration with scripts/migrate.mjs, re-applies 0006, 0007, 0009, 0010, 0011 and 0014 twice (they must be re-runnable), then runs the SQL
 # tests.
 #
 #   PGURL=postgres://postgres@127.0.0.1:5432/postgres tests/sql/run.sh
@@ -26,8 +26,8 @@ migrate_all() { # url
   local url="$1"
   DATABASE_URL="$url" node scripts/migrate.mjs
   DATABASE_URL="$url" node scripts/migrate.mjs                     # nothing left to apply
-  # 0009 replaces functions from 0006, so it is re-run after it (in production each file runs once, in order)
-  for f in 0006_channex.sql 0007_channex_cron.sql 0009_channex_fixes.sql 0010_inbox.sql 0011_alerts.sql; do
+  # 0009 and 0014 replace functions from 0006, so they are re-run after it (in production each file runs once, in order)
+  for f in 0006_channex.sql 0007_channex_cron.sql 0009_channex_fixes.sql 0010_inbox.sql 0011_alerts.sql 0014_listing_types.sql; do
     DATABASE_URL="$url" node scripts/migrate.mjs --reapply "$f"   # re-run through the runner
     psqlq "$url" -f "supabase/migrations/$f" >/dev/null 2>&1 || { echo "re-running $f with psql failed"; psqlq "$url" -f "supabase/migrations/$f"; exit 1; }
   done
@@ -51,3 +51,6 @@ psqlq "$URL1" -f tests/sql/inbox.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  
 
 echo "== booking alerts (0011)"
 psqlq "$URL1" -f tests/sql/alerts.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
+
+echo "== listing types (0014)"
+psqlq "$URL1" -f tests/sql/listing_types.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'

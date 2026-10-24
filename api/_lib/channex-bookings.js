@@ -229,7 +229,7 @@ export function newBookingFields(b) {
 }
 
 /** Keys a channel revision owns; everything else (unit, door code, guest token, staff notes, invoices…) stays as staff left it. */
-export const CHANNEL_KEYS = ['unitTypeId', 'ratePlanId', 'channel', 'otaName', 'reservationCode', 'channex', 'groupRef', 'guests', 'checkIn', 'checkOut',
+export const CHANNEL_KEYS = ['unitTypeId', 'listingTypeId', 'ratePlanId', 'channel', 'otaName', 'reservationCode', 'channex', 'groupRef', 'guests', 'checkIn', 'checkOut',
   'nights', 'nightly', 'accommodation', 'cleaningFee', 'tourismTax', 'total', 'revenue', 'currency', 'platformFee', 'feeEstimated', 'payout',
   'paymentCollect', 'otaNotes', 'arrivalHour'];
 
@@ -265,6 +265,36 @@ export function mergeBooking(existing, incoming) {
   // a different type was sold: the unit is chosen again (assignment.locked is kept; a locked unit of another type stays a conflict)
   if (existing.unitTypeId && incoming.unitTypeId && existing.unitTypeId !== incoming.unitTypeId && !(existing.assignment && existing.assignment.locked)) out._typeChanged = true;
   return out;
+}
+
+/**
+ * A booking sold on a single-unit listing type (a unitTypes record with listingOf, e.g. one apartment's Airbnb or Vrbo
+ * listing) is filed under the unit's real type and pinned to that unit: the guest booked that apartment. Pure; changes
+ * the incoming booking in place and returns true when it was a listing booking.
+ *   b      a booking from revisionToBookings (unitTypeId is the mapped type)
+ *   ctx    {types, units}
+ */
+export function pinListing(b, ctx = {}) {
+  if (!b || !b.unitTypeId) return false;
+  const t = (ctx.types || []).find((x) => x && x.id === b.unitTypeId);
+  const unitId = t && typeof t.listingOf === 'string' && t.listingOf ? t.listingOf : null;
+  if (!unitId) return false;
+  const u = (ctx.units || []).find((x) => x && x.id === unitId);
+  b.listingTypeId = t.id;
+  b.listingUnitId = unitId;
+  if (u && u.unitTypeId) b.unitTypeId = u.unitTypeId;
+  return true;
+}
+
+/** After the merge: a listing booking stays on its unit, locked so automatic assignment never moves it. */
+export function keepOnListingUnit(b, inc, now) {
+  if (!inc.listingUnitId) return;
+  if (b.propertyId !== inc.listingUnitId || !(b.assignment && b.assignment.locked)) {
+    b.propertyId = inc.listingUnitId;
+    b.assignment = { how: 'channel', by: 'system', at: now, locked: true };
+  }
+  delete b.needsUnit;
+  delete b.listingUnitId;
 }
 
 /**
@@ -312,7 +342,7 @@ export function revisionNights(before, after, units, typeIds) {
   for (const b of [...(before || []), ...(after || [])]) {
     if (!b || !isIso(b.checkIn) || !isIso(b.checkOut) || b.checkOut <= b.checkIn) continue;
     const last = addDays(b.checkOut, -1);
-    for (const t of new Set([b.unitTypeId, b.propertyId && unitType.get(b.propertyId)])) {
+    for (const t of new Set([b.unitTypeId, b.listingTypeId, b.propertyId && unitType.get(b.propertyId)])) {
       if (!t || !typeIds.has(t)) continue;
       const list = nights.get(t) || [];
       list.push([b.checkIn, last]);
@@ -533,6 +563,7 @@ export async function ingestRevision(sb, input, opts = {}) {
   const saved = [];
   const moves = [];
   for (const inc of incoming) {
+    pinListing(inc, ctx);
     const old = existing.get(inc.id);
     let b;
     if (old) b = mergeBooking(old, inc);
@@ -542,6 +573,7 @@ export async function ingestRevision(sb, input, opts = {}) {
     }
     const fresh = !!b._typeChanged;
     delete b._typeChanged;
+    keepOnListingUnit(b, inc, nowLocal);
     if (!b.unitTypeId && live(b) && !b.propertyId) b.needsUnit = true;
     // the context holds this booking's latest version
     const idx = ctx.bookings.findIndex((x) => x.id === b.id);

@@ -802,7 +802,7 @@
             '<div class="cal-lane' + (canAct ? '' : ' ro') + '" data-pid="' + esc(p.id) + '" style="width:' + lw.toFixed(2) + 'px">' + bars + '</div></div>';
         }
         function groupRow(t) {
-          var bd = O.building(t.buildingId), av = O.assign.typeAvailability({ unitTypeId: t.id, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
+          var bd = O.building(t.buildingId), av = O.assign.typeAvailability({ unitTypeId: t.id, listingOf: t.listingOf, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
           var cells = av.map(function (n, i) {
             var over = n.raw < 0, txt = over ? (dw >= 64 ? 'Oversold' : '!') : dw >= 76 ? n.availability + ' of ' + n.units + ' free' : dw >= 34 ? n.availability + '/' + n.units : String(n.availability);
             var tl = d.dowName(n.date) + ' ' + d.fmt(n.date) + ': ' + (over ? 'oversold by ' + fmt.plural(-n.raw, 'booking') : n.availability + ' of ' + n.units + ' ' + t.name + ' units free') + (n.unassigned ? ', ' + n.unassigned + ' without a unit' : '');
@@ -892,7 +892,7 @@
         function mcell(sg) { var w = sg.n * dw; return '<div class="cal-mo" style="left:' + (sg.i0 * dw).toFixed(2) + 'px;width:' + w.toFixed(2) + 'px">' + esc(w >= 100 ? d.monthName(sg.iso, true) + ' ' + sg.iso.slice(0, 4) : d.monthName(sg.iso)) + '</div>'; }
         var rows = '';
         types.forEach(function (t) {
-          var av = O.assign.typeAvailability({ unitTypeId: t.id, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
+          var av = O.assign.typeAvailability({ unitTypeId: t.id, listingOf: t.listingOf, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
           var bd = O.building(t.buildingId), on = C.typeConnected(t.id);
           rows += '<div class="cal-row grp" style="height:' + gh + 'px"><div class="cal-prop" title="' + esc(O.typeTitle(t) + ': units free each night') + '"><span class="pn">' + esc(t.name) + '</span><span class="pl">' + esc((bd ? bd.name : '') + (on ? '' : ' · not connected')) + '</span></div>' +
             '<div class="cal-lane ro" style="width:' + lw.toFixed(2) + 'px">' + av.map(function (n, j) {

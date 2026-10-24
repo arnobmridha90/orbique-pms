@@ -474,7 +474,7 @@
     return moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' moved to another unit' + (lost ? ', ' + lost + ' still need a unit' : '') + '.' : '';
   }
   function freeTonight(t) {
-    var n = O.assign.typeAvailability({ unitTypeId: t.id, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: D.TODAY, to: D.TODAY })[0];
+    var n = O.assign.typeAvailability({ unitTypeId: t.id, listingOf: t.listingOf, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: D.TODAY, to: D.TODAY })[0];
     return n ? n.availability + ' of ' + n.units + ' free tonight' : '';
   }
 
@@ -544,8 +544,11 @@
     var h = '<section class="card bt-bd" data-bd="' + esc(bd.id) + '"><div class="bt-hd"><div class="grow"><h3>' + esc(bd.name) + '</h3><div class="small muted">' + esc(addr || 'No address yet') + '</div><div class="small muted">' + esc(times) + (O.multiCountry() ? ' · ' + esc(O.countryLabel(O.countryOf(bd))) : '') + (bd.currency ? ' · ' + esc(bd.currency) : '') + '</div></div>' +
       (edit ? '<div class="acts"><button type="button" class="btn btn-ghost btn-sm" data-bt="editbd" data-id="' + esc(bd.id) + '">' + O.icon('edit') + 'Edit building</button></div>' : '') + '</div>';
     h += '<div class="bt-sec"><h4>Unit types</h4><div class="bt-types">' + types.map(function (t) {
-      var us = O.unitsOfType(t.id), facts = [t.maxGuests ? 'Sleeps ' + t.maxGuests : '', t.beds != null && t.beds !== '' ? (+t.beds ? fmt.plural(+t.beds, 'bedroom') : 'Studio') : '', us.length ? freeTonight(t) : ''].filter(Boolean).join(' · ');
-      var inner = '<span class="tn">' + esc(t.name) + '</span><span class="tm">' + esc(fmt.plural(us.length, 'unit') + (us.length ? ' (' + unitNos(us) + ')' : '')) + '</span>' + (facts ? '<span class="tf">' + esc(facts) + '</span>' : '');
+      var us = O.unitsOfType(t.id), lu = t.listingOf ? D.properties.filter(function (u) { return u.id === t.listingOf; })[0] : null;
+      var facts = [t.maxGuests ? 'Sleeps ' + t.maxGuests : '', t.beds != null && t.beds !== '' ? (+t.beds ? fmt.plural(+t.beds, 'bedroom') : 'Studio') : '', us.length || lu ? freeTonight(t) : ''].filter(Boolean).join(' · ');
+      /* one unit's own listing (Airbnb, Vrbo): it sells that unit, so it has no units of its own */
+      var count = t.listingOf ? 'Own listing of ' + (lu ? lu.unitNo || lu.name || lu.id : 'a removed unit') : fmt.plural(us.length, 'unit') + (us.length ? ' (' + unitNos(us) + ')' : '');
+      var inner = '<span class="tn">' + esc(t.name) + '</span><span class="tm">' + esc(count) + '</span>' + (facts ? '<span class="tf">' + esc(facts) + '</span>' : '');
       return edit ? '<button type="button" class="bt-type" data-bt="edittype" data-id="' + esc(t.id) + '" aria-label="Edit unit type ' + esc(t.name) + '">' + inner + '</button>' : '<div class="bt-type">' + inner + '</div>';
     }).join('') + (edit ? '<button type="button" class="bt-type add" data-bt="addtype" data-id="' + esc(bd.id) + '">' + O.icon('plus') + 'Add a unit type</button>' : '') + '</div>' +
       (!types.length && !edit ? '<div class="bt-none">No unit types yet.</div>' : '') + '</div>';
