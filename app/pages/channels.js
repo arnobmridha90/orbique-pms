@@ -669,12 +669,16 @@
       '<div class="field"><label>Default rate (' + esc(cur) + ' a night)</label><input class="input" name="rate" type="number" min="1" step="0.01" inputmode="decimal" value="' + esc(p.defaultRate == null ? '' : p.defaultRate) + '"></div></div>' +
       '<div class="form-grid"><div class="field"><label>Minimum stay (nights)</label><input class="input" name="min" type="number" min="1" step="1" value="' + esc(p.minStay || 1) + '"></div>' +
       '<div class="field"><label>Maximum stay (nights)</label><input class="input" name="max" type="number" min="0" step="1" value="' + esc(p.maxStay || 0) + '"><div class="hint">0 means no maximum.</div></div></div>' +
+      /* a plan for a site that takes no MYR (Vrbo): rates are still set in the building's currency and converted each night
+         at the day's exchange rate. Channex fixes a plan's currency when it is created, so it is chosen only then. */
+      '<div class="field"><label>Currency on the booking site</label><select class="select" name="cur"' + (isNew ? '' : ' disabled') + '>' + [cur, 'USD', 'SGD', 'EUR', 'GBP', 'AUD'].filter(function (c, i, a) { return a.indexOf(c) === i; }).map(function (c) { return '<option value="' + esc(c) + '"' + ((p.currency || cur) === c ? ' selected' : '') + '>' + esc(c === cur ? c + ' (your prices)' : c + ', converted from ' + cur + ' daily') + '</option>'; }).join('') + '</select><div class="hint">Only for a site that does not take ' + esc(cur) + ', such as Vrbo. You still set every price in ' + esc(cur) + '.' + (isNew ? '' : ' Fixed once the plan exists.') + '</div></div>' +
       '<label class="check"><input type="checkbox" name="primary"' + (p.primary ? ' checked' : '') + '><span><b>Main plan</b><br><span class="small muted">Its rate is the price of the ' + esc(t.name) + ' units in Pricing. One per unit type.</span></span></label>' +
       (others.length ? '<div class="field"><label>Price follows another plan</label><div class="form-grid"><select class="select" name="fp"><option value="">No, it has its own rates</option>' + others.map(function (o) { return '<option value="' + esc(o.id) + '"' + (f.planId === o.id ? ' selected' : '') + '>' + esc(optName(o)) + '</option>'; }).join('') + '</select>' +
         '<div class="row-flex"><select class="select" name="ft" style="width:auto"><option value="amount"' + (f.type !== 'pct' ? ' selected' : '') + '>plus ' + esc(cur) + '</option><option value="pct"' + (f.type === 'pct' ? ' selected' : '') + '>plus %</option></select><input class="input" name="fv" type="number" step="0.01" value="' + esc(f.value == null ? '' : f.value) + '" style="width:110px"></div></div><div class="hint">For example Bed & Breakfast = Best Available Rate plus 40. Use a minus number for a discount.</div></div>' : '') +
       '<div class="blk-sum bad" hidden></div></div>');
     function read() {
       var v = { name: O.$('[name=name]', body).value.trim(), meal: O.$('[name=meal]', body).value, rate: num(O.$('[name=rate]', body).value), min: posInt(O.$('[name=min]', body).value) || 1, max: Math.max(0, Math.floor(num(O.$('[name=max]', body).value) || 0)), primary: O.$('[name=primary]', body).checked };
+      var cs = O.$('[name=cur]', body); v.currency = cs && cs.value && cs.value !== cur ? cs.value : null;
       var fp = O.$('[name=fp]', body); v.follows = fp && fp.value ? { planId: fp.value, type: O.$('[name=ft]', body).value === 'pct' ? 'pct' : 'amount', value: num(O.$('[name=fv]', body).value) || 0 } : null;
       return v;
     }
@@ -684,6 +688,7 @@
       if (!(v.rate > 0)) return 'Enter a default rate above 0.';
       if (v.max && v.max < v.min) return 'The maximum stay is shorter than the minimum stay.';
       if (v.follows && v.primary) return 'A main plan has its own rates. Untick Main plan or stop following the other plan.';
+      if (v.currency && v.primary) return 'A main plan is in ' + cur + '. Use another currency only for a booking site\'s own plan.';
       if (v.follows) { var x = planById(v.follows.planId), hops = 0; while (x && hops++ < 6) { if (plan && x.id === plan.id) return 'These plans would follow each other in a circle.'; x = x.follows ? planById(x.follows.planId) : null; } }
       return '';
     }
@@ -706,6 +711,7 @@
         if (err) { box.hidden = false; box.textContent = err; return false; }
         var x = plan || { id: O.uid('RP'), unitTypeId: typeId, createdAt: D.NOW, createdBy: O.state.viewer };
         x.name = v.name; x.meal = v.meal; x.defaultRate = round2(v.rate); x.minStay = v.min; x.maxStay = v.max; x.follows = v.follows; x.primary = v.primary; x.updatedAt = D.NOW;
+        if (isNew && v.currency) x.currency = v.currency;
         if (x.primary) plansOf(typeId).forEach(function (o) { if (o !== x) o.primary = false; });
         if (isNew) D.ratePlans.push(x);
         D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'channels', text: (isNew ? 'Added the rate plan ' : 'Changed the rate plan ') + x.name + ' (' + t.name + ')' });
@@ -827,6 +833,7 @@
         var ps = plansOf(t.id), cur = curOf(b.id), map = crMap();
         var rows = ps.map(function (p) {
           var f = p.follows && planById(p.follows.planId), rule = f ? f.name + ' ' + (num(p.follows.value) < 0 ? '−' : '+') + ' ' + (p.follows.type === 'pct' ? Math.abs(num(p.follows.value)) + '%' : money2(Math.abs(num(p.follows.value) || 0), cur)) : p.primary ? 'Your prices in Pricing' : 'Own rates';
+          if (p.currency && p.currency !== cur) rule += ' · sold in ' + p.currency;
           var today = planRate(p, D.TODAY, map, 0);
           return '<tr' + (can ? ' class="click" data-plan="' + esc(p.id) + '"' : '') + '><td><b>' + esc(p.name) + '</b>' + (p.primary ? ' ' + U.pill('Main', 'accent') : '') + '</td><td>' + esc((MEALS.filter(function (m) { return m[0] === p.meal; })[0] || ['', 'Room only'])[1]) + '</td>' +
             '<td class="num">' + esc(money2(num(p.defaultRate), cur)) + '</td><td class="num">' + esc(money2(today, cur)) + '</td><td>' + esc(rule) + '</td><td class="num">' + (p.minStay || 1) + (p.maxStay ? '–' + p.maxStay : '+') + '</td></tr>';

@@ -303,3 +303,51 @@ test('lastMinuteFactor: regular Sun-Thu nights inside the window get the deal, e
   assert.equal(lastMinuteFactor({ pct: 0, days: 3 }, '2026-10-25', t), 1);
   assert.equal(lastMinuteFactor({ pct: 10, days: 30 }, '2026-10-25', t), 1); // window too long: ignored
 });
+
+test('fxFactor: a plan sold in another currency converts at a fresh rate, and is not sold without one', async () => {
+  const { fxFactor, foreignCurrency } = await import('../../api/_lib/fx.js');
+  const now = Date.parse('2026-10-25T00:00:00Z');
+  const fx = { base: 'MYR', rates: { USD: 0.2112 }, at: '2026-10-24T19:00:00Z' };
+  assert.equal(foreignCurrency({ currency: 'usd' }, 'MYR'), 'USD');
+  assert.equal(foreignCurrency({ currency: 'MYR' }, 'MYR'), '');
+  assert.equal(foreignCurrency({}, 'MYR'), '');
+  assert.equal(fxFactor({}, 'MYR', null, now), 1);
+  assert.equal(fxFactor({ currency: 'MYR' }, 'MYR', null, now), 1);
+  assert.equal(fxFactor({ currency: 'USD' }, 'MYR', fx, now), 0.2112);
+  assert.equal(fxFactor({ currency: 'USD' }, 'MYR', null, now), null);
+  assert.equal(fxFactor({ currency: 'SGD' }, 'MYR', fx, now), null, 'a currency the blob does not have');
+  assert.equal(fxFactor({ currency: 'USD' }, 'MYR', Object.assign({}, fx, { base: 'SGD' }), now), null, 'rates from another base');
+  assert.equal(fxFactor({ currency: 'USD' }, 'MYR', Object.assign({}, fx, { at: '2026-10-10T00:00:00Z' }), now), null, 'older than 7 days');
+});
+
+test('computeRestrictions: a USD plan sends its ringgit rate converted, after the last-minute deal; no rate means stop_sell', async () => {
+  const { computeRestrictions } = await import('../../api/_lib/channex-sync.js');
+  const chain = new Proxy({}, { get: (t, k) => (k === 'then' ? undefined : k === 'range' ? async () => ({ data: [], error: null }) : () => chain) });
+  const sb = { from: () => chain };
+  const plan = { id: 'RP-V', unitTypeId: 'UT', name: 'Vrbo', currency: 'USD', defaultRate: 400 };
+  const ctx = (fx) => ({
+    ratePlans: new Map([['RP-V', { rate_plan_id: 'x' }]]), plans: new Map([['RP-V', plan]]), unitTypes: new Map([['UT', { id: 'UT' }]]),
+    roomTypes: new Map([['UT', { room_type_id: 'y' }]]), lastMinute: null, fx
+  });
+  const dates = new Map([['RP-V', new Set(['2027-01-05'])]]);
+  const prop = { org_id: 'o', currency: 'MYR' };
+  const ok = await computeRestrictions(sb, prop, dates, ctx({ base: 'MYR', rates: { USD: 0.2112 }, at: new Date().toISOString() }));
+  assert.equal(ok.rows[0].value.rate, '84.48');
+  assert.equal(ok.rows[0].value.stop_sell, false);
+  const none = await computeRestrictions(sb, prop, dates, ctx(null));
+  assert.equal(none.rows[0].value.stop_sell, true);
+});
+
+test('fetchFx: reads open.er-api.com, refuses an unexpected answer', async () => {
+  const { fetchFx } = await import('../../api/_lib/channex-sync.js');
+  const good = await fetchFx('MYR', { now: Date.parse('2026-10-25T00:00:00Z'), fetch: async (u) => ({ ok: true, json: async () => ({ result: 'success', base_code: 'MYR', rates: { USD: 0.21, MYR: 1 }, url: u }) }) });
+  assert.deepEqual(good, { base: 'MYR', rates: { USD: 0.21, MYR: 1 }, at: '2026-10-25T00:00:00.000Z', source: 'open.er-api.com' });
+  await assert.rejects(fetchFx('MYR', { fetch: async () => ({ ok: true, json: async () => ({ result: 'error' }) }) }));
+  await assert.rejects(fetchFx('MYR', { fetch: async () => ({ ok: false, status: 503 }) }));
+});
+
+test('ratePlanBody: a plan in another currency is created in that currency', () => {
+  const b = ratePlanBody({ id: 'RP-V', name: 'Vrbo', defaultRate: 84.48 }, { propertyId: 'p', roomTypeId: 'r', occAdults: 4, currency: 'USD' });
+  assert.equal(b.currency, 'USD');
+  assert.equal(b.options[0].rate, '84.48');
+});

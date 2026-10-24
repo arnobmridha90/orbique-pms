@@ -33,6 +33,8 @@
 import { channexConfig, ChannexError, taskIds as taskIdsOf, warnings as warningsOf } from './channex.js';
 import { must, selectAll, records, blob, archived, tracked, addAlert, todayMY, addDays, dateRange, isIso, STATE_DAYS } from './channex-db.js';
 import { processSetupQueue, pendingSetupRefs } from './channex-setup.js';
+import { foreignCurrency, fxFactor } from './fx.js';
+export { foreignCurrency, fxFactor };
 
 export const KINDS = ['availability', 'restrictions'];
 export const ENDPOINT = { availability: '/availability', restrictions: '/restrictions' };
@@ -250,7 +252,8 @@ export async function loadContext(sb, prop, cfg) {
     ratePlans: new Map(rps.filter((r) => r.rate_plan_id).map((r) => [r.plan_id, r])),
     unitTypes: new Map(types.map((t) => [t.id, t])),
     plans: planMap,
-    lastMinute: await blob(sb, prop.org_id, 'lastMinuteDeal')
+    lastMinute: await blob(sb, prop.org_id, 'lastMinuteDeal'),
+    fx: await blob(sb, prop.org_id, 'fxRates')
   };
 }
 
@@ -319,11 +322,16 @@ export async function computeRestrictions(sb, prop, dates, ctx) {
     const rtm = plan && ctx.roomTypes.get(plan.unitTypeId);
     const retired = !plan || archived(plan) || map.retired || !type || archived(type) || !rtm || rtm.retired;
     const own = days.get(planId) || {};
+    const fx = fxFactor(plan, prop.currency, ctx.fx);
     for (const d of [...dates.get(planId)].sort()) {
       const c = { plans: ctx.plans, dayOf: (pid) => (days.get(pid) || {})[d] };
       const row = { target_id: planId, date: d, value: restrictionValue(plan || {}, own[d], { retired, ctx: c }) };
       const f = lastMinuteFactor(ctx.lastMinute, d, today);
       if (f < 1 && row.value.rate !== undefined) row.value.rate = (Math.round(Number(row.value.rate) * f * 100) / 100).toFixed(2);
+      if (fx !== 1 && row.value.rate !== undefined) {
+        if (fx === null) row.value.stop_sell = true; // no rate to convert with: never sell at a ringgit number in dollars
+        else row.value.rate = (Math.round(Number(row.value.rate) * fx * 100) / 100).toFixed(2);
+      }
       const sent = own[d] && own[d].sent;
       if (sent && typeof sent === 'object' && Array.isArray(sent.f)) row.sent = { at: String(sent.at || ''), f: sent.f.filter((k) => k in row.value) };
       rows.push(row);
@@ -689,6 +697,51 @@ export async function markLastMinute(sb, opts = {}) {
     const rps = typeIds.length ? must(await sb.from('channex_rate_plans').select('plan_id').eq('org_id', p.org_id).eq('env', cfg.env).eq('retired', false).in('unit_type_id', typeIds), 'load rate plans') || [] : [];
     const rows = rps.map((r) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'restrictions', target_id: r.plan_id, date_from: t0, date_to: addDays(t0, days - 1), reason: 'last_minute', force: false }));
     if (rows.length) { must(await sb.from('channex_outbox').insert(rows), 'mark last minute'); n += rows.length; }
+  }
+  return n;
+}
+
+/* ---------- exchange rates (plans sold in another currency) ---------- */
+
+const FX_URL = 'https://open.er-api.com/v6/latest/';
+/** Fetch today's rates from a base currency: {base, rates, at, source}. Replaceable for tests (opts.fetch). */
+export async function fetchFx(base, opts = {}) {
+  const f = opts.fetch || fetch;
+  const res = await f(FX_URL + encodeURIComponent(base), { signal: AbortSignal.timeout(opts.timeoutMs || 8000) });
+  if (!res.ok) throw new Error('exchange rates: HTTP ' + res.status);
+  const j = await res.json();
+  if (!j || j.result !== 'success' || !j.rates || typeof j.rates !== 'object') throw new Error('exchange rates: unexpected answer');
+  return { base: String(base).toUpperCase(), rates: j.rates, at: new Date(opts.now || Date.now()).toISOString(), source: 'open.er-api.com' };
+}
+
+/**
+ * Nightly: for each connected workspace with a rate plan in another currency, save today's rates (blob fxRates, only
+ * the currencies its plans use) and, when a rate moved by 0.5% or more, mark those plans for the whole window so every
+ * night goes out at the new rate. Resolves the number of plans marked. A failed fetch keeps yesterday's rates.
+ */
+export async function refreshFx(sb, opts = {}) {
+  const cfg = opts.config || channexConfig();
+  const t0 = todayMY();
+  const props = must(await sb.from('channex_properties').select('org_id, channex_property_id, currency').eq('env', cfg.env).in('status', CONNECTED), 'load properties') || [];
+  const got = new Map();
+  let n = 0;
+  for (const p of props) {
+    const base = String(p.currency || 'MYR').toUpperCase();
+    // every plan with its own currency, sent yet or not (a new plan is created on Channex before its first rates go out)
+    const plans = await records(sb, p.org_id, 'ratePlans', (q) => q.not('data->>currency', 'is', null));
+    const foreign = plans.filter((pl) => !archived(pl) && foreignCurrency(pl, base));
+    if (!foreign.length) continue;
+    if (!got.has(base)) got.set(base, await fetchFx(base, opts));
+    const fresh = got.get(base);
+    const curs = [...new Set(foreign.map((pl) => foreignCurrency(pl, base)))];
+    const old = await blob(sb, p.org_id, 'fxRates');
+    const v = { base, rates: {}, at: fresh.at, source: fresh.source };
+    for (const c of curs) if (num(fresh.rates[c]) > 0) v.rates[c] = num(fresh.rates[c]);
+    must(await sb.from('blobs').upsert({ org_id: p.org_id, key: 'fxRates', data: { v } }, { onConflict: 'org_id,key' }), 'save exchange rates');
+    const moved = (c) => { const a = old && old.rates && num(old.rates[c]); const b = v.rates[c]; return !(a > 0) || !(b > 0) || Math.abs(b / a - 1) >= 0.005 || (old && old.base !== base); };
+    const rows = foreign.filter((pl) => moved(foreignCurrency(pl, base)))
+      .map((pl) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'restrictions', target_id: pl.id, date_from: t0, date_to: addDays(t0, STATE_DAYS - 1), reason: 'fx', force: false }));
+    if (rows.length) { must(await sb.from('channex_outbox').insert(rows), 'mark exchange rate'); n += rows.length; }
   }
   return n;
 }
