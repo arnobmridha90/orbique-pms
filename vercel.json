@@ -9,6 +9,7 @@
     "api/*.js": { "maxDuration": 20, "includeFiles": "config/**" }
   },
   "rewrites": [
+    { "source": "/api/public/:path*", "destination": "/api/public?path=:path*" },
     { "source": "/guest/:token", "destination": "/index.html" },
     { "source": "/((?!api/|vendor/|icons/).*)", "destination": "/index.html" }
   ],

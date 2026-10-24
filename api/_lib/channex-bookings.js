@@ -74,7 +74,7 @@ export const myt = (ms) => new Date(ms + 8 * 3600000).toISOString().slice(0, 16)
 export function nowMY(now = Date.now()) { return todayMY(now) + myt(now).slice(10); }
 
 let regionNames = null;
-function countryName(code) {
+export function countryName(code) {
   try {
     regionNames = regionNames || new Intl.DisplayNames(['en'], { type: 'region' });
     return regionNames.of(code === 'UK' ? 'GB' : code) || code;
@@ -382,7 +382,7 @@ async function mappings(sb, cfg, prop) {
 }
 
 /** Units, types, buildings, and the bookings and blocks around [from, to) (a month either side, for the best fit). */
-async function assignContext(sb, orgId, from, to) {
+export async function assignContext(sb, orgId, from, to) {
   const a = addDays(from, -31);
   const z = addDays(to, 31);
   const [units, types, buildings, bookings, blocks] = await Promise.all([
@@ -397,7 +397,7 @@ async function assignContext(sb, orgId, from, to) {
 
 /** The booking's check-in time the way the guest app and guest messages see it (O.guestmsg.ciTimeOf): its own, the unit's,
  * the building's, else 15:00. The door code and a typed unit's number reach the guest from 30 minutes before it. */
-function ciTimeIn(b, ctx) {
+export function ciTimeIn(b, ctx) {
   const unit = b.propertyId ? (ctx.units || []).find((u) => u.id === b.propertyId) : null;
   const type = (ctx.types || []).find((t) => t.id === ((unit && unit.unitTypeId) || b.unitTypeId));
   const building = type ? (ctx.buildings || []).find((x) => x.id === type.buildingId) : null;
@@ -414,7 +414,7 @@ function checkTimesFn(ctx) {
   };
 }
 
-async function saveRecords(sb, orgId, list) {
+export async function saveRecords(sb, orgId, list) {
   if (!list.length) return;
   const rows = list.map((b) => ({ org_id: orgId, coll: 'bookings', id: b.id, data: b, deleted: false }));
   must(await sb.from('records').upsert(rows, { onConflict: 'org_id,coll,id' }), 'save bookings');
@@ -429,7 +429,7 @@ export async function resolveAlerts(sb, orgId, kind, key) {
 }
 
 /** Unit moves in the workspace's activity log (auditLog blob, newest first, at most 500). Never throws. */
-async function audit(sb, orgId, entries) {
+export async function audit(sb, orgId, entries) {
   if (!entries.length) return;
   try {
     const cur = await sb.from('blobs').select('data').eq('org_id', orgId).eq('key', 'auditLog').maybeSingle();
@@ -442,13 +442,13 @@ async function audit(sb, orgId, entries) {
 }
 
 const unitLabel = (units, id) => { const u = units.find((x) => x.id === id); return u ? u.unitNo || u.short || u.name || id : 'no unit'; };
-function moveText(b, from, to, units) {
+export function moveText(b, from, to, units) {
   return 'Assigned ' + ((b.guest && b.guest.name) || 'a guest') + ' (' + b.id + ') ' + (from ? 'from ' + unitLabel(units, from) + ' ' : '') + 'to ' +
     (to ? unitLabel(units, to) : 'no unit (none free for the whole stay)') + ' automatically';
 }
 
 /** Assign one booking in place against ctx (whose bookings list holds it). Returns {from, to, changed, res}. */
-function assignOne(b, ctx, now, fresh) {
+export function assignOne(b, ctx, now, fresh) {
   const from = b.propertyId || null;
   if (!live(b) || !b.unitTypeId) return { from, to: from, changed: false, res: null };
   const res = A.assignUnits({ booking: b, units: ctx.units, bookings: ctx.bookings, blocks: ctx.blocks, now, fresh: !!fresh, ciTime: ciTimeIn(b, ctx) });
@@ -458,7 +458,7 @@ function assignOne(b, ctx, now, fresh) {
 }
 
 /** Alerts after a booking is saved: double booking and needs a unit (raised, or resolved once fixed). */
-async function bookingAlerts(sb, orgId, b, ctx, now) {
+export async function bookingAlerts(sb, orgId, b, ctx, now) {
   const raised = [];
   const conflict = detectConflicts(b, ctx);
   if (conflict.double) {
