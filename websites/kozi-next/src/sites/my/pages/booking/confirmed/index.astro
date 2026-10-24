@@ -6,13 +6,15 @@ import { ICONS } from '@shared/data/icons';
 const mdac = GUIDES.find((g) => g.slug.startsWith('mdac'))!;
 const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
 ---
-<Layout site="my" title="Your Kozi booking" description="Your Kozi booking is confirmed." noindex>
-  <section class="wrap bc" data-confirmed>
+<Layout site="my" title="Your Kozi booking" description="Your Kozi booking." noindex>
+  <section class="wrap bc" data-confirmed data-email={BRAND.email}>
     <div class="bc-sun" aria-hidden="true"><span></span></div>
-    <p class="eyebrow bc-k" data-bc-k>Booking confirmed</p>
-    <h1 class="display bc-h"><span data-bc-h>You're booked.</span></h1>
+    <p class="eyebrow bc-k" data-bc-k>Your booking</p>
+    <h1 class="display bc-h"><span data-bc-h>Thank you.</span></h1>
+    <p class="bc-status" role="status" data-bc-status></p>
     <p class="bc-ref">Reference <b data-bc-ref>—</b> <button type="button" class="s-link" data-bc-copy>Copy</button></p>
     <p class="bc-test" data-bc-test hidden>Test mode: no payment was taken and no room is held.</p>
+    <p class="bc-again" data-bc-again hidden><a class="btn" href="/stays/">Find another stay <span class="arr" aria-hidden="true">→</span></a></p>
 
     <div class="bc-grid">
       <dl class="bc-stay">
@@ -20,9 +22,11 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
         <div><dt>Check-in</dt><dd><span data-bc-in>—</span><small>from {PROPERTY.checkIn}</small></dd></div>
         <div><dt>Check-out</dt><dd><span data-bc-out>—</span><small>by {PROPERTY.checkOut}</small></dd></div>
         <div><dt>Guests</dt><dd data-bc-guests>—</dd></div>
+        <div data-bc-paid-row hidden><dt data-bc-paid-k>Paid</dt><dd data-bc-paid>—</dd></div>
+        <div data-bc-rate-row hidden><dt>Rate</dt><dd><span data-bc-rate>—</span><small data-bc-terms></small></dd></div>
         <div><dt>Where</dt><dd>{PROPERTY.building}<small>{PROPERTY.address}</small></dd></div>
       </dl>
-      <div>
+      <div data-bc-next>
         <h2 class="display bc-h2">What happens next</h2>
         <ol class="bc-steps" role="list">
           <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.mail} /><div><b>Keep your reference</b><span>It's at the top of this page. Copy it, or add the stay to your calendar below.</span></div></li>
@@ -44,11 +48,21 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
   /* a small sunrise, like the O in the logo, comes up as the page opens */
   .bc-sun { position: relative; width: 92px; aspect-ratio: 2 / 1; overflow: hidden; margin-bottom: 30px; pointer-events: none; }
   .bc-sun span { position: absolute; left: 14%; right: 14%; top: 28%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, var(--amber-hi), var(--amber) 72%);
-    box-shadow: 0 0 40px 6px rgb(240 184 96 / 0.35); transform: translateY(100%); animation: bcrise 1.4s var(--ease-out) 0.2s forwards; }
+    box-shadow: 0 0 40px 6px rgb(240 184 96 / 0.35); transform: translateY(100%); animation: bcrise 1.4s var(--ease-out) 0.2s forwards;
+    transition: opacity 400ms ease, filter 400ms ease; }
   .bc-sun::after { content: ''; position: absolute; inset: auto 0 0; height: 2px; border-radius: 2px; background: var(--ink); }
   @keyframes bcrise { to { transform: translateY(0); } }
+  /* while the payment is being confirmed, the sun breathes so the page doesn't look stuck */
+  .bc.is-wait .bc-sun span { animation: bcrise 1.4s var(--ease-out) 0.2s forwards, bcwait 1.2s ease-in-out 1.6s infinite alternate; }
+  @keyframes bcwait { to { opacity: 0.45; } }
+  .bc.is-off .bc-sun span { filter: grayscale(1); opacity: 0.35; }
+  .bc-again { margin: 30px 0 0; }
   .bc-h { font-size: clamp(52px, 8vw, 128px); margin: 20px 0 0; max-width: 6.9em; }
   .bc-h em { color: var(--amber); }
+  /* always in the page, so screen readers hear each new line; empty, it takes no room */
+  .bc-status { margin: 22px 0 0; max-width: 36em; font-size: 17px; color: var(--ink-2); }
+  .bc-status:empty { margin: 0; }
+  .bc-status a { border-bottom: 1px solid var(--amber); color: var(--ink); }
   .bc-ref { margin: 22px 0 0; font-size: 16px; color: var(--ink-2); }
   .bc-ref b { font: 650 18px/1 var(--sans); letter-spacing: 0.06em; color: var(--ink); margin-right: 6px; }
   .bc-test { display: inline-block; margin: 18px 0 0; padding: 10px 14px; border-radius: 12px; background: rgb(200 134 46 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); }
@@ -71,5 +85,5 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
   .bc-ghost { color: var(--ink); }
   @media (hover: hover) and (pointer: fine) { .bc-ghost:hover { background: rgb(43 38 34 / 0.05); } }
   @media (max-width: 860px) { .bc-grid { grid-template-columns: 1fr; } }
-  @media (prefers-reduced-motion: reduce) { .bc-sun span { animation: none; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .bc-sun span, .bc.is-wait .bc-sun span { animation: none; transform: none; } }
 </style>
