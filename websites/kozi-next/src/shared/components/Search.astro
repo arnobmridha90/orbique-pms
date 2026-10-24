@@ -1,0 +1,74 @@
+---
+// The search bar: where, when and how many. Works without JavaScript as a plain form
+// (it submits to /stays/); with JavaScript the fields open a list, a calendar and a stepper.
+import { DESTINATIONS } from '@shared/data/kozi';
+interface Props { id: string; class?: string; compact?: boolean }
+const { id, class: cls = '', compact = false } = Astro.props;
+const first = DESTINATIONS[0];
+---
+<form class:list={['search', cls, { 'search-compact': compact }]} action="/stays/" method="get" role="search" aria-label="Find a stay" data-search={id}>
+  <div class="s-bar">
+    <button type="button" class="s-phone" data-open="when" aria-haspopup="dialog" aria-expanded="false" aria-controls={`${id}-when`}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>
+      <span><b data-v="where-phone">{first.city}</b><small data-v="sum">Add dates · 2 guests</small></span>
+    </button>
+    <div class="s-field s-where">
+      <button type="button" class="s-btn" data-open="where" aria-haspopup="listbox" aria-expanded="false" aria-controls={`${id}-where`}>
+        <span class="s-k">Where</span><span class="s-v" data-v="where">{first.city}</span>
+      </button>
+    </div>
+    <span class="s-sep" aria-hidden="true"></span>
+    <div class="s-field s-when">
+      <button type="button" class="s-btn" data-open="when" aria-haspopup="dialog" aria-expanded="false" aria-controls={`${id}-when`}>
+        <span class="s-k">When</span><span class="s-v" data-v="when">Add dates</span>
+      </button>
+    </div>
+    <span class="s-sep" aria-hidden="true"></span>
+    <div class="s-field s-who">
+      <button type="button" class="s-btn" data-open="who" aria-haspopup="dialog" aria-expanded="false" aria-controls={`${id}-who`}>
+        <span class="s-k">Guests</span><span class="s-v" data-v="who">2 guests</span>
+      </button>
+    </div>
+    <button class="s-go" type="submit" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>
+      <span>Search</span>
+    </button>
+  </div>
+  <input type="hidden" name="city" value={first.id} />
+  <input type="hidden" name="in" value="" disabled />
+  <input type="hidden" name="out" value="" disabled />
+  <input type="hidden" name="guests" value="2" />
+
+  <div class="s-shade" data-shade aria-hidden="true"></div>
+  <div class="s-pop s-pop-where" id={`${id}-where`} data-pop="where" role="listbox" aria-label="Destinations" tabindex="-1">
+    <p class="s-pop-k">Destinations</p>
+    {DESTINATIONS.map((d) => (
+      <button type="button" class="s-dest" role="option" aria-selected={d.id === first.id ? 'true' : 'false'} data-city={d.id} data-name={d.city}>
+        <span class="s-dest-pin" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" /><circle cx="12" cy="10" r="2.4" /></svg></span>
+        <span><b>{d.city}, {d.country}</b><small>{d.buildings.map((b) => b.name).join(' · ')}</small></span>
+      </button>
+    ))}
+  </div>
+  <div class="s-pop s-pop-when" id={`${id}-when`} data-pop="when" role="dialog" aria-label="Choose your dates" tabindex="-1">
+    <div class="s-pop-head"><p class="s-pop-k">Your dates</p><button type="button" class="s-x" data-close aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></div>
+    <div data-cal></div>
+    <div class="s-pop-foot">
+      <p data-nights aria-live="polite">Pick the day you arrive</p>
+      <button type="button" class="s-link" data-clear>Clear</button>
+      <button type="button" class="btn small" data-done>Done</button>
+    </div>
+  </div>
+  <div class="s-pop s-pop-who" id={`${id}-who`} data-pop="who" role="dialog" aria-label="Guests" tabindex="-1">
+    <div class="s-pop-head"><p class="s-pop-k">Guests</p><button type="button" class="s-x" data-close aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></div>
+    <div class="s-step">
+      <div><b>Guests</b><small>Every suite sleeps 4</small></div>
+      <div class="stepper">
+        <button type="button" data-dec aria-label="One guest fewer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg></button>
+        <output data-count aria-live="polite">2</output>
+        <button type="button" data-inc aria-label="One more guest"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg></button>
+      </div>
+    </div>
+    <p class="s-note">A fifth guest sleeps on an extra bed, RM60 a night.</p>
+    <div class="s-pop-foot"><span></span><button type="button" class="btn small" data-done>Done</button></div>
+  </div>
+</form>

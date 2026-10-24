@@ -1,0 +1,23 @@
+---
+// Arnob's Kozi mark, inlined so its parts can animate. The paths are used exactly as supplied:
+// the K, Z and I take the text colour, the sunrise O, its horizon and the crosshair stay amber.
+import raw from '@shared/assets/logo.svg?raw';
+
+interface Props { id: string; class?: string; label?: string }
+const { id, class: cls = '', label = 'Kozi' } = Astro.props;
+const p = [...raw.matchAll(/<path d="([^"]+)"/g)].map((m) => m[1]);
+const [k, z, i] = p[0].split(' Z M').map((x) => (x.startsWith('M') ? x : 'M' + x));
+const amber = '#C8862E';
+---
+<svg class:list={['logo', cls]} viewBox="0 0 822 822" role="img" aria-label={label}>
+  <defs><clipPath id={`sun-${id}`} clipPathUnits="userSpaceOnUse"><rect class="lg-clip" x="330" y="-4" width="310" height="306" /></clipPath></defs>
+  <g transform="translate(94,94)">
+    <rect class="lg-v" x="315.5" y="-34" width="3" height="702" fill={amber} />
+    <rect class="lg-h" x="-34" y="315.5" width="702" height="3" fill={amber} />
+    <path class="lg-k" d={`${k} Z`} fill="currentColor" />
+    <path class="lg-z" d={`${z} Z`} fill="currentColor" />
+    <path class="lg-i" d={i} fill="currentColor" />
+    <g class="lg-o" clip-path={`url(#sun-${id})`}><path d={p[1]} fill={amber} fill-rule="evenodd" /></g>
+    <path class="lg-bar" d={p[2]} fill={amber} />
+  </g>
+</svg>

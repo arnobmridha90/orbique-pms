@@ -1,0 +1,45 @@
+---
+// Photo credits: what the licences of photos we did not take ask for (title, author, source, licence).
+import Layout from '@shared/components/Layout.astro';
+import PageHead from '@shared/components/PageHead.astro';
+import Photo from '@shared/components/Photo.astro';
+import { BRAND, CREDITS, CC_BY_SA } from '@shared/data/kozi';
+import { crumbsLd } from '@shared/lib/seo';
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Photo credits', path: '/credits/' }];
+---
+<Layout site="my" title="Photo credits | Kozi" description="Credits and licences for the photos on the Kozi website that we did not take ourselves."
+  over jsonld={[crumbsLd(BRAND.my, crumbs)]}>
+  <PageHead crumbs={crumbs} eyebrow="Kozi" size="short" seed={4}>
+    <Fragment slot="title">Photo <em>credits.</em></Fragment>
+    <Fragment slot="lede">The photos inside our suites are our own. These photos of the Vortex building were taken by others and shared under a Creative Commons licence.</Fragment>
+  </PageHead>
+  <section class="wrap cr" aria-label="Credits">
+    <ul class="cr-list" role="list">
+      {Object.entries(CREDITS).map(([key, c]) => (
+        <li class="cr-item">
+          <div class="cr-media"><Photo k={key} alt={c.title} sizes="220px" widths={[480]} /></div>
+          <div>
+            <h2 class="display cr-h">“{c.title}”</h2>
+            <p>By {c.by}, taken {c.taken}. From <a href={c.source} rel="noopener">Wikimedia Commons</a>, under <a href={CC_BY_SA.url} rel="noopener license">{CC_BY_SA.name}</a>.</p>
+            <p class="cr-fine">Shown resized and cropped to fit the page. Our edits are shared under the same licence.</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Layout>
+
+<style is:global>
+  .cr { padding: clamp(48px, 6vw, 84px) 0 clamp(90px, 10vw, 140px); }
+  .cr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; max-width: 900px; }
+  .cr-item { display: grid; grid-template-columns: 150px 1fr; gap: 28px; align-items: center; padding: 26px 0; border-top: 1px solid var(--line); }
+  .cr-item:last-child { border-bottom: 1px solid var(--line); }
+  .cr-media { aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden; background: var(--sand); }
+  .cr-media picture, .cr-media img { width: 100%; height: 100%; }
+  .cr-media img { object-fit: cover; }
+  .cr-h { font-size: clamp(24px, 2.2vw, 32px); line-height: 1.1; margin-bottom: 10px; }
+  .cr-item p { margin: 0; color: var(--ink-2); }
+  .cr-item a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--amber); text-underline-offset: 3px; }
+  .cr-fine { margin-top: 8px !important; font-size: 14px; color: var(--muted) !important; }
+  @media (max-width: 560px) { .cr-item { grid-template-columns: 96px 1fr; gap: 18px; } }
+</style>

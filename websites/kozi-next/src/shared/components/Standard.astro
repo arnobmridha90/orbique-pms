@@ -1,0 +1,50 @@
+---
+// The Kozi standard: what every suite has. Icons draw themselves in as they arrive.
+import { AMENITIES, POLICIES } from '@shared/data/kozi';
+import { ICONS } from '@shared/data/icons';
+
+---
+<section class="sd" aria-labelledby="sd-h">
+  <div class="wrap">
+    <div class="sd-head">
+      <p class="eyebrow" data-reveal>The Kozi standard</p>
+      <h2 id="sd-h" class="display h2" data-split>Everything a home has, <em>in the middle of the city.</em></h2>
+    </div>
+    <ul class="sd-grid" role="list">
+      {AMENITIES.map((a, i) => (
+        <li class="sd-item" data-reveal style={`--d:${(i % 3) * 80}`}>
+          <svg class="sd-ic" viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[a.icon]} />
+          <h3>{a.title}</h3>
+          <p>{a.text}</p>
+        </li>
+      ))}
+    </ul>
+    <p class="sd-small" data-reveal>{POLICIES.paid} {POLICIES.tax}</p>
+  </div>
+</section>
+
+<style is:global>
+  .sd { background: var(--cream); padding: clamp(96px, 12vw, 180px) 0; }
+  .sd-head { max-width: 980px; }
+  .sd-head .h2 { margin-top: 22px; }
+  .sd-head .h2 em { display: block; }
+  .sd-grid { list-style: none; margin: clamp(48px, 6vw, 88px) 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+  .sd-item { padding: 34px 28px 38px 0; border-bottom: 1px solid var(--line); }
+  .sd-item:not(:nth-child(3n + 1)) { padding-left: 28px; border-left: 1px solid var(--line); }
+  .sd-ic { width: 34px; height: 34px; fill: none; stroke: var(--amber-deep); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .sd-ic * { stroke-dasharray: 80; stroke-dashoffset: 0; }
+  .js:not(.rm) .sd-item:not(.in) .sd-ic * { stroke-dashoffset: 80; }
+  .sd-item.in .sd-ic * { transition: stroke-dashoffset 1400ms var(--ease-out); transition-delay: calc(var(--d, 0) * 1ms + 200ms); }
+  .sd-item h3 { margin: 22px 0 8px; font: 400 clamp(22px, 1.9vw, 27px)/1.15 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.012em; }
+  .sd-item p { margin: 0; color: var(--ink-2); max-width: 18.4em; }
+  .sd-small { margin: 28px 0 0; font-size: 14px; color: var(--muted); }
+  @media (max-width: 900px) {
+    .sd-grid { grid-template-columns: 1fr 1fr; }
+    .sd-item, .sd-item:not(:nth-child(3n + 1)) { padding: 28px 20px 30px 0; border-left: 0; }
+    .sd-item:nth-child(2n) { padding-left: 20px; border-left: 1px solid var(--line); }
+  }
+  @media (max-width: 520px) {
+    .sd-grid { grid-template-columns: 1fr; }
+    .sd-item:nth-child(2n) { padding-left: 0; border-left: 0; }
+  }
+</style>

@@ -1,0 +1,206 @@
+---
+// A guide: the live sky over the title, then the guide itself with its contents beside it,
+// every source at the end, and the other guides after that.
+import { getImage } from 'astro:assets';
+import Layout from '@shared/components/Layout.astro';
+import PageHead from '@shared/components/PageHead.astro';
+import Photo from '@shared/components/Photo.astro';
+import StayBand from '@shared/components/StayBand.astro';
+import { GUIDE_PAGES, type Guide } from '@shared/data/guides';
+import { BRAND, PROPERTY, photo } from '@shared/data/kozi';
+import { crumbsLd, orgLd } from '@shared/lib/seo';
+
+export function getStaticPaths() {
+  return GUIDE_PAGES.map((g) => ({ params: { slug: g.slug }, props: { g } }));
+}
+const { g } = Astro.props as { g: Guide };
+const text = (s: string) => s.replace(/<[^>]+>/g, '');
+
+// every h2 gets an id so the contents can link to it
+const toc: { id: string; t: string }[] = [];
+const html = g.html.replace(/<h2>(.*?)<\/h2>/g, (_, t: string) => {
+  const id = text(t).toLowerCase().replace(/'/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  toc.push({ id, t: text(t) });
+  return `<h2 id="${id}">${t}</h2>`;
+});
+const path = `/guides/${g.slug}/`;
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Guides', path: '/guides/' }, { name: g.tag, path }];
+const og = await getImage({ src: photo(g.photo.key), width: 1200, height: 630, fit: 'cover', format: 'jpg', quality: 78 });
+const article = {
+  '@context': 'https://schema.org', '@type': 'Article', headline: g.title, description: g.desc, inLanguage: 'en',
+  image: new URL(og.src, BRAND.my).href, url: `${BRAND.my}${path}`, mainEntityOfPage: `${BRAND.my}${path}`,
+  author: { '@id': orgLd['@id'] }, publisher: { '@id': orgLd['@id'] }, citation: g.sources.map((s) => s.url),
+};
+const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
+---
+<Layout site="my" title={`${g.title} | Kozi guides`} description={g.desc} image={og.src} over
+  jsonld={[crumbsLd(BRAND.my, crumbs), orgLd, article]}>
+  <div class="g-progress" data-g-progress aria-hidden="true"></div>
+  <PageHead crumbs={crumbs} eyebrow={`${g.tag} · Checked ${g.checked}`} size="short" seed={g.slug.length}>
+    <Fragment slot="title" set:html={g.h1} />
+    <Fragment slot="lede">{g.lede}</Fragment>
+  </PageHead>
+
+  <div class="wrap g-wrap" data-guide>
+    <div class="g-body">
+      <article class="g-prose" data-g-prose>
+        <figure class="g-photo" style={g.photo.pos ? `--pos:${g.photo.pos}` : undefined}>
+          <Photo k={g.photo.key} alt={g.photo.alt} eager sizes="(max-width: 760px) 92vw, 760px" widths={[640, 960, 1280]} />
+          <figcaption>{g.photo.alt}</figcaption>
+        </figure>
+        <Fragment set:html={html} />
+
+        <section class="g-src" aria-labelledby="g-src-h">
+          <h2 id="g-src-h">Sources</h2>
+          <ol>
+            {g.sources.map((s) => (
+              <li><a href={s.url} rel="noopener" target="_blank">{s.name}<span aria-hidden="true"> ↗</span></a><small>{new URL(s.url).hostname.replace(/^www\./, '')}</small></li>
+            ))}
+          </ol>
+          <p class="g-checked"><b>Checked {g.checked}.</b> Rules and fares change. If something here is out of date, tell us at <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a> and we'll fix it.</p>
+        </section>
+      </article>
+
+      <aside class="g-aside" aria-label="About this guide">
+        <div class="g-stick">
+          <nav class="g-toc" aria-label="On this page">
+            <p class="g-k">On this page</p>
+            <ol>{toc.map((t) => <li><a href={`#${t.id}`} data-g-toc={t.id}>{t.t}</a></li>)}</ol>
+          </nav>
+          <a class="g-stay" href={PROPERTY.path}>
+            <div class="g-stay-media"><Photo k="boutique/02-dining-and-living" alt="" sizes="300px" widths={[480, 720]} /></div>
+            <div class="g-stay-body">
+              <p class="g-k">Stay with us</p>
+              <p class="g-stay-h">{PROPERTY.name}</p>
+              <p>Two-bedroom suites for four, between KLCC and Bukit Bintang.</p>
+              <span class="g-stay-go">See the suites <span aria-hidden="true">→</span></span>
+            </div>
+          </a>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <section class="g-more" aria-labelledby="g-more-h">
+    <div class="wrap">
+      <p class="eyebrow">Before you fly</p>
+      <h2 id="g-more-h" class="display h3" data-split>More <em>guides.</em></h2>
+      <ul class="g-cards" role="list">
+        {others.map((o, i) => (
+          <li data-reveal style={`--d:${i * 80}`}>
+            <a class="g-card" href={`/guides/${o.slug}/`}>
+              <div class="g-card-media"><Photo k={o.photo.key} alt="" sizes="(max-width: 760px) 92vw, 44vw" widths={[480, 720, 960]} /></div>
+              <div class="g-card-body">
+                <p class="g-tag">{o.tag}</p>
+                <h3 class="display" set:html={o.h1} />
+                <p>{o.lede}</p>
+              </div>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+  <StayBand />
+</Layout>
+
+<style is:global>
+  /* how far through the guide you are, as a thin line along the top */
+  .g-progress { position: fixed; inset: 0 0 auto; z-index: 70; height: 2px; background: var(--amber); transform: scaleX(0); transform-origin: 0 50%; pointer-events: none; }
+  .g-wrap { padding: clamp(40px, 5vw, 72px) 0 clamp(80px, 9vw, 130px); }
+  .g-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: clamp(40px, 7vw, 120px); }
+  .g-photo { margin: 0 0 clamp(30px, 4vw, 48px); position: relative; border-radius: 24px; overflow: hidden; aspect-ratio: 3 / 2; background: var(--sand); }
+  .g-photo picture, .g-photo img { width: 100%; height: 100%; }
+  .g-photo img { object-fit: cover; object-position: var(--pos, 50% 50%); }
+  .g-photo figcaption { position: absolute; left: 14px; bottom: 14px; max-width: calc(100% - 28px); padding: 8px 13px; border-radius: 999px; font: 550 12.5px/1.3 var(--sans);
+    color: var(--cream); background: rgb(20 18 26 / 0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+
+  .g-prose { max-width: 40.25em; font-size: 18px; line-height: 1.72; color: var(--ink-2); }
+  .g-prose > :first-child { margin-top: 0; }
+  .g-prose h2 { margin: 2.4em 0 0.6em; font: 330 clamp(28px, 2.6vw, 38px)/1.08 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.018em; color: var(--ink); scroll-margin-top: calc(var(--hd-h) + 28px); }
+  .g-prose p { margin: 0 0 1.05em; }
+  .g-prose b { color: var(--ink); font-weight: 650; }
+  .g-prose a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--amber); text-decoration-thickness: 1.5px; text-underline-offset: 3px; transition: text-decoration-color 200ms ease; }
+  @media (hover: hover) and (pointer: fine) { .g-prose a:hover { text-decoration-color: var(--ink); } }
+  .g-prose ul, .g-prose ol { margin: 0 0 1.2em; padding: 0; list-style: none; display: grid; gap: 0.7em; }
+  .g-prose ul > li { position: relative; padding-left: 26px; }
+  .g-prose ul > li::before { content: ''; position: absolute; left: 4px; top: 0.66em; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+  .g-prose ol { counter-reset: g; }
+  .g-prose ol > li { position: relative; counter-increment: g; padding-left: 42px; min-height: 28px; }
+  .g-prose ol > li::before { content: counter(g); position: absolute; left: 0; top: 0.12em; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+    font: 650 13px/1 var(--sans); color: var(--amber-deep); box-shadow: inset 0 0 0 1.5px var(--amber); }
+  .g-note { margin: 1.6em 0; padding: 20px 24px; border-radius: 18px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line), inset 3px 0 0 var(--amber); color: var(--ink-2); font-size: 16.5px; line-height: 1.6; }
+  .g-note b { display: block; margin-bottom: 4px; }
+  .g-table { margin: 1.4em 0 1em; overflow-x: auto; border-radius: 18px; box-shadow: inset 0 0 0 1px var(--line); background: var(--paper); }
+  .g-table table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 15px; line-height: 1.5; }
+  .g-table th { text-align: left; padding: 14px 18px; font: 650 10.5px/1.3 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .g-table td { padding: 14px 18px; vertical-align: top; border-top: 1px solid var(--line); }
+  .g-table tr:first-child td { border-top: 0; }
+  .g-table td:first-child { font-weight: 650; color: var(--ink); }
+
+  .g-src { margin-top: 3.4em; padding-top: 34px; border-top: 1px solid var(--line); }
+  .g-src h2 { margin-top: 0; font-size: 26px; }
+  .g-src ol { gap: 12px; font-size: 15.5px; line-height: 1.45; }
+  .g-src li { display: grid; gap: 2px; }
+  .g-src a { text-decoration: none; font-weight: 600; }
+  @media (hover: hover) and (pointer: fine) { .g-src a:hover { text-decoration: underline; text-decoration-color: var(--amber); } }
+  .g-src small { font-size: 13px; color: var(--muted); }
+  .g-checked { margin-top: 28px !important; padding: 16px 20px; border-radius: 16px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); font-size: 15px; }
+
+  .g-stick { position: sticky; top: calc(var(--hd-h) + 28px); display: grid; gap: 30px; }
+  .g-k { margin: 0 0 12px; font: 650 10.5px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .g-toc ol { list-style: none; margin: 0; padding: 0; display: grid; border-left: 1px solid var(--line); }
+  .g-toc a { position: relative; display: block; padding: 7px 0 7px 16px; font-size: 14.5px; line-height: 1.35; color: var(--muted); transition: color 200ms ease; }
+  .g-toc a::before { content: ''; position: absolute; left: -1px; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--amber); transform: scaleY(0); transition: transform 250ms var(--ease-out); }
+  .g-toc a[aria-current] { color: var(--ink); }
+  .g-toc a[aria-current]::before { transform: scaleY(1); }
+  @media (hover: hover) and (pointer: fine) { .g-toc a:hover { color: var(--ink); } }
+  .g-stay { display: block; border-radius: 22px; overflow: hidden; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
+  .g-stay:active { transform: scale(0.99); }
+  .g-stay-media { aspect-ratio: 16 / 10; overflow: hidden; background: var(--sand); }
+  .g-stay-media picture, .g-stay-media img { width: 100%; height: 100%; }
+  .g-stay-media img { object-fit: cover; transition: transform 900ms var(--ease-out); }
+  .g-stay-body { padding: 18px 20px 20px; }
+  .g-stay-body .g-k { margin-bottom: 8px; color: var(--amber-deep); }
+  .g-stay-h { margin: 0; font: 400 22px/1.15 var(--display); font-variation-settings: var(--soft); color: var(--ink); }
+  .g-stay-body p:not(.g-k):not(.g-stay-h) { margin: 6px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); }
+  .g-stay-go { display: inline-block; margin-top: 12px; font-weight: 650; font-size: 14.5px; }
+  .g-stay-go span { display: inline-block; transition: transform 200ms var(--ease-out); }
+  @media (hover: hover) and (pointer: fine) {
+    .g-stay:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 24px 50px -36px rgb(43 38 34 / 0.5); }
+    .g-stay:hover .g-stay-media img { transform: scale(1.04); }
+    .g-stay:hover .g-stay-go span { transform: translateX(3px); }
+  }
+
+  .g-more { padding: clamp(80px, 9vw, 130px) 0; background: var(--paper); border-top: 1px solid var(--line); }
+  .g-more .h3 { margin: 18px 0 40px; }
+  .g-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  .g-card { display: grid; grid-template-columns: 0.9fr 1fr; height: 100%; border-radius: 26px; overflow: hidden; background: var(--cream); box-shadow: inset 0 0 0 1px var(--line); transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
+  .g-card:active { transform: scale(0.99); }
+  .g-card-media { position: relative; min-height: 240px; background: var(--sand); }
+  .g-card-media picture, .g-card-media img { width: 100%; height: 100%; }
+  .g-card-media img { position: absolute; inset: 0; object-fit: cover; transition: transform 900ms var(--ease-out); }
+  .g-card-body { padding: 26px; display: grid; align-content: start; gap: 10px; }
+  .g-tag { margin: 0; font: 650 11px/1 var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber-deep); }
+  .g-card h3 { font-size: clamp(26px, 2.2vw, 32px); line-height: 1.04; }
+  .g-card-body p:last-child { margin: 0; font-size: 15px; color: var(--ink-2); }
+  @media (hover: hover) and (pointer: fine) {
+    .g-card:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 30px 60px -40px rgb(43 38 34 / 0.5); }
+    .g-card:hover .g-card-media img { transform: scale(1.04); }
+  }
+
+  @media (max-width: 1100px) {
+    .g-body { grid-template-columns: minmax(0, 1fr); }
+    .g-toc { display: none; }
+    .g-stick { position: static; }
+    .g-stay { display: grid; grid-template-columns: 220px 1fr; max-width: 640px; }
+    .g-stay-media { aspect-ratio: auto; min-height: 100%; }
+    .g-cards { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .g-photo { aspect-ratio: 4 / 3; border-radius: 20px; }
+    .g-prose { font-size: 17px; }
+    .g-stay, .g-card { grid-template-columns: 1fr; }
+    .g-stay-media, .g-card-media { aspect-ratio: 16 / 10; min-height: 0; }
+  }
+</style>

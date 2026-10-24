@@ -1,0 +1,21 @@
+---
+// A responsive photo from src/assets/photos: WebP in three widths with a JPEG fallback.
+// skip: a media query where the photo is hidden (a phone's strip on a wide screen, say). There a blank stands in,
+// so the browser doesn't fetch a photo nobody sees, which would slow the one that's showing.
+import { getImage } from 'astro:assets';
+import { photo } from '@shared/data/kozi';
+// low: fetched at low priority, for a photo just out of sight that mustn't hold up the one in view
+interface Props { k: string; alt: string; sizes?: string; class?: string; eager?: boolean; low?: boolean; widths?: number[]; skip?: string }
+const { k, alt, sizes = '(max-width: 760px) 100vw, 50vw', class: cls, eager = false, low = false, widths = [480, 800, 1280, 1800], skip } = Astro.props;
+const src = photo(k);
+const ws = widths.filter((w) => w <= src.width);
+const opts = { src, widths: ws.length ? ws : [src.width], sizes, quality: 78 };
+const [webp, jpg] = await Promise.all([getImage({ ...opts, format: 'webp' }), getImage({ ...opts, format: 'jpg' })]);
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+---
+<picture>
+  {skip && <source media={skip} srcset={BLANK} />}
+  <source srcset={webp.srcSet.attribute} type="image/webp" sizes={sizes} />
+  <img src={jpg.src} srcset={jpg.srcSet.attribute} alt={alt} sizes={sizes} class={cls} loading={eager ? 'eager' : 'lazy'} decoding="async"
+    fetchpriority={eager ? 'high' : low ? 'low' : undefined} width={jpg.attributes.width} height={jpg.attributes.height} />
+</picture>

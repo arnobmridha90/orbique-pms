@@ -1,0 +1,41 @@
+---
+// Not found on staykozi.com: the live Earth and two ways back.
+import Layout from '@shared/components/Layout.astro';
+import Globe from '@shared/components/Globe.astro';
+import { BRAND } from '@shared/data/kozi';
+---
+<Layout site="com" title="Page not found | Kozi" description="This page could not be found." noindex over ink="light">
+  <section class="nf stars" data-globe aria-labelledby="nf-h">
+    <Globe />
+    <div class="wrap nf-in">
+      <p class="eyebrow nf-k">Page not found</p>
+      <h1 id="nf-h" class="display nf-h">This page has <em>checked out.</em></h1>
+      <p class="nf-p">The link may be old, or the page has moved. These will get you back on track.</p>
+      <div class="nf-go">
+        <a class="btn nf-main" href="/">Back to Kozi <span class="arr" aria-hidden="true">→</span></a>
+        <a class="btn ghost" href={`${BRAND.my}/`}>Kozi Malaysia</a>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style is:global>
+  .nf { position: relative; isolation: isolate; overflow: hidden; min-height: max(560px, 86svh); display: grid; align-items: center; color: var(--cream);
+    background: radial-gradient(80% 70% at 70% 40%, #1c2142 0%, #0e1024 55%, #07080f 100%); }
+  .nf .gh-stage { position: absolute; top: 50%; right: max(-10vw, -160px); width: min(54vw, 100svh, 900px); transform: translateY(-50%); }
+  .nf-in { position: relative; z-index: 1; padding: calc(var(--hd-h) + 40px) 0 80px; pointer-events: none; }
+  .nf-in a { pointer-events: auto; }
+  @media (max-width: 860px) {
+    .nf { display: block; min-height: 0; }
+    .nf .gh-stage { position: relative; top: auto; right: auto; width: calc(100% + 30vw); margin: -6vw -15vw -26vw; transform: none; }
+    .nf-in { padding: 0 0 80px; }
+  }
+  .nf-k { color: var(--amber-hi); }
+  .nf-h { margin-top: 22px; font-size: clamp(48px, 7vw, 112px); max-width: 6.32em; }
+  .nf-h em { color: var(--amber-hi); }
+  .nf-p { margin: 24px 0 0; max-width: 25.3em; font-size: clamp(17px, 1.3vw, 19px); color: rgb(246 239 228 / 0.8); }
+  .nf-go { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+  .nf .nf-main { background: var(--cream); color: var(--ink); }
+  .nf .btn.ghost { color: var(--cream); box-shadow: inset 0 0 0 1px rgb(246 239 228 / 0.4); }
+  @media (hover: hover) and (pointer: fine) { .nf .nf-main:hover { background: #fff; } }
+</style>

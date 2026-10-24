@@ -1,0 +1,75 @@
+---
+// Member sign-in: email, then a 6-digit code. No password. Opens from any [data-member-open].
+import Logo from './Logo.astro';
+---
+<dialog class="mb" data-member aria-labelledby="mb-h">
+  <form method="dialog" class="mb-x-form"><button class="mb-x" aria-label="Close" value="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></form>
+  <div class="mb-head"><Logo id="mb" class="mb-logo" /></div>
+  <section class="mb-step" data-step="email">
+    <h2 id="mb-h" class="display mb-h">Join Kozi, <em>free.</em></h2>
+    <p class="mb-p">Members see our lowest price on every stay. Enter your email and we'll send you a 6-digit code. No password.</p>
+    <form class="mb-form" data-form="email" novalidate>
+      <label class="fld"><span>Email</span><input type="email" name="email" autocomplete="email" inputmode="email" required placeholder="you@example.com" /></label>
+      <p class="mb-err" role="alert" data-err></p>
+      <button class="btn mb-go" type="submit"><span>Email me a code</span></button>
+      <p class="mb-fine">By joining you agree to hear from Kozi about your stays. You can leave at any time.</p>
+    </form>
+  </section>
+  <section class="mb-step" data-step="code" hidden>
+    <h2 class="display mb-h">Check your <em>email.</em></h2>
+    <p class="mb-p">We sent a code to <b data-email></b>. It works for 10 minutes.</p>
+    <form class="mb-form" data-form="code" novalidate>
+      <label class="otp"><span class="sr-only">6-digit code</span>
+        <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" required />
+        <span class="otp-slots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      </label>
+      <p class="mb-err" role="alert" data-err></p>
+      <button class="btn mb-go" type="submit"><span>Sign in</span></button>
+      <p class="mb-fine"><button type="button" class="s-link" data-back>Use another email</button> · <button type="button" class="s-link" data-resend>Send a new code</button></p>
+      <p class="mb-test" data-test hidden>Test mode: any 6 digits work.</p>
+    </form>
+  </section>
+  <section class="mb-step" data-step="done" hidden>
+    <h2 class="display mb-h">You're <em>in.</em></h2>
+    <p class="mb-p">Member prices now show on every stay, for 30 days on this device.</p>
+    <a class="btn amber mb-go" href="/stays/">See member prices <span class="arr" aria-hidden="true">→</span></a>
+  </section>
+</dialog>
+
+<style is:global>
+  .mb { width: min(460px, calc(100vw - 32px)); max-height: calc(100svh - 32px); padding: 30px; border: 0; border-radius: 28px; background: var(--paper); color: var(--ink);
+    box-shadow: 0 40px 120px -30px rgb(20 18 26 / 0.6); opacity: 0; transform: scale(0.96); transition: opacity 200ms ease, transform 240ms var(--ease-out), display 240ms allow-discrete, overlay 240ms allow-discrete; }
+  .mb[open] { opacity: 1; transform: none; }
+  @starting-style { .mb[open] { opacity: 0; transform: scale(0.96); } }
+  .mb::backdrop { background: rgb(20 18 26 / 0); backdrop-filter: blur(0); transition: background-color 240ms ease, backdrop-filter 240ms ease, display 240ms allow-discrete, overlay 240ms allow-discrete; }
+  .mb[open]::backdrop { background: rgb(20 18 26 / 0.5); backdrop-filter: blur(6px); }
+  @starting-style { .mb[open]::backdrop { background: rgb(20 18 26 / 0); backdrop-filter: blur(0); } }
+  .mb-x-form { position: absolute; top: 14px; right: 14px; margin: 0; }
+  .mb-x { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; transition: background-color 200ms ease; }
+  .mb-x svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+  @media (hover: hover) and (pointer: fine) { .mb-x:hover { background: rgb(43 38 34 / 0.06); } }
+  .mb-logo { width: 54px; }
+  .mb-h { font-size: 40px; margin: 22px 0 10px; }
+  .mb-p { margin: 0 0 22px; color: var(--ink-2); }
+  .mb-step:not([hidden]) { animation: mbstep 260ms var(--ease-out); }
+  @keyframes mbstep { from { opacity: 0; transform: translateY(8px); } }
+  .fld { display: grid; gap: 7px; }
+  .fld > span { font: 600 12px/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .fld input, .fld select, .fld textarea { width: 100%; height: 54px; padding: 0 16px; border-radius: 14px; border: 1px solid rgb(43 38 34 / 0.18); background: #fff; font: 500 16px var(--sans); color: var(--ink); transition: border-color 200ms ease, box-shadow 200ms ease; }
+  .fld textarea { height: 110px; padding: 14px 16px; resize: vertical; }
+  .fld input:focus, .fld select:focus, .fld textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 4px rgb(200 134 46 / 0.18); }
+  .mb-go { width: 100%; margin-top: 16px; height: 54px; }
+  .mb-go[aria-busy='true'] { opacity: 0.7; pointer-events: none; }
+  .mb-err { min-height: 0; margin: 8px 0 0; color: #b42318; font-size: 14px; }
+  .mb-err:empty { display: none; }
+  .mb-fine { margin: 14px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
+  .mb-fine .s-link { font-size: 13px; padding: 4px 2px; }
+  .mb-test { margin: 10px 0 0; font-size: 13px; text-align: center; color: var(--amber-deep); font-weight: 600; }
+  .otp { position: relative; display: block; height: 64px; }
+  .otp input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; caret-color: transparent; }
+  .otp-slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; height: 100%; pointer-events: none; }
+  .otp-slots i { display: grid; place-items: center; border-radius: 14px; border: 1px solid rgb(43 38 34 / 0.18); background: #fff; font: 600 24px/1 var(--sans); font-style: normal; font-variant-numeric: tabular-nums; transition: border-color 150ms ease, box-shadow 150ms ease; }
+  .otp input:focus + .otp-slots i.cur { border-color: var(--ink); box-shadow: 0 0 0 4px rgb(200 134 46 / 0.18); }
+  .otp-slots i.cur:empty::after { content: ''; width: 2px; height: 24px; background: var(--ink); animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+</style>

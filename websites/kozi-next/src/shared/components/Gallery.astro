@@ -1,0 +1,117 @@
+---
+// A suite's photos: five in a mosaic on a wide screen, a swipeable strip on a phone, and every
+// photo full screen in a viewer that works with arrow keys, swipes and the Escape key.
+import Photo from './Photo.astro';
+import { CREDITS, CC_BY_SA } from '@shared/data/kozi';
+interface Props { photos: { key: string; alt: string }[]; name: string; note?: string }
+const { photos, name, note } = Astro.props;
+const few = photos.length < 5;
+---
+<div class:list={['gl', { 'gl-few': few }]} data-gallery>
+  <div class="gl-grid">
+    {photos.slice(0, few ? 1 : 5).map((p, i) => (
+      <button type="button" class:list={['gl-tile', { 'gl-main': i === 0 }]} data-open-at={i} aria-label={`Open photo ${i + 1} of ${photos.length}: ${p.alt}`}>
+        <Photo k={p.key} alt="" eager={i === 0} skip="(max-width: 900px)" sizes={i === 0 ? '(max-width: 900px) 100vw, 50vw' : '25vw'} widths={i === 0 ? [640, 960, 1280, 1800] : [480, 720]} />
+      </button>
+    ))}
+    {note && <p class="gl-note">{note}</p>}
+  </div>
+  <div class="gl-strip" data-strip>
+    {photos.map((p, i) => (
+      <button type="button" class="gl-slide" data-open-at={i} aria-label={`Open photo ${i + 1} of ${photos.length}: ${p.alt}`}>
+        <Photo k={p.key} alt="" eager={i === 0} low={i > 0} skip="(min-width: 901px)" sizes="100vw" widths={[480, 800, 1200]} />
+      </button>
+    ))}
+  </div>
+  {photos.length > 1 && (
+    <button type="button" class="gl-all" data-open-at="0">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>
+      {/* the name is the words on the button, so voice control can say what it sees (the phone shows the count) */}
+      <span class="gl-all-wide">Show all {photos.length} photos</span><span class="gl-all-phone"><b data-strip-n>1</b> / {photos.length}<span class="sr-only"> photos. Show all</span></span>
+    </button>
+  )}
+
+  <dialog class="lb" data-lb aria-label={`Photos of the ${name}`}>
+    <div class="lb-top">
+      <p class="lb-count" aria-live="polite"><b data-lb-n>1</b> of {photos.length}</p>
+      <p class="lb-name">{name}</p>
+      <form method="dialog"><button class="lb-x" aria-label="Close photos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></form>
+    </div>
+    <div class="lb-track" data-lb-track tabindex="-1">
+      {photos.map((p, i) => (
+        <figure class="lb-slide" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${photos.length}`}>
+          <Photo k={p.key} alt={p.alt} sizes="100vw" widths={[960, 1600, 2200]} />
+          <figcaption>{p.alt}{CREDITS[p.key] && <small> · Photo: {CREDITS[p.key].by}, {CC_BY_SA.name}</small>}</figcaption>
+        </figure>
+      ))}
+    </div>
+    <button type="button" class="lb-arrow lb-prev" data-lb-step="-1" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+    <button type="button" class="lb-arrow lb-next" data-lb-step="1" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg></button>
+  </dialog>
+</div>
+
+<style is:global>
+  .gl { position: relative; }
+  .gl-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; height: clamp(400px, 60vh, 640px); border-radius: 28px; overflow: hidden; }
+  .gl-few .gl-grid { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .gl-tile { position: relative; overflow: hidden; background: var(--sand); cursor: zoom-in; }
+  .gl-main { grid-row: 1 / 3; }
+  .gl-tile picture, .gl-tile img { width: 100%; height: 100%; }
+  .gl-tile img { object-fit: cover; transition: transform 700ms var(--ease-out), filter 300ms ease; }
+  .gl-tile::after { content: ''; position: absolute; inset: 0; background: rgb(20 18 26 / 0); transition: background-color 250ms ease; pointer-events: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .gl-tile:hover img { transform: scale(1.035); }
+    .gl-grid:hover .gl-tile:not(:hover)::after { background: rgb(20 18 26 / 0.12); }
+  }
+  .gl-all { position: absolute; right: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 9px; height: 42px; padding: 0 16px; border-radius: 999px;
+    background: rgb(251 247 240 / 0.94); color: var(--ink); font: 600 14px/1 var(--sans); box-shadow: 0 10px 30px -12px rgb(20 18 26 / 0.45);
+    transition: transform 160ms var(--ease-out), background-color 200ms ease; }
+  .gl-all svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  .gl-all:active { transform: scale(0.97); }
+  @media (hover: hover) and (pointer: fine) { .gl-all:hover { background: #fff; } }
+  .gl-all-phone { display: none; font-variant-numeric: tabular-nums; }
+  .gl-strip { display: none; }
+
+  @media (max-width: 900px) {
+    .gl-grid { display: none; }
+    .gl-strip { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin-inline: calc(var(--gutter) * -1); overscroll-behavior-x: contain; }
+    .gl-strip::-webkit-scrollbar { display: none; }
+    .gl-slide { flex: 0 0 100%; scroll-snap-align: center; scroll-snap-stop: always; aspect-ratio: 4 / 3.2; background: var(--sand); }
+    .gl-slide picture, .gl-slide img { width: 100%; height: 100%; }
+    .gl-slide img { object-fit: cover; }
+    .gl-all { right: 12px; bottom: 12px; height: 34px; padding: 0 12px; font-size: 13px; background: rgb(20 18 26 / 0.62); color: var(--cream); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: none; }
+    .gl-all svg { display: none; }
+    .gl-all-wide { display: none; }
+    .gl-all-phone { display: inline; }
+    .gl-note { left: 12px; bottom: 12px; font-size: 12px; padding: 8px 12px; }
+  }
+
+  /* the viewer */
+  .lb { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #0d0c10; color: var(--cream);
+    opacity: 0; transition: opacity 220ms var(--ease-out), display 220ms allow-discrete, overlay 220ms allow-discrete; overflow: hidden; }
+  .lb[open] { opacity: 1; display: grid; grid-template-rows: auto 1fr; }
+  @starting-style { .lb[open] { opacity: 0; } }
+  .lb::backdrop { background: #0d0c10; }
+  .lb-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 14px var(--gutter); padding-top: max(14px, env(safe-area-inset-top)); }
+  .lb-count { margin: 0; font: 500 14px/1 var(--sans); font-variant-numeric: tabular-nums; color: rgb(246 239 228 / 0.7); }
+  .lb-count b { color: var(--cream); font-weight: 650; }
+  .lb-name { margin: 0; font: 400 18px/1 var(--display); font-variation-settings: var(--soft); }
+  .lb-top form { justify-self: end; margin: 0; }
+  .lb-x { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; transition: background-color 200ms ease, transform 160ms var(--ease-out); }
+  .lb-x svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+  .lb-x:active { transform: scale(0.94); }
+  .lb-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; min-height: 0; outline: none; overscroll-behavior: contain; }
+  .lb-track::-webkit-scrollbar { display: none; }
+  .lb-slide { flex: 0 0 100%; min-width: 0; scroll-snap-align: center; scroll-snap-stop: always; margin: 0; display: grid; grid-template-rows: 1fr auto; gap: 14px; padding: 0 clamp(16px, 7vw, 120px) max(22px, env(safe-area-inset-bottom)); }
+  .lb-slide picture { min-height: 0; display: grid; place-items: center; }
+  .lb-slide img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 6px; }
+  .lb-slide figcaption { text-align: center; font-size: 14.5px; color: rgb(246 239 228 / 0.72); }
+  .lb-arrow { position: absolute; top: 50%; width: 52px; height: 52px; margin-top: -26px; border-radius: 50%; display: grid; place-items: center; background: rgb(255 255 255 / 0.08);
+    transition: background-color 200ms ease, transform 160ms var(--ease-out), opacity 200ms ease; }
+  .lb-arrow svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .lb-arrow:active { transform: scale(0.94); }
+  .lb-arrow:disabled { opacity: 0; pointer-events: none; }
+  .lb-prev { left: clamp(10px, 2vw, 32px); } .lb-next { right: clamp(10px, 2vw, 32px); }
+  @media (hover: hover) and (pointer: fine) { .lb-x:hover, .lb-arrow:hover { background: rgb(255 255 255 / 0.16); } }
+  @media (hover: none), (max-width: 760px) { .lb-arrow { display: none; } .lb-name { display: none; } .lb-top { grid-template-columns: 1fr auto; } }
+</style>

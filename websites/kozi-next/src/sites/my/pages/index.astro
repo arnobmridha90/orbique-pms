@@ -1,0 +1,28 @@
+---
+import Layout from '@shared/components/Layout.astro';
+import Hero from '@shared/components/Hero.astro';
+import Statement from '@shared/components/Statement.astro';
+import Views from '@shared/components/Views.astro';
+import Suites from '@shared/components/Suites.astro';
+import Day from '@shared/components/Day.astro';
+import Standard from '@shared/components/Standard.astro';
+import Direct from '@shared/components/Direct.astro';
+import GuidesStrip from '@shared/components/GuidesStrip.astro';
+import { BRAND } from '@shared/data/kozi';
+import { lodgingLd, orgLd } from '@shared/lib/seo';
+
+const title = 'Kozi | Two-bedroom suites in central Kuala Lumpur';
+const description = 'Kozi suites at Vortex KLCC: two bedrooms, two bathrooms and a full kitchen in the Golden Triangle, between KLCC and Bukit Bintang. Book direct for member prices.';
+const site = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi Malaysia', url: `${BRAND.my}/`, publisher: { '@id': orgLd['@id'] } };
+---
+<Layout site="my" title={title} description={description} over intro jsonld={[orgLd, site, lodgingLd]}
+  alternates={[{ lang: 'x-default', href: `${BRAND.com}/` }, { lang: 'en', href: `${BRAND.com}/` }, { lang: 'en-MY', href: `${BRAND.my}/` }]}>
+  <Hero />
+  <Statement />
+  <Views />
+  <Suites />
+  <Day />
+  <Standard />
+  <Direct />
+  <GuidesStrip />
+</Layout>

@@ -1,0 +1,183 @@
+@import '@fontsource-variable/inter-tight/index.css';
+/* Fraunces, pinned to the soft, large optical size the sites use (scripts/fonts.py makes the files) */
+@font-face { font-family: 'Fraunces Variable'; font-style: normal; font-display: swap; font-weight: 300 700;
+  src: url('../../assets/fonts/fraunces-kozi-normal.woff2') format('woff2-variations'), url('../../assets/fonts/fraunces-kozi-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Fraunces Variable'; font-style: italic; font-display: swap; font-weight: 300 700;
+  src: url('../../assets/fonts/fraunces-kozi-italic.woff2') format('woff2-variations'), url('../../assets/fonts/fraunces-kozi-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+/* Stand-ins while the fonts load: common system fonts scaled to the same average letter width (Fraunces 0.376em
+   upright and 0.3535em italic at weight 330, Inter Tight 0.4297em; the system fonts' widths are from
+   @capsizecss/metrics), so a late font doesn't re-wrap a title and push the page about. Line lengths are set
+   in em rather than ch for the same reason: a ch follows whichever font is showing (1ch is about 0.575em in both). */
+@font-face { font-family: 'Fraunces fb Georgia'; src: local('Georgia'); size-adjust: 84.34%; ascent-override: 115.96%; descent-override: 30.23%; line-gap-override: 0%; }
+@font-face { font-family: 'Fraunces fb Georgia'; font-style: italic; src: local('Georgia Italic'), local('Georgia-Italic'); size-adjust: 77.76%; ascent-override: 125.77%; descent-override: 32.79%; line-gap-override: 0%; }
+@font-face { font-family: 'Fraunces fb Noto'; src: local('Noto Serif'), local('NotoSerif'), local('NotoSerif-Regular'); size-adjust: 78.17%; ascent-override: 125.11%; descent-override: 32.62%; line-gap-override: 0%; }
+@font-face { font-family: 'Fraunces fb Noto'; font-style: italic; src: local('Noto Serif Italic'), local('NotoSerif-Italic'); size-adjust: 75.37%; ascent-override: 129.75%; descent-override: 33.83%; line-gap-override: 0%; }
+@font-face { font-family: 'Fraunces fb Times'; src: local('Times New Roman'), local('TimesNewRomanPSMT'), local('Liberation Serif'), local('LiberationSerif'); size-adjust: 92.55%; ascent-override: 105.67%; descent-override: 27.55%; line-gap-override: 0%; }
+@font-face { font-family: 'Fraunces fb Times'; font-style: italic; src: local('Times New Roman Italic'), local('TimesNewRomanPS-ItalicMT'), local('Liberation Serif Italic'), local('LiberationSerif-Italic'); size-adjust: 86.6%; ascent-override: 112.93%; descent-override: 29.45%; line-gap-override: 0%; }
+@font-face { font-family: 'Fraunces fb DejaVu'; src: local('DejaVu Serif'), local('DejaVuSerif'); size-adjust: 72.78%; ascent-override: 134.37%; descent-override: 35.04%; line-gap-override: 0%; }
+@font-face { font-family: 'Inter Tight fb Arial'; src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('LiberationSans'); size-adjust: 96.39%; ascent-override: 100.5%; descent-override: 25.02%; line-gap-override: 0%; }
+@font-face { font-family: 'Inter Tight fb Roboto'; src: local('Roboto'), local('Roboto-Regular'); size-adjust: 96.61%; ascent-override: 100.28%; descent-override: 24.97%; line-gap-override: 0%; }
+@font-face { font-family: 'Inter Tight fb DejaVu'; src: local('DejaVu Sans'), local('DejaVuSans'); size-adjust: 84.54%; ascent-override: 114.6%; descent-override: 28.53%; line-gap-override: 0%; }
+
+:root {
+  /* brand */
+  --cream: #f6efe4; --paper: #fbf7f0; --sand: #eadfcd; --ink: #2b2622; --ink-2: #4a423b; --muted: #71665d;
+  --amber: #c8862e; --amber-hi: #f0b860; --amber-deep: #945e14; --amber-ink: #ad7020; --night: #14121a; --line: rgb(43 38 34 / 0.12);
+  /* live sky (set by the sky script; these are the build-time first paint) */
+  --zen: #83a8cd; --hor: #eee3d0; --glow: #fff1da;
+  --sk0: #cfcac2; --sk1: #b2b0ac; --sk2: #8f9196; --sk3: #5f636c; --sk4: #2b2622; --lit: 0; --dark: 0;
+  --w0: 0; --w1: 0; --w2: 0; --w3: 0; --w4: 0; --w5: 0;
+  /* type */
+  --display: 'Fraunces Variable', 'Fraunces fb Georgia', 'Fraunces fb Noto', 'Fraunces fb Times', 'Fraunces fb DejaVu', Georgia, serif;
+  --sans: 'Inter Tight Variable', 'Inter Tight fb Arial', 'Inter Tight fb Roboto', 'Inter Tight fb DejaVu', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --soft: 'SOFT' 100, 'opsz' 144;
+  /* motion: strong curves, short UI durations */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* layout */
+  --gutter: clamp(16px, 4vw, 56px);
+  --maxw: 1440px;
+  --radius: 22px;
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.no-deal [data-deal] { display: none !important; } /* see deal() in lib/api.ts */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: var(--cream); }
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+body {
+  margin: 0; background: var(--cream); color: var(--ink);
+  font: 400 17px/1.6 var(--sans); letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+img, svg, video, canvas { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
+::selection { background: var(--amber-hi); color: var(--ink); }
+
+.wrap { width: min(var(--maxw), 100% - 2 * var(--gutter)); margin-inline: auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip { position: fixed; left: 16px; top: -60px; z-index: 300; background: var(--ink); color: var(--cream); padding: 10px 16px; border-radius: 999px; font-weight: 600; transition: top 200ms var(--ease-out); }
+.skip:focus { top: 16px; }
+
+/* type */
+.display { font-family: var(--display); font-variation-settings: var(--soft); font-weight: 330; letter-spacing: -0.022em; line-height: 0.96; margin: 0; text-wrap: balance; }
+p, li, dd { text-wrap: pretty; }
+.display em, .serif-em { font-style: italic; color: var(--amber-ink); font-weight: 330; } /* 3.5:1 on cream, for large type */
+.h2 { font-size: clamp(40px, 5.6vw, 88px); }
+.h3 { font-size: clamp(30px, 3.4vw, 50px); line-height: 1.02; }
+.eyebrow { font: 600 11.5px/1 var(--sans); letter-spacing: 0.22em; text-transform: uppercase; color: var(--amber-deep); display: inline-flex; align-items: center; gap: 10px; }
+.eyebrow::before { content: ''; width: 22px; height: 1px; background: currentColor; }
+.lede { font-size: clamp(17px, 1.35vw, 20px); line-height: 1.6; color: var(--ink-2); max-width: 560px; }
+
+/* breadcrumbs */
+.crumbs ol { display: flex; flex-wrap: wrap; gap: 6px 0; margin: 0; padding: 0; list-style: none; font: 550 13px/1.4 var(--sans); }
+.crumbs li { display: inline-flex; align-items: center; opacity: 0.78; }
+.crumbs li + li::before { content: '/'; margin: 0 10px; opacity: 0.45; }
+.crumbs li:last-child { opacity: 1; }
+.crumbs a { border-bottom: 1px solid transparent; transition: border-color 200ms ease; }
+@media (hover: hover) and (pointer: fine) { .crumbs a:hover { border-color: currentColor; } }
+
+/* buttons: quick press feedback, hover only on real pointers */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 24px; border-radius: 999px;
+  font: 600 15px/1 var(--sans); letter-spacing: -0.005em; white-space: nowrap; background: var(--ink); color: var(--cream);
+  transition: transform 160ms var(--ease-out), background-color 200ms ease, color 200ms ease, box-shadow 200ms ease; }
+.btn:active { transform: scale(0.97); }
+.btn.amber { background: var(--amber); color: #1d1406; }
+.btn.ghost { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px currentColor; }
+.btn .arr { transition: transform 200ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { background: var(--ink-2); }
+  .btn.amber:hover { background: var(--amber-hi); }
+  .btn.ghost:hover { background: rgb(255 255 255 / 0.08); }
+  .btn:hover .arr { transform: translateX(3px); }
+}
+
+/* film grain over photos and dark sections */
+.grain::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.09; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+
+/* The skyline box keeps the drawing's 8:3 shape: it fills the width, or the height on tall
+   screens, and on a phone it centres on Vortex and the Twin Towers rather than the middle.
+   Its parent sets container-type: size. */
+.city-box {
+  --W: max(100cqw, 165cqh);
+  position: absolute; width: var(--W); aspect-ratio: 8 / 3;
+  bottom: min(0px, (62cqh - 37.5cqw) * 0.6);
+  left: clamp(100cqw - var(--W), 50cqw - 0.44 * var(--W), 0px);
+}
+.sk-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; will-change: transform; }
+
+/* our window: the dot is drawn in the skyline, the label is a real link (hero and building pages) */
+.kozi-pin { position: absolute; pointer-events: auto; display: block; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; color: var(--cream); }
+.kp-line { position: absolute; left: 50%; bottom: calc(50% + 6px); width: 1px; height: var(--kp-h, 86px); background: linear-gradient(to top, transparent, var(--amber-hi) 22%); transform-origin: bottom; }
+.kp-label { position: absolute; right: calc(50% - 1px); bottom: calc(50% + 6px + var(--kp-h, 86px)); display: grid; gap: 1px; padding: 9px 13px 9px 12px; white-space: nowrap; text-align: right;
+  border-radius: 12px 12px 3px 12px; background: rgb(20 18 26 / 0.62); backdrop-filter: blur(12px) saturate(1.3); -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12); transform-origin: 100% 100%; transition: transform 200ms var(--ease-out), background-color 200ms ease; }
+.kp-label b { font: 600 13px/1.2 var(--sans); letter-spacing: 0.01em; }
+.kp-label small { font: 500 11.5px/1.3 var(--sans); color: rgb(246 239 228 / 0.72); }
+.kp-label small span { display: inline-block; transition: transform 200ms var(--ease-out); }
+.kozi-pin:active .kp-label { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  .kozi-pin:hover .kp-label { background: rgb(20 18 26 / 0.78); }
+  .kozi-pin:hover .kp-label small span { transform: translateX(3px); }
+}
+@media (max-width: 760px) {
+    .kozi-pin { --kp-h: 80px; }
+    .kp-label { right: auto; left: -16px; border-radius: 12px 12px 12px 3px; text-align: left; transform-origin: 0 100%; padding: 8px 11px; }
+    .kp-label b { font-size: 12.5px; }
+    .kp-label small { font-size: 11px; }
+}
+
+/* a few stars on a dark section (staykozi.com) */
+.stars::before, .stars::after { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.stars::before { opacity: 0.6; background-size: 430px 430px;
+  background-image:
+    radial-gradient(1.2px 1.2px at 12% 18%, #fff 50%, transparent 52%), radial-gradient(1px 1px at 33% 72%, #fff 50%, transparent 52%),
+    radial-gradient(1.4px 1.4px at 58% 12%, #ffe9c4 50%, transparent 52%), radial-gradient(1px 1px at 81% 41%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 46% 51%, #cfd8ff 50%, transparent 52%), radial-gradient(1.2px 1.2px at 91% 86%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 6% 63%, #fff 50%, transparent 52%), radial-gradient(1px 1px at 68% 93%, #ffe9c4 50%, transparent 52%); }
+.stars::after { opacity: 0.35; background-size: 613px 613px;
+  background-image: radial-gradient(1px 1px at 22% 38%, #fff 50%, transparent 52%), radial-gradient(1px 1px at 74% 22%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 52% 84%, #fff 50%, transparent 52%), radial-gradient(1.3px 1.3px at 88% 61%, #fff 50%, transparent 52%); }
+
+/* the red "live" dot, with a ring that keeps pulsing out of it */
+.live-dot { position: relative; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; }
+.live-dot::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid #e5484d; animation: livepulse 2.2s var(--ease-out) infinite; }
+@keyframes livepulse { from { transform: scale(0.6); opacity: 0.9; } to { transform: scale(1.9); opacity: 0; } }
+
+/* skyline colours follow the live sky */
+.skyline .sk-l0 { fill: var(--sk0); } .skyline .sk-l1 { fill: var(--sk1); } .skyline .sk-l2 { fill: var(--sk2); }
+.skyline .sk-l3 { fill: var(--sk3); } .skyline .sk-l4 { fill: var(--sk4); }
+.skyline .sk-fac { opacity: calc(1 - var(--dark) * 0.8); }
+.skyline .sk-bal { opacity: calc(1 - var(--dark) * 0.55); }
+.skyline .sk-vortex { fill: color-mix(in srgb, var(--sk4) 82%, var(--sk3)); }
+.skyline .sk-vrim { fill: none; stroke: var(--amber-hi); stroke-width: 2.5; opacity: calc(var(--dark) * 0.75); }
+.skyline .sk-nlit { opacity: var(--dark); }
+.skyline .sk-mlit { opacity: calc(var(--dark) * 0.8); }
+.skyline .sk-legs { fill: none; stroke: var(--sk3); stroke-width: 5; }
+.skyline .sk-w { fill: #ffd28a; will-change: opacity; }
+.skyline .sk-w0 { opacity: var(--w0); } .skyline .sk-w1 { opacity: var(--w1); } .skyline .sk-w2 { opacity: var(--w2); }
+.skyline .sk-w3 { opacity: var(--w3); } .skyline .sk-w4 { opacity: var(--w4); } .skyline .sk-w5 { opacity: var(--w5); }
+.skyline .sk-pglow { opacity: calc(var(--dark) * 0.9); }
+.skyline .sk-plit { opacity: calc(var(--dark) * 0.92); }
+.skyline .sk-beacons { opacity: var(--dark); }
+.skyline .sk-beacon { fill: #ff5a4a; animation: beacon 1.6s steps(1, end) infinite; }
+@keyframes beacon { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.15; } }
+.skyline .sk-kozi rect { fill: var(--amber-hi); }
+.skyline .sk-kring { fill: none; stroke: var(--amber-hi); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: kring 2.4s var(--ease-out) infinite; }
+@keyframes kring { from { opacity: 0.9; transform: scale(0.6); } to { opacity: 0; transform: scale(2.6); } }
+.skyline .sk-klabel text { font: 600 17px var(--sans); letter-spacing: 0.06em; fill: var(--amber-hi); }
+.skyline .sk-klabel line { stroke: var(--amber-hi); stroke-width: 1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  .skyline .sk-beacon { opacity: 1; }
+}

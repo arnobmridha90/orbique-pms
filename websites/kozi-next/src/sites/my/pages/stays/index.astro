@@ -1,0 +1,114 @@
+---
+// Search results: every suite with its live price for your dates (or its lowest price soon),
+// what's open, and the member price beside the public one.
+import Layout from '@shared/components/Layout.astro';
+import PageHead from '@shared/components/PageHead.astro';
+import Search from '@shared/components/Search.astro';
+import Photo from '@shared/components/Photo.astro';
+import { BRAND, PROPERTY, SUITES, VIEWS } from '@shared/data/kozi';
+import { crumbsLd } from '@shared/lib/seo';
+
+const order = ['boutique', 'premium', 'standard'];
+const list = order.map((id) => SUITES.find((s) => s.id === id)!);
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Stays', path: '/stays/' }];
+const itemList = {
+  '@context': 'https://schema.org', '@type': 'ItemList', name: 'Kozi suites in Kuala Lumpur',
+  itemListElement: list.map((s, i) => ({ '@type': 'ListItem', position: i + 1, url: `${BRAND.my}${PROPERTY.path}${s.id}/`, name: `${s.name}, ${PROPERTY.name}` })),
+};
+---
+<Layout site="my" title="Stays in Kuala Lumpur: live prices and member deals | Kozi" over
+  description="Kozi two-bedroom suites at Vortex KLCC, Kuala Lumpur. Pick your dates to see live prices for every suite, and join free for the member price."
+  jsonld={[crumbsLd(BRAND.my, crumbs), itemList]}>
+  <PageHead crumbs={crumbs} eyebrow="Kuala Lumpur · Kozi @ Vortex KLCC" size="short" seed={9}>
+    <Fragment slot="title">Find your <em>stay.</em></Fragment>
+    <div class="sy-search"><Search id="stays-search" /></div>
+  </PageHead>
+
+  <section class="wrap sy" data-stays aria-labelledby="sy-h">
+    <div class="sy-top">
+      <h2 id="sy-h" class="sy-count" data-sy-count aria-live="polite">3 suites at Vortex KLCC</h2>
+      <p class="sy-mem" data-member-note data-deal><b>Members pay less on every night.</b> <button type="button" class="bk-join" data-member-open>Join free <span aria-hidden="true">→</span></button></p>
+      <p class="sy-mem" data-member-in data-deal hidden><span class="bk-badge">Member prices</span> You're seeing member prices.</p>
+    </div>
+    <ul class="sy-list" role="list" data-sy-list>
+      {list.map((s, i) => (
+        <li class="sr" data-type={s.id} data-reveal style={`--d:${i * 80}`}>
+          <a class="sr-media" href={`${PROPERTY.path}${s.id}/`} tabindex="-1" aria-hidden="true">
+            <Photo k={s.photos[0].key} alt="" sizes="(max-width: 760px) 92vw, 36vw" widths={[480, 720, 960]} eager={i === 0} />
+            {s.photos[1] && <Photo k={s.photos[1].key} alt="" sizes="(max-width: 760px) 92vw, 36vw" widths={[480, 720, 960]} class="sr-b" skip="not all and (hover: hover) and (pointer: fine)" />}
+            {!s.hasPhotos && <span class="gl-note">Suite photos are on the way</span>}
+          </a>
+          <div class="sr-body">
+            <p class="sr-where">{PROPERTY.name} · {s.levels}</p>
+            <h3 class="display sr-name"><a href={`${PROPERTY.path}${s.id}/`} data-sr-link>{s.name}</a></h3>
+            <p class="sr-line">{s.line}</p>
+            <ul class="sr-chips" role="list">
+              <li>2 bedrooms</li><li>2 bathrooms</li><li>Sleeps 4</li>
+              {s.views.map((v) => <li>{VIEWS[v].short} view</li>)}
+            </ul>
+          </div>
+          <div class="sr-price" data-sr-price>
+            <p class="sr-k" data-sr-k>From</p>
+            <p class="sr-rate"><b data-sr-rate>&nbsp;</b> <span>a night</span></p>
+            <p class="sr-total" data-sr-total></p>
+            <p class="sr-mem" data-sr-mem></p>
+            <a class="btn small sr-go" href={`${PROPERTY.path}${s.id}/`} data-sr-go>See the suite <span class="arr" aria-hidden="true">→</span></a>
+          </div>
+        </li>
+      ))}
+    </ul>
+    <p class="sy-test" data-sy-test hidden>Test mode: these are sample prices while online booking is being connected.</p>
+    <p class="sy-note">Prices are per suite, for up to 4 guests. {`A 5th guest is RM60 a night for the extra bed.`} Malaysia's tourism tax for non-Malaysian guests (RM10 per room per night) is not included.</p>
+  </section>
+</Layout>
+
+<style is:global>
+  .sy-search { margin-top: clamp(26px, 5cqh, 44px); max-width: 920px; }
+  .sy { padding: clamp(48px, 6vw, 80px) 0 clamp(90px, 10vw, 150px); }
+  .sy-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 30px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+  .sy-count { margin: 0; font: 400 clamp(24px, 2.2vw, 32px)/1.1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.015em; }
+  .sy-mem { margin: 0; font-size: 15px; color: var(--ink-2); }
+  .sy-list { list-style: none; margin: 0; padding: 0; }
+  .sr { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.2fr) minmax(220px, 0.55fr); gap: clamp(20px, 3vw, 44px); padding: 30px 0; border-bottom: 1px solid var(--line); align-items: stretch; transition: opacity 300ms ease; }
+  .sr.sold { opacity: 0.62; }
+  .sr-media { position: relative; display: block; border-radius: 22px; overflow: hidden; aspect-ratio: 4 / 3; background: var(--sand); }
+  .sr-media picture, .sr-media img { width: 100%; height: 100%; }
+  .sr-media img { position: absolute; inset: 0; object-fit: cover; transition: opacity 500ms ease, transform 900ms var(--ease-out); }
+  .sr-media .sr-b { opacity: 0; }
+  @media (hover: hover) and (pointer: fine) {
+    .sr:hover .sr-media img { transform: scale(1.03); }
+    .sr:hover .sr-media .sr-b { opacity: 1; }
+  }
+  .sr-body { display: grid; align-content: center; gap: 10px; }
+  .sr-where { margin: 0; font: 650 11px/1 var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber-deep); }
+  .sr-name { font-size: clamp(34px, 3.2vw, 50px); }
+  .sr-name a { background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat; transition: background-size 400ms var(--ease-out); }
+  @media (hover: hover) and (pointer: fine) { .sr-name a:hover { background-size: 100% 1px; } }
+  .sr-line { margin: 0; color: var(--ink-2); max-width: 26.45em; }
+  .sr-chips { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .sr-chips li { padding: 7px 11px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); font: 600 12.5px/1 var(--sans); color: var(--ink-2); }
+  .sr-price { display: grid; align-content: center; justify-items: end; gap: 4px; text-align: right; padding-left: clamp(16px, 2vw, 32px); border-left: 1px solid var(--line); }
+  .sr-k { margin: 0; font: 600 13px/1 var(--sans); color: var(--muted); }
+  .sr-k:empty { display: none; }
+  .sr-rate { margin: 0; display: flex; align-items: baseline; gap: 6px; }
+  .sr-rate b { font: 400 38px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; }
+  .sr-rate span { font-size: 14px; color: var(--ink-2); }
+  .sr.sold .sr-rate span { display: none; }
+  .sr-total { margin: 2px 0 0; font-size: 14.5px; color: var(--ink-2); }
+  .sr-total:empty, .sr-mem:empty { display: none; }
+  .sr-mem { margin: 0; font: 600 13.5px/1.35 var(--sans); color: var(--amber-deep); }
+  .sr-go { margin-top: 14px; }
+  .sr.loading .sr-price { opacity: 0.45; }
+  .sy-test { margin: 26px 0 0; display: inline-block; padding: 10px 14px; border-radius: 12px; background: rgb(200 134 46 / 0.1); color: #87550f; font: 600 13px/1.4 var(--sans); }
+  .sy-note { margin: 18px 0 0; font-size: 14px; color: var(--muted); max-width: 46em; }
+  @media (max-width: 1000px) {
+    .sr { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+    .sr-price { grid-column: 1 / -1; grid-template-columns: 1fr auto; justify-items: start; align-items: center; text-align: left; padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+    .sr-price > * { grid-column: 1; }
+    .sr-go { grid-column: 2; grid-row: 1 / span 4; margin: 0; }
+  }
+  @media (max-width: 760px) {
+    .sr { grid-template-columns: 1fr; gap: 16px; padding: 24px 0; }
+    .sr-media { aspect-ratio: 16 / 11; }
+  }
+</style>
