@@ -143,9 +143,10 @@ export async function checkout(input: CheckoutInput): Promise<{ url: string }> {
   return { url };
 }
 
-/** RM230, or RM211.50 when there are sen. whole rounds to the ringgit, for tight spots like a calendar day. */
+/** RM230, or RM211.50 when there are sen. whole rounds up to the ringgit, for tight spots like a calendar day,
+ *  so a rounded price is never below what the guest pays. */
 export function rm(n: number, whole = false) {
-  const v = whole ? Math.round(n) : Math.round(n * 100) / 100;
+  const v = whole ? Math.ceil(n - 0.001) : Math.round(n * 100) / 100;
   return `RM${v.toLocaleString('en-MY', Number.isInteger(v) ? undefined : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
