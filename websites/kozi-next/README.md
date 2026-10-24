@@ -36,6 +36,9 @@ website slug `kozi`. Members, who join free with their email, see the plain pric
 the parity markup set in Orbique. While that markup is 0%, the member-saving lines hide themselves
 (`html.no-deal`, see `deal()` in `src/shared/lib/api.ts`).
 
+After Stripe, the thank-you page (`/booking/confirmed/`) asks Orbique about the payment session
+(`GET booking?session_id`) until the stay shows as paid, then shows what was paid and the cancellation terms.
+
 ## Rules
 
 - No walking times until they have been measured.

@@ -28,7 +28,7 @@ const API = (import.meta.env.PUBLIC_KOZI_API as string | undefined)?.replace(/\/
 export const TEST_MODE = !API;
 const WS = 'kozi';
 
-class ApiError extends Error { constructor(message: string, readonly code: string) { super(message); } }
+export class ApiError extends Error { constructor(message: string, readonly code: string) { super(message); } }
 async function call<T>(path: string, body?: object): Promise<T> {
   // a GET goes without headers, so the browser needn't ask the API's permission first
   const res = await fetch(`${API}/api/public/${path}`, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : undefined);
@@ -118,8 +118,8 @@ export async function availability(checkIn: string, checkOut: string, guests: nu
 export type CheckoutInput = { type: SuiteType; checkIn: string; checkOut: string; guests: number; plan: string | null; name: string; email: string; phone: string; country: string; arrival?: string; notes?: string };
 export type Booked = { ref: string; type: SuiteType; in: string; out: string; guests: number; name: string; total: number; test: boolean };
 export const BOOKED_KEY = 'kozi-booked';
-/** Holds the nights and opens Stripe's payment page. The confirmation page reads the stay back from this tab, so
- *  nothing about the guest travels in an address. */
+/** Holds the nights and opens Stripe's payment page. The confirmation page gets the stay from Orbique and the guest's
+ *  first name back from this tab, so nothing about the guest travels in an address. */
 export async function checkout(input: CheckoutInput): Promise<{ url: string }> {
   let url: string, ref: string, total: number;
   if (API) {
@@ -130,6 +130,10 @@ export async function checkout(input: CheckoutInput): Promise<{ url: string }> {
       arrival: input.arrival, notes: input.notes, memberToken: getMember()?.token,
       successUrl: `${location.origin}/booking/confirmed/?session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${location.origin}/book/?${stay}&back=1`,
+    }).catch((e: unknown) => {
+      // a member sign-in Orbique no longer takes: forget it here too, so the member box offers a fresh sign-in
+      if (e instanceof ApiError && e.code === 'member-expired') signOut();
+      throw e;
     });
     ({ url, bookingId: ref, total } = r);
   } else {
@@ -142,6 +146,14 @@ export async function checkout(input: CheckoutInput): Promise<{ url: string }> {
   try { sessionStorage.setItem(BOOKED_KEY, JSON.stringify(booked)); } catch { /* private mode: the page still confirms, without the details */ }
   return { url };
 }
+
+export type BookingStatus = {
+  bookingId: string; status: 'paid' | 'waiting' | 'cancelled'; type: SuiteType | null; checkIn: string; checkOut: string;
+  nights: number; guests: number; total: number; plan: string | null; refundable: boolean; freeCancelUntil: string | null;
+};
+/** Back from Stripe: the stay behind a payment session, and whether Orbique has it as paid yet (Stripe tells Orbique
+ *  a few seconds after the guest lands). Only the stay comes back, never the guest's details. Live mode only. */
+export const bookingStatus = (session: string) => call<BookingStatus>(`booking?ws=${WS}&session_id=${encodeURIComponent(session)}`);
 
 /** RM230, or RM211.50 when there are sen. whole rounds up to the ringgit, for tight spots like a calendar day,
  *  so a rounded price is never below what the guest pays. */
