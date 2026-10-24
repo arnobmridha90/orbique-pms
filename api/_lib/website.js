@@ -175,7 +175,7 @@ export function calendarDays(input) {
 export function notes(s) {
   return {
     tourismTax: 'Malaysia charges a tourism tax of RM10 per room per night to guests who are not Malaysian. It is paid at check-in and is not included in the price.',
-    cancellation: s.freeCancelDays > 0 ? `Free cancellation until ${s.freeCancelDays} days before arrival. After that, the first night is charged.` : 'Cancellation terms are shown at booking.',
+    cancellation: s.freeCancelDays > 0 ? `Free cancellation until ${s.freeCancelDays} days before arrival.` : 'Cancellation terms are shown at booking.',
     nonRefundable: 'Non-refundable: the lower price cannot be refunded if you cancel or change your dates.',
     extraBed: s.extraBedFee > 0 ? `A ${s.baseGuests + 1}th guest sleeps on an extra bed for RM${s.extraBedFee} a night.` : null,
     currency: 'Prices are in Malaysian ringgit (MYR).'
