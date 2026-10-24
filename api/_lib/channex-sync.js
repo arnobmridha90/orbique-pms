@@ -6,6 +6,7 @@
  *   diffValues(computed, state, {full})    only what changed since Channex last accepted it, field by field
  *   rejectedItems(warnings, items, ids)    which items of a call Channex dropped (meta.warnings), as target dates
  *   restrictionValue(plan, day, opts)      what one date of a rate plan means for Channex
+ *   lastMinuteFactor(deal, date, today)    the workspace's last-minute deal for one night (1 = no discount)
  *   backoffMs(level)                       429 pause: 60 s x 2^level, at most 16 minutes
  *   toItems(kind, propertyId, runs, ids)   runs -> Channex `values` items
  * With the database:
@@ -14,6 +15,7 @@
  *   fullSync(sb, prop, opts)                    500 days: one availability call + one restrictions call
  *   runWorker(sb, opts)                         setup queue, then every property with marks or a full-sync request
  *   markLastDay(sb, opts)                       nightly: the day that just came into the 500-day window
+ *   markLastMinute(sb, opts)                    nightly: the nights that just came into a last-minute deal's window
  *   forceMarks(sb, propertyId)                  resume: pending marks go out with complete values
  *   resendRejected(sb, prop, opts)              Send again: dates Channex dropped (rate_warning alerts) are marked again
  *
@@ -29,7 +31,7 @@
  * its dates even when it equals what Channex last accepted.
  */
 import { channexConfig, ChannexError, taskIds as taskIdsOf, warnings as warningsOf } from './channex.js';
-import { must, selectAll, records, archived, tracked, addAlert, todayMY, addDays, dateRange, isIso, STATE_DAYS } from './channex-db.js';
+import { must, selectAll, records, blob, archived, tracked, addAlert, todayMY, addDays, dateRange, isIso, STATE_DAYS } from './channex-db.js';
 import { processSetupQueue, pendingSetupRefs } from './channex-setup.js';
 
 export const KINDS = ['availability', 'restrictions'];
@@ -142,6 +144,25 @@ export function restrictionValue(plan, day, opts = {}) {
   return out;
 }
 
+/**
+ * The last-minute deal (blob lastMinuteDeal, set per workspace): unsold nights close to arrival go out cheaper on
+ * every rate plan, so every site gets the same cut. deal {pct, days, nights: [weekday of the night, 0 = Sunday],
+ * skip: [ISO dates that are not regular nights], until: ISO}. A night gets it when it is at most days - 1 days away
+ * (days 3: tonight, tomorrow and the night after). Sold-out nights are closed by availability, so only unsold nights
+ * can be booked at the lower rate. Resolves the rate multiplier (1 = no discount).
+ */
+export function lastMinuteFactor(deal, date, today) {
+  if (!deal || typeof deal !== 'object' || !isIso(date) || !isIso(today)) return 1;
+  const pct = num(deal.pct), days = posInt(deal.days);
+  if (pct === null || pct <= 0 || pct >= 60 || !days || days > 14) return 1;
+  if (date < today || date > addDays(today, days - 1)) return 1;
+  if (isIso(deal.until) && date > deal.until) return 1;
+  if (Array.isArray(deal.skip) && deal.skip.includes(date)) return 1;
+  const dow = new Date(date + 'T00:00:00Z').getUTCDay();
+  if (Array.isArray(deal.nights) && !deal.nights.includes(dow)) return 1;
+  return 1 - pct / 100;
+}
+
 /** Runs -> Channex `values`. ids: Map target_id -> Channex room_type_id / rate_plan_id. One date -> `date`, else a range. */
 export function toItems(kind, propertyId, runs, ids) {
   const idKey = kind === 'availability' ? 'room_type_id' : 'rate_plan_id';
@@ -228,7 +249,8 @@ export async function loadContext(sb, prop, cfg) {
     roomTypes: new Map(rts.filter((r) => r.room_type_id).map((r) => [r.unit_type_id, r])),
     ratePlans: new Map(rps.filter((r) => r.rate_plan_id).map((r) => [r.plan_id, r])),
     unitTypes: new Map(types.map((t) => [t.id, t])),
-    plans: planMap
+    plans: planMap,
+    lastMinute: await blob(sb, prop.org_id, 'lastMinuteDeal')
   };
 }
 
@@ -289,6 +311,7 @@ export async function computeRestrictions(sb, prop, dates, ctx) {
   const parents = targets.map((id) => ctx.plans.get(id)).filter((p) => p && p.follows && p.follows.planId).map((p) => p.follows.planId);
   const days = await loadDays(sb, prop.org_id, [...new Set([...targets, ...parents])]);
   const rows = [];
+  const today = todayMY();
   for (const planId of targets) {
     const plan = ctx.plans.get(planId);
     const map = ctx.ratePlans.get(planId);
@@ -299,6 +322,8 @@ export async function computeRestrictions(sb, prop, dates, ctx) {
     for (const d of [...dates.get(planId)].sort()) {
       const c = { plans: ctx.plans, dayOf: (pid) => (days.get(pid) || {})[d] };
       const row = { target_id: planId, date: d, value: restrictionValue(plan || {}, own[d], { retired, ctx: c }) };
+      const f = lastMinuteFactor(ctx.lastMinute, d, today);
+      if (f < 1 && row.value.rate !== undefined) row.value.rate = (Math.round(Number(row.value.rate) * f * 100) / 100).toFixed(2);
       const sent = own[d] && own[d].sent;
       if (sent && typeof sent === 'object' && Array.isArray(sent.f)) row.sent = { at: String(sent.at || ''), f: sent.f.filter((k) => k in row.value) };
       rows.push(row);
@@ -642,6 +667,28 @@ export async function markLastDay(sb, opts = {}) {
       ...rps.map((r) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'restrictions', target_id: r.plan_id, date_from: day, date_to: day, reason: 'nightly', force: true }))
     ];
     if (rows.length) { must(await sb.from('channex_outbox').insert(rows), 'mark last day'); n += rows.length; }
+  }
+  return n;
+}
+
+/**
+ * Nightly: workspaces with a last-minute deal get marks for the nights now inside its window, so the newest night goes
+ * out at the deal rate (a normal delta: nights already sent at the deal rate are not sent again).
+ */
+export async function markLastMinute(sb, opts = {}) {
+  const cfg = opts.config || channexConfig();
+  const t0 = todayMY();
+  const props = must(await sb.from('channex_properties').select('org_id, channex_property_id').eq('env', cfg.env).in('status', CONNECTED), 'load properties') || [];
+  let n = 0;
+  for (const p of props) {
+    const deal = await blob(sb, p.org_id, 'lastMinuteDeal');
+    const days = deal && posInt(deal.days);
+    if (!days || days > 14 || !(num(deal.pct) > 0)) continue;
+    const rts = must(await sb.from('channex_room_types').select('unit_type_id').eq('channex_property_id', p.channex_property_id).eq('env', cfg.env).eq('retired', false), 'load room types') || [];
+    const typeIds = rts.map((r) => r.unit_type_id);
+    const rps = typeIds.length ? must(await sb.from('channex_rate_plans').select('plan_id').eq('org_id', p.org_id).eq('env', cfg.env).eq('retired', false).in('unit_type_id', typeIds), 'load rate plans') || [] : [];
+    const rows = rps.map((r) => ({ org_id: p.org_id, channex_property_id: p.channex_property_id, kind: 'restrictions', target_id: r.plan_id, date_from: t0, date_to: addDays(t0, days - 1), reason: 'last_minute', force: false }));
+    if (rows.length) { must(await sb.from('channex_outbox').insert(rows), 'mark last minute'); n += rows.length; }
   }
   return n;
 }
