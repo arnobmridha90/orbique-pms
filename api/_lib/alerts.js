@@ -146,6 +146,10 @@ export function describe(row, ctx = {}) {
   }
   if (b.reservationCode) money.push('Ref ' + clean(b.reservationCode, 40));
   if (money.length) lines.push(money.join(' · '));
+  // what a website guest told us at checkout
+  const web = isObj(b.web) ? b.web : {};
+  if (row.kind === 'new' && web.arrival) lines.push('Arriving ' + clean(web.arrival, 40));
+  if (row.kind === 'new' && web.notes) lines.push('Guest note: ' + clean(web.notes, 300));
   return { title, lines, text: lines.join('\n') };
 }
 

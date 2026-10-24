@@ -304,7 +304,8 @@ address straight into the inbox; email replies to guests then go out from that a
 A workspace's own website books through `/api/public/*` (api/public.js). Settings live in the workspace's `website`
 value (blobs): its `slug` (the website sends `ws=<slug>`), the room types and their Flexible, Non-refundable and Weekly
 plans, `publicMarkupPct` (what non-members pay above the member price), the extra bed fee, `emailFrom` for sign-in
-codes and `siteUrl`.
+codes and guest confirmations (`replyTo` if replies should go elsewhere), `address` for the confirmation (else the
+building's address) and `siteUrl`.
 
 To take payments:
 
@@ -316,8 +317,13 @@ To take payments:
 3. Redeploy. Until both are set, checkout answers "Online payment is not switched on yet" and holds nothing.
 
 How a booking goes: checkout holds the nights as a pending booking (they close on every booking site straight away, with
-no alert), then Stripe's page opens in MYR. Payment confirms the booking and sends the usual booking alert. If the guest
-does not pay within 30 minutes the hold is released and the nights open again. Refunds are made in Stripe.
+no alert), then Stripe's page opens in MYR. The guest's arrival time and note go on the booking's note and in the
+alert. Payment confirms the booking, sends the usual booking alert and emails the guest a confirmation (reference,
+suite, dates, guests, amount paid, rate and cancellation terms, address, check-in time); the booking's `web.guestEmail`
+says whether it went. A guest who starts checkout again for the same suite and dates gets a fresh payment page: the
+earlier unpaid hold is released and its Stripe page closed. If the guest does not pay within 30 minutes the hold is
+released and the nights open again. Refunds are made in Stripe. The thank-you page can ask
+`GET /api/public/booking?ws=<slug>&session_id=<Stripe session>` whether the stay is paid.
 
 ## Updating Orbique later
 
