@@ -6,9 +6,10 @@
  * tick (budget about 15 s):
  *   1. retry booking events not handled yet, and revisions that were saved but not acknowledged
  *   2. poll /booking_revisions/feed when 15 minutes have passed (the backup to webhooks)
- *   3. setup queue (edits to buildings, unit types and rate plans of connected buildings)
- *   4. every property with marks or a full-sync request: availability, then rates and restrictions
- *   5. booking alerts that are due (email, WhatsApp, phone app; api/_lib/alerts.js)
+ *   3. website holds nobody paid for in time are released (api/_lib/website.js)
+ *   4. setup queue (edits to buildings, unit types and rate plans of connected buildings)
+ *   5. every property with marks or a full-sync request: availability, then rates and restrictions
+ *   6. booking alerts that are due (email, WhatsApp, phone app; api/_lib/alerts.js)
  * nightly:
  *   mark the day that just came into the 500-day window (a delta, never a full sync), the nights inside a last-minute
  *   deal's window (blob lastMinuteDeal), today's exchange rates for plans sold in another currency (blob fxRates),
@@ -24,6 +25,7 @@ import { must, tracked, records, addAlert, todayMY, addDays } from './_lib/chann
 import { runWorker, markLastDay, markLastMinute, refreshFx, CONNECTED } from './_lib/channex-sync.js';
 import { retryInbound, pollFeed, reassignUpcoming } from './_lib/channex-bookings.js';
 import { processOutbox } from './_lib/alerts.js';
+import { releaseHolds } from './_lib/website.js';
 
 export const TICK_BUDGET_MS = 15000;
 const PRUNE_DAYS = 60;
@@ -35,7 +37,8 @@ export const bookingHooks = {
   retryInbound: (sb, opts) => retryInbound(sb, opts),
   pollFeed: (sb, opts) => pollFeed(sb, opts),
   reassignUpcoming: (sb, opts) => reassignUpcoming(sb, opts),
-  alerts: (sb, opts) => processOutbox(sb, opts)
+  alerts: (sb, opts) => processOutbox(sb, opts),
+  holds: (sb, opts) => releaseHolds(sb, opts)
 };
 
 /** Run a hook; a failure is logged and reported, never stops the tick (ARI still goes out). */
@@ -53,6 +56,8 @@ export async function tick(sb, opts = {}) {
     inbound: await safely('retry inbound', () => bookingHooks.retryInbound(sb, { config: cfg, request: opts.request, budgetMs: 5000, olderThanMs: opts.eventsOlderThanMs })),
     feed: await safely('feed', () => bookingHooks.pollFeed(sb, { config: cfg, request: opts.request, budgetMs: 5000, force: opts.forceFeed }))
   };
+  // released holds open their nights again: before the send below, so it goes out in this tick
+  out.holds = await safely('website holds', () => bookingHooks.holds(sb, {}));
   const budget = Math.max(3000, (opts.budgetMs || TICK_BUDGET_MS) - (Date.now() - start));
   out.ari = summary(await runWorker(sb, { config: cfg, budgetMs: budget, request: opts.request, quietMs: opts.quietMs }));
   // the bookings above may have queued alerts: send them in the same tick

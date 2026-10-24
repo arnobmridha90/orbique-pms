@@ -196,7 +196,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   for (const h of HEADERS) if (h.re.test(p)) for (const { key, value } of h.headers) res.setHeader(key, value);
 
-  const api = /^\/api\/([^/]+?)\/?$/.exec(p);
+  const api = /^\/api\/([^/]+?)\/?$/.exec(p) || /^\/api\/(public)\/.+$/.exec(p); // vercel.json rewrites /api/public/* to api/public.js
   if (api) return runApi(req, res, url, api[1]);
   if (p.startsWith('/api/')) { res.statusCode = 404; res.setHeader('Content-Type', 'application/json; charset=utf-8'); return res.end(JSON.stringify({ ok: false, error: 'not-found', message: 'Unknown address.' })); }
 

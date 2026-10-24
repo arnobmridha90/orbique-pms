@@ -299,6 +299,26 @@ address straight into the inbox; email replies to guests then go out from that a
    `insert into public.inbound_addresses (address, org_id, kind) values ('hello@staykozi.com', '<the org id>', 'own');`
    The workspace keeps its Orbique address too, so booking sites already set up with it still work.
 
+## Website bookings: live prices, card payment, members
+
+A workspace's own website books through `/api/public/*` (api/public.js). Settings live in the workspace's `website`
+value (blobs): its `slug` (the website sends `ws=<slug>`), the room types and their Flexible, Non-refundable and Weekly
+plans, `publicMarkupPct` (what non-members pay above the member price), the extra bed fee, `emailFrom` for sign-in
+codes and `siteUrl`.
+
+To take payments:
+
+1. In Stripe, open Developers → API keys and copy the secret key. In Vercel (orbique-pms → Settings → Environment
+   Variables, Production) add `STRIPE_SECRET_KEY` with it.
+2. In Stripe, open Developers → Webhooks → Add endpoint. URL: `https://<your Orbique address>/api/public/stripe-webhook`.
+   Events: `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded` and
+   `checkout.session.async_payment_failed`. Copy the signing secret (`whsec_…`) into Vercel as `STRIPE_WEBHOOK_SECRET`.
+3. Redeploy. Until both are set, checkout answers "Online payment is not switched on yet" and holds nothing.
+
+How a booking goes: checkout holds the nights as a pending booking (they close on every booking site straight away, with
+no alert), then Stripe's page opens in MYR. Payment confirms the booking and sends the usual booking alert. If the guest
+does not pay within 30 minutes the hold is released and the nights open again. Refunds are made in Stripe.
+
 ## Updating Orbique later
 
 Every change merged into the main branch on GitHub deploys automatically. Database changes are applied during that
