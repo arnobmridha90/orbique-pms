@@ -1,7 +1,7 @@
 /* Pure parts of the ARI sender and setup (api/_lib/channex-sync.js, channex-setup.js, api/channex.js helpers). */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compressValues, diffValues, backoffMs, restrictionValue, planRate, toItems, markDates, stableKey, rejectedItems, datesText, BACKOFF_MAX_MS } from '../../api/_lib/channex-sync.js';
+import { compressValues, diffValues, backoffMs, restrictionValue, planRate, toItems, markDates, stableKey, rejectedItems, datesText, lastMinuteFactor, BACKOFF_MAX_MS } from '../../api/_lib/channex-sync.js';
 import { propertyBody, roomTypeBody, ratePlanBody, occupancy, groupTitle, buildingProblems, propertyType, PROPERTY_TYPES, PROPERTY_SETTINGS } from '../../api/_lib/channex-setup.js';
 import { allowedOrg, webhookBody, appUrl, IFRAME_CHANNELS, WEBHOOK_EVENTS } from '../../api/channex.js';
 import { todayMY, addDays } from '../../api/_lib/channex-db.js';
@@ -273,4 +273,19 @@ test('todayMY: Malaysia date; CHANNEX_TODAY is honoured only against a local moc
   } finally {
     for (const [k, v] of [['CHANNEX_TODAY', saved.t], ['CHANNEX_BASE_URL', saved.b]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
+});
+
+test('lastMinuteFactor: regular Sun-Thu nights inside the window get the deal, everything else does not', () => {
+  const deal = { pct: 10, days: 3, nights: [0, 1, 2, 3, 4], skip: ['2026-11-04'], until: '2027-04-30' };
+  const t = '2026-10-25'; // a Sunday
+  assert.equal(lastMinuteFactor(deal, '2026-10-25', t), 0.9); // tonight
+  assert.equal(lastMinuteFactor(deal, '2026-10-27', t), 0.9); // the night after tomorrow
+  assert.equal(lastMinuteFactor(deal, '2026-10-28', t), 1); // outside the window
+  assert.equal(lastMinuteFactor(deal, '2026-10-24', t), 1); // past
+  assert.equal(lastMinuteFactor(deal, '2026-10-30', '2026-10-29'), 1); // Friday night
+  assert.equal(lastMinuteFactor(deal, '2026-11-04', '2026-11-03'), 1); // skipped (event)
+  assert.equal(lastMinuteFactor(deal, '2027-05-02', '2027-05-02'), 1); // after until
+  assert.equal(lastMinuteFactor(null, '2026-10-25', t), 1);
+  assert.equal(lastMinuteFactor({ pct: 0, days: 3 }, '2026-10-25', t), 1);
+  assert.equal(lastMinuteFactor({ pct: 10, days: 30 }, '2026-10-25', t), 1); // window too long: ignored
 });

@@ -10,7 +10,8 @@
  *   4. every property with marks or a full-sync request: availability, then rates and restrictions
  *   5. booking alerts that are due (email, WhatsApp, phone app; api/_lib/alerts.js)
  * nightly:
- *   mark the day that just came into the 500-day window (a delta, never a full sync), refresh channel lists,
+ *   mark the day that just came into the 500-day window (a delta, never a full sync), the nights inside a last-minute
+ *   deal's window (blob lastMinuteDeal), refresh channel lists,
  *   prune the call log and events older than 60 days, raise needs_unit alerts for unassigned arrivals within 48 h,
  *   re-run unit assignment for stays starting in the next 14 days, then a normal tick.
  * Answers {ok, task, ...summary}. Never returns keys or payloads.
@@ -19,7 +20,7 @@ import { send, cors, readJson, bearer } from './_lib/http.js';
 import { requireAdminClient } from './_lib/supabase.js';
 import { channexConfig, safeEqual, channelView } from './_lib/channex.js';
 import { must, tracked, records, addAlert, todayMY, addDays } from './_lib/channex-db.js';
-import { runWorker, markLastDay, CONNECTED } from './_lib/channex-sync.js';
+import { runWorker, markLastDay, markLastMinute, CONNECTED } from './_lib/channex-sync.js';
 import { retryInbound, pollFeed, reassignUpcoming } from './_lib/channex-bookings.js';
 import { processOutbox } from './_lib/alerts.js';
 
@@ -64,6 +65,7 @@ export async function nightly(sb, opts = {}) {
   const cfg = opts.config || channexConfig();
   const out = {};
   out.marked = await markLastDay(sb, { config: cfg });
+  out.lastMinute = await safely('last minute', () => markLastMinute(sb, { config: cfg }));
   out.reassign = await safely('reassign', () => bookingHooks.reassignUpcoming(sb, { config: cfg }));
   out.channels = await refreshChannels(sb, cfg, opts);
   out.pruned = await prune(sb);
