@@ -3,7 +3,8 @@
  *
  * Settings: the workspace's `website` blob (edited by Orbique; see DEFAULTS):
  *   {slug, enabled, origins: [extra https origins], types: {key: {typeId, name, plans: {flexible, nonref, weekly}}},
- *    publicMarkupPct, baseGuests, maxGuests, extraBedFee, holdMinutes, freeCancelDays, emailFrom, brand}
+ *    publicMarkupPct, baseGuests, maxGuests, extraBedFee, holdMinutes, freeCancelDays, emailFrom, replyTo, address, brand}
+ *   address: the street address in the guest's confirmation (else the building's); replyTo: else emailFrom's address
  * Prices: a night's rate is the plan's own Orbique rate (channelRates days, else its parent plan with the rule, else
  * defaultRate) with the workspace's last-minute deal, the same number the booking sites get before their markup.
  * Members pay that; everyone else pays it plus publicMarkupPct. A fifth guest adds the extra bed fee per night.
@@ -11,11 +12,13 @@
  *   quoteStay(input)            pure: one unit type's options for a stay (unit-tested)
  *   calendarDays(input)         pure: nightly prices and restrictions for a date picker
  *   memberToken / readMemberToken, stripeSignatureOk, formEncode   pure helpers
- *   loadSite, availability, calendar, checkout, memberStart, memberVerify, stripeEvent, releaseHolds   database
+ *   loadSite, availability, calendar, checkout, bookingStatus, memberStart, memberVerify, stripeEvent, releaseHolds   database
  *
  * Holds: checkout saves a pending booking with webHold: true (it closes the nights on every site straight away, but
  * raises no alert, see 0015), assigns a unit, then opens a Stripe Checkout Session in MYR. Payment confirms it (the
- * alert goes out then); an expired session, or the worker after holdMinutes plus a margin, cancels it.
+ * alert goes out then, and the guest gets a confirmation email); an expired session, or the worker after holdMinutes
+ * plus a margin, cancels it. A guest who starts checkout again for the same room type and dates (say after leaving
+ * the payment page) gets a new payment page: their earlier unpaid hold is released and its Stripe session expired.
  */
 import { createHash, createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { ApiError, bad, conflict, tooMany, text, email as emailField, phone as phoneField } from './http.js';
@@ -49,6 +52,10 @@ const CODE_TRIES = 5;
 const CODES_PER_15_MIN = 3;
 export const MEMBER_DAYS = 30;
 const HOLD_MARGIN_MIN = 15;           // the worker releases a hold this long after Stripe's session should have expired
+export const ARRIVALS = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm', '9:00 pm to midnight', 'After midnight'];
+const NOTES_MAX = 600;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const money = (v) => Math.round(num(v) * 100) / 100;
@@ -69,6 +76,8 @@ export function siteSettings(v) {
   s.maxNights = Math.min(180, Math.max(1, Math.round(num(s.maxNights)) || DEFAULTS.maxNights));
   s.types = isObj(s.types) ? s.types : {};
   s.siteUrl = typeof s.siteUrl === 'string' && /^https:\/\/[a-z0-9.-]+$/i.test(s.siteUrl) ? s.siteUrl : null;
+  s.address = typeof s.address === 'string' ? s.address.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  s.replyTo = typeof s.replyTo === 'string' ? s.replyTo.trim().slice(0, 200) : '';
   s.origins = Array.isArray(s.origins) ? s.origins.filter((o) => typeof o === 'string' && /^https:\/\/[a-z0-9.-]+$/i.test(o)) : [];
   return s;
 }
@@ -410,6 +419,19 @@ function guestInput(g) {
   return { name, email: mail, phone, country, countryName: country ? countryName(country) : '', foreign: !!country && country !== 'MY' };
 }
 
+/** The optional arrival window and note a guest gives at checkout. */
+export function extrasInput(body) {
+  const arrival = text(body.arrival, 'Arrival time', { max: 40 });
+  if (arrival && !ARRIVALS.includes(arrival)) throw bad('bad-arrival', 'Please choose your arrival time from the list.');
+  const notes = text(body.notes, 'Notes', { max: NOTES_MAX, multiline: true });
+  return { arrival: arrival || null, notes: notes || null };
+}
+
+/** The staff note for a website booking: what the guest told us at checkout. */
+export function staffNote(extras) {
+  return [extras.arrival ? 'Arriving ' + extras.arrival + '.' : '', extras.notes ? 'Guest note: ' + extras.notes : ''].filter(Boolean).join('\n');
+}
+
 function returnUrl(u, origin, fallbackPath) {
   if (typeof u === 'string' && u.length < 600) {
     try {
@@ -422,8 +444,9 @@ function returnUrl(u, origin, fallbackPath) {
 }
 
 /**
- * POST checkout {type, in, out, guests, plan?, guest: {name, email, phone, country}, memberToken?, successUrl?, cancelUrl?}
+ * POST checkout {type, in, out, guests, plan?, guest: {name, email, phone, country}, arrival?, notes?, memberToken?, successUrl?, cancelUrl?}
  * -> {url (Stripe Checkout), bookingId, total, price: 'member'|'public', expiresAt}
+ * arrival is one of ARRIVALS; notes is free text (at most 600 characters). Both go on the booking's staff note.
  */
 export async function checkout(sb, site, body, opts = {}) {
   const stripe = opts.stripe || stripeConfig();
@@ -434,6 +457,7 @@ export async function checkout(sb, site, body, opts = {}) {
   const type = typeOf(site, body.type);
   const stay = stayInput(body, s, today);
   const guest = guestInput(body.guest);
+  const extras = extrasInput(body);
   if (!opts.origin && !s.siteUrl) throw bad('no-origin', 'Please book from the website.');
   const member = body.memberToken ? readMemberToken(String(body.memberToken), site.orgId, { now }) : null;
   if (body.memberToken && !member) throw new ApiError(401, 'member-expired', 'Your member sign-in has expired. Please sign in again to get the member price.');
@@ -452,7 +476,11 @@ export async function checkout(sb, site, body, opts = {}) {
 
   // a flood of holds would close real nights on every booking site
   const holds = await records(sb, site.orgId, 'bookings', (q) => q.eq('data->>webHold', 'true'));
-  const open = holds.filter((b) => live(b));
+  let open = holds.filter((b) => live(b));
+  // the same guest trying again (back from the payment page): their earlier unpaid hold must not block them
+  const again = open.filter((b) => b.guest && b.guest.email === guest.email && b.unitTypeId === type.typeId && b.checkIn === stay.checkIn && b.checkOut === stay.checkOut);
+  for (const old of again) await replaceHold(sb, site.orgId, old, stripe, opts);
+  if (again.length) open = open.filter((b) => !again.includes(b));
   if (open.length >= MAX_OPEN_HOLDS) throw tooMany('Many guests are booking right now. Please try again in a few minutes.');
   if (open.filter((b) => b.guest && b.guest.email === guest.email).length >= MAX_HOLDS_PER_EMAIL) throw tooMany('You already have a booking waiting for payment. Please finish it, or wait a few minutes and try again.');
 
@@ -490,7 +518,8 @@ export async function checkout(sb, site, body, opts = {}) {
     status: 'pending',
     paymentCollect: 'property',
     webHold: true,
-    web: { price, plan: opt.plan, refundable: opt.refundable, freeCancelUntil: opt.freeCancelUntil || null, member: member ? member.email : null, holdUntil, currency: 'MYR' }
+    notes: staffNote(extras),
+    web: { price, plan: opt.plan, refundable: opt.refundable, freeCancelUntil: opt.freeCancelUntil || null, member: member ? member.email : null, holdUntil, currency: 'MYR', arrival: extras.arrival, notes: extras.notes }
   });
   b.reservationCode = b.id;
 
@@ -542,6 +571,20 @@ export async function checkout(sb, site, body, opts = {}) {
   return { url: session.url, bookingId: b.id, total, currency: 'MYR', price, plan: opt.plan, refundable: opt.refundable, expiresAt: holdUntil };
 }
 
+/**
+ * The guest started checkout again for the same stay: expire the earlier Stripe session, then release its hold.
+ * A session Stripe already completed is a paid booking (another tab, say): that one stays and checkout stops.
+ */
+async function replaceHold(sb, orgId, old, stripe, opts) {
+  const id = old.web && old.web.session;
+  if (id && /^cs_[A-Za-z0-9_]+$/.test(id)) {
+    const cur = await stripeCall(stripe, 'GET', '/v1/checkout/sessions/' + id, null, { fetch: opts.fetch });
+    if (cur.status === 'complete') throw conflict('already-paid', 'You have already paid for this stay. Please check your email for the confirmation.');
+    if (cur.status === 'open') await stripeCall(stripe, 'POST', '/v1/checkout/sessions/' + id + '/expire', null, { fetch: opts.fetch });
+  }
+  await release(sb, orgId, old, 'replaced');
+}
+
 /** Cancel an unpaid hold (its nights open again on every site). */
 async function release(sb, orgId, b, why) {
   const now = nowMY();
@@ -552,8 +595,8 @@ async function release(sb, orgId, b, why) {
   return next;
 }
 
-/** Stripe webhook event (already verified). Confirms a paid booking, releases an expired hold. */
-export async function stripeEvent(sb, event) {
+/** Stripe webhook event (already verified). Confirms a paid booking, releases an expired hold. opts {email, fetch} (tests). */
+export async function stripeEvent(sb, event, opts = {}) {
   const type = event && event.type;
   const obj = event && event.data && event.data.object;
   if (!isObj(obj)) return { handled: false };
@@ -568,7 +611,7 @@ export async function stripeEvent(sb, event) {
   if (type === 'checkout.session.completed' || type === 'checkout.session.async_payment_succeeded') {
     if (obj.payment_status !== 'paid' && obj.payment_status !== 'no_payment_required') return { handled: true, status: 'waiting' };
     if (b.paidAt && b.status !== 'pending') return { handled: true, status: 'already' };
-    return { handled: true, status: await confirmPaid(sb, orgId, b, obj) };
+    return { handled: true, status: await confirmPaid(sb, orgId, b, obj, opts) };
   }
   if (type === 'checkout.session.expired' || type === 'checkout.session.async_payment_failed') {
     if (b.webHold && live(b)) { await release(sb, orgId, b, type === 'checkout.session.expired' ? 'expired' : 'payment_failed'); return { handled: true, status: 'released' }; }
@@ -577,7 +620,7 @@ export async function stripeEvent(sb, event) {
   return { handled: false };
 }
 
-async function confirmPaid(sb, orgId, b, session) {
+async function confirmPaid(sb, orgId, b, session, opts = {}) {
   const nowLocal = nowMY();
   const next = Object.assign({}, b);
   const wasReleased = !live(b);
@@ -603,7 +646,121 @@ async function confirmPaid(sb, orgId, b, session) {
   await saveRecords(sb, orgId, [next]);
   await bookingAlerts(sb, orgId, next, ctx, nowLocal).catch((e) => console.error('[website] alerts:', e && e.message));
   if (r.changed) await audit(sb, orgId, [{ at: nowLocal, by: 'system', cat: 'bookings', text: moveText(next, r.from, r.to, ctx.units) }]);
+  // the guest's confirmation, not while the paid stay overlaps another booking (the team sorts that out first)
+  const sent = next.conflict ? 'held: double booking' : await guestConfirmation(sb, orgId, next, opts).catch((e) => 'failed: ' + String(e && e.message || e).slice(0, 200));
+  next.web = Object.assign({}, next.web, { guestEmail: sent, guestEmailAt: nowMY() });
+  await saveRecords(sb, orgId, [next]);
   return wasReleased ? 'reinstated' : 'confirmed';
+}
+
+/* ---------- the guest's confirmation email ---------- */
+
+/** "Tue 10 Nov 2026" */
+export function longDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  if (!m) return '';
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return WEEKDAYS[d.getUTCDay()] + ' ' + Number(m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
+}
+/** "15:00" -> "3:00 pm" */
+export function clockText(t) {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(t || ''));
+  if (!m) return '';
+  const h = +m[1];
+  return (h % 12 || 12) + ':' + m[2] + (h < 12 ? ' am' : ' pm');
+}
+const rm = (v) => 'RM' + num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const addrOf = (from) => { const m = /<([^<>\s]+@[^<>\s]+)>/.exec(String(from || '')) || /^\s*([^<>\s]+@[^<>\s]+)\s*$/.exec(String(from || '')); return m ? m[1] : ''; };
+
+/**
+ * The confirmation email of a paid website booking. Pure.
+ * b the booking; s site settings; place {typeName, building: {name, address}}.
+ * -> {subject, text, html}
+ */
+export function confirmationEmail(b, s, place = {}) {
+  const brand = text(s.brand, 'Brand', { max: 60 }) || 'us';
+  const w = b.web || {};
+  const n = num(b.nights);
+  const suite = place.typeName || 'Apartment';
+  const where = [place.building && place.building.name, (s.address || (place.building && place.building.address) || '')].filter(Boolean).join(', ');
+  const terms = w.refundable === false
+    ? 'Non-refundable rate: the amount paid is not refunded if you cancel.'
+    : w.freeCancelUntil ? `Free cancellation until ${longDate(w.freeCancelUntil)}.`
+      : `This stay was booked less than ${s.freeCancelDays} days before arrival, so free cancellation does not apply.`;
+  const planName = OPTION_NAME[w.plan] || (w.refundable === false ? 'Non-refundable' : 'Flexible');
+  const rows = [
+    ['Booking reference', b.id],
+    ['Suite', suite],
+    ['Check-in', longDate(b.checkIn) + ', from ' + (clockText(b.checkInTime) || '3:00 pm')],
+    ['Check-out', longDate(b.checkOut) + ', by ' + (clockText(b.checkOutTime) || '11:00 am')],
+    ['Nights', String(n)],
+    ['Guests', String(b.guests) + (num(b.extraBed) > 0 ? ' (with an extra bed)' : '')],
+    ['Total paid', rm(w.paid || b.total)],
+    ['Rate', planName + '. ' + terms]
+  ];
+  if (where) rows.push(['Address', where]);
+  if (w.arrival) rows.push(['Your arrival time', w.arrival]);
+  if (w.notes) rows.push(['Your note to us', w.notes]);
+  const first = String((b.guest && b.guest.name) || '').split(' ')[0];
+  const hello = first ? 'Hi ' + first + ',' : 'Hello,';
+  const intro = `Thank you for booking with ${brand}. Your payment has gone through and your stay is confirmed.`;
+  const outro = 'If you have any questions before your stay, just reply to this email.';
+  const subject = `Your ${brand} booking is confirmed: ${longDate(b.checkIn)} (${b.id})`;
+  const textBody = [hello, '', intro, '', ...rows.map(([k, v]) => k + ': ' + v), '', outro, '', brand].join('\n');
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const html = '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1d2433;max-width:560px">' +
+    '<p>' + esc(hello) + '</p><p>' + esc(intro) + '</p>' +
+    '<table style="border-collapse:collapse;width:100%;margin:12px 0 16px">' +
+    rows.map(([k, v]) => '<tr><td style="padding:6px 12px 6px 0;color:#6b7280;vertical-align:top;white-space:nowrap">' + esc(k) + '</td><td style="padding:6px 0;vertical-align:top">' + esc(v).replace(/\n/g, '<br>') + '</td></tr>').join('') +
+    '</table><p>' + esc(outro) + '</p><p>' + esc(brand) + '</p></div>';
+  return { subject, text: textBody, html };
+}
+
+/** Send the confirmation to the guest. -> 'sent' | 'skipped: why'; throws when the email service refuses it. */
+async function guestConfirmation(sb, orgId, b, opts = {}) {
+  const cfg = opts.email || emailConfig();
+  if (!cfg.configured) return 'skipped: email is not set up';
+  const to = b.guest && b.guest.email;
+  if (!to) return 'skipped: no email address';
+  const s = siteSettings(await blob(sb, orgId, 'website'));
+  const typeKey = Object.keys(s.types).find((k) => isObj(s.types[k]) && s.types[k].typeId === b.unitTypeId);
+  const t = await record(sb, orgId, 'unitTypes', b.unitTypeId).catch(() => null);
+  const building = t && t.buildingId ? await record(sb, orgId, 'buildings', t.buildingId).catch(() => null) : null;
+  const msg = confirmationEmail(b, s, { typeName: (typeKey && s.types[typeKey].name) || (t && t.name), building });
+  const from = text(s.emailFrom, 'From', { max: 200 }) || cfg.from;
+  const replyTo = addrOf(s.replyTo) || addrOf(from);
+  const fetchFn = opts.fetch || fetch;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await fetchFn(cfg.baseUrl + '/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + cfg.key, 'Content-Type': 'application/json', 'Idempotency-Key': 'confirm-' + b.id },
+      body: JSON.stringify(Object.assign({ from, to: [to], subject: msg.subject, text: msg.text, html: msg.html }, replyTo ? { reply_to: replyTo } : {})),
+      signal: ctl.signal
+    });
+    if (!res.ok) throw new Error('email service answered ' + res.status);
+    return 'sent';
+  } finally { clearTimeout(timer); }
+}
+
+/**
+ * GET booking?session_id: what the thank-you page shows, from the server. Only the stay, never the guest's details.
+ * -> {bookingId, status: 'paid'|'waiting'|'cancelled', type, checkIn, checkOut, nights, guests, total, plan, refundable, freeCancelUntil}
+ */
+export async function bookingStatus(sb, site, q) {
+  const id = String(q.session_id || q.session || '');
+  if (!/^cs_[A-Za-z0-9_]{1,200}$/.test(id)) throw bad('bad-session', 'Unknown booking.');
+  const rows = await records(sb, site.orgId, 'bookings', (x) => x.eq('data->web->>session', id).eq('data->>channel', 'direct'));
+  const b = rows.length === 1 ? rows[0] : null;
+  if (!b) throw new ApiError(404, 'no-booking', 'Unknown booking.');
+  const w = b.web || {};
+  const status = !live(b) ? 'cancelled' : b.paidAt && !b.webHold ? 'paid' : 'waiting';
+  const typeKey = Object.keys(site.settings.types).find((k) => isObj(site.settings.types[k]) && site.settings.types[k].typeId === b.unitTypeId) || null;
+  return {
+    bookingId: b.id, status, type: typeKey, checkIn: b.checkIn, checkOut: b.checkOut, nights: b.nights, guests: b.guests,
+    total: status === 'paid' && w.paid ? w.paid : b.total, currency: 'MYR', plan: w.plan || null, refundable: w.refundable !== false, freeCancelUntil: w.freeCancelUntil || null
+  };
 }
 
 /** The worker's pass: cancel website holds whose payment window has passed (in case Stripe's event never came). */

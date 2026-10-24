@@ -5,8 +5,9 @@
  *
  *   GET  availability?ws&in&out&guests       every room type for one stay: free or not, nightly prices, totals
  *   GET  calendar?ws&type&from&to            nightly availability and prices of one room type (date picker)
- *   POST checkout?ws  {type, in, out, guests, plan?, guest, memberToken?, successUrl?, cancelUrl?}
+ *   POST checkout?ws  {type, in, out, guests, plan?, guest, arrival?, notes?, memberToken?, successUrl?, cancelUrl?}
  *                                            holds the nights and opens Stripe Checkout -> {url, bookingId, ...}
+ *   GET  booking?ws&session_id               the stay behind a Stripe Checkout session, for the thank-you page
  *   POST member/start?ws  {email}            emails a 6-digit code
  *   POST member/verify?ws {email, code}      -> {token, expiresAt} (30 days; send it back as memberToken)
  *   POST stripe-webhook                      Stripe events (Stripe-Signature checked with STRIPE_WEBHOOK_SECRET)
@@ -16,12 +17,13 @@
 import { send, fail, readJson, rawBody, ApiError } from './_lib/http.js';
 import { requireAdminClient } from './_lib/supabase.js';
 import {
-  loadSite, availability, calendar, checkout, memberStart, memberVerify, stripeEvent, stripeConfig, stripeSignatureOk, originAllowed
+  loadSite, availability, calendar, checkout, bookingStatus, memberStart, memberVerify, stripeEvent, stripeConfig, stripeSignatureOk, originAllowed
 } from './_lib/website.js';
 
 const ROUTES = {
   availability: { method: 'GET', run: (sb, site, q) => availability(sb, site, q) },
   calendar: { method: 'GET', run: (sb, site, q) => calendar(sb, site, q) },
+  booking: { method: 'GET', run: (sb, site, q) => bookingStatus(sb, site, q) },
   checkout: { method: 'POST', body: true, run: (sb, site, q, body, origin) => checkout(sb, site, body, { origin }) },
   'member/start': { method: 'POST', body: true, run: (sb, site, q, body) => memberStart(sb, site, body) },
   'member/verify': { method: 'POST', body: true, run: (sb, site, q, body) => memberVerify(sb, site, body) }

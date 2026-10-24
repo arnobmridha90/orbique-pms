@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import A from '../api/_lib/shared/assign.cjs';
-import { availability, calendar, checkout, stripeEvent, releaseHolds, memberStart, memberVerify, loadSite } from '../api/_lib/website.js';
+import { availability, calendar, checkout, stripeEvent, releaseHolds, memberStart, memberVerify, loadSite, bookingStatus } from '../api/_lib/website.js';
 
 process.env.MEMBER_TOKEN_SECRET = 'flow-test-secret';
 const ORG = '11111111-2222-4333-8444-555555555555';
@@ -90,12 +90,12 @@ function seed() {
   return fakeDb({
     orgs: [{ id: ORG, status: 'active' }],
     blobs: [
-      { org_id: ORG, key: 'website', data: { v: { slug: 'kozi', brand: 'Kozi', publicMarkupPct: 10, types: { standard: { typeId: 'UT-STD', name: 'Standard Suite', plans: { flexible: 'RP-FLEX', nonref: 'RP-NREF' } } } } } },
+      { org_id: ORG, key: 'website', data: { v: { slug: 'kozi', brand: 'Kozi', emailFrom: 'Kozi <hello@staykozi.com>', publicMarkupPct: 10, types: { standard: { typeId: 'UT-STD', name: 'Standard Suite', plans: { flexible: 'RP-FLEX', nonref: 'RP-NREF' } } } } } },
       { org_id: ORG, key: 'lastMinuteDeal', data: { v: null } }
     ],
     records: [
       rec('unitTypes', 'UT-STD', { name: 'Standard 2-Bedroom Suite', buildingId: 'BD-1' }),
-      rec('buildings', 'BD-1', { name: 'Vortex', checkInTime: '15:00', checkOutTime: '11:00' }),
+      rec('buildings', 'BD-1', { name: 'Vortex KLCC', address: '56 Jalan Sultan Ismail, 50250 Kuala Lumpur', checkInTime: '15:00', checkOutTime: '11:00' }),
       rec('properties', 'P-411', { unitTypeId: 'UT-STD', unitNo: '41-1', buildingId: 'BD-1' }),
       rec('ratePlans', 'RP-FLEX', { unitTypeId: 'UT-STD', name: 'Flexible', primary: true, defaultRate: 250, minStay: 1 }),
       rec('ratePlans', 'RP-NREF', { unitTypeId: 'UT-STD', name: 'Non-refundable', follows: { planId: 'RP-FLEX', type: 'pct', value: -10 }, defaultRate: 225, minStay: 1 }),
@@ -105,9 +105,14 @@ function seed() {
   });
 }
 
-function stripeFake(calls) {
+function stripeFake(calls, sessions = {}) {
   return async (url, init) => {
-    calls.push({ url, body: init.body });
+    calls.push({ url, method: init.method, body: init.body });
+    const m = /\/v1\/checkout\/sessions\/(cs_\w+)(\/expire)?$/.exec(url);
+    if (m) {
+      if (m[2]) sessions[m[1]] = 'expired';
+      return { ok: true, status: 200, json: async () => ({ id: m[1], status: sessions[m[1]] || 'open' }) };
+    }
     const id = 'cs_test_' + calls.length;
     return { ok: true, status: 200, json: async () => ({ id, url: 'https://checkout.stripe.com/c/pay/' + id }) };
   };
@@ -219,4 +224,63 @@ test('member sign-in: code by email, wrong code counted, member price at checkou
   assert.equal(out.price, 'member');
   assert.equal(out.total, 500);
   assert.equal(booking(db, out.bookingId).web.member, 'ana@example.com');
+});
+
+test('arrival time and note go on the booking; the guest gets a confirmation email when it is paid; status by session', async () => {
+  const db = seed();
+  const site = await loadSite(db, 'kozi');
+  const opts = { today: TODAY, origin: 'https://staykozi.my', stripe: STRIPE, fetch: stripeFake([]) };
+  await assert.rejects(checkout(db, site, { type: 'standard', in: '2026-11-10', out: '2026-11-12', guests: 2, guest, arrival: 'noon' }, opts), /arrival time from the list/);
+  await assert.rejects(checkout(db, site, { type: 'standard', in: '2026-11-10', out: '2026-11-12', guests: 2, guest, notes: 'x'.repeat(601) }, opts), /at most 600/);
+  const out = await checkout(db, site, { type: 'standard', in: '2026-11-10', out: '2026-11-12', guests: 2, guest, arrival: '7:00 pm to 9:00 pm', notes: 'Late flight.\nBaby cot please.' }, opts);
+  let b = booking(db, out.bookingId);
+  assert.equal(b.notes, 'Arriving 7:00 pm to 9:00 pm.\nGuest note: Late flight.\nBaby cot please.');
+  assert.equal(b.web.arrival, '7:00 pm to 9:00 pm');
+  assert.equal(b.web.notes, 'Late flight.\nBaby cot please.');
+
+  assert.equal((await bookingStatus(db, site, { session_id: b.web.session })).status, 'waiting');
+  await assert.rejects(bookingStatus(db, site, { session_id: 'cs_test_nope' }), /Unknown booking/);
+
+  const sent = [];
+  const email = { configured: true, key: 're_x', from: 'Orbique <alerts@example.com>', baseUrl: 'https://resend.test' };
+  const fetch = async (u, init) => { sent.push(JSON.parse(init.body)); return { ok: true, status: 200 }; };
+  await stripeEvent(db, { type: 'checkout.session.completed', data: { object: { id: b.web.session, payment_status: 'paid', amount_total: 55000, metadata: { booking_id: out.bookingId, org_id: ORG } } } }, { email, fetch });
+  assert.equal(sent.length, 1);
+  const m = sent[0];
+  assert.deepEqual(m.to, ['ana@example.com']);
+  assert.equal(m.from, 'Kozi <hello@staykozi.com>');
+  assert.equal(m.reply_to, 'hello@staykozi.com');
+  assert.match(m.subject, new RegExp('confirmed: Tue 10 Nov 2026 \\(' + out.bookingId + '\\)'));
+  for (const want of [out.bookingId, 'Standard Suite', 'Check-in: Tue 10 Nov 2026, from 3:00 pm', 'Check-out: Thu 12 Nov 2026, by 11:00 am', 'Guests: 2', 'Total paid: RM550.00',
+    'Rate: Flexible. Free cancellation until Tue 3 Nov 2026.', 'Address: Vortex KLCC, 56 Jalan Sultan Ismail, 50250 Kuala Lumpur', 'Your arrival time: 7:00 pm to 9:00 pm']) assert.ok(m.text.includes(want), want);
+  b = booking(db, out.bookingId);
+  assert.equal(b.web.guestEmail, 'sent');
+  const st = await bookingStatus(db, site, { session_id: b.web.session });
+  assert.deepEqual([st.status, st.bookingId, st.type, st.total, st.refundable], ['paid', out.bookingId, 'standard', 550, true]);
+  assert.equal(st.guest, undefined);
+});
+
+test('starting checkout again for the same stay replaces the guest\'s own unpaid hold; a paid one stops it', async () => {
+  const db = seed();
+  const site = await loadSite(db, 'kozi');
+  const calls = [], sessions = {};
+  const opts = { today: TODAY, origin: 'https://staykozi.my', stripe: STRIPE, fetch: stripeFake(calls, sessions) };
+  const body = { type: 'standard', in: '2026-11-10', out: '2026-11-12', guests: 2, guest };
+  const one = await checkout(db, site, body, opts);
+  const first = booking(db, one.bookingId).web.session;
+  // only one unit, and the guest is back from the payment page
+  const two = await checkout(db, site, body, opts);
+  assert.notEqual(two.bookingId, one.bookingId);
+  assert.equal(sessions[first], 'expired');
+  assert.equal(booking(db, one.bookingId).status, 'cancelled');
+  assert.equal(booking(db, one.bookingId).web.released, 'replaced');
+  assert.equal(booking(db, two.bookingId).status, 'pending');
+  // the replaced session's expiry event changes nothing
+  assert.equal((await stripeEvent(db, { type: 'checkout.session.expired', data: { object: { id: first, metadata: { booking_id: one.bookingId, org_id: ORG } } } })).status, 'unchanged');
+  // someone else still cannot take it
+  await assert.rejects(checkout(db, site, Object.assign({}, body, { guest: Object.assign({}, guest, { email: 'bo@example.com' }) }), opts), /just booked/);
+  // paid in another tab: the new checkout stops and the paid stay stays
+  sessions[booking(db, two.bookingId).web.session] = 'complete';
+  await assert.rejects(checkout(db, site, body, opts), /already paid/);
+  assert.equal(booking(db, two.bookingId).status, 'pending');
 });

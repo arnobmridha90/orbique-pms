@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
-  quoteStay, calendarDays, siteSettings, memberToken, readMemberToken, formEncode, stripeSignatureOk, originAllowed, stayInput, notes
+  quoteStay, calendarDays, siteSettings, memberToken, readMemberToken, formEncode, stripeSignatureOk, originAllowed, stayInput, notes,
+  extrasInput, staffNote, confirmationEmail, longDate, clockText
 } from '../api/_lib/website.js';
 import { routeOf } from '../api/public.js';
 
@@ -110,4 +111,26 @@ test('origins and routes', () => {
   assert.equal(originAllowed('https://book.example', siteSettings({ origins: ['https://book.example'] })), true);
   assert.equal(routeOf({ url: '/api/public/member/start?ws=kozi' }), 'member/start');
   assert.equal(routeOf({ url: '/api/public?path=availability&ws=kozi' }), 'availability');
+  assert.equal(routeOf({ url: '/api/public/booking?ws=kozi&session_id=cs_test_1' }), 'booking');
+});
+
+test('checkout extras, dates and times in words, the confirmation email\'s cancellation terms', () => {
+  assert.deepEqual(extrasInput({}), { arrival: null, notes: null });
+  assert.deepEqual(extrasInput({ arrival: 'After midnight', notes: '  Two cots  ' }), { arrival: 'After midnight', notes: 'Two cots' });
+  assert.throws(() => extrasInput({ arrival: '6 pm' }), /from the list/);
+  assert.equal(staffNote({ arrival: null, notes: 'Hi' }), 'Guest note: Hi');
+  assert.equal(staffNote({ arrival: null, notes: null }), '');
+  assert.equal(longDate('2026-12-31'), 'Thu 31 Dec 2026');
+  assert.deepEqual(['00:30', '12:00', '15:00', '23:05'].map(clockText), ['12:30 am', '12:00 pm', '3:00 pm', '11:05 pm']);
+  const s = siteSettings({ brand: 'Kozi' });
+  const b = { id: 'BK-1', checkIn: '2026-12-31', checkOut: '2027-01-02', nights: 2, guests: 5, extraBed: 120, total: 1000, checkInTime: '15:00', guest: { name: 'Ana Lim' } };
+  const nonref = confirmationEmail(Object.assign({}, b, { web: { plan: 'nonref', refundable: false, paid: 1000 } }), s, { typeName: 'Premium Suite' });
+  assert.match(nonref.text, /^Hi Ana,/);
+  assert.match(nonref.text, /Rate: Non-refundable\. Non-refundable rate: the amount paid is not refunded if you cancel\./);
+  assert.match(nonref.text, /Guests: 5 \(with an extra bed\)/);
+  assert.ok(!/Address:/.test(nonref.text));
+  const late = confirmationEmail(Object.assign({}, b, { web: { plan: 'flexible', refundable: true, freeCancelUntil: null } }), s, {});
+  assert.match(late.text, /booked less than 7 days before arrival, so free cancellation does not apply/);
+  const xss = confirmationEmail(Object.assign({}, b, { web: { notes: '<b>hi</b>' } }), s, {});
+  assert.ok(xss.html.includes('&lt;b&gt;hi&lt;/b&gt;') && !xss.html.includes('<b>hi'));
 });

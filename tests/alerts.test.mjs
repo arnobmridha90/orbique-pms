@@ -47,6 +47,12 @@ test('a new booking says the site, guest, stay, unit and payout', () => {
   assert.equal(m.text, m.lines.join('\n'));
 });
 
+test('a website booking also says when the guest arrives and their note', () => {
+  const m = describe({ kind: 'new', data: { b: booking({ channel: 'direct', otaName: 'Website', web: { arrival: '9:00 pm to midnight', notes: 'Late flight,\n  please leave a towel.' } }) } }, ctx);
+  assert.equal(m.title, 'New booking · Website');
+  assert.deepEqual(m.lines.slice(-2), ['Arriving 9:00 pm to midnight', 'Guest note: Late flight, please leave a towel.']);
+});
+
 test('cancellations leave out the money; date changes show the old dates; no unit yet is said', () => {
   const c = describe({ kind: 'cancelled', data: { b: booking({ propertyId: null }) } }, ctx);
   assert.equal(c.title, 'Cancelled · Trip.com');
