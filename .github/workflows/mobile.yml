@@ -332,6 +332,14 @@ jobs:
             status=1
           else
             adb shell dumpsys package "$pkg" | grep -E 'versionCode|versionName' > "$out/version.txt" || true
+            # Right after boot the 2-core emulator is still busy (load 20+), and launching then gives an ANR on the
+            # first focus event that no app code causes, so wait (up to 3 minutes) for the 1-minute load to fall below 6
+            for i in $(seq 1 36); do
+              load=$(adb shell cat /proc/loadavg | cut -d' ' -f1)
+              awk -v l="${load:-99}" 'BEGIN { exit !(l < 6) }' && break
+              sleep 5
+            done
+            echo "Emulator load before launch: ${load:-?}"
             t0=$(date +%s)
             timeout 90 adb shell am start -W -n "$pkg/.MainActivity" | tee "$out/launch.txt"
             for t in 15 30; do
