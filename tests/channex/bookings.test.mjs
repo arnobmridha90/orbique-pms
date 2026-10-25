@@ -101,6 +101,19 @@ test('revisionToBookings: cancelled status, estimated fee without ota_commission
   assert.equal(channelOf({ unique_id: 'OSA-1', ota_name: 'Hostelworld' }), 'other');
 });
 
+test('revisionToBookings: Agoda sends the net it pays, so the guest price comes from refsell_amt and the fee is the difference', () => {
+  const room = { checkin_date: '2026-12-28', checkout_date: '2026-12-30', room_type_id: RT_T, rate_plan_id: RP_T, amount: '484.06',
+    days: { '2026-12-28': '242.03', '2026-12-29': '242.03' }, occupancy: { adults: 1 },
+    meta: { refsell_amt: 59292, net_inclusive_amt: 48406 } };
+  const b = revisionToBookings(rev({ unique_id: 'AGO-1790172277', ota_name: 'Agoda', ota_commission: null, amount: '484.06', services: [], rooms: [room] }), ctx()).bookings[0];
+  assert.equal(b.channel, 'agoda');
+  assert.equal(b.payout, 484.06); assert.equal(b.total, 592.92); assert.equal(b.platformFee, 108.86);
+  assert.equal(b.accommodation, 592.92); assert.equal(b.nightly, 296); assert.equal(b.feeEstimated, undefined);
+  // without the Agoda price fields the fee is still an estimate on the amount
+  const e = revisionToBookings(rev({ unique_id: 'AGO-2', ota_name: 'Agoda', ota_commission: null, amount: '484.06', services: [], rooms: [Object.assign({}, room, { meta: {} })] }), ctx()).bookings[0];
+  assert.equal(e.total, 484.06); assert.equal(e.feeEstimated, true);
+});
+
 test('stripRevision and revisionAttrs: no card data kept; API shape unwrapped', () => {
   const s = stripRevision(rev());
   assert.equal(s.guarantee, undefined);
