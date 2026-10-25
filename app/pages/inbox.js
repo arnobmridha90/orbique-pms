@@ -926,9 +926,17 @@
       '<input type="file" hidden data-in="audio" accept="audio/*">' +
       '</div>';
   }
+  /* why routesFor(c) found nothing, in words the team can act on */
+  function noRouteWhy(c) {
+    var cfg = liveCfg() || {}, b = bk(c), phone = c.wa || (b && b.guest && b.guest.phone) || (c.contact && c.contact.phone);
+    var site = b && VIA[b.channel] && /^(booking|airbnb|expedia)$/.test(b.channel) ? VIA[b.channel] : null;
+    if (site && !(b.channex && b.channex.bookingId)) return 'This ' + site + ' booking was entered by hand, so it is not linked to the ' + site + ' chat. Message the guest from ' + site + ' itself' + (phone ? ', or connect WhatsApp under Inbox settings.' : '.');
+    if (phone && !(cfg.whatsapp && cfg.whatsapp.configured && cfg.whatsapp.number)) return 'WhatsApp is not connected yet, so the guest\'s phone number cannot be used. Connect it under Inbox settings.';
+    return 'No way to reach this guest yet: add a phone number to the booking.';
+  }
   function routeHTML(c) {
     var rs = routesFor(c), r = routeOf(c), cfg = liveCfg();
-    if (!rs.length) return O.icon('alert') + '<span class="ellipsis">No way to reach this guest yet: add a phone number to the booking</span>';
+    if (!rs.length) { var why = noRouteWhy(c); return O.icon('alert') + '<span class="ellipsis" title="' + esc(why) + '">' + esc(why) + '</span>'; }
     var pick = rs.length > 1 ? '<label class="sr-only" for="ib-via">Send by</label><select id="ib-via" class="select" data-f="via">' + rs.map(function (x) { return '<option value="' + x.via + '"' + (x === r ? ' selected' : '') + '>' + esc(x.label) + (x.open ? '' : ' (closed)') + '</option>'; }).join('') + '</select>'
       : '<span class="ellipsis">' + esc(r.label) + '</span>';
     var gl = guestLang(c), on = !!live.xl[c.id];
@@ -1217,7 +1225,7 @@
         if (files.length) { U.toast('Photos, files and voice notes cannot go to guests from Orbique yet. Send them as an internal note, or from WhatsApp on your phone.', 'bad'); return; }
         if (!text) return;
         var r = routeOf(c);
-        if (!r) { U.toast('There is no way to reach this guest yet. Add their phone number to the booking.', 'bad'); return; }
+        if (!r) { U.toast(noRouteWhy(c), 'bad'); return; }
         if (!r.open) { U.toast(r.why, 'bad'); return; }
         if (live.busy['send' + c.id]) return;
         var cfg = liveCfg();
