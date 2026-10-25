@@ -114,6 +114,13 @@ export function stripRevision(rev) {
   return r;
 }
 
+/** Agoda's selling price over what it pays the property (refsell_amt / net_inclusive_amt, both in cents), or 0 when not given. */
+function agodaSellRatio(room) {
+  const m = isObj(room && room.meta) ? room.meta : {};
+  const sell = num(m.refsell_amt), net = num(m.net_inclusive_amt);
+  return sell > 0 && net > 0 && sell >= net && sell < net * 2 ? sell / net : 0;
+}
+
 function priceOf(item) { return money(item && (item.total_price !== undefined ? item.total_price : item.amount !== undefined ? item.amount : item.price)); }
 const matches = (item, re) => re.test(String((item && item.name) || '') + ' ' + String((item && item.type) || ''));
 
@@ -165,7 +172,7 @@ export function revisionToBookings(rev, ctx = {}) {
     if (!unitTypeId) problems.push({ kind: 'unmapped_room', room: i, roomTypeId: room.room_type_id || null });
     if (!ratePlanId) problems.push({ kind: 'unmapped_rate', room: i, ratePlanId: room.rate_plan_id || null });
     const days = isObj(room.days) ? Object.values(room.days) : [];
-    const accommodation = days.length ? money(days.reduce((a, v) => a + num(v), 0)) : money(room.amount);
+    let accommodation = days.length ? money(days.reduce((a, v) => a + num(v), 0)) : money(room.amount);
     const services = (Array.isArray(room.services) ? room.services : []).concat(i === 0 && Array.isArray(rev.services) ? rev.services : []);
     const cleaningFee = money(services.filter((s) => matches(s, /clean/i)).reduce((a, s) => a + priceOf(s), 0));
     const taxes = (Array.isArray(room.taxes) ? room.taxes : []).concat(Array.isArray(room.collected_taxes) ? room.collected_taxes : []);
@@ -176,7 +183,16 @@ export function revisionToBookings(rev, ctx = {}) {
     const occ = isObj(room.occupancy) ? room.occupancy : isObj(rev.occupancy) ? rev.occupancy : {};
     const guests = Math.max(1, Math.round(num(occ.adults) + num(occ.children)) || 1);
     const feePct = FEE_PCT[channel] !== undefined ? FEE_PCT[channel] : 0.15;
-    const platformFee = commission !== null ? money(commission * share) : Math.round(accommodation * feePct);
+    let platformFee = commission !== null ? money(commission * share) : Math.round(accommodation * feePct);
+    // Agoda's amounts are what the property receives; its price to the guest is refsell_amt, so the fee is the difference
+    const sellRatio = channel === 'agoda' && commission === null ? agodaSellRatio(room) : 0;
+    let payout = collect === 'property' ? total : money(total - platformFee);
+    if (sellRatio) {
+      payout = total;
+      accommodation = money(accommodation * sellRatio);
+      total = money(total * sellRatio);
+      platformFee = money(total - payout);
+    }
     const times = (ctx.checkTimes && ctx.checkTimes(unitTypeId)) || {};
     const b = {
       id: (ctx.recordIds && ctx.recordIds[i]) || (ctx.newId ? ctx.newId(i) : newBookingId()),
@@ -201,14 +217,14 @@ export function revisionToBookings(rev, ctx = {}) {
       total,
       revenue: money(accommodation + cleaningFee),
       platformFee,
-      payout: collect === 'property' ? total : money(total - platformFee),
+      payout,
       status,
       otaNotes
     };
     if (validTime(rev.arrival_hour)) b.arrivalHour = rev.arrival_hour;
     if (groupRef) b.groupRef = groupRef;
     if (currency && currency !== 'MYR') b.currency = currency;
-    if (commission === null) b.feeEstimated = true;
+    if (commission === null && !sellRatio) b.feeEstimated = true;
     if (collect) b.paymentCollect = collect;
     if (collect !== 'property') { b.paidAt = createdAt.slice(0, 10); b.payMethod = 'Paid via ' + (CHANNEL_NAME[channel] || 'the platform'); }
     if (status === 'cancelled') b.cancelledAt = ctx.today || todayMY(ctx.now || Date.now());
