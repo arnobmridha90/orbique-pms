@@ -87,6 +87,35 @@ do $$ declare v jsonb; begin
   if v->1->>'undoneAt' is distinct from '2026-10-24T12:00' then raise exception 'a stale copy un-did the undo: %', v->1; end if;
   raise notice 'ok: an undone push stays undone, newest first';
 end $$;
+-- Undo of PA hands its night on to the later PB and stamps both; a device that missed it saves stale copies of both:
+-- PA stays undone and PB keeps the hand-off, so undoing PB later puts back RM250, not PA's RM300
+select pg_temp.save('{"units":{},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","nights":{"2026-11-01":{"from":300,"to":320}}},{"id":"PA","at":"2026-08-01T10:00","pid":"p1","nights":{"2026-11-01":{"from":250,"to":300}}}]}');
+select pg_temp.save('{"units":{},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","changedAt":"2026-10-26T08:00","nights":{"2026-11-01":{"from":250,"to":320}}},{"id":"PA","at":"2026-08-01T10:00","pid":"p1","undoneAt":"2026-10-26T08:00","changedAt":"2026-10-26T08:00","nights":{"2026-11-01":{"from":250,"to":300}}}]}');
+select pg_temp.save('{"units":{"p3":{"costs":{"rent":10},"updatedAt":"2026-10-26T08:30"}},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","nights":{"2026-11-01":{"from":300,"to":320}}},{"id":"PA","at":"2026-08-01T10:00","pid":"p1","nights":{"2026-11-01":{"from":250,"to":300}}}]}');
+do $$ declare v jsonb; a jsonb; b jsonb; begin
+  v := pg_temp.saved();
+  select e into a from jsonb_array_elements(v->'pushes') e where e->>'id' = 'PA';
+  select e into b from jsonb_array_elements(v->'pushes') e where e->>'id' = 'PB';
+  if a->>'undoneAt' is distinct from '2026-10-26T08:00' then raise exception 'PA lost its undo: %', a; end if;
+  if b->'nights'->'2026-11-01'->>'from' is distinct from '250' then raise exception 'PB lost the hand-off: %', b; end if;
+  if v->'units'->'p3' is null then raise exception 'the stale save lost its own unit: %', v->'units'; end if;
+  raise notice 'ok: a stale save keeps the undo and the hand-off it missed';
+end $$;
+-- neither undone: the copy changed last wins, the new one on a tie
+select pg_temp.save('{"units":{},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","changedAt":"2026-10-26T09:00","nights":{"2026-11-01":{"from":260,"to":320}}}]}');
+do $$ begin
+  if (select e->'nights'->'2026-11-01'->>'from' from jsonb_array_elements(pg_temp.saved()->'pushes') e where e->>'id' = 'PB') is distinct from '260' then raise exception 'a newer change of PB lost'; end if;
+  raise notice 'ok: the push record changed last wins';
+end $$;
+-- a record without an id (the app never writes one) is kept once, not doubled on every save
+select pg_temp.save('{"units":{},"pushes":[{"at":"2026-08-03T11:00","pid":"p1","n":1}]}');
+select pg_temp.save(pg_temp.saved()::text);
+select pg_temp.save(pg_temp.saved()::text);
+do $$ declare k int; begin
+  select count(*) into k from jsonb_array_elements(pg_temp.saved()->'pushes') e where not (e ? 'id');
+  if k <> 1 then raise exception 'records without an id: %', k; end if;
+  raise notice 'ok: a record without an id is not doubled';
+end $$;
 -- at most 30, newest first
 select pg_temp.save((select jsonb_build_object('units', '{}'::jsonb, 'pushes', jsonb_agg(jsonb_build_object('id', 'Q' || g, 'at', '2026-09-' || lpad(g::text, 2, '0') || 'T10:00') order by g desc))::text from generate_series(1, 30) g));
 do $$ declare v jsonb; begin

@@ -168,6 +168,8 @@ function daysBetween(a, b) { return Math.round((ms(b) - ms(a)) / 864e5); }
 function group3(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 function round10(x) { return Math.round(x / 10) * 10; }
 function pct(x) { return Math.round(x * 100) + '%'; }
+/* the gap kept between unit types, exactly (settings keep it to a tenth of a percent) */
+function gapPct(x) { var v = Math.round(x * 1000) / 10; return (v % 1 ? v.toFixed(1) : String(v)) + '%'; }
 function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
 /* a chance in words for the middle of a sentence: 'about a 6 in 10 chance', 'about an even chance' */
 function chanceNoun(p) {
@@ -263,7 +265,7 @@ function settings(over) {
   s.minFactor = clamp(s.minFactor, 0.05, 1);
   s.maxFactor = Math.max(1, s.maxFactor);
   s.rounding = s.rounding > 0 ? s.rounding : 1;
-  s.tierGap = clamp(s.tierGap, 0, 1);
+  s.tierGap = Math.round(clamp(s.tierGap, 0, 1) * 1000) / 1000;
   s.historyPrior = Math.max(0, s.historyPrior);
   s.marketOcc = clamp(s.marketOcc, 0.05, 1);
   /* the lead-time curve: never falling, ending at 1 */
@@ -502,14 +504,17 @@ function prepare(input) {
   m.pace = pace;
 
   /* the building's other unit types: the tier-order check, and the limits that keep this unit between them (better:
-     priced above this unit, unless told) */
-  m.tiers = [];
+     priced above this unit, unless told). A type whose usual price is within a rounding step (or 1%) of this unit's is a
+     peer: no order is kept against it */
+  m.tiers = []; m.peers = [];
   (input.otherTiers || []).forEach(function (t) {
     if (!t || !t.prices) return;
-    var mine = [], theirs = [];
+    var mine = [], theirs = [], name = String(t.name || 'another unit type');
     all.forEach(function (n) { var tp = num(t.prices[n.iso]); if (tp > 0) { theirs.push(tp); if (n.current) mine.push(n.current); } });
     if (!theirs.length) return;
-    m.tiers.push({ name: String(t.name || 'another unit type'), prices: t.prices, better: t.better != null ? !!t.better : median(theirs) > (median(mine) || P0) });
+    var mm = median(mine) || P0, mt = median(theirs);
+    if (t.better == null && Math.abs(mt - mm) < Math.max(s.rounding, 0.01 * mm) - 1e-9) { m.peers.push(name); return; }
+    m.tiers.push({ name: name, prices: t.prices, better: t.better != null ? !!t.better : mt > mm });
   });
 
   /* the open nights the planner prices. Booked nights are certain unless their stay cancels (cancelRate); a cancelled
@@ -579,6 +584,11 @@ function prepare(input) {
   m.nVar = 0; m.nFloorLo = 0; m.nCeilHi = 0;   /* nights with a choice of prices; of them, the ones the floor or ceiling cut */
   m.nTier = 0; m.tierUp = {}; m.tierDn = {};   /* nights the other unit types limited, and which types did */
   m.nTierHi = 0; m.nTierLo = 0;               /* of them, the nights whose highest or lowest price they cut */
+  /* nights where the gap does not fit between a cheaper and a better type (the order only, or one price when not even
+     that fits), and nights where the owner's floor or ceiling, or the range of prices tried, leaves no price inside the
+     limits (the plans take the nearest price allowed): counts and the types involved */
+  m.squeeze = { n: 0, one: 0, up: {}, dn: {} };
+  m.lost = { floor: 0, low: 0, ceiling: 0, high: 0, up: {}, dn: {} };
   open.forEach(function (n, x) {
     cOff[x] = cP.length;
     if (m.keepPeaks && n.peak) {
@@ -593,20 +603,40 @@ function prepare(input) {
     if (hi < lo) { lo = hi = kF > kC ? kF : clamp(Math.round(bp / step), kF, kC); }
     else {
       m.nVar++; if (kF > lo0) m.nFloorLo++; if (kC < hi0) m.nCeilHi++;
-      var tHi = Infinity, tLo = -Infinity, up = [], dn = [];
+      /* tHi, tLo: the gap limits on the step; oHi, oLo: the order only (strictly below, strictly above) */
+      var tHi = Infinity, tLo = -Infinity, oHi = Infinity, oLo = -Infinity, pHi = Infinity, pLo = -Infinity, up = [], dn = [];
       m.tiers.forEach(function (t) {
         var tp = num(t.prices[n.iso]), lim = t.lim[x]; if (!(tp > 0)) return;
-        if (t.better) { var c1 = Math.min(Math.floor(lim / step + 1e-9), Math.ceil(tp / step - 1e-9) - 1); if (c1 < tHi) tHi = c1; up.push(t.name); }
-        else { var c2 = Math.max(Math.ceil(lim / step - 1e-9), Math.floor(tp / step + 1e-9) + 1); if (c2 > tLo) tLo = c2; dn.push(t.name); }
+        if (t.better) {
+          var o1 = Math.ceil(tp / step - 1e-9) - 1, c1 = Math.min(Math.floor(lim / step + 1e-9), o1);
+          if (c1 < tHi) tHi = c1; if (o1 < oHi) oHi = o1; if (tp < pHi) pHi = tp; up.push(t.name);
+        } else {
+          var o2 = Math.floor(tp / step + 1e-9) + 1, c2 = Math.max(Math.ceil(lim / step - 1e-9), o2);
+          if (c2 > tLo) tLo = c2; if (o2 > oLo) oLo = o2; if (tp > pLo) pLo = tp; dn.push(t.name);
+        }
       });
-      if (tLo <= tHi && (tHi < hi || tLo > lo)) {
+      /* a cheaper and a better type too close for the gap: the order only; too close for a price between them on the
+         step: one price, the step nearest today's when it is between them, else nearest halfway (the lower on a tie) */
+      if (tLo > tHi) {
+        m.squeeze.n++;
+        up.forEach(function (nm) { m.squeeze.up[nm] = 1; }); dn.forEach(function (nm) { m.squeeze.dn[nm] = 1; });
+        tLo = oLo; tHi = oHi;
+        if (tLo > tHi) { var mid = n.current > pLo && n.current < pHi ? n.current : (pLo + pHi) / 2; tLo = tHi = Math.max(1, Math.ceil(mid / step - 0.5 - 1e-9)); m.squeeze.one++; }
+      }
+      if (tHi < hi || tLo > lo) {
         var lo2 = Math.max(lo, tLo), hi2 = Math.min(hi, tHi);
-        if (lo2 > hi2) lo2 = hi2 = tLo > hi ? hi : lo;
-        if (hi2 < hi) m.nTierHi++;
-        if (lo2 > lo) m.nTierLo++;
-        lo = lo2; hi = hi2; m.nTier++;
-        if (tHi < hi0) up.forEach(function (nm) { m.tierUp[nm] = 1; });
-        if (tLo > lo0) dn.forEach(function (nm) { m.tierDn[nm] = 1; });
+        if (lo2 > hi2) {
+          /* the floor or ceiling, or the range tried, wins: the window's end nearest the limits */
+          if (tLo > hi) { lo2 = hi2 = hi; if (kC < hi0 && hi === kC) m.lost.ceiling++; else m.lost.high++; dn.forEach(function (nm) { m.lost.dn[nm] = 1; }); }
+          else { lo2 = hi2 = lo; if (kF > lo0 && lo === kF) m.lost.floor++; else m.lost.low++; up.forEach(function (nm) { m.lost.up[nm] = 1; }); }
+        } else {
+          if (hi2 < hi) m.nTierHi++;
+          if (lo2 > lo) m.nTierLo++;
+          m.nTier++;
+          if (tHi < hi0) up.forEach(function (nm) { m.tierUp[nm] = 1; });
+          if (tLo > lo0) dn.forEach(function (nm) { m.tierDn[nm] = 1; });
+        }
+        lo = lo2; hi = hi2;
       }
     }
     for (var c = lo; c <= hi; c++) cP.push(c * step);
@@ -881,7 +911,7 @@ function prosCons(m, st, ctx) {
     var verb = ctx.isCurrent ? ' costs ' : ' would cost ';
     st.tierAbove.forEach(function (t) { cons.push('On ' + plural(t.nights, 'night') + ' this unit' + verb + 'as much as or more than ' + t.name + ', a better unit type in this building.'); });
     st.tierBelow.forEach(function (t) { cons.push('On ' + plural(t.nights, 'night') + ' this unit' + (ctx.isCurrent ? ' costs ' : ' would cost ') + 'no more than ' + t.name + ', a cheaper unit type in this building.'); });
-    var gapW = pct(m.s.tierGap), better = {};
+    var gapW = gapPct(m.s.tierGap), better = {};
     m.tiers.forEach(function (t) { better[t.name] = t.better; });
     st.tierClose.forEach(function (t) {
       cons.push('On ' + plural(t.nights, 'night') + ' this unit' + (ctx.isCurrent ? ' is' : ' would be') + ' priced within ' + gapW + ' of ' + t.name + ', ' + (better[t.name] ? 'a better' : 'a cheaper') + ' unit type in this building.');
@@ -1227,11 +1257,27 @@ function plan(input) {
     if (held) res.notes.push(plural(held, 'peak night is', 'peak nights are') + ' held at the lowest or highest price allowed instead of today\'s price.');
   }
   /* the building's other unit types limited the prices */
+  var gapW = gapPct(m.s.tierGap);
   if (m.nTier && (tu.length || td.length)) {
-    res.notes.push('To keep the unit types in this building in order' + (m.s.tierGap > 0 ? ' and at least ' + pct(m.s.tierGap) + ' apart (or as far apart as today, where that is less)' : '') +
+    res.notes.push('To keep the unit types in this building in order' + (m.s.tierGap > 0 ? ' and at least ' + gapW + ' apart (or as far apart as today, where that is less)' : '') +
       ', the plans keep this unit ' + [tu.length ? 'below ' + joinWords(tu) : '', td.length ? 'above ' + joinWords(td) : ''].filter(Boolean).join(' and ') +
       '. That limits the prices of ' + plural(m.nTier, 'night') + '.');
   }
+  /* the cheaper and the better types too close for the gap, or for any price between them */
+  var sq = m.squeeze;
+  if (sq.n) {
+    var sqW = joinWords(Object.keys(sq.dn)) + ' and ' + joinWords(Object.keys(sq.up));
+    if (sq.n > sq.one) res.notes.push('On ' + plural(sq.n - sq.one, 'night') + ' ' + sqW + ' are too close in price to keep this unit ' + gapW + ' from both, so there the plans only keep it between them.');
+    if (sq.one) res.notes.push('On ' + plural(sq.one, 'night') + ' no price in steps of ' + money(m.step) + ' fits between ' + sqW + ', so there the plans use a single price, the step nearest today\'s price or halfway.');
+  }
+  /* the owner's floor or ceiling, or the range of prices tried, leaves no price that keeps the order and the gap */
+  var ls = m.lost, upW = joinWords(Object.keys(ls.up)), dnW = joinWords(Object.keys(ls.dn));
+  if (ls.floor) res.notes.push('On ' + plural(ls.floor, 'night') + ' your lowest price, ' + money(m.limits.floor) + ', leaves no room under ' + upW + ', so the plans use it there.');
+  if (ls.low) res.notes.push('On ' + plural(ls.low, 'night') + ' the lowest price tried (' + pct(m.s.minFactor) + ' of today\'s) leaves no room under ' + upW + ', so the plans use it there.');
+  if (ls.ceiling) res.notes.push('On ' + plural(ls.ceiling, 'night') + ' your highest price, ' + money(m.limits.ceiling) + ', leaves no room over ' + dnW + ', so the plans use it there.');
+  if (ls.high) res.notes.push('On ' + plural(ls.high, 'night') + ' the highest price tried (' + pct(m.s.maxFactor) + ' of today\'s) leaves no room over ' + dnW + ', so the plans use it there.');
+  /* types priced like this unit */
+  if (m.peers.length) res.notes.push(joinWords(m.peers) + (m.peers.length === 1 ? ' has' : ' have') + ' about the same usual price as this unit, so the plans keep no order against ' + (m.peers.length === 1 ? 'it' : 'them') + '.');
   /* the workspace's last-minute deal still applies on top of these prices; the forecast counts it */
   if (m.dealN) {
     res.notes.push('Your last-minute deal takes ' + pct(m.deal.pct) + ' off ' + (m.dealN === m.n ? (m.n === 1 ? 'the open night' : 'every open night') : m.dealN + ' of the ' + plural(m.n, 'open night')) + ' when ' + (m.dealN === 1 ? 'it is' : 'they are') + ' booked in the last ' + plural(m.deal.days, 'day') +

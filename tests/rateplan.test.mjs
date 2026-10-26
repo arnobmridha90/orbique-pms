@@ -738,6 +738,80 @@ test('the building\'s unit types stay apart: at least tierGap, today\'s gap wher
   assert.ok(r0.notes.some((t) => /^To keep the unit types in this building in order, the plans/.test(t)), r0.notes.join(' | '));
 });
 
+test('unit types too close for the gap: the order still holds, with notes; peers and lost nights are named', () => {
+  const ns = nights('2026-10-27', 90, BOOKED);
+  const open = ns.filter((n) => n.status === 'open');
+  const by = (f) => Object.fromEntries(ns.map((n) => [n.iso, f(n)]));
+  const inOrder = (r, lo, hi, skip) => {
+    let bad = 0;
+    for (const o of r.options) for (const n of open) {
+      if (skip && skip.has(n.iso)) continue;
+      const p = o.prices[n.iso]; if (!(p > 0)) continue;
+      if (!(p > lo[n.iso] && p < hi[n.iso])) bad++;
+    }
+    return bad;
+  };
+  /* a middle type squeezed: Standard RM10 under today's price, Premium RM12 over it, today's price off the step */
+  const std = by((n) => n.current - 10), prm = by((n) => n.current + 12);
+  const off = ns.map((n) => Object.assign({}, n, { current: n.current + 1 }));
+  const rq = R.plan(input({ profitPerMonth: 800, nights: off, otherTiers: [{ name: 'Standard', prices: std, better: false }, { name: 'Premium', prices: prm, better: true }] }));
+  const peaksQ = new Set(rq.calibration.peaks.map((p) => p.iso));
+  assert.equal(inOrder(rq, std, prm, peaksQ), 0);
+  assert.ok(rq.notes.some((t) => /^On \d+ nights Standard and Premium are too close in price to keep this unit 5% from both, so there the plans only keep it between them\.$/.test(t)), rq.notes.join(' | '));
+  /* the same with no price today on the middle type, and with today's price out of order */
+  const none = ns.map((n) => Object.assign({}, n, { current: 0 }));
+  const rn = R.plan(input({ profitPerMonth: 800, nights: none, basePrice: 230, otherTiers: [{ name: 'Standard', prices: std, better: false }, { name: 'Premium', prices: prm, better: true }] }));
+  /* 31 Dec: Standard's RM555 is above the highest price tried for a unit with no price (180% of RM230), and a note says so */
+  assert.equal(inOrder(rn, std, prm, new Set(['2026-12-31'])), 0);
+  assert.ok(rn.notes.includes("On 1 night the highest price tried (180% of today's) leaves no room over Standard, so the plans use it there."), rn.notes.join(' | '));
+  const low = ns.map((n) => Object.assign({}, n, { current: n.current - 20 }));
+  const rl = R.plan(input({ profitPerMonth: 800, nights: low, otherTiers: [{ name: 'Standard', prices: std, better: false }, { name: 'Premium', prices: prm, better: true }] }));
+  const peaksL = new Set(rl.calibration.peaks.map((p) => p.iso));
+  for (const o of rl.options.filter((x) => !x.keys.includes('current'))) for (const n of open) if (!peaksL.has(n.iso)) assert.ok(o.prices[n.iso] > std[n.iso] && o.prices[n.iso] < prm[n.iso], o.name + ' ' + n.iso);
+  /* rounding 10 on a Kozi-like ladder: Standard 230, Boutique 235 today, Premium 250 */
+  const ns2 = ns.map((n) => Object.assign({}, n, { current: 235 }));
+  const s2 = by(() => 230), p2 = by(() => 250);
+  const r10 = R.plan(input({ profitPerMonth: 800, nights: ns2, assumptions: { rounding: 10 }, otherTiers: [{ name: 'Standard', prices: s2, better: false }, { name: 'Premium', prices: p2, better: true }] }));
+  assert.equal(inOrder(r10, s2, p2), 0);
+  for (const o of r10.options.filter((x) => !x.keys.includes('current'))) for (const n of open) assert.equal(o.prices[n.iso], 240, o.name + ' ' + n.iso);
+  /* no step between them at all: one price, and a note */
+  const p3 = by(() => 238);
+  const r1 = R.plan(input({ profitPerMonth: 800, nights: ns2, assumptions: { rounding: 10 }, otherTiers: [{ name: 'Standard', prices: s2, better: false }, { name: 'Premium', prices: p3, better: true }] }));
+  assert.ok(r1.notes.some((t) => /^On \d+ nights no price in steps of RM 10 fits between Standard and Premium, so there the plans use a single price, the step nearest today's price or halfway\.$/.test(t)), r1.notes.join(' | '));
+  /* RM235 is halfway between the steps 230 and 240: the lower one, so the unit is never dearer than Premium */
+  for (const o of r1.options.filter((x) => !x.keys.includes('current'))) for (const n of open) assert.equal(o.prices[n.iso], 230, o.name + ' ' + n.iso);
+});
+
+test('unit types: a type priced like this one is a peer, the floor and the range tried can win, and the gap is written exactly', () => {
+  const ns = nights('2026-10-27', 90, BOOKED);
+  const same = Object.fromEntries(ns.map((n) => [n.iso, n.current]));
+  const rp = R.plan(input({ profitPerMonth: 800, otherTiers: [{ name: 'Twin', prices: same }] }));
+  assert.ok(rp.notes.includes('Twin has about the same usual price as this unit, so the plans keep no order against it.'), rp.notes.join(' | '));
+  for (const o of rp.options) {
+    assert.ok(!o.cons.some((t) => /Twin/.test(t)), o.cons.join(' | '));
+    assert.ok(!o.pros.some((t) => /in order/.test(t)), o.pros.join(' | '));
+  }
+  /* the floor above what keeps this unit under Deluxe */
+  const deluxe = Object.fromEntries(ns.map((n) => [n.iso, n.current + 20]));
+  const rf = R.plan(input({ profitPerMonth: 800, floor: 250, otherTiers: [{ name: 'Deluxe', prices: deluxe, better: true }] }));
+  assert.ok(rf.notes.some((t) => /^On \d+ nights your lowest price, RM 250, leaves no room under Deluxe, so the plans use it there\.$/.test(t)), rf.notes.join(' | '));
+  const kept = rf.notes.find((t) => /^To keep the unit types/.test(t));
+  const nKept = kept ? +kept.match(/limits the prices of (\d+) night/)[1] : 0;
+  const nLost = +rf.notes.find((t) => /your lowest price/.test(t)).match(/^On (\d+) night/)[1];
+  assert.ok(nLost > 0 && nKept + nLost <= 82, kept + ' / ' + nLost);
+  /* the range tried: Deluxe far below today's price */
+  const cheapD = Object.fromEntries(ns.map((n) => [n.iso, Math.round(n.current * 0.5)]));
+  const rr = R.plan(input({ profitPerMonth: 800, otherTiers: [{ name: 'Deluxe', prices: cheapD, better: true }] }));
+  assert.ok(rr.notes.some((t) => /^On \d+ nights the lowest price tried \(60% of today's\) leaves no room under Deluxe, so the plans use it there\.$/.test(t)), rr.notes.join(' | '));
+  assert.ok(!rr.notes.some((t) => /^To keep the unit types/.test(t)), rr.notes.join(' | '));
+  /* a gap of 4.5% is written as 4.5%, one under 0.05% counts as none */
+  const better = Object.fromEntries(ns.map((n) => [n.iso, n.current + 40]));
+  const r45 = R.plan(input({ profitPerMonth: 800, assumptions: { tierGap: 0.045 }, otherTiers: [{ name: 'Deluxe', prices: better, better: true }] }));
+  assert.ok(r45.notes.some((t) => /at least 4\.5% apart/.test(t)), r45.notes.join(' | '));
+  const r0 = R.plan(input({ profitPerMonth: 800, assumptions: { tierGap: 0.0004 }, otherTiers: [{ name: 'Deluxe', prices: better, better: true }] }));
+  assert.ok(r0.notes.some((t) => /^To keep the unit types in this building in order, the plans/.test(t)), r0.notes.join(' | '));
+});
+
 test('money in sentences comes from input.money when given', () => {
   const r = R.plan(input({ profitPerMonth: 800, money: (n) => 'MYR' + Math.round(n), draws: 300 }));
   assert.ok(r.options[0].pros.concat(r.options[0].cons).some((t) => /MYR800/.test(t)));

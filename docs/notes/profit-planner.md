@@ -32,7 +32,7 @@ possible for its occupancy) and recommends the one with the best chance of reach
 | `tests/rateplan.test.mjs` | `node --test` unit tests for the engine; add to the "Unit tests" step in `.github/workflows/ci.yml`. |
 | `app/pages/planner.js` | The page (`O.page('planner', …)`), styles with `O.css('planner', …)` like the other pages. |
 | `app/core.js` | Nav entry after `pricing` in the Manage group, owner-only (`O.OWNER_ONLY.planner = true`: it shows costs and profit), the label in all four nav dictionaries (en "Profit Planner" in Title Case like the other English labels, bn, ms, zh), an icon, and the `ratePlanner` blob registered as a `config` blob. It also registers `lastMinuteDeal` (the workspace's last-minute deal, which the channel manager applies) as a `config` blob, so the page can read it. |
-| `app/pages/pricing.js` | Knows the planner's `how: 'planner'`: the night panel says "Set by the profit planner", the table "Open · profit planner". A "Profit Planner" button in the page's own toolbar, next to Auto-apply, opens the planner for the same unit (the top bar keeps its two buttons, so it does not wrap on tablets and phones). |
+| `app/pages/pricing.js` | Knows the planner's `how: 'planner'`: the night panel says "Set by the profit planner", the table "Open · profit planner". A "Profit Planner" button in the page's own toolbar, next to Auto-apply, opens the planner for the same unit (the top bar keeps its two buttons, so it does not wrap on tablets and phones). Below 560px it is a 40px icon button (named "Profit Planner") beside the unit select, so the date range and Auto-apply keep their row. |
 | `supabase/migrations/0016_planner_owner_only.sql` | The `ratePlanner` blob is read and written by owners only (RLS on `public.blobs`), and an app save of it is merged with what is saved (below). Applies on deploy; re-runnable. |
 | `tests/sql/planner.sql` | The 0016 rules and the merge, run by `tests/sql/run.sh` ("== profit planner (0016)"), which also re-runs 0016 to check it is re-runnable. |
 
@@ -44,10 +44,11 @@ D.ratePlanner = {
                            horizon: 'next90' | 'next30' | 'next60' | 'next180' | 'YYYY-MM-DD' (an end date),
                            keepPeaks: true, floor: 200 | null, ceiling: 600 | null,   // price limits, RM a night
                            updatedAt, by } },
-  pushes: [ { id, at, by, pid, typeId, planId, option, n,
+  pushes: [ { id, at, by, pid, typeId, planId, option, name, n,   // name: the card's name ("Balanced and Most profit")
               nights: { iso: { from, to, own, how, by, at } },   // own, how, by and at only for a night that had its own
                                                                 // price before (by and at: who set it and when)
-              undoneAt, undoneBy, undoneN, handedN, planN } ]   // newest first, at most 30
+              undoneAt, undoneBy, undoneN, handedN, planN,
+              changedAt } ]   // set by Undo on the push it undoes and on a later push it hands nights to; newest first, at most 30
 }
 ```
 
@@ -55,7 +56,10 @@ A blob is last-write-wins, so a device that missed another device's push (its li
 push record when it saved costs, and the pushed prices could no longer be undone. Migration 0016 therefore merges every
 app save of `ratePlanner` with what is saved (`blobs_planner_merge`, a `before update` trigger): every unit either copy
 has, the one saved last (`updatedAt`) where both have it; every push record either copy has, by `id`, the undone copy
-where only one is undone; newest first, at most 30. The merged value comes back to every device through the live
+where only one is undone (an Undo is never lost), else the copy changed last (`changedAt`, else `undoneAt`, else `at`;
+the new copy on a tie), so a device that missed an Undo cannot bring back a stale copy of the later push the Undo handed
+nights to. Saved records without an `id` are dropped (the app gives every push one). Newest first, at most 30. ISO
+times compare byte by byte (`collate "C"`), whatever the database's collation. The merged value comes back to every device through the live
 connection like any other change. Writes from the server (no signed-in user) are stored as sent. The practice copy has
 no server, so two tabs of it still work last-write-wins.
 
@@ -96,7 +100,8 @@ R.rng(seed)           the seeded generator (mulberry32), exported for tests
   costs: {…}, profitPerMonth: number,   // below 0 counts as 0, "cover all costs"
   assumptions: {…},                 // merged over DEFAULTS
   history: { sold, available, avgPaid, priceIndex } | null,   // this unit's own past nights (see Calibration)
-  otherTiers: [ { name, prices: {iso: price} } ],      // the building's other unit types, for the tier-order check
+  otherTiers: [ { name, prices: {iso: price}, better? } ],   // the building's other unit types, for the tier order;
+                                    // the page sends no `better`, so it is worked out from the usual (median) prices
   keepPeaks: true,                  // peak nights keep today's price in every option
   floor: null, ceiling: null,       // optional absolute limits (RM); the result's `limits` gives them as the prices
                                     // use them, on the rounding step ({floor: 205, ceiling: 295}; null when not set;
@@ -261,16 +266,33 @@ today's price, or `P0` for nights with none), in steps of `rounding` (RM5), insi
 with the building's other unit types that night and apart from them by `tierGap` (5%): at most `price / (1 + tierGap)`
 of every better type and at least `price · (1 + tierGap)` of every cheaper type, so the better type is at least 5%
 dearer than the cheaper one. Where the two are closer than that today, today's gap is the limit instead, so today's
-prices always stay allowed; and always strictly below a better type and strictly above a cheaper one. At `tierGap` 0
-the order alone is kept (one step apart). When that leaves no candidate, the night takes the price nearest to the
-window. Each type is still planned on its own, against the others' prices at the time, so pushing the recommended
-plan of each type in turn keeps the building's ladder (Standard below Boutique below Premium) with gaps of about
-`tierGap`: on the Kozi copy, pushing Standard, Boutique and Premium in turn left median gaps of RM15 and RM15 (today
-RM45 and RM40; one step, RM5, before the gap). A note says so: "To keep the unit types in this building in order and
-at least 5% apart (or as far apart as today, where that is less), the plans keep this unit below Deluxe and above
-Studio. That limits the prices of 75 nights." A plan's pro says the same; prices of the owner's own that break the
-order get a con ("would cost as much as or more than Deluxe", "no more than Studio"), and prices in order but closer
-than the limit another ("would be priced within 5% of Deluxe"). Peak nights kept at today's price are not moved. For each
+prices stay allowed when they are on the rounding step; and always strictly below a better type and strictly above a
+cheaper one. `tierGap` is kept to a tenth of a percent and written exactly ("4.5%"); at 0 the order alone is kept (one
+step apart). Which type is better is worked out from the usual (median) prices over the dates; a type whose usual price
+is within one rounding step (or 1%) of this unit's is a peer, with no order kept against it and a note ("Twin has about
+the same usual price as this unit, so the plans keep no order against it").
+
+When a cheaper and a better type are too close for the gap (no step fits both limits), that night keeps the order only,
+with a note ("On 75 nights Standard and Premium are too close in price to keep this unit 5% from both, so there the
+plans only keep it between them"); when no step fits strictly between them at all, the night takes one price, the step
+nearest today's price when it is between them, else nearest halfway (the lower step on a tie, so this unit is never
+dearer than the better type), and a note says so. When the owner's floor or ceiling, or the range of prices tried,
+leaves no price inside the limits, the night takes the end of that range nearest them (the floor and ceiling win), it
+is not counted in the order note, and its own note names the cause ("On 12 nights your lowest price, RM 250, leaves no
+room under Deluxe, so the plans use it there"; "the lowest price tried (60% of today's)"; "your highest price"; "the
+highest price tried (180% of today's)").
+
+Each type is still planned on its own, against the others' prices at the time, so the gap is a minimum, not a target.
+Pushing the recommended plan of each type in turn keeps the building's ladder (Standard below Boutique below Premium)
+with gaps of about `tierGap`: on the Kozi copy, pushing Standard, Boutique and Premium in turn left median gaps of RM15
+and RM15 (today RM45 and RM40; one step, RM5, before the gap), stable on a second round. Pushing Premium first left
+RM35 and RM45, but planning again lowers Boutique and Premium for two more rounds (Premium's average RM369, then 359,
+then 346) until every rung sits at the minimum gap (medians about 6.8% and 6.5%). A note says which limits applied: "To
+keep the unit types in this building in order and at least 5% apart (or as far apart as today, where that is less),
+the plans keep this unit below Deluxe and above Studio. That limits the prices of 75 nights." A plan's pro says the
+same only when every priced open night keeps the limits; prices that break the order get a con ("would cost as much as
+or more than Deluxe", "no more than Studio"), and prices in order but closer than the limit another ("would be priced
+within 5% of Deluxe"). Peak nights kept at today's price are not moved. For each
 candidate the mean selling chance over K = 48 parameter draws, `P̄(p)`, is computed once. For a value `λ` (RM placed on
 each extra night sold, on top of its profit) the night's price is
 
@@ -369,8 +391,12 @@ first. Numbers are compared as rounded, the way they are shown, so no sentence s
   below that, and "Little chance of …, less than 1 in 20" under 5%.
 - Losing money, only when the target is above 0 (with a target of 0 the chance above already says it).
 - Tier order: "On 4 nights this unit would cost as much as or more than Deluxe, a better unit type in this building",
-  or less than a cheaper one ("costs" for Today's prices). The plans keep the order (above), so this is for Today's
-  prices, your own mix, and peak nights kept at today's price.
+  or "no more than" a cheaper one ("costs" for Today's prices), and "would be priced within 5% of Deluxe" for prices in
+  order but inside the gap. The plans keep the order and the gap where they can (above), so these are for Today's
+  prices, your own mix, peak nights kept at today's price, and nights where the floor, ceiling or range tried wins or
+  the neighbouring types leave no room (each with its note). When every priced open night keeps the limits, a pro:
+  "Keeps the other unit types in this building in order, at least 5% apart (or as far apart as today, where that is
+  less)"; at `tierGap` 0, "Keeps the right order against the other unit types in this building".
 - The occupancy it needs against what is likely to sell and the market ("Needs 72% of nights sold to reach the target;
   few similar listings sell more than 75%"), and, when the plan's own forecast is above `marketOcc`, "treat this plan's
   numbers as optimistic".
@@ -427,7 +453,7 @@ first. Numbers are compared as rounded, the way they are shown, so no sentence s
 7. Preview: by month ("Profit in the month", with a total row for all the dates) and by night (date, today, new,
    change, status; the change column is left out on phones), toggle "Keep peak nights at today's price". Opening it
    scrolls its title to just below the top bar.
-8. Push history with Undo.
+8. Push history with Undo. Each row names the plan as its card did ("Balanced and Most profit"); the subtitle names the unit type when it has more than one unit, else the unit.
 9. Assumptions (collapsed): every `R.ASSUMPTIONS` value with its source and a reset, plus what calibration used. The
    summary ("1 value changed from the defaults") and "Reset all" follow every edit; the plans use the values straight
    away, and Save costs and target keeps them for next time.
@@ -498,13 +524,14 @@ Undo puts back the nights still at the push's price:
 - The confirm, the toast and the audit line name the units Undo writes ("for all 3 Deluxe units", "for Studio 3A only"
   when the type has other units) and the push's own plan when it goes back by itself.
 - A night a later push (not undone, same unit or type) changed again from this push's price is handed over: the later
-  push takes this push's `from`, so undoing it later puts back the price from before both, in any order.
+  push takes this push's `from` (and gets `changedAt`, for the save merge), so undoing it later puts back the price
+  from before both, in any order.
 - Nights changed by hand since keep their newer price and past nights are skipped; the confirm says how many, and for
   a unit type which units.
 - After the confirm closes it looks the push record up again by its id (the push history may have arrived from another
   device while the dialog was open, as new objects; if the record is gone it says to press Undo again) and checks again
   (a second Enter, or prices or rate plans that changed while it was open),
-  and the record is marked undone (`undoneAt`, `undoneN` unit nights, `handedN`, `planN` nights put back on the push's
+  and the record is marked undone (`undoneAt`, `changedAt`, `undoneN` unit nights, `handedN`, `planN` nights put back on the push's
   own plan by itself) only once every night shows its old price again (with another main plan now: the units have no
   own price left on those nights).
 

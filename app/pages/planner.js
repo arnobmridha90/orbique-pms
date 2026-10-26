@@ -252,7 +252,8 @@
         otherWords: others.length <= 3 ? joinWords(others.map(unitName)) + (others.length === 1 ? ' gets' : ' get') : 'the other ' + others.length + ' units get' };
     }
     if (t && mp) return { many: false, n: 1, short: unitName(P), line: 'Prices go to the ' + t.name + ' main rate plan', name: t.name, others: [], idle: [] };
-    return { many: false, n: 1, short: unitName(P) + ' only', line: 'Prices apply to this unit only', name: unitName(P), others: [], idle: [] };
+    /* "only" when the unit's type has other units, as Undo says it */
+    return { many: false, n: 1, short: unitName(P) + (t && histUnits(t) > 1 ? ' only' : ''), line: 'Prices apply to this unit only', name: unitName(P), others: [], idle: [] };
   }
 
   /* ------------------------------------------------------------------ saved data and drafts */
@@ -860,7 +861,7 @@
     var t = typeOf(P), list = pushList().filter(function (x) { return x.pid === P.id || (t && x.typeId === t.id); }).slice(0, 10), edit = canChange();
     var rows = list.map(function (x) {
       var isos = Object.keys(x.nights || {}).sort(), u = D.propById[x.pid];
-      var name = R.NAMES[x.option] || (x.option === 'custom' ? 'Your own mix' : 'Plan');
+      var name = x.name || R.NAMES[x.option] || (x.option === 'custom' ? 'Your own mix' : 'Plan');
       var undo = x.undoneAt ? '<span class="pill neutral">Undone ' + esc(d.fmt(x.undoneAt.slice(0, 10))) + '</span>'
         : '<button type="button" class="btn btn-ghost btn-sm" data-undo="' + esc(x.id) + '"' + (edit ? '' : ' disabled title="' + esc(WHY_CHANGE) + '"') + '>' + O.icon('refresh') + 'Undo</button>';
       return '<div class="pp-hrow' + (x.undoneAt ? ' undone' : '') + '"><div class="main"><div class="t">' + esc(name) + ' · ' + fmt.plural(x.n || isos.length, 'night') + (isos.length ? ' (' + esc(rangeText(isos)) + ')' : '') + '</div>' +
@@ -999,7 +1000,7 @@
     var isos = list.map(function (x) { return x.iso; }), s = card.stats, vs = cur && cur !== card ? cur.stats : null;
     /* "on every booking site" only when the unit's type is connected; the channel note below says what happens otherwise */
     var onSites = !!(O.channel && P.unitTypeId && O.channel.typeConnected(P.unitTypeId));
-    var lead = 'Change ' + fmt.plural(list.length, 'night') + ' for ' + (t ? t.name : P.name) + (sc.many ? ' (applies to ' + sc.typeWords + ')' : '') + (onSites ? ' on every booking site.' : ' in Orbique.');
+    var lead = 'Change ' + fmt.plural(list.length, 'night') + ' for ' + (sc.many ? t.name + ' (applies to ' + sc.typeWords + ')' : sc.short) + (onSites ? ' on every booking site.' : ' in Orbique.');
     /* the workspace's last-minute deal still applies on top, as the forecast counted it */
     var dealOn = {}, rd = v.res.deal;
     card.nightly.forEach(function (n) { if (n.deal) dealOn[n.iso] = 1; });
@@ -1059,7 +1060,7 @@
       if (x.own && x.at) { y.at = x.at; if (x.by != null) y.by = x.by; }   /* who set the old price and when, for Undo */
     });
     var b = ownBlob();
-    b.pushes.unshift({ id: O.uid('PP'), at: D.NOW, by: O.state.viewer, pid: P.id, typeId: t ? t.id : null, planId: mp ? mp.id : null, option: card.key, n: list.length, nights: nights });
+    b.pushes.unshift({ id: O.uid('PP'), at: D.NOW, by: O.state.viewer, pid: P.id, typeId: t ? t.id : null, planId: mp ? mp.id : null, option: card.key, name: card.key === 'custom' ? 'Your own mix' : card.name, n: list.length, nights: nights });
     if (b.pushes.length > 30) b.pushes.length = 30;
     if (!Array.isArray(D.priceLog)) D.priceLog = [];
     D.priceLog.unshift({ at: D.NOW, pid: P.id, n: list.length, by: (O.viewer() || {}).name || '', how: card.key === 'custom' ? 'Your own mix from the profit planner' : card.name + ' plan from the profit planner', first: isos[0], last: isos[isos.length - 1] });
@@ -1223,11 +1224,11 @@
       }
       u.hand.forEach(function (h) {
         var x = rec.nights[h.iso], y = h.rec.nights[h.iso];
-        y.from = x.from;
+        y.from = x.from; h.rec.changedAt = D.NOW;   /* the later push changed too: the save merge keeps the newer copy */
         if (x.own) { y.own = true; y.how = x.how || 'manual'; if (x.at) y.at = x.at; else delete y.at; if (x.by != null) y.by = x.by; else delete y.by; }
         else { delete y.own; delete y.how; delete y.at; delete y.by; }
       });
-      rec.undoneAt = D.NOW; rec.undoneBy = O.state.viewer; rec.undoneN = back.length;
+      rec.undoneAt = D.NOW; rec.undoneBy = O.state.viewer; rec.undoneN = back.length; rec.changedAt = D.NOW;
       if (u.hand.length) rec.handedN = u.hand.length;
       if (u.plan.length) rec.planN = u.plan.length;
       if (back.length) {

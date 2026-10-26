@@ -177,11 +177,12 @@
     '.pg-pricing tr.cur-prop td:first-child{box-shadow:inset 3px 0 0 var(--brand-strong);}',
     '@media (max-width:1024px){.pg-pricing .pr-head3{grid-template-columns:repeat(3,minmax(0,1fr));}}',
     '@media (max-width:560px){',
-    '  .pg-pricing .pr-prop{min-width:0;max-width:none;width:100%;}',
+    /* the unit select and the planner button share the first row, the date range and Auto-apply the second */
+    '  .pg-pricing .pr-prop{min-width:0;max-width:none;width:100%;order:-2;}',
+    '  .pg-pricing .pr-prop.pr-prop-p{width:auto;flex:1 1 calc(100% - 50px);}',
     '  .pg-pricing .toolbar > *{max-width:100%;}',
-    /* the planner button as its icon only, so the date range, it and Auto-apply share one row */
+    '  .pg-pricing .pr-plan{order:-1;flex:none;width:40px;min-width:40px;height:40px;padding:0;justify-content:center;}',
     '  .pg-pricing .pr-plan .pr-plan-l{display:none;}',
-    '  .pg-pricing .pr-plan{padding-left:9px;padding-right:9px;}',
     '  .pg-pricing .pr-head3 .v{font-size:15px;}',
     '  .pg-pricing .hist{grid-template-columns:minmax(0,1fr);}',
     '  .pg-pricing .rules .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}',
@@ -856,7 +857,7 @@
       var P = m.P;
 
       root.innerHTML = '<div class="pg-pricing">' +
-        '<div class="toolbar"><select class="select pr-prop" data-prop-sel aria-label="Property">' + D.properties.map(function (q) { return '<option value="' + q.id + '"' + (q.id === pid ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') + '</select>' +
+        '<div class="toolbar"><select class="select pr-prop' + (O.allowed('planner') ? ' pr-prop-p' : '') + '" data-prop-sel aria-label="Property">' + D.properties.map(function (q) { return '<option value="' + q.id + '"' + (q.id === pid ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') + '</select>' +
         '<span data-slot="range"></span><span class="spacer"></span>' +
         /* the Profit planner for this unit, in the page's own toolbar (the top bar keeps to its two buttons) */
         (O.allowed('planner') ? '<button type="button" class="btn btn-ghost btn-sm pr-plan" data-pr-plan aria-label="Profit Planner" title="Work out the prices that cover your costs and reach your profit target">' + O.icon('planner') + '<span class="pr-plan-l">Profit Planner</span></button>' : '') +

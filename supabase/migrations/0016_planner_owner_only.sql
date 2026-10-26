@@ -10,7 +10,9 @@
 --     push record when it saved costs, and the pushed prices could no longer be undone; a stale push would drop costs
 --     another device saved. The trigger merges the saved copy into the new one: every unit either copy has, the one saved
 --     last (updatedAt) where both have it; every push record either copy has, by id, the undone copy where only one is
---     undone; newest first, at most 30 (as the app keeps them). Server writes (no signed-in user) are stored as sent.
+--     undone; where neither or both are, the one changed last (changedAt, which Undo stamps on the push it undoes and on a later
+--     push it hands nights to); newest first, at most 30 (as the app keeps them). Server writes (no signed-in user) are
+--     stored as sent.
 --
 -- Why: the planner page is owner-only (O.OWNER_ONLY), and its Save says only account owners see the costs, but 0001 let
 -- every member read and write every blob. Other members' browsers no longer load the blob (auth.js reads every blob the
@@ -47,19 +49,26 @@ begin
     into units
     from jsonb_each(case when jsonb_typeof(nv->'units') = 'object' then nv->'units' else '{}'::jsonb end) n
     full join jsonb_each(case when jsonb_typeof(ov->'units') = 'object' then ov->'units' else '{}'::jsonb end) o on o.key = n.key;
-  -- pushes: the new copy's records (the saved copy's where only that one is undone), then the saved copy's records the
-  -- new copy does not have; newest first, at most 30
+  -- pushes: the new copy's records, each against the saved copy's record with the same id: the undone one where only
+  -- one is undone (an Undo is never lost), else the one changed last (changedAt, else undoneAt, else at: Undo also hands
+  -- nights on to a later push and stamps it), the new copy on a tie; then the saved copy's records the new copy does not
+  -- have. Saved records without an id are dropped (the app gives every push one); newest first, at most 30
   with n as (
     select e.p, e.i from jsonb_array_elements(case when jsonb_typeof(nv->'pushes') = 'array' then nv->'pushes' else '[]'::jsonb end) with ordinality e(p, i)
      where jsonb_typeof(e.p) = 'object'
   ), o as (
     select e.p, e.i from jsonb_array_elements(case when jsonb_typeof(ov->'pushes') = 'array' then ov->'pushes' else '[]'::jsonb end) with ordinality e(p, i)
-     where jsonb_typeof(e.p) = 'object'
+     where jsonb_typeof(e.p) = 'object' and e.p->>'id' is not null
   ), m as (
-    select case when jsonb_typeof(s.p->'undoneAt') = 'string' and jsonb_typeof(n.p->'undoneAt') is distinct from 'string' then s.p else n.p end as p, n.i, 0 as src
-      from n left join lateral (select x.p from o x where n.p ? 'id' and x.p->>'id' = n.p->>'id' limit 1) s on true
+    select case
+             when s.p is null then n.p
+             when (jsonb_typeof(s.p->'undoneAt') is not distinct from 'string') <> (jsonb_typeof(n.p->'undoneAt') is not distinct from 'string')
+               then case when jsonb_typeof(s.p->'undoneAt') = 'string' then s.p else n.p end
+             when coalesce(s.p->>'changedAt', s.p->>'undoneAt', s.p->>'at', '') collate "C" > coalesce(n.p->>'changedAt', n.p->>'undoneAt', n.p->>'at', '') collate "C" then s.p
+             else n.p end as p, n.i, 0 as src
+      from n left join lateral (select x.p from o x where n.p->>'id' is not null and x.p->>'id' = n.p->>'id' limit 1) s on true
     union all
-    select o.p, o.i, 1 from o where not (o.p ? 'id') or not exists (select 1 from n where n.p->>'id' = o.p->>'id')
+    select o.p, o.i, 1 from o where not exists (select 1 from n where n.p->>'id' = o.p->>'id')
   )
   select coalesce(jsonb_agg(x.p order by x.at desc, x.src, x.i), '[]'::jsonb) into pushes
     from (select m.p, m.i, m.src, coalesce(m.p->>'at', '') collate "C" as at from m order by 4 desc, 3, 2 limit 30) x;
