@@ -5,7 +5,7 @@
  * The fixture is modelled on the Kozi Standard unit: 90 nights from 2026-10-27 (today 2026-10-26), net prices RM230
  * Sun-Thu and RM290 Fri-Sat, RM315 on 21-23 and 27-29 Dec, RM565 on 31 Dec, a few nights booked, about RM2,500 fixed
  * a month, RM120 cleaning per stay, RM15 utilities per night. At RM1,500 a month the target is out of reach (the best
- * plan makes about RM1,140); RM800 is the reachable variant used for the option-order checks.
+ * plan makes about RM1,020); RM800 is the reachable variant used for the option-order checks.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,7 +79,15 @@ test('COST_FIELDS and ASSUMPTIONS describe every value in display order', () => 
   }
   assert.equal(R.DEFAULTS.baseOcc, 0.6);
   assert.equal(R.DEFAULTS.beta, 4);
-  assert.deepEqual(R.DEFAULTS.leadShare, [0.28, 0.54, 0.64, 0.69, 0.73, 0.77, 0.83, 0.89, 0.93, 0.94, 0.98, 1]);
+  /* the defaults the export of 310 bookings supports (docs/notes/profit-planner.md, Assumptions) */
+  assert.deepEqual(R.DEFAULTS.leadShare, [0.10, 0.25, 0.37, 0.46, 0.58, 0.64, 0.70, 0.78, 0.85, 0.92, 0.97, 1]);
+  assert.deepEqual(R.DEFAULTS.dow, [-0.07, -0.07, -0.07, -0.07, -0.07, 1.05, 1.10]);
+  assert.equal(R.DEFAULTS.cancelRate, 0.11);
+  assert.equal(R.DEFAULTS.baseOccSd, 0.12);
+  assert.equal(R.DEFAULTS.paceStrength, 25);
+  const cancel = R.ASSUMPTIONS.find((a) => a.key === 'cancelRate');
+  assert.equal(cancel.label, 'Booked stays that cancel');
+  assert.match(cancel.source, /310 bookings/);
 });
 
 test('requiredRates: exact against hand-computed values', () => {
@@ -160,8 +168,28 @@ test('open-night conditioning lowers the chances of near nights and leaves far n
     else { close(a[i].chance, b[i].chance, 1e-8, n.iso); far++; }   /* only a 1e-9 trace of pace is left */
   });
   assert.ok(near > 50 && far > 20);
-  /* tomorrow (lead 1, F = 0.54) keeps well under its unconditioned chance */
+  /* tomorrow (lead 1, F = 0.25: three quarters of its nights would have been booked by now) keeps well under its
+     unconditioned chance */
   assert.ok(a[0].chance < 0.75 * b[0].chance);
+});
+
+test('an open night near its date: guests arrive at random and the first takes it, so the chance is exact at the usual price', () => {
+  /* one night, no weekday, month, pace or spread: P = 60% at the usual price, F = the share of its nights booked this
+     close (10% same day, 25% a day ahead, 52% four days ahead between 46% and 58%, 92% thirty days ahead). Given the
+     night is still open, the chance it sells is P F / (1 - P (1 - F)) */
+  const flat = { dow: [0, 0, 0, 0, 0, 0, 0], month: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], baseOccSd: 0, betaSd: 0, monthSd: 0, paceStrength: 1e9 };
+  const one = (lead) => ({ today: TODAY, nights: [{ iso: isoOf(ms(TODAY) + lead * DAY), dow: new Date(ms(TODAY) + lead * DAY).getUTCDay(), lead, current: 200, status: 'open' }], costs: {}, profitPerMonth: 0, assumptions: flat });
+  for (const [lead, F] of [[0, 0.10], [1, 0.25], [4, 0.52], [30, 0.92], [90, 1]]) {
+    close(R.evaluate(one(lead), {}).nightly[0].chance, 0.6 * F / (1 - 0.6 * (1 - F)), 1e-8, 'lead ' + lead);
+  }
+  /* at another price the same arrivals: the night sells unless every guest still to come passes, 1 - (1 - P)^H, with
+     H the share of guests still to come (from F at the usual occupancy) */
+  const H = 1 - Math.log(1 - 0.6 * 0.75) / Math.log(0.4), lg = Math.log(0.6 / 0.4);
+  for (const p of [160, 220, 260]) {
+    const P = 1 / (1 + Math.exp(-(lg - 4 * Math.log(p / 200))));
+    const iso = isoOf(ms(TODAY) + DAY);
+    close(R.evaluate(one(1), { [iso]: p }).nightly[0].chance, 1 - Math.pow(1 - P, H), 1e-8, 'RM' + p);
+  }
 });
 
 test('pace: a month with no bookings by now loses demand, a month booked ahead gains it', () => {
@@ -173,10 +201,11 @@ test('pace: a month with no bookings by now loses demand, a month booked ahead g
   assert.ok(pace['2026-11'].effect < -0.05, 'November ' + pace['2026-11'].effect);
   assert.equal(pace['2026-11'].booked, 0);
   assert.ok(pace['2026-11'].expected > 1);
-  assert.ok(pace['2027-01'].effect > 0.3, 'January ' + pace['2027-01'].effect);
+  /* nothing expected yet so far ahead: 3 nights (less the 11% that cancel) against 25 nights of evidence */
+  close(pace['2027-01'].effect, Math.log(1 + 3 * 0.89 / 25), 1e-12, 'January');
   assert.equal(pace['2027-01'].booked, 3);
   assert.ok(pace['2026-12'].effect < 0 && pace['2026-12'].effect > pace['2026-11'].effect, 'December barely expected anything yet');
-  assert.match(pace['2026-11'].text, /^No nights booked in November yet; about \d+ expected by now: November demand lowered\.$/);
+  assert.match(pace['2026-11'].text, /^No nights booked in November yet; about \d+(\.\d)? expected by now: November demand lowered\.$/);
   assert.match(pace['2027-01'].text, /^3 nights booked in January; hardly any expected by now: January demand raised\.$/);
   assert.ok(r.calibration.text.includes(pace['2026-11'].text));
   const a = R.evaluate(inp, {}).nightly, b = R.evaluate(off, {}).nightly;
@@ -185,9 +214,35 @@ test('pace: a month with no bookings by now loses demand, a month booked ahead g
     if (n.iso.startsWith('2026-11')) assert.ok(n.chance < b[i].chance, n.iso);
     if (n.iso.startsWith('2027-01')) assert.ok(n.chance > b[i].chance, n.iso);
   });
-  /* the cap: never more than 0.7 either way */
-  const many = input({ nights: nights('2026-10-27', 90, Object.fromEntries(nights('2027-01-01', 20).map((n) => [n.iso, 250]))) });
+  /* the cap: never more than 0.7 either way (20 nights against 3 nights of evidence) */
+  const many = input({ nights: nights('2026-10-27', 90, Object.fromEntries(nights('2027-01-01', 20).map((n) => [n.iso, 250]))), assumptions: { paceStrength: 3 } });
   close(R.plan(many).calibration.pace.find((p) => p.month === '2027-01').effect, 0.7, 1e-12);
+});
+
+test('pace: about 25 nights of evidence, peak nights left out, and the sentence agrees with its own numbers', () => {
+  /* 20 January nights booked ahead: 20 x 0.89 against 25, not enough to hit the cap */
+  const many = input({ nights: nights('2026-10-27', 90, Object.fromEntries(nights('2027-01-01', 20).map((n) => [n.iso, 250]))) });
+  close(R.plan(many).calibration.pace.find((p) => p.month === '2027-01').effect, Math.log(1 + 20 * 0.89 / 25), 1e-12);
+  /* a booked peak night (New Year's Eve at RM565) does not count as pace: its premium already stands for its demand */
+  const base = R.plan(input({ nights: nights('2026-10-27', 90, {}), profitPerMonth: 800 })).calibration.pace.find((p) => p.month === '2026-12');
+  const nye = R.plan(input({ nights: nights('2026-10-27', 90, { '2026-12-31': 565 }), profitPerMonth: 800 })).calibration.pace.find((p) => p.month === '2026-12');
+  assert.equal(nye.booked, 0);
+  assert.equal(nye.effect, base.effect);
+  close(nye.expected, base.expected, 1e-12);
+  /* the shown count is on the booked count's footing (cancellations included), one decimal under 10, and the verb
+     follows the effect: "left as it is" when the effect is small or the two numbers read the same */
+  const rows = [];
+  for (const ns of [nights('2026-10-27', 90, BOOKED), nights('2026-10-27', 90, {}), nights('2026-10-27', 90, { '2026-11-02': 230, '2026-11-03': 230, '2026-11-09': 230 }), nights('2026-11-20', 60, BOOKED)]) {
+    for (const p of R.plan(input({ nights: ns, profitPerMonth: 800 })).calibration.pace) if (p.text) rows.push(p);
+  }
+  assert.ok(rows.length >= 8);
+  for (const p of rows) {
+    const shown = /about ([\d.]+) expected/.exec(p.text), e = shown ? +shown[1] : 0;
+    if (shown) close(e, p.expected < 10 ? Math.round(p.expected * 10) / 10 : Math.round(p.expected), 1e-9, p.text);
+    if (/raised\.$/.test(p.text)) assert.ok(p.effect >= 0.05 && p.booked > e, p.text);
+    else if (/lowered\.$/.test(p.text)) assert.ok(p.effect <= -0.05 && p.booked < e, p.text);
+    else assert.ok(/left as it is\.$/.test(p.text) && (Math.abs(p.effect) < 0.05 || p.booked === e), p.text);
+  }
 });
 
 test('history calibration moves the usual occupancy toward what the unit sold, adjusted for the price paid', () => {
@@ -275,9 +330,11 @@ test('options (reachable): Fill sells the most nights and Premium has the highes
     assert.ok(o.stats.occ <= fill.stats.occ + 1e-12, o.name + ' occupancy');
     assert.ok(o.stats.adr <= prem.stats.adr + 1e-9, o.name + ' ADR');
   }
-  /* Fill and Premium are close to the edge: at the target, not far above it */
-  close(fill.stats.profitPerMonth, 800, 15);
-  close(prem.stats.profitPerMonth, 800, 15);
+  /* Fill and Premium are close to the edge: at the target, not far above it. Nights alike (the Sunday to Thursday nights
+     of a month share one demand) step to their next price together, so the last plan that reaches the target can sit up
+     to about RM20 above it */
+  close(fill.stats.profitPerMonth, 800, 25);
+  close(prem.stats.profitPerMonth, 800, 25);
   assert.ok(fill.stats.occ > optionWith(r, 'balanced').stats.occ && optionWith(r, 'profit').stats.occ > prem.stats.occ);
 });
 
@@ -451,7 +508,7 @@ test('zero costs and no profit target', () => {
 
 test('all nights booked: nothing to price, one card, exact profit', () => {
   const ns = nights('2026-10-27', 30, {}).map((n) => Object.assign({}, n, { status: 'booked', booked: 216 }));
-  const r = R.plan(input({ nights: ns }));
+  const r = R.plan(input({ nights: ns, assumptions: { cancelRate: 0 } }));
   assert.equal(r.open, 0);
   assert.equal(r.options.length, 1);
   assert.deepEqual(r.options[0].keys, ['current', 'fill', 'balanced', 'profit', 'premium']);
@@ -564,7 +621,8 @@ test('pros and cons: present, plain, and their numbers match the stats', () => {
       }
       /* the weak-demand sentence */
       const w = s.weakDemandProfitPerMonth;
-      assert.ok(all.some((t) => (w >= r.target ? t.startsWith('Still makes about ' + tens(w) + ' a month if demand is ') : w >= 0 ? t.endsWith('profit falls to about ' + tens(w) + ' a month.') : t.endsWith('the unit loses about ' + tens(-w) + ' a month.'))), o.name + ' weak demand');
+      assert.ok(all.some((t) => (Math.round(w / 10) === 0 ? t.endsWith('% weaker, the unit about breaks even.') : w >= r.target ? t.startsWith('Still makes about ' + tens(w) + ' a month if demand is ') : w >= 0 ? t.endsWith('profit falls to about ' + tens(w) + ' a month.') : t.endsWith('the unit loses about ' + tens(-w) + ' a month.'))), o.name + ' weak demand');
+      assert.ok(!all.some((t) => /RM 0 a month/.test(t)), o.name + ' no "RM 0 a month"');
       /* against today's prices */
       if (!o.keys.includes('current')) {
         const d = s.profitPerMonth - optionWith(r, 'current').stats.profitPerMonth;
@@ -594,21 +652,90 @@ test('pros and cons: present, plain, and their numbers match the stats', () => {
   for (const r of [PLAN, PLAN800]) for (const o of r.options) assert.ok(!o.pros.concat(o.cons).some((t) => /Kuala Lumpur/.test(t)), o.name);
 });
 
-test('pros and cons: the building\'s other unit types (tier order)', () => {
+test('the building\'s other unit types: the plans keep this unit between them, say so, and today\'s prices are flagged when they do not', () => {
   const ns = nights('2026-10-27', 90, BOOKED);
-  const better = Object.fromEntries(ns.map((n) => [n.iso, n.current + 10]));   /* RM10 above this unit every night */
+  const better = Object.fromEntries(ns.map((n) => [n.iso, n.current + 30]));   /* RM30 above this unit every night */
   const cheaper = Object.fromEntries(ns.map((n) => [n.iso, 180]));
-  const r = R.plan(input({ profitPerMonth: 800, otherTiers: [{ name: 'Deluxe', prices: better }, { name: 'Studio', prices: cheaper }] }));
-  const prem = optionWith(r, 'premium'), fill = optionWith(r, 'fill');
-  assert.ok(prem.stats.tierAbove.find((t) => t.name === 'Deluxe').nights > 30);
-  assert.ok(prem.cons.some((t) => /^On \d+ nights this unit would cost as much as or more than Deluxe, a better unit type in this building\.$/.test(t)));
-  /* early in the list, so it is among the three cons a card shows */
-  assert.ok(prem.cons.findIndex((t) => /Deluxe/.test(t)) < 3, prem.cons.join(' | '));
-  assert.ok(fill.stats.tierBelow.find((t) => t.name === 'Studio').nights > 10);
-  assert.ok(fill.cons.some((t) => /^On \d+ nights this unit would cost less than Studio, a cheaper unit type in this building\.$/.test(t)));
-  assert.ok(fill.cons.findIndex((t) => /Studio/.test(t)) < 3, fill.cons.join(' | '));
-  const cur = optionWith(r, 'current');
-  assert.ok(cur.pros.includes('Keeps the right order against the other unit types in this building.'));
+  const tiers = [{ name: 'Deluxe', prices: better }, { name: 'Studio', prices: cheaper }];
+  const inp = input({ profitPerMonth: 800, otherTiers: tiers });
+  const r = R.plan(inp);
+  for (const o of r.options) {
+    assert.deepEqual(o.stats.tierAbove, [], o.name);
+    assert.deepEqual(o.stats.tierBelow, [], o.name);
+    assert.ok(o.pros.includes('Keeps the other unit types in this building in order, at least 5% apart (or as far apart as today, where that is less).'), o.name);
+    /* Deluxe at least 5% dearer, Studio at least 5% cheaper */
+    for (const [iso, p] of Object.entries(o.prices)) { assert.ok(p < better[iso], o.name + ' ' + iso); if (!o.keys.includes('current')) assert.ok(p * 1.05 <= better[iso] + 1e-9 && p >= 189, o.name + ' ' + iso); }
+  }
+  /* 75 open nights that are not peaks (the 7 peaks keep today's price) */
+  assert.ok(r.notes.includes('To keep the unit types in this building in order and at least 5% apart (or as far apart as today, where that is less), the plans keep this unit below Deluxe and above Studio. That limits the prices of 75 nights.'), r.notes.join(' | '));
+  /* Premium stops at Deluxe's prices, and says that rather than blaming the range of prices tried */
+  assert.match(optionWith(r, 'premium').summary, /^The highest prices that keep this unit below Deluxe, which still make RM 800 a month on average\.$/);
+  assert.ok(!r.notes.some((t) => /stopped at/.test(t)), r.notes.join(' | '));
+  /* prices of your own that break the order get the cons, early enough to be among the three a card shows */
+  const dear = R.evaluate(inp, Object.fromEntries(Object.entries(better).map(([iso, p]) => [iso, p + 10])));
+  assert.ok(dear.stats.tierAbove.find((t) => t.name === 'Deluxe').nights > 30);
+  assert.ok(dear.cons.some((t) => /^On \d+ nights this unit would cost as much as or more than Deluxe, a better unit type in this building\.$/.test(t)));
+  assert.ok(dear.cons.findIndex((t) => /Deluxe/.test(t)) < 3, dear.cons.join(' | '));
+  const cheap = R.evaluate(inp, Object.fromEntries(ns.map((n) => [n.iso, 170])));
+  assert.ok(cheap.stats.tierBelow.find((t) => t.name === 'Studio').nights > 10);
+  assert.ok(cheap.cons.some((t) => /^On \d+ nights this unit would cost no more than Studio, a cheaper unit type in this building\.$/.test(t)));
+  /* in order, but closer than the gap: its own con, and no order pro */
+  const near = R.evaluate(inp, Object.fromEntries(ns.map((n) => [n.iso, 185])));
+  assert.deepEqual(near.stats.tierBelow, []);
+  assert.ok(near.stats.tierClose.find((t) => t.name === 'Studio').nights > 10);
+  assert.ok(near.cons.some((t) => /^On \d+ nights this unit would be priced within 5% of Studio, a cheaper unit type in this building\.$/.test(t)), near.cons.join(' | '));
+  assert.ok(!near.pros.some((t) => /in order/.test(t)));
+  assert.ok(cheap.cons.findIndex((t) => /Studio/.test(t)) < 3, cheap.cons.join(' | '));
+  /* today's prices already above the better type: Today's prices is flagged and takes no other role, and the plans go
+     below it on every night but the peaks, which keep today's price */
+  const under = Object.fromEntries(ns.map((n) => [n.iso, n.current - 20]));
+  const r2 = R.plan(input({ profitPerMonth: 800, otherTiers: [{ name: 'Deluxe', prices: under, better: true }] }));
+  const cur = optionWith(r2, 'current');
+  assert.deepEqual(cur.keys, ['current']);
+  assert.ok(cur.cons.some((t) => /^On 82 nights this unit costs as much as or more than Deluxe, a better unit type in this building\.$/.test(t)), cur.cons.join(' | '));
+  for (const o of r2.options.filter((x) => !x.keys.includes('current'))) {
+    assert.deepEqual(o.stats.tierAbove, [{ name: 'Deluxe', nights: 7 }], o.name);
+    for (const n of ns) if (n.status === 'open' && !r2.calibration.peaks.some((p) => p.iso === n.iso)) assert.ok(o.prices[n.iso] < under[n.iso], o.name + ' ' + n.iso);
+  }
+  /* no other unit types: no note, and no order pro */
+  assert.ok(!PLAN800.notes.some((t) => /unit types/.test(t)));
+  assert.ok(!PLAN800.options.some((o) => o.pros.some((t) => /right order|in order/.test(t))));
+});
+
+test('the building\'s unit types stay apart: at least tierGap, today\'s gap where smaller, order only at 0', () => {
+  const ns = nights('2026-10-27', 90, BOOKED);
+  const better = Object.fromEntries(ns.map((n) => [n.iso, n.current + 40]));
+  const cheaper = Object.fromEntries(ns.map((n) => [n.iso, n.current - 40]));
+  const tiers = [{ name: 'Deluxe', prices: better, better: true }, { name: 'Studio', prices: cheaper, better: false }];
+  const r = R.plan(input({ profitPerMonth: 800, otherTiers: tiers }));
+  const peaks = new Set(r.calibration.peaks.map((p) => p.iso));
+  for (const o of r.options) {
+    assert.deepEqual(o.stats.tierClose, [], o.name);
+    for (const [iso, p] of Object.entries(o.prices)) {
+      if (peaks.has(iso)) continue;
+      assert.ok(p * 1.05 <= better[iso] + 1e-9, o.name + ' ' + iso + ' ' + p + ' vs ' + better[iso]);
+      assert.ok(p >= cheaper[iso] * 1.05 - 1e-9, o.name + ' ' + iso + ' ' + p + ' vs ' + cheaper[iso]);
+    }
+  }
+  /* a 10% gap from the assumptions */
+  const r10 = R.plan(input({ profitPerMonth: 800, otherTiers: tiers, assumptions: { tierGap: 0.1 } }));
+  for (const o of r10.options) for (const [iso, p] of Object.entries(o.prices)) {
+    if (peaks.has(iso) || o.keys.includes('current')) continue;
+    assert.ok(p * 1.1 <= better[iso] + 1e-9 || p === ns.find((n) => n.iso === iso).current, o.name + ' ' + iso);
+    assert.ok(p >= cheaper[iso] * 1.1 - 1e-9 || p === ns.find((n) => n.iso === iso).current, o.name + ' ' + iso);
+  }
+  assert.ok(r10.options[0].pros.concat(r10.options[0].cons).some((t) => /10%/.test(t)) || r10.notes.some((t) => /10% apart/.test(t)), r10.notes.join(' | '));
+  /* today's gap when it is smaller: RM5 above today's price stays allowed, nothing dearer */
+  const close = Object.fromEntries(ns.map((n) => [n.iso, n.current + 5]));
+  const r5 = R.plan(input({ profitPerMonth: 800, otherTiers: [{ name: 'Deluxe', prices: close, better: true }] }));
+  for (const o of r5.options) {
+    assert.deepEqual(o.stats.tierClose, [], o.name);
+    for (const [iso, p] of Object.entries(o.prices)) assert.ok(p <= close[iso] - 5, o.name + ' ' + iso);
+  }
+  /* at 0, the order only, as before: a step below Deluxe is allowed */
+  const r0 = R.plan(input({ profitPerMonth: 800, otherTiers: tiers, assumptions: { tierGap: 0 } }));
+  assert.ok(r0.options.every((o) => o.pros.includes('Keeps the right order against the other unit types in this building.')));
+  assert.ok(r0.notes.some((t) => /^To keep the unit types in this building in order, the plans/.test(t)), r0.notes.join(' | '));
 });
 
 test('money in sentences comes from input.money when given', () => {
@@ -631,9 +758,9 @@ test('Balanced: chances within the noise count as equal, so the pick hardly move
 });
 
 test('Fill or Premium stopped by the prices tried, or by the owner\'s limit, says so', () => {
-  const low = R.plan(input({ profitPerMonth: 300, draws: 500 }));
-  assert.match(optionWith(low, 'fill').summary, /^The lowest prices the planner tries \(60% of today's\), which still make RM 300 a month on average, to sell the most nights\./);
-  assert.ok(low.notes.includes('Fill the calendar stopped at the lowest prices the planner tries (60% of today\'s) and still makes RM 300 a month on average, so even lower prices could sell more nights. Lowest price to try, in the assumptions, sets this limit.'), low.notes.join(' | '));
+  const low = R.plan(input({ profitPerMonth: 200, draws: 500 }));
+  assert.match(optionWith(low, 'fill').summary, /^The lowest prices the planner tries \(60% of today's\), which still make RM 200 a month on average, to sell the most nights\./);
+  assert.ok(low.notes.includes('Fill the calendar stopped at the lowest prices the planner tries (60% of today\'s) and still makes RM 200 a month on average, so even lower prices could sell more nights. Lowest price to try, in the assumptions, sets this limit.'), low.notes.join(' | '));
   const busy = R.plan(input({ assumptions: { baseOcc: 0.9 }, draws: 500 }));
   assert.match(optionWith(busy, 'premium').summary, /^The highest prices the planner tries \(180% of today's\), which still make RM 1,500 a month on average\./);
   assert.ok(busy.notes.some((t) => t.startsWith('Premium rates stopped at the highest prices the planner tries (180% of today\'s)')));
@@ -682,10 +809,14 @@ test('short dates: no option beats Balanced clearly on the chance of the target 
     const rough = 'These dates cover only ' + count + (count === 1 ? ' night' : ' nights') + ', so the monthly figures are rough: one booking more or less changes them a lot.';
     assert.equal(r.notes.includes(rough), count < 14, count + ' nights');
   }
-  /* one night: Most profit has a 6 in 10 chance of RM800 a month, and the note says so next to "on average" */
+  /* one night two days ahead: Most profit has about an even chance of RM800 a month (the night either sells or not),
+     and the note says so next to "on average" */
   const one = R.plan(input({ nights: nights('2026-10-28', 1, {}), profitPerMonth: 800 }));
-  assert.ok(optionWith(one, 'balanced').stats.pTarget > 0.5);
-  assert.ok(one.notes.some((t) => /^On average, no plan reaches RM 800 a month\..*the recommended plan still has about a \d in 10 chance of reaching it\.$/.test(t)), one.notes.join(' | '));
+  assert.ok(optionWith(one, 'balanced').stats.pTarget > 0.4);
+  assert.ok(one.notes.some((t) => /^On average, no plan reaches RM 800 a month\..*the recommended plan still has (about an? \d in 10|about an even) chance of reaching it\.$/.test(t)), one.notes.join(' | '));
+  /* every night it has moved by 15% or more: the con says it of the one night, not "1 of the 1 night" */
+  const bal = optionWith(one, 'balanced');
+  if (bal.stats.bigMoves === 1) assert.ok(bal.cons.includes('Moves the night with a price today by 15% or more, and the forecast is less sure about prices guests have not seen.'), bal.cons.join(' | '));
 });
 
 test('short dates: counts are over the dates, not a month, and shares never read "10 in 10"', () => {
@@ -700,9 +831,10 @@ test('short dates: counts are over the dates, not a month, and shares never read
 
 test('a booked night with no amount is counted at today\'s price less the usual discount, and an explicit 0 stays RM0', () => {
   const as = (v) => nights('2026-10-27', 90, BOOKED).map((n) => (n.status === 'booked' ? Object.assign({}, n, { booked: v }) : n));
-  const unknown = R.plan(input({ nights: as(null), profitPerMonth: 800, draws: 500 }));
-  const free = R.plan(input({ nights: as(0), profitPerMonth: 800, draws: 500 }));
-  const missing = R.plan(input({ nights: as(undefined), profitPerMonth: 800, draws: 500 }));
+  const sure = { cancelRate: 0 };   /* no cancellations, so the booked amounts count in full */
+  const unknown = R.plan(input({ nights: as(null), profitPerMonth: 800, draws: 500, assumptions: sure }));
+  const free = R.plan(input({ nights: as(0), profitPerMonth: 800, draws: 500, assumptions: sure }));
+  const missing = R.plan(input({ nights: as(undefined), profitPerMonth: 800, draws: 500, assumptions: sure }));
   assert.ok(unknown.notes.includes('8 booked nights have no amount recorded, so they are counted at today\'s price less the usual discount.'));
   assert.ok(!free.notes.some((t) => /no amount recorded/.test(t)));
   assert.deepEqual(missing.options, unknown.options);
@@ -725,7 +857,8 @@ test('a negative target counts as 0, and with target 0 the chance of covering co
 });
 
 test('target 0 and every plan losing money: no broken sentences', () => {
-  const r = R.plan(input({ costs: Object.assign({}, COSTS, { rent: 8000 }), profitPerMonth: 0, draws: 500 }));
+  /* guests a little more sensitive to price, so Most profit is clearly ahead of today's prices */
+  const r = R.plan(input({ costs: Object.assign({}, COSTS, { rent: 8000 }), profitPerMonth: 0, draws: 500, assumptions: { beta: 5 } }));
   const all = texts(r);
   assert.ok(!all.some((t) => /RM 0 a month|make all costs|highest expected profit, about [−-]|more profit than today|either/.test(t)), all.join(' | '));
   const b = optionWith(r, 'balanced');
@@ -737,12 +870,54 @@ test('target 0 and every plan losing money: no broken sentences', () => {
   assert.ok(r.notes.some((t) => t.startsWith('To cover them, costs would need to be about ')));
 });
 
-test('a wide occupancy margin near the limits widens the range without moving the forecast much', () => {
-  const at = (sd) => R.evaluate(input({ profitPerMonth: 800, draws: 500, assumptions: { baseOcc: 0.95, baseOccSd: sd } }), {}).stats;
-  const narrow = at(0.02), wide = at(0.2);
+test('a wide occupancy margin near either limit widens the range but moves the forecast only a little', () => {
+  const at = (q, sd) => R.evaluate(input({ profitPerMonth: 800, draws: 500, assumptions: { baseOcc: q, baseOccSd: sd } }), {}).stats;
+  /* near the top */
+  let narrow = at(0.95, 0.02), wide = at(0.95, 0.2);
   assert.ok(wide.occ > narrow.occ - 0.08, narrow.occ + ' -> ' + wide.occ);
   assert.ok(wide.p10 < narrow.p10 && wide.p90 >= narrow.p90 - 1e-9);
   assert.ok(wide.p10 > 0, 'P10 ' + wide.p10);
+  /* near the bottom: the spread is the narrower side (0.2 up to 0.4, not 0.2 down to 0.01), so the expected forecast
+     moves about 3 points here instead of about 8 */
+  narrow = at(0.2, 0.02); wide = at(0.2, 0.2);
+  assert.ok(wide.occ < narrow.occ + 0.05, narrow.occ + ' -> ' + wide.occ);
+  assert.ok(Math.abs(wide.profitPerMonth - narrow.profitPerMonth) < 250, narrow.profitPerMonth + ' -> ' + wide.profitPerMonth);
+  assert.ok(wide.p10 < narrow.p10 && wide.p90 > narrow.p90);
+  /* in the middle the default margin is about 0.33 in log-odds, as before */
+  const mid = at(0.6, 0.08);
+  assert.ok(Math.abs(mid.occ - at(0.6, 0.02).occ) < 0.01);
+});
+
+test('weak demand that rounds to RM 0 reads "about breaks even": a con short of a target, a pro with no target', () => {
+  const prices = optionWith(PLAN800, 'balanced').prices;
+  const weakOf = (o) => o.pros.concat(o.cons).filter((t) => /% weaker/.test(t));
+  /* profit is linear in the rent, so moving the rent by the weak-demand profit brings that profit to about 0 */
+  const w0 = R.evaluate(input({ profitPerMonth: 800, draws: 500 }), prices).stats.weakDemandProfitPerMonth;
+  for (const d of [-3, 3]) {
+    const costs = Object.assign({}, COSTS, { rent: COSTS.rent + w0 + d });
+    const t800 = R.evaluate(input({ profitPerMonth: 800, draws: 500, costs }), prices);
+    close(t800.stats.weakDemandProfitPerMonth, -d, 1e-6);
+    assert.equal(weakOf(t800).length, 1);
+    assert.match(weakOf(t800)[0], /^If demand is \d+% weaker, the unit about breaks even\.$/);
+    assert.ok(t800.cons.includes(weakOf(t800)[0]), 'a con with a target');
+    const t0 = R.evaluate(input({ profitPerMonth: 0, draws: 500, costs }), prices);
+    if (d > 0) {
+      /* a small loss with no target: about breaks even, a pro */
+      assert.match(weakOf(t0)[0], /^If demand is \d+% weaker, the unit about breaks even\.$/);
+      assert.ok(t0.pros.includes(weakOf(t0)[0]));
+    } else assert.match(weakOf(t0)[0], /^Still covers its costs if demand is \d+% weaker\.$/);
+    assert.ok(!t800.pros.concat(t800.cons, t0.pros, t0.cons).some((t) => /RM 0 a month/.test(t)));
+  }
+});
+
+test('the owner\'s price limits come back on the result as the prices use them', () => {
+  assert.deepEqual(PLAN800.limits, { floor: null, ceiling: null });
+  const r = R.plan(input({ floor: 203, ceiling: 298, profitPerMonth: 800, draws: 300 }));
+  assert.deepEqual(r.limits, { floor: 205, ceiling: 295 });
+  /* no step between them: the floor wins */
+  const tight = R.plan(input({ floor: 201, ceiling: 204, profitPerMonth: 800, draws: 300 }));
+  assert.deepEqual(tight.limits, { floor: 205, ceiling: 205 });
+  for (const o of tight.options.filter((x) => !x.keys.includes('current'))) for (const p of Object.values(o.prices)) assert.equal(p, 205);
 });
 
 test('invalid dates are left out, with no NaN or "undefined" anywhere', () => {
@@ -789,14 +964,19 @@ test('Fill and Premium reach the goal with a margin, checked on separate draws, 
 });
 
 test('late bookings: one note for the dates, and a con only for a plan that relies on them clearly more than today\'s prices', () => {
-  for (const r of [PLAN, PLAN800]) {
-    const cur = optionWith(r, 'current').stats;
+  /* 90 nights: almost half of a far night's bookings come in the last 3 days, not enough for the note; the next 10
+     nights: most of what still sells comes late */
+  const soon = R.plan(input({ nights: nights('2026-10-27', 10, {}), profitPerMonth: 800 }));
+  for (const r of [PLAN, PLAN800, soon]) {
+    const cur = optionWith(r, 'current').stats, bal = optionWith(r, 'balanced').stats;
     for (const o of r.options) {
       const has = o.cons.some((t) => /^Relies on late bookings/.test(t));
       assert.equal(has, !o.keys.includes('current') && o.stats.lateShare >= 0.6 && o.stats.lateShare >= cur.lateShare + 0.1, o.name);
     }
-    assert.ok(r.notes.some((t) => /^Guests book late for these dates: about \d in 10 of the nights likely to sell usually book in the last 3 days before arrival, so the calendar fills late\.$/.test(t)));
+    assert.equal(r.notes.some((t) => /^Guests book late for these dates/.test(t)), bal.lateShare >= 0.6);
   }
+  close(optionWith(PLAN800, 'current').stats.lateShare, 0.45, 0.05);
+  assert.ok(soon.notes.some((t) => /^Guests book late for these dates: about \d in 10 of the nights likely to sell usually book in the last 3 days before arrival, so the calendar fills late\.$/.test(t)), soon.notes.join(' | '));
 });
 
 test('peaks kept at today\'s price below the ordinary nights get a con', () => {
@@ -815,6 +995,101 @@ test('assumption wording: the pace label reads the right way round, and the sour
   assert.equal(pace.label, 'Bookings it takes to move the forecast');
   assert.match(pace.help, /A higher number takes more bookings to move the forecast\./);
   assert.ok(R.ASSUMPTIONS.filter((a) => /Kuala Lumpur/.test(a.source)).every((a) => /based on Kuala Lumpur data|one Kuala Lumpur operator|same operator/.test(a.source)));
+});
+
+/* ---------------------------------------------------------------- second review: model and Kozi fixes */
+const bookedRun = (count, extra) => nights('2026-11-02', count, {}).map((n, i) => Object.assign({}, n, { status: 'booked', booked: 250 }, typeof extra === 'function' ? extra(i) : extra || {}));
+
+test('cancellations: a booked stay may cancel and sell again, a stay the guest is in cannot, and a stay cancels as a whole', () => {
+  const plan = (ns, c) => R.plan(input({ nights: ns, profitPerMonth: 0, assumptions: { cancelRate: c } })).options[0].stats;
+  const sure = plan(bookedRun(10), 0), some = plan(bookedRun(10), 0.5);
+  close(sure.occ, 1, 1e-12);
+  assert.equal(sure.p10, sure.p90);
+  /* half the stays cancel; a cancelled night sells again with its chance now, at today's price */
+  assert.ok(some.occ > 0.5 && some.occ < 1, String(some.occ));
+  assert.ok(some.profit < sure.profit);
+  close(some.p50, some.profitPerMonth, 0.6 * (some.p90 - some.p10));
+  /* checked in: firm */
+  const firm = plan(bookedRun(10, { firm: true }), 0.5);
+  close(firm.occ, 1, 1e-12);
+  close(firm.profit, sure.profit, 1e-9);
+  assert.equal(firm.p10, firm.p90);
+  /* the stay is the booking when given, else a run of booked nights: ten nights of one stay cancel together, ten
+     one-night stays one by one (the same average, a wider spread for the one stay) */
+  const run = plan(bookedRun(10), 0.5), oneStay = plan(bookedRun(10, { stay: 'B1' }), 0.5), tenStays = plan(bookedRun(10, (i) => ({ stay: 'B' + i })), 0.5);
+  assert.deepEqual(run, oneStay);
+  close(tenStays.profit, oneStay.profit, 1e-9);
+  assert.ok(oneStay.p90 - oneStay.p10 > 1.5 * (tenStays.p90 - tenStays.p10), (oneStay.p90 - oneStay.p10) + ' vs ' + (tenStays.p90 - tenStays.p10));
+  /* the default: 11% of the booked nights of the fixture */
+  const def = optionWith(PLAN800, 'current').stats, none = optionWith(R.plan(input({ profitPerMonth: 800, assumptions: { cancelRate: 0 } })), 'current').stats;
+  assert.ok(def.soldNights < none.soldNights && def.soldNights > none.soldNights - 8 * 0.11);
+});
+
+test('last-minute deal: the forecast takes it off the nights it covers, and says so', () => {
+  const deal = { pct: 10, days: 3, nights: [0, 1, 2, 3, 4], skip: ['2026-11-03'], until: '2026-12-31' };
+  const r = R.plan(input({ profitPerMonth: 800, lastMinute: deal })), cur = optionWith(r, 'current');
+  /* Sunday to Thursday, open, up to 31 December, not 3 November */
+  const covered = cur.nightly.filter((n) => n.deal).map((n) => n.iso);
+  const want = nights('2026-10-27', 90, BOOKED).filter((n) => n.status === 'open' && n.dow <= 4 && n.iso <= '2026-12-31' && n.iso !== '2026-11-03').map((n) => n.iso);
+  assert.deepEqual(covered, want);
+  assert.deepEqual(r.deal, { pct: 0.1, days: 3, nights: want.length });
+  assert.ok(r.notes.includes('Your last-minute deal takes 10% off ' + want.length + ' of the 82 open nights when they are booked in the last 3 days before the night. The forecast counts it, and the prices here are the ones before the deal.'), r.notes.join(' | '));
+  assert.ok(cur.stats.revenue < optionWith(PLAN800, 'current').stats.revenue);
+  /* the prices stay the ones before the deal; the money is less by the deal on the share of sales inside its window */
+  const flat = { dow: [0, 0, 0, 0, 0, 0, 0], month: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], baseOccSd: 0, betaSd: 0, monthSd: 0, paceStrength: 1e9 };
+  const one = (lead, lm) => ({ today: TODAY, nights: [{ iso: isoOf(ms(TODAY) + lead * DAY), dow: new Date(ms(TODAY) + lead * DAY).getUTCDay(), lead, current: 200, status: 'open' }], costs: {}, profitPerMonth: 0, assumptions: flat, lastMinute: lm });
+  const ratio = (lead) => R.evaluate(one(lead, { pct: 10, days: 3 }), {}).stats.revenue / R.evaluate(one(lead, null), {}).stats.revenue;
+  close(ratio(1), 0.9, 1e-9);                       /* inside the window: every sale is at the deal */
+  close(ratio(30), 1 - 0.1 * 0.37 / 0.92, 1e-9);    /* 30 days out: the share of its remaining sales in the last 3 days */
+  /* a deal the channel manager would not apply does nothing */
+  for (const bad of [{ pct: 0, days: 3 }, { pct: 60, days: 3 }, { pct: 10, days: 0 }, { pct: 10, days: 15 }, { pct: 10, days: 2.5 }, null, 'x']) {
+    const b = R.plan(input({ profitPerMonth: 800, lastMinute: bad, draws: 200 }));
+    assert.equal(b.deal, null, JSON.stringify(bad));
+    assert.ok(!b.notes.some((t) => /last-minute deal/.test(t)));
+  }
+});
+
+test('peak nights: the special dates and the holidays count when priced above the usual price, other nights from 25% above', () => {
+  const ns = nights('2026-10-27', 90, BOOKED).map((n) => (['2026-11-18', '2026-11-19'].includes(n.iso) ? Object.assign({}, n, { current: 250 }) : n.iso === '2026-12-24' ? Object.assign({}, n, { current: 240 }) : n));
+  const r = R.plan(input({ nights: ns, specialDates: ['2026-11-19'], profitPerMonth: 800, draws: 200 }));
+  const pk = Object.fromEntries(r.calibration.peaks.map((p) => [p.iso, p]));
+  assert.ok(pk['2026-11-19'] && pk['2026-11-19'].special, 'a special date 9% above the usual price');
+  assert.ok(!pk['2026-11-18'], 'an ordinary night 9% above the usual price');
+  assert.ok(pk['2026-12-24'] && pk['2026-12-24'].special, 'Christmas Eve, a holiday, above the usual price');
+  assert.ok(pk['2026-12-31'].special && !pk['2026-12-21'].special);
+  assert.equal(pk['2026-11-19'].usual, 230);
+  /* a special date at the usual price is not a peak */
+  assert.ok(!R.plan(input({ specialDates: ['2026-11-18'], profitPerMonth: 800, draws: 200 })).calibration.peaks.some((p) => p.iso === '2026-11-18'));
+});
+
+test('notes and cons on how sure the forecast is: little history, big moves, and the reaction to price', () => {
+  /* little history: the forecast starts from today's prices */
+  const little = 'This unit has little sales history yet, so the forecast assumes today\'s Sunday to Thursday price sells about 60% of nights. The plans adjust today\'s prices; they do not work out a market price from scratch.';
+  assert.ok(PLAN800.notes.includes(little));
+  const hist = R.plan(input({ profitPerMonth: 800, history: { sold: 36, available: 60, priceIndex: 1 } }));
+  assert.ok(!hist.notes.some((t) => /little sales history/.test(t)));
+  /* the unit's own nights narrow the spread of the usual occupancy, so the range of outcomes narrows too */
+  const spread = (r) => { const st = optionWith(r, 'current').stats; return st.p90 - st.p10; };
+  assert.equal(hist.calibration.baseOccUsed, 0.6);
+  assert.ok(spread(hist) < 0.9 * spread(PLAN800), spread(hist) + ' vs ' + spread(PLAN800));
+  /* a plan that moves a third or more of today's prices by 15% or more says the forecast is less sure there */
+  for (const r of [PLAN, PLAN800]) {
+    for (const o of r.options) {
+      const st = o.stats, has = o.cons.some((t) => /by 15% or more, and the forecast is less sure about prices guests have not seen\.$/.test(t));
+      assert.equal(has, !o.keys.includes('current') && st.bigMoves > 0 && st.bigMoves * 3 >= st.pricedToday, o.name);
+    }
+  }
+  assert.ok(optionWith(PLAN, 'fill').cons.includes('Moves ' + optionWith(PLAN, 'fill').stats.bigMoves + ' of the 82 nights with a price today by 15% or more, and the forecast is less sure about prices guests have not seen.'));
+  /* the reaction to price: with a weaker reaction the most profitable prices go the other way, and the note says what is at stake */
+  assert.ok(PLAN800.notes.some((t) => /^How much guests react to price is the least certain part of the forecast\. If they react less than assumed, the most profitable prices would be higher than today's rather than lower\. The difference in profit between the two is about RM [\d,]+ a month\.$/.test(t)), PLAN800.notes.join(' | '));
+  assert.ok(!R.plan(input({ profitPerMonth: 800, assumptions: { betaSd: 0 }, draws: 200 })).notes.some((t) => /react to price/.test(t)));
+});
+
+test('Fill and Premium missing: the note says why', () => {
+  const loss = R.plan(input({ costs: Object.assign({}, COSTS, { rent: 9000 }), profitPerMonth: 1500, draws: 300 }));
+  assert.ok(!optionWith(loss, 'fill') && !optionWith(loss, 'premium'));
+  assert.ok(loss.notes.includes('There is no Fill the calendar or Premium rates plan: both look for prices that cover all costs, and on average none does in these dates.'));
+  assert.ok(!PLAN.notes.some((t) => /^There is no /.test(t)));
 });
 
 /* ---------------------------------------------------------------- speed */

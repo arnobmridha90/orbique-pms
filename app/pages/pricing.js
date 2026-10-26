@@ -179,11 +179,13 @@
     '@media (max-width:560px){',
     '  .pg-pricing .pr-prop{min-width:0;max-width:none;width:100%;}',
     '  .pg-pricing .toolbar > *{max-width:100%;}',
+    /* the planner button as its icon only, so the date range, it and Auto-apply share one row */
+    '  .pg-pricing .pr-plan .pr-plan-l{display:none;}',
+    '  .pg-pricing .pr-plan{padding-left:9px;padding-right:9px;}',
     '  .pg-pricing .pr-head3 .v{font-size:15px;}',
     '  .pg-pricing .hist{grid-template-columns:minmax(0,1fr);}',
     '  .pg-pricing .rules .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}',
     '  .pg-pricing .wf-row{grid-template-columns:minmax(0,1.6fr) minmax(40px,0.7fr) 70px;gap:8px;}',
-    '  #tb-actions .pr-plan-l{display:none;}',
     '}'
   ].join('\n'));
 
@@ -856,6 +858,8 @@
       root.innerHTML = '<div class="pg-pricing">' +
         '<div class="toolbar"><select class="select pr-prop" data-prop-sel aria-label="Property">' + D.properties.map(function (q) { return '<option value="' + q.id + '"' + (q.id === pid ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') + '</select>' +
         '<span data-slot="range"></span><span class="spacer"></span>' +
+        /* the Profit planner for this unit, in the page's own toolbar (the top bar keeps to its two buttons) */
+        (O.allowed('planner') ? '<button type="button" class="btn btn-ghost btn-sm pr-plan" data-pr-plan aria-label="Profit Planner" title="Work out the prices that cover your costs and reach your profit target">' + O.icon('planner') + '<span class="pr-plan-l">Profit Planner</span></button>' : '') +
         '<span class="pr-auto"' + (editRules ? '' : ' title="' + esc(WHY_RULES) + '"') + '>Auto-apply <button type="button" class="switch' + (m.R.auto ? ' on' : '') + '" data-auto role="switch" aria-checked="' + (m.R.auto ? 'true' : 'false') + '" aria-label="Auto-apply suggestions daily"' + (editRules ? '' : ' disabled') + '></button></span></div>' +
         '<div class="pr-ctx"><b>' + esc(P.type || '') + '</b>' + (P.area ? '<span class="dot"></span>' + esc(P.area) : '') + '<span class="dot"></span>Base price ' + fmt.money(m.R.base, { cur: P }) + '<span class="dot"></span>' + s.open.length + ' of ' + fmt.plural(m.days.length, 'night') + ' open</div>' +
         kpiStrip(m, s) +
@@ -876,11 +880,10 @@
 
       /* top bar actions */
       var openChanges = s.changes;
-      ctx.setActions((O.allowed('planner') ? '<button type="button" class="btn btn-ghost btn-sm" data-pr-plan aria-label="Profit planner" title="Work out the prices that cover your costs and reach your profit target">' + O.icon('planner') + '<span class="pr-plan-l">Profit planner</span></button>' : '') +
-        '<button type="button" class="btn btn-ghost btn-sm" data-pr-csv>' + O.icon('download') + 'Export CSV</button>' +
+      ctx.setActions('<button type="button" class="btn btn-ghost btn-sm" data-pr-csv>' + O.icon('download') + 'Export CSV</button>' +
         (edit ? '<button type="button" class="btn btn-primary btn-sm" data-pr-all' + (openChanges.length ? '' : ' disabled') + '>' + O.icon('sparkle') + (openChanges.length ? (openChanges.length === 1 ? 'Apply 1 suggestion' : 'Apply all ' + openChanges.length + ' suggestions') : s.open.length ? 'All suggestions applied' : 'No open nights to price') + '</button>' : ''));
       var A = ctx.actionsEl;
-      var planBtn = O.$('[data-pr-plan]', A);
+      var planBtn = O.$('[data-pr-plan]', root);
       if (planBtn) planBtn.onclick = function () { O.go('planner', { propertyId: pid }); };
       O.$('[data-pr-csv]', A).onclick = function () {
         var rows = [['Date', 'Day', 'Status', 'Our price (' + fmt.cur(P) + ')', 'Competitor avg (' + fmt.cur(P) + ')', 'Competitor min', 'Competitor max', 'Index', 'Same weekday last year', 'Same weekday 2 years ago', 'Pace ' + m.groupName, 'Usual pace', 'Event', 'Suggested (' + fmt.cur(P) + ')', 'Change (' + fmt.cur(P) + ')', 'Factors']];

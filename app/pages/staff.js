@@ -304,7 +304,7 @@
     if (role === 'owner') {
       main = '<div class="card"><div class="card-head stf-rh"><div><h3>Account owner</h3><div class="sub">' + esc(ROLE_DESC.owner) + (names.length ? ' · ' + esc(names.join(', ')) : '') + '</div></div></div>' +
         '<div class="stf-own"><div class="note brand">Account owners can open every section and do everything. This role cannot be limited, so a workspace always has someone who can fix access.</div>' +
-        '<div class="small muted">Only account owners can:</div><ul>' + ['Open Financials (profit and loss, cash flow, owner money)', 'Open the Profit planner (unit costs and profit targets)', 'Approve expense claims and owner payouts', 'Change roles, permissions and personal changes', 'Load or reset the workspace data'].map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></div></div>';
+        '<div class="small muted">Only account owners can:</div><ul>' + ['Open Financials (profit and loss, cash flow, owner money)', 'Open the Profit Planner (unit costs and profit targets)', 'Approve expense claims and owner payouts', 'Change roles, permissions and personal changes', 'Load or reset the workspace data'].map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></div></div>';
     } else {
       var m = { mode: 'role', role: role, editable: manage, open: roleOpen }, sum = summary(m), ch = roleDiff(role);
       var anyOpen = O.PERMS.some(function (P) { return roleOpen[P[0]]; });

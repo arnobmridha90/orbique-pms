@@ -9,7 +9,8 @@
  *   costs      monthly, yearly, one-off (paid back), per stay, per occupied night, share of revenue  -> R.monthlyCosts
  *   cost maths the stored price needed at each occupancy to break even or reach the target         -> R.requiredRates
  *   demand     logit P(night sells at p) = a + dow + month + peak + pace - beta ln(p / P0); a night still unsold
- *              t days before arrival sells with P F(t) / (1 - P (1 - F(t))), F the lead-time curve
+ *              t days before arrival sells with 1 - (1 - P)^H(t), H(t) the share of the guests looking for that night
+ *              who are still to come (from the lead-time curve F, the share of nights booked t days or less ahead)
  *   optimiser  per open night, the price maximising Pbar(p) (contribution(p) + lambda), Pbar the mean over 48
  *              stratified parameter draws (computed once per candidate price); a grid of lambda is the frontier
  *   risk       Monte Carlo: parameter draws, then each open night sells or not. Every plan uses the same draws, so
@@ -32,28 +33,32 @@ var SHORT_NIGHTS = 30;         /* under this many nights, counts in the sentence
 var ROUGH_NIGHTS = 14;         /* under this many nights, the monthly figures are flagged as rough */
 var LATE_DAYS = 3;             /* a late booking comes this many days or less before arrival */
 var LEAD_DAYS = [0, 1, 2, 3, 5, 7, 10, 14, 21, 30, 45, 60];   /* where the lead-time curve (leadShare) is given */
+var HOLIDAYS = ['12-24', '12-25', '12-31', '01-01'];   /* special nights every year: peak nights when priced above usual */
+var BIG_MOVE = 0.15;           /* a price 15% or more away from today's is a big move */
 var ORDER = ['current', 'fill', 'balanced', 'profit', 'premium'];   /* display order of the options */
 var NAMES = { current: "Today's prices", fill: 'Fill the calendar', balanced: 'Balanced', profit: 'Most profit', premium: 'Premium rates' };
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 var DEFAULTS = {
   baseOcc: 0.60,          /* share of nights sold at P0 on an average night */
-  baseOccSd: 0.08,        /* uncertainty of baseOcc, in occupancy */
+  baseOccSd: 0.12,        /* uncertainty of baseOcc, in occupancy, for a unit with no history (its own nights narrow it) */
   beta: 4,                /* price sensitivity: at 60% a 10% higher price loses about 15% of bookings */
   betaSd: 0.3,            /* beta draws are beta x exp(N(0, betaSd)) */
   monthSd: 0.15,          /* a month's own shock, in log-odds */
-  dow: [0.05, -0.15, -0.18, -0.15, 0.10, 0.25, 0.30],                                   /* Sun..Sat, log-odds */
+  dow: [-0.07, -0.07, -0.07, -0.07, -0.07, 1.05, 1.10],                                 /* Sun..Sat, log-odds */
   month: [0.10, -0.10, -0.05, -0.15, -0.10, 0.05, 0.10, 0.20, -0.15, -0.15, -0.10, 0.30], /* Jan..Dec, log-odds */
   peakThreshold: 0.25,    /* a night priced 25% or more above the usual price for its kind of night is a peak */
-  paceStrength: 3,        /* nights of evidence the bookings so far must outweigh */
+  paceStrength: 25,       /* nights of evidence the bookings so far must outweigh (about 9 stays) */
   paceCap: 0.7,           /* pace stays within +-0.7 log-odds */
-  leadShare: [0.28, 0.54, 0.64, 0.69, 0.73, 0.77, 0.83, 0.89, 0.93, 0.94, 0.98, 1.00],  /* F at LEAD_DAYS */
+  leadShare: [0.10, 0.25, 0.37, 0.46, 0.58, 0.64, 0.70, 0.78, 0.85, 0.92, 0.97, 1.00],  /* F at LEAD_DAYS, per night */
   avgStay: 2.7,
+  cancelRate: 0.11,       /* share of the stays already booked that cancel before arrival */
   discountLeak: 0.06,     /* average discount off the stored price */
   paybackMonths: 24,      /* one-off costs are spread over this many months */
   minFactor: 0.6,         /* candidate prices from 0.6 to 1.8 times each night's price today */
   maxFactor: 1.8,
   rounding: 5,            /* every suggested price is a multiple of this */
+  tierGap: 0.05,          /* a better unit type stays at least 5% dearer than a cheaper one, or as far apart as today */
   weakDemand: 0.45,       /* the weak-demand check lowers a by this (about 20% fewer bookings) */
   historyPrior: 60,       /* the unit's own history weighs available / (available + 60) */
   marketOcc: 0.75,        /* few listings in the market sell more than this */
@@ -66,7 +71,7 @@ var ASSUMPTIONS = [
     source: 'Orbique\'s starting value, based on Kuala Lumpur data: AirDNA 57% and Airbtics 56% for the year to September 2026; well-run 2-bedrooms there sell 60 to 75%.' },
   { key: 'baseOccSd', label: 'How sure that is, plus or minus', unit: 'share', min: 0, max: 0.2, step: 0.01,
     help: 'A wider margin gives a wider range of outcomes and a less certain chance of reaching the target.',
-    source: 'Judgement: 8 points either way covers most well-run units.' },
+    source: 'Judgement: 12 points either way for a unit with little history of its own; your own nights narrow it.' },
   { key: 'beta', label: 'How much guests react to price', unit: 'number', min: 1, max: 8, step: 0.1,
     help: 'At 4, a 10% higher price loses about 15% of bookings. A higher number means guests compare prices more.',
     source: 'Studies of single listings among close alternatives: a 10% higher price loses 10 to 30% of bookings. In this forecast, at 4 and leaving costs aside, the price that brings in the most sells about 75% of nights.' },
@@ -78,24 +83,27 @@ var ASSUMPTIONS = [
     source: 'Judgement.' },
   { key: 'dow', label: 'Busier or quieter by weekday', unit: 'list', items: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], min: -1, max: 1, step: 0.05,
     help: 'Plus sells more often than an average night, minus less often. 0.1 is about 2 more or fewer nights sold in 100.',
-    source: '310 bookings from one Kuala Lumpur operator (Booking.com and Trip.com, July 2025 to October 2026), shrunk about halfway to zero because the counts are small; Friday and Saturday raised because they sold at higher prices.' },
+    source: '310 bookings from one Kuala Lumpur operator (Booking.com and Trip.com, July 2025 to October 2026). Sunday to Thursday sold about the same once the small counts are allowed for, so they share one value. Friday and Saturday sold as many nights as Thursday at prices about 27% higher, so their values include that price difference at a reaction to price of 4.' },
   { key: 'month', label: 'Busier or quieter by month', unit: 'list', items: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], min: -1, max: 1, step: 0.05,
     help: 'Plus sells more often than an average month, minus less often. Bookings already made adjust the coming months as well.',
     source: 'AirROI and AirDNA month patterns for Kuala Lumpur plus the same operator\'s bookings: December, August, January and July strongest; April, September, October and Ramadan softest.' },
   { key: 'peakThreshold', label: 'Peak night when priced above usual by', unit: 'share', min: 0.1, max: 1, step: 0.05,
-    help: 'Nights priced this much above the usual price for that kind of night (concerts, Christmas, New Year, Chinese New Year) are peak nights. Their higher price is taken as extra demand.',
+    help: 'Nights priced this much above the usual price for that kind of night (concerts, Christmas, New Year, Chinese New Year) are peak nights. Their higher price is taken as extra demand. The dates your last-minute deal skips, and 24, 25 and 31 December and 1 January, are peak nights whenever they are priced above the usual price.',
     source: 'Judgement.' },
-  { key: 'paceStrength', label: 'Bookings it takes to move the forecast', unit: 'nights', min: 0, max: 30, step: 1,
+  { key: 'paceStrength', label: 'Bookings it takes to move the forecast', unit: 'nights', min: 0, max: 60, step: 1,
     help: 'Months with more bookings than expected by now get more demand, months with fewer get less. A higher number takes more bookings to move the forecast.',
-    source: 'Judgement: about 3 nights.' },
+    source: 'Judgement: about 25 nights, roughly 9 stays.' },
   { key: 'leadShare', label: 'How far ahead guests book', unit: 'list', items: ['Same day', '1 day', '2 days', '3 days', '5 days', '7 days', '10 days', '14 days', '21 days', '30 days', '45 days', '60 days'], min: 0, max: 1, step: 0.01,
-    help: 'The share of bookings made this many days or less before arrival. A night still empty close to the date has less time left to sell.',
-    source: '310 bookings from one Kuala Lumpur operator, July 2025 to October 2026: half of them come 1 day or less before arrival.' },
+    help: 'The share of nights booked this many days or less before the night. A night still empty close to the date has less time left to sell.',
+    source: '310 bookings from one Kuala Lumpur operator, July 2025 to October 2026, each spread over its nights: a quarter of the nights are booked 1 day or less before the night, and almost half 3 days or less.' },
   { key: 'avgStay', label: 'Average stay', unit: 'nights', min: 1, max: 14, step: 0.1,
     help: 'Spreads cleaning and the other per-stay costs over the nights of a stay.',
     source: 'The same operator\'s 310 bookings; 37% are one-night stays.' },
+  { key: 'cancelRate', label: 'Booked stays that cancel', unit: 'share', min: 0, max: 0.6, step: 0.01,
+    help: 'The share of the stays already booked that cancel before arrival. Their nights may then sell again.',
+    source: 'The same operator\'s 310 bookings: about 16% of the nights on Booking.com\'s books later cancelled, and Trip.com bookings cancelled about half as often. 11% is the blend.' },
   { key: 'discountLeak', label: 'Average discount off the price', unit: 'share', min: 0, max: 0.3, step: 0.01,
-    help: 'Non-refundable, weekly and last-minute discounts, averaged over all bookings.',
+    help: 'Non-refundable, weekly and last-minute discounts, averaged over all bookings. When the workspace has a last-minute deal, the forecast also counts that deal night by night, so this can then be about 2 to 3 points lower.',
     source: 'Non-refundable 10%, weekly 15% and last-minute 10%, used by some of the bookings.' },
   { key: 'paybackMonths', label: 'Pay back furnishing over', unit: 'months', min: 1, max: 120, step: 1,
     help: 'One-off costs such as furnishing are spread over this many months.',
@@ -109,6 +117,9 @@ var ASSUMPTIONS = [
   { key: 'rounding', label: 'Round prices to', unit: 'money', min: 1, max: 50, step: 1,
     help: 'Every suggested price is a multiple of this.',
     source: 'Judgement.' },
+  { key: 'tierGap', label: 'Gap kept between unit types', unit: 'share', min: 0, max: 0.3, step: 0.01,
+    help: 'On every night, a better unit type in the building stays at least this much dearer than a cheaper one. Where the two are closer than that today, today\'s gap is kept instead. At 0, the plans keep the order only.',
+    source: 'Judgement: 5%, so that each step up in the building is still worth something to a guest.' },
   { key: 'marketOcc', label: 'The busiest listings in the area sell', unit: 'share', min: 0.5, max: 1, step: 0.01,
     help: 'Plans that need more nights sold than this are flagged.',
     source: 'Orbique\'s starting value, based on Kuala Lumpur data: the top tenth of listings there sit at about 75%.' }
@@ -246,11 +257,13 @@ function settings(over) {
   s.paceStrength = Math.max(0, s.paceStrength);
   s.paceCap = Math.max(0, s.paceCap);
   s.avgStay = Math.max(1, s.avgStay);
+  s.cancelRate = clamp(s.cancelRate, 0, 0.9);
   s.discountLeak = clamp(s.discountLeak, 0, 0.9);
   s.paybackMonths = s.paybackMonths > 0 ? s.paybackMonths : DEFAULTS.paybackMonths;
   s.minFactor = clamp(s.minFactor, 0.05, 1);
   s.maxFactor = Math.max(1, s.maxFactor);
   s.rounding = s.rounding > 0 ? s.rounding : 1;
+  s.tierGap = clamp(s.tierGap, 0, 1);
   s.historyPrior = Math.max(0, s.historyPrior);
   s.marketOcc = clamp(s.marketOcc, 0.05, 1);
   /* the lead-time curve: never falling, ending at 1 */
@@ -259,13 +272,48 @@ function settings(over) {
   return s;
 }
 
-/* F(t): the share of bookings made t days or less before arrival (linear between the given points, 1 from 60 days) */
+/* F(t): the share of nights booked t days or less before the night (linear between the given points, 1 from 60 days) */
 function leadF(t, share) {
   if (t <= 0) return share[0];
   for (var i = 1; i < LEAD_DAYS.length; i++) {
     if (t <= LEAD_DAYS[i]) return share[i - 1] + (share[i] - share[i - 1]) * (t - LEAD_DAYS[i - 1]) / (LEAD_DAYS[i] - LEAD_DAYS[i - 1]);
   }
   return 1;
+}
+/* H(t): the share of the guests looking for a night who are still to come t days before it. Guests arrive at random
+   and the first one takes the night, so a night that sells with P overall sells in its last t days with
+   1 - (1 - P)^H. F counts the bookings that happened, and an early guest takes a night before later ones can, so at
+   the usual occupancy q: F = ((1 - q)^(1 - H) - (1 - q)) / q, that is H = 1 - ln(1 - q (1 - F)) / ln(1 - q). */
+function leadH(F, q) {
+  if (F >= 1) return 1;
+  if (F <= 0) return 0;
+  q = clamp(q, 0.01, 0.99);
+  return clamp(1 - Math.log(1 - q * (1 - F)) / Math.log(1 - q), 0, 1);
+}
+/* the chance a night still unsold sells, from its chance P over the whole booking window, given as log-odds x:
+   1 - (1 - P)^H = 1 - exp(-H ln(1 + e^x)) */
+function openChance(x, H) {
+  if (H >= 1) return 1 / (1 + Math.exp(-x));
+  if (!(H > 0)) return 0;
+  var sp = x > 30 ? x : x < -30 ? Math.exp(x) : Math.log(1 + Math.exp(x));
+  return 1 - Math.exp(-H * sp);
+}
+/* the workspace's last-minute deal (blob lastMinuteDeal, applied by the channel manager as lastMinuteFactor in
+   api/_lib/channex-sync.js): {pct, days, nights: [weekdays], skip: [iso], until: iso}, or null when it does nothing */
+function dealOf(x) {
+  if (!x || typeof x !== 'object') return null;
+  var p = num(x.pct), days = Math.floor(num(x.days));
+  if (!(p > 0) || p >= 60 || days < 1 || days > 14 || num(x.days) !== days) return null;
+  var skip = {};
+  (Array.isArray(x.skip) ? x.skip : []).forEach(function (iso) { skip[String(iso).slice(0, 10)] = 1; });
+  return { pct: p / 100, days: days, nights: Array.isArray(x.nights) ? x.nights.map(Number) : null, skip: skip,
+    until: validIso(String(x.until || '').slice(0, 10)) ? String(x.until).slice(0, 10) : null };
+}
+function dealCovers(deal, n) {
+  if (!deal) return false;
+  if (deal.until && n.iso > deal.until) return false;
+  if (deal.skip[n.iso]) return false;
+  return !deal.nights || deal.nights.indexOf(n.dow) >= 0;
 }
 
 /* ---------------------------------------------------------------- cost maths */
@@ -326,9 +374,12 @@ function prepare(input) {
   m.keepPeaks = input.keepPeaks !== false;
   m.seed = input.seed != null && input.seed !== '' && isFinite(Number(input.seed)) ? Number(input.seed) : 1;
   m.draws = Math.round(clamp(num(input.draws) || 2000, 100, 20000));
+  /* the last-minute deal only acts on nights counted from a real today */
+  m.deal = m.today ? dealOf(input.lastMinute) : null;
 
   /* the nights, in date order (a booked night with no amount, null or missing, is counted at its price today later on;
-     an explicit 0 stays RM0) */
+     an explicit 0 stays RM0). firm: a booked night that can no longer cancel (the guest is in); stay: the booking it
+     belongs to, so its nights cancel together */
   var all = [];
   (input.nights || []).forEach(function (x) {
     var iso = x && String(x.iso || '').slice(0, 10);
@@ -338,7 +389,8 @@ function prepare(input) {
     var dw = x.dow != null && x.dow !== '' && isFinite(Number(x.dow)) ? ((Math.round(Number(x.dow)) % 7) + 7) % 7 : dowOf(iso);
     var unknown = st === 'booked' && (x.booked == null || x.booked === '' || !isFinite(Number(String(x.booked).replace(/,/g, ''))));
     all.push({ iso: iso, dow: dw, lead: Math.max(0, Math.round(lead)), current: num(x.current) > 0 ? num(x.current) : null,
-      status: st, booked: st === 'booked' && !unknown ? Math.max(0, num(x.booked)) : 0, bookedUnknown: unknown, month: iso.slice(0, 7), g: dw === 5 || dw === 6 ? 1 : 0 });
+      status: st, booked: st === 'booked' && !unknown ? Math.max(0, num(x.booked)) : 0, bookedUnknown: unknown, month: iso.slice(0, 7), g: dw === 5 || dw === 6 ? 1 : 0,
+      firm: st === 'booked' && x.firm === true, stay: st === 'booked' && x.stay != null && x.stay !== '' ? String(x.stay) : null });
   });
   all.sort(function (a, b) { return a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0; });
   m.all = all; m.N = all.length; m.months = m.N / DAYS_PER_MONTH;
@@ -348,18 +400,29 @@ function prepare(input) {
   m.monthKeys.forEach(function (key) { years[key.slice(5)] = (years[key.slice(5)] || 0) + 1; });
   m.monthLabels = m.monthKeys.map(function (key) { return MONTHS[+key.slice(5) - 1] + (years[key.slice(5)] > 1 ? ' ' + key.slice(0, 4) : ''); });
 
-  /* peak nights: at least peakThreshold above the usual price for their kind of night (median of today's prices in the
-     same month and weekday group, Sun-Thu or Fri-Sat; the group's median over all the dates when the month has fewer
-     than 3 such nights) */
-  var byMG = {}, byG = [[], []];
-  all.forEach(function (n) { if (!n.current) return; var key = n.month + '|' + n.g; (byMG[key] = byMG[key] || []).push(n.current); byG[n.g].push(n.current); });
-  var gMed = [median(byG[0]), median(byG[1])];
+  /* peak nights. Special nights are the owner's own (input.specialDates: the last-minute deal's skip dates) and the
+     holidays every year (24, 25 and 31 December, 1 January). The usual price for a kind of night (Sun-Thu or Fri-Sat)
+     is the lower of the median of today's prices on the ordinary nights of the same month (with at least 3 of them) and
+     on the ordinary nights of that kind over all the dates, so a month full of events does not make its events look
+     usual. A night is a peak when it is priced peakThreshold or more above the usual price, or is special and priced
+     above it. */
+  var special = {};
+  (Array.isArray(input.specialDates) ? input.specialDates : []).forEach(function (iso) { iso = String(iso).slice(0, 10); if (validIso(iso)) special[iso] = 1; });
+  all.forEach(function (n) { n.special = !!special[n.iso] || HOLIDAYS.indexOf(n.iso.slice(5)) >= 0; });
+  var byMG = {}, byG = [[], []], anyG = [[], []];
+  all.forEach(function (n) {
+    if (!n.current) return;
+    anyG[n.g].push(n.current);
+    if (n.special) return;
+    var key = n.month + '|' + n.g; (byMG[key] = byMG[key] || []).push(n.current); byG[n.g].push(n.current);
+  });
+  var gMed = [median(byG[0]) || median(anyG[0]), median(byG[1]) || median(anyG[1])];
   all.forEach(function (n) {
     n.usual = null; n.peak = false; n.peakLn = 0;
     if (!n.current) return;
-    var arr = byMG[n.month + '|' + n.g], usual = arr.length >= 3 ? median(arr) : gMed[n.g];
+    var arr = byMG[n.month + '|' + n.g], usual = arr && arr.length >= 3 ? Math.min(median(arr), gMed[n.g]) : gMed[n.g];
     n.usual = usual;
-    if (usual > 0 && n.current >= usual * (1 + s.peakThreshold)) { n.peak = true; n.peakLn = Math.log(n.current / usual); }
+    if (usual > 0 && (n.current >= usual * (1 + s.peakThreshold) || (n.special && n.current > usual))) { n.peak = true; n.peakLn = Math.log(n.current / usual); }
   });
 
   /* P0, the reference price: median of today's Sun-Thu non-peak prices */
@@ -393,54 +456,90 @@ function prepare(input) {
     hist = { sold: sold, available: avail, priceIndex: pIdx, observed: sold / avail, weight: w, baseOcc: sigmoid(a) };
   }
   m.a = a; m.baseOcc = sigmoid(a);
-  /* the occupancy spread in log-odds: half the width of baseOcc +- baseOccSd (kept inside 1% to 99%), so a wide margin
-     near the limits widens the range without moving the forecast much */
-  m.sdA = Math.max(0, (logit(Math.min(0.99, m.baseOcc + s.baseOccSd)) - logit(Math.max(0.01, m.baseOcc - s.baseOccSd))) / 2);
+  /* the occupancy spread in log-odds: the narrower side of baseOcc +- baseOccSd (each end kept inside 1% to 99%). Log-odds
+     stretch towards 0% and 100%, so the wider side would spread the draws far out near either limit and move the expected
+     forecast; the narrower side keeps a wide margin to a wider range (the other side alone when one end is past a limit).
+     The unit's own history narrows it as it moves a: with weight w, by the square root of 1 - w */
+  var lq = logit(m.baseOcc), wUp = logit(Math.min(0.99, m.baseOcc + s.baseOccSd)) - lq, wDn = lq - logit(Math.max(0.01, m.baseOcc - s.baseOccSd));
+  m.sdA = wUp > 0 && wDn > 0 ? Math.min(wUp, wDn) : Math.max(0, wUp, wDn);
+  if (hist) m.sdA *= Math.sqrt(1 - hist.weight);
 
-  /* each night's demand terms (without a and price) and the lead-time curve */
+  /* each night's demand terms (without a and price), the lead-time curve F, the share of guests still to come H (at the
+     usual occupancy the curve comes from), and the share of a night's remaining sales that come in the deal's window */
   all.forEach(function (n) {
     n.eff = s.dow[n.dow] + s.month[+n.month.slice(5) - 1];
     n.F = leadF(n.lead, s.leadShare);
+    n.H = leadH(n.F, s.baseOcc);
+    n.deal = dealCovers(m.deal, n);
+    n.R = 1;
+    if (n.deal) { var inWin = n.lead <= m.deal.days - 1 ? 1 : n.F > 0 ? leadF(m.deal.days - 1, s.leadShare) / n.F : 0; n.R = 1 - m.deal.pct * clamp(inWin, 0, 1); }
   });
 
-  /* pace: bookings already made against those expected by now at today's prices, per month */
-  var pace = [], paceRows = [];
+  /* pace: bookings already made against those expected by now at today's prices, per month. Peak nights are left out
+     (their premium already stands for their demand, and they book further ahead than the all-year curve). A booked night
+     counts as 1 - cancelRate, as the curve counts the stays that went ahead; the expected count shown is on the same
+     footing as the booked count (stays that will cancel included) */
+  var keepB = 1 - s.cancelRate, pace = [], paceRows = [];
   for (i = 0; i < M; i++) { pace.push(0); paceRows.push({ month: m.monthKeys[i], label: m.monthLabels[i], booked: 0, expected: 0, effect: 0, text: '' }); }
   all.forEach(function (n) {
-    if (n.status === 'blocked') return;
-    var p = n.current || P0, P = sigmoid(a + n.eff + s.beta * n.peakLn - s.beta * Math.log(p / P0));
+    if (n.status === 'blocked' || n.peak) return;
+    var p = n.current || P0, P = sigmoid(a + n.eff - s.beta * Math.log(p / P0));
     paceRows[n.mi].expected += P * (1 - n.F);
     if (n.status === 'booked') paceRows[n.mi].booked++;
   });
   paceRows.forEach(function (r, mi) {
-    var den = s.paceStrength + r.expected, theta = den > 0 ? (s.paceStrength + r.booked) / den : r.booked > 0 ? Infinity : 1;
+    var B = r.booked * keepB, den = s.paceStrength + r.expected, theta = den > 0 ? (s.paceStrength + B) / den : B > 0 ? Infinity : 1;
     r.effect = theta > 0 ? clamp(Math.log(theta), -s.paceCap, s.paceCap) : -s.paceCap;
     pace[mi] = r.effect;
-    var e = Math.round(r.expected);
-    if (!r.booked && e < 1 && Math.abs(r.effect) < 0.05) return;
+    r.expected = keepB > 0 ? r.expected / keepB : r.expected;
+    /* the expected count as the sentence shows it: one decimal under 10 */
+    var e = r.expected < 10 ? Math.round(r.expected * 10) / 10 : Math.round(r.expected);
+    if (!r.booked && e < 0.5 && Math.abs(r.effect) < 0.05) return;
+    var verb = Math.abs(r.effect) < 0.05 || e === r.booked ? ' demand left as it is.' : r.effect < 0 ? ' demand lowered.' : ' demand raised.';
     r.text = (r.booked ? plural(r.booked, 'night') + ' booked in ' + r.label : 'No nights booked in ' + r.label + ' yet') + '; ' +
-      (e ? 'about ' + e + ' expected by now' : 'hardly any expected by now') + ': ' +
-      (r.effect <= -0.05 ? r.label + ' demand lowered.' : r.effect >= 0.05 ? r.label + ' demand raised.' : r.label + ' demand left as it is.');
+      (e >= 0.05 ? 'about ' + e + ' expected by now' : 'hardly any expected by now') + ': ' + r.label + verb;
   });
   m.pace = pace;
 
-  /* the open nights the planner prices */
+  /* the building's other unit types: the tier-order check, and the limits that keep this unit between them (better:
+     priced above this unit, unless told) */
+  m.tiers = [];
+  (input.otherTiers || []).forEach(function (t) {
+    if (!t || !t.prices) return;
+    var mine = [], theirs = [];
+    all.forEach(function (n) { var tp = num(t.prices[n.iso]); if (tp > 0) { theirs.push(tp); if (n.current) mine.push(n.current); } });
+    if (!theirs.length) return;
+    m.tiers.push({ name: String(t.name || 'another unit type'), prices: t.prices, better: t.better != null ? !!t.better : median(theirs) > (median(mine) || P0) });
+  });
+
+  /* the open nights the planner prices. Booked nights are certain unless their stay cancels (cancelRate); a cancelled
+     night may sell again at today's price with its open chance now */
   var open = all.filter(function (n) { return n.status === 'open'; }), nOpen = open.length;
   m.open = open; m.n = nOpen;
-  m.bookedN = 0; m.bookedRev = 0; m.blockedN = 0;
-  all.forEach(function (n) { if (n.status === 'booked') { m.bookedN++; m.bookedRev += n.booked; } else if (n.status === 'blocked') m.blockedN++; });
-  m.bookedContrib = m.bookedRev * (1 - m.pct) - m.bookedN * m.v;
+  m.bookedN = 0; m.bookedSold = 0; m.bookedRev = 0; m.bookedContrib = 0; m.blockedN = 0;
+  all.forEach(function (n) {
+    if (n.status === 'blocked') { m.blockedN++; return; }
+    if (n.status !== 'booked') return;
+    var keep = n.firm ? 1 : keepB, p = n.current || P0;
+    var q = openChance(a + n.eff + pace[n.mi] + s.beta * n.peakLn - s.beta * Math.log(p / P0), n.H);
+    n.keep = keep; n.resell = q; n.resellCt = p * n.R * m.kNet - m.v;
+    n.bSold = keep + (1 - keep) * q;
+    n.bRev = keep * n.booked + (1 - keep) * q * p * n.R * (1 - m.leak);
+    n.bCt = keep * (n.booked * (1 - m.pct) - m.v) + (1 - keep) * q * n.resellCt;
+    m.bookedN++; m.bookedSold += n.bSold; m.bookedRev += n.bRev; m.bookedContrib += n.bCt;
+  });
   m.fixedDates = costs.fixedMonthly * m.N / DAYS_PER_MONTH;
   m.missing = open.filter(function (n) { return !n.current; }).length;
-  m.F = new Float64Array(nOpen); m.G = new Float64Array(nOpen); m.lateW = new Float64Array(nOpen);
+  m.F = new Float64Array(nOpen); m.H = new Float64Array(nOpen); m.R = new Float64Array(nOpen); m.G = new Float64Array(nOpen); m.lateW = new Float64Array(nOpen);
   var baseTerm = new Float64Array(nOpen), mOf = new Int32Array(nOpen);
   open.forEach(function (n, x) {
-    m.F[x] = n.F;
+    m.F[x] = n.F; m.H[x] = n.H; m.R[x] = n.R;
     m.G[x] = n.peakLn + m.lnP0;                     /* logit = a + base + beta (G - ln p) */
     m.lateW[x] = n.F > 0 ? leadF(Math.min(n.lead, LATE_DAYS), s.leadShare) / n.F : 0;
     baseTerm[x] = n.eff + pace[n.mi];
     mOf[x] = n.mi;
   });
+  m.dealN = open.filter(function (n) { return n.deal; }).length;
 
   /* the 48 parameter draws behind each selling chance: stratified (one draw per 1/48 slice of each distribution,
      paired at random), so their mean is close to the exact expectation */
@@ -454,12 +553,32 @@ function prepare(input) {
     for (j = 0; j < nOpen; j++) m.LK[k * nOpen + j] = ak + baseTerm[j] + shocks[mOf[j]];
   }
 
+  /* the price each other unit type allows this unit on each open night: a better type stays at least tierGap dearer than
+     this unit (as a share of this unit's price), a cheaper type at least tierGap cheaper (as a share of its own); where
+     the two are closer than that today, today's gap is the limit. Always strictly below a better type and above a
+     cheaper one. NaN: that type has no price that night */
+  m.tiers.forEach(function (t) {
+    t.lim = new Float64Array(nOpen);
+    open.forEach(function (n, x) {
+      var tp = num(t.prices[n.iso]), cur = n.current, lim;
+      if (!(tp > 0)) { t.lim[x] = NaN; return; }
+      if (t.better) { lim = tp / (1 + s.tierGap); if (cur > lim && cur < tp) lim = cur; }
+      else { lim = tp * (1 + s.tierGap); if (cur > tp && cur < lim) lim = cur; }
+      t.lim[x] = lim;
+    });
+  });
+
   /* candidate prices per open night, multiples of the rounding step inside minFactor..maxFactor of the night's price
-     today (P0 for nights with none) and inside floor and ceiling; peak nights keep today's price with keepPeaks */
+     today (P0 for nights with none), inside floor and ceiling, and inside the other unit types' limits that night (when
+     that leaves nothing, the nearest price to them); peak nights keep today's price with keepPeaks */
   var step = m.step, kF = m.floor ? Math.ceil(m.floor / step - 1e-9) : 1, kC = m.ceiling < Infinity ? Math.floor(m.ceiling / step + 1e-9) : Infinity;
   if (kF < 1) kF = 1;
+  /* the owner's limits as the prices use them: on the rounding step, and the floor wins when the two leave no step between */
+  m.limits = { floor: m.floor ? kF * step : null, ceiling: m.ceiling < Infinity ? Math.max(kF, kC) * step : null };
   var cP = [], cOff = new Int32Array(nOpen), cN = new Int32Array(nOpen), cK0 = new Float64Array(nOpen);
   m.nVar = 0; m.nFloorLo = 0; m.nCeilHi = 0;   /* nights with a choice of prices; of them, the ones the floor or ceiling cut */
+  m.nTier = 0; m.tierUp = {}; m.tierDn = {};   /* nights the other unit types limited, and which types did */
+  m.nTierHi = 0; m.nTierLo = 0;               /* of them, the nights whose highest or lowest price they cut */
   open.forEach(function (n, x) {
     cOff[x] = cP.length;
     if (m.keepPeaks && n.peak) {
@@ -472,19 +591,36 @@ function prepare(input) {
     var bp = n.current || P0, lo0 = Math.ceil(bp * s.minFactor / step - 1e-9), hi0 = Math.floor(bp * s.maxFactor / step + 1e-9);
     var lo = Math.max(kF, lo0), hi = Math.min(kC, hi0);
     if (hi < lo) { lo = hi = kF > kC ? kF : clamp(Math.round(bp / step), kF, kC); }
-    else { m.nVar++; if (kF > lo0) m.nFloorLo++; if (kC < hi0) m.nCeilHi++; }
+    else {
+      m.nVar++; if (kF > lo0) m.nFloorLo++; if (kC < hi0) m.nCeilHi++;
+      var tHi = Infinity, tLo = -Infinity, up = [], dn = [];
+      m.tiers.forEach(function (t) {
+        var tp = num(t.prices[n.iso]), lim = t.lim[x]; if (!(tp > 0)) return;
+        if (t.better) { var c1 = Math.min(Math.floor(lim / step + 1e-9), Math.ceil(tp / step - 1e-9) - 1); if (c1 < tHi) tHi = c1; up.push(t.name); }
+        else { var c2 = Math.max(Math.ceil(lim / step - 1e-9), Math.floor(tp / step + 1e-9) + 1); if (c2 > tLo) tLo = c2; dn.push(t.name); }
+      });
+      if (tLo <= tHi && (tHi < hi || tLo > lo)) {
+        var lo2 = Math.max(lo, tLo), hi2 = Math.min(hi, tHi);
+        if (lo2 > hi2) lo2 = hi2 = tLo > hi ? hi : lo;
+        if (hi2 < hi) m.nTierHi++;
+        if (lo2 > lo) m.nTierLo++;
+        lo = lo2; hi = hi2; m.nTier++;
+        if (tHi < hi0) up.forEach(function (nm) { m.tierUp[nm] = 1; });
+        if (tLo > lo0) dn.forEach(function (nm) { m.tierDn[nm] = 1; });
+      }
+    }
     for (var c = lo; c <= hi; c++) cP.push(c * step);
     cN[x] = hi - lo + 1; cK0[x] = lo;
   });
   m.cP = new Float64Array(cP); m.cOff = cOff; m.cN = cN; m.cK0 = cK0;
   m.cPb = new Float64Array(cP.length); m.cCt = new Float64Array(cP.length);
   for (j = 0; j < nOpen; j++) {
-    for (i = cOff[j]; i < cOff[j] + cN[j]; i++) { m.cPb[i] = pbar(m, j, m.cP[i], 0); m.cCt[i] = m.cP[i] * m.kNet - m.v; }
+    for (i = cOff[j]; i < cOff[j] + cN[j]; i++) { m.cPb[i] = pbar(m, j, m.cP[i], 0); m.cCt[i] = m.cP[i] * m.R[j] * m.kNet - m.v; }
   }
 
   /* the Monte Carlo draws: a, beta and a shock per month, then one uniform U per open night. The night sells when U is
-     below its chance P F / (1 - P (1 - F)), which is the same as P above U / (F + U (1 - F)): so each uniform is stored as
-     that threshold in log-odds (V), and a draw needs no exp, only a comparison with a + ... + beta (G - ln p) */
+     below its chance 1 - (1 - P)^H, which is the same as P above 1 - (1 - U)^(1 / H): so each uniform is stored as that
+     threshold in log-odds (V), and a draw needs no exp, only a comparison with a + ... + beta (G - ln p) */
   var J = m.draws;
   m.mB = new Float64Array(J); m.L = new Float64Array(J * nOpen); m.V = new Float64Array(J * nOpen);
   for (j = 0; j < J; j++) {
@@ -494,7 +630,7 @@ function prepare(input) {
     for (k = 0; k < nOpen; k++) m.L[j * nOpen + k] = aj + baseTerm[k] + sh[mOf[k]];
   }
   for (i = 0; i < J * nOpen; i++) {
-    var u = next(), Fx = m.F[i % nOpen], thr = Fx >= 1 ? u : Fx > 0 ? u / (Fx + u * (1 - Fx)) : 1;
+    var u = next(), Hx = m.H[i % nOpen], thr = Hx >= 1 ? u : Hx > 0 ? 1 - Math.pow(1 - u, 1 / Hx) : 1;
     m.V[i] = thr <= 0 ? -Infinity : thr >= 1 ? Infinity : Math.log(thr / (1 - thr));
   }
   m.riskCache = {};
@@ -510,15 +646,25 @@ function prepare(input) {
     for (j = 0; j < nOpen; j++) m.LC[k * nOpen + j] = ck + baseTerm[j] + cs[mOf[j]];
   }
 
-  /* the building's other unit types, for the tier-order check (better: priced above this unit, unless told) */
-  m.tiers = [];
-  (input.otherTiers || []).forEach(function (t) {
-    if (!t || !t.prices) return;
-    var mine = [], theirs = [];
-    all.forEach(function (n) { var tp = num(t.prices[n.iso]); if (tp > 0) { theirs.push(tp); if (n.current) mine.push(n.current); } });
-    if (!theirs.length) return;
-    m.tiers.push({ name: String(t.name || 'another unit type'), prices: t.prices, better: t.better != null ? !!t.better : median(theirs) > (median(mine) || P0) });
+  /* the booked nights in each Monte Carlo draw: each stay (a booking, else a run of booked nights) cancels with
+     cancelRate unless the guest is in; a cancelled night then sells again with its chance now. Drawn last, so the other
+     draws do not depend on it */
+  m.bookedDraw = new Float64Array(J);
+  var stays = [], last = null;
+  all.forEach(function (n) {
+    if (n.status !== 'booked') { last = null; return; }
+    if (!last || (n.stay ? n.stay !== last.id : last.id != null || daysBetween(last.end, n.iso) !== 1) || n.firm !== last.firm) { last = { id: n.stay, firm: n.firm, nights: [] }; stays.push(last); }
+    last.nights.push(n); last.end = n.iso;
   });
+  var keepSum = stays.map(function (st) { return st.nights.reduce(function (t, n) { return t + n.booked * (1 - m.pct) - m.v; }, 0); });
+  for (j = 0; j < J; j++) {
+    var tot = 0;
+    for (i = 0; i < stays.length; i++) {
+      if (stays[i].firm || !(s.cancelRate > 0) || next() >= s.cancelRate) { tot += keepSum[i]; continue; }
+      stays[i].nights.forEach(function (n) { if (next() < n.resell) tot += n.resellCt; });
+    }
+    m.bookedDraw[j] = tot;
+  }
 
   /* what calibration used, for the page */
   var text = [];
@@ -530,20 +676,17 @@ function prepare(input) {
   paceRows.forEach(function (r) { if (r.text) text.push(r.text); });
   m.calibration = {
     P0: P0, P0From: P0From, baseOcc: s.baseOcc, baseOccUsed: m.baseOcc, history: hist, pace: paceRows,
-    peaks: all.filter(function (n) { return n.peak; }).map(function (n) { return { iso: n.iso, current: n.current, usual: n.usual, premium: n.current / n.usual - 1, status: n.status }; }),
+    peaks: all.filter(function (n) { return n.peak; }).map(function (n) { return { iso: n.iso, current: n.current, usual: n.usual, premium: n.current / n.usual - 1, status: n.status, special: n.special }; }),
     text: text
   };
   return m;
 }
 
 /* one open night's selling chance at price p: the mean over the 48 parameter draws, given it is still unsold now.
-   shift moves a (the weak-demand check) */
-function pbar(m, x, p, shift) {
-  var lnp = Math.log(p), F = m.F[x], g = m.G[x], n = m.n, sum = 0;
-  for (var k = 0; k < K; k++) {
-    var P = 1 / (1 + Math.exp(-(m.LK[k * n + x] + shift + m.kB[k] * (g - lnp))));
-    sum += F >= 1 ? P : F > 0 ? P * F / (1 - P * (1 - F)) : 0;
-  }
+   shift moves a (the weak-demand check); bScale scales the reaction to price (1 unless given) */
+function pbar(m, x, p, shift, bScale) {
+  var lnp = Math.log(p), H = m.H[x], g = m.G[x], n = m.n, sum = 0, bs = bScale || 1;
+  for (var k = 0; k < K; k++) sum += openChance(m.LK[k * n + x] + shift + bs * m.kB[k] * (g - lnp), H);
   return sum / K;
 }
 /* the same, from the candidate table when p is one of the night's candidates */
@@ -564,12 +707,9 @@ function checkPPM(m, prices) {
   for (var x = 0; x < n; x++) {
     var p = prices[x];
     if (!(p > 0)) continue;
-    var F = m.F[x], g = m.G[x] - Math.log(p), sum = 0;
-    for (var k = 0; k < KC; k++) {
-      var P = 1 / (1 + Math.exp(-(m.LC[k * n + x] + m.kBC[k] * g)));
-      sum += F >= 1 ? P : F > 0 ? P * F / (1 - P * (1 - F)) : 0;
-    }
-    contrib += sum / KC * (p * m.kNet - m.v);
+    var H = m.H[x], g = m.G[x] - Math.log(p), sum = 0;
+    for (var k = 0; k < KC; k++) sum += openChance(m.LC[k * n + x] + m.kBC[k] * g, H);
+    contrib += sum / KC * (p * m.R[x] * m.kNet - m.v);
   }
   return m.months ? (m.bookedContrib + contrib - m.fixedDates) / m.months : 0;
 }
@@ -592,12 +732,12 @@ function expect(m, prices, shift) {
     var p = prices[x];
     if (!(p > 0)) continue;
     var q = shift ? pbar(m, x, p, shift) : chanceAt(m, x, p);
-    pb[x] = q; sold += q; rev += q * p * (1 - m.leak); contrib += q * (p * m.kNet - m.v); late += q * m.lateW[x];
+    pb[x] = q; sold += q; rev += q * p * m.R[x] * (1 - m.leak); contrib += q * (p * m.R[x] * m.kNet - m.v); late += q * m.lateW[x];
   }
   return { pb: pb, sold: sold, rev: rev, contrib: contrib, late: late };
 }
 function quick(m, e) {
-  var sold = m.bookedN + e.sold;
+  var sold = m.bookedSold + e.sold;
   return { occ: m.N ? sold / m.N : 0, adr: sold > 0 ? (m.bookedRev + e.rev) / sold : 0,
     profitPerMonth: m.months ? (m.bookedContrib + e.contrib - m.fixedDates) / m.months : 0 };
 }
@@ -609,10 +749,10 @@ function risk(m, prices, J) {
   if (m.riskCache[key]) return m.riskCache[key];
   /* a night with no price never sells: its log-price term is -Infinity, below every threshold */
   var n = m.n, gl = new Float64Array(n), ct = new Float64Array(n), x, j, L = m.L, V = m.V, mB = m.mB;
-  for (x = 0; x < n; x++) { if (prices[x] > 0) { gl[x] = m.G[x] - Math.log(prices[x]); ct[x] = prices[x] * m.kNet - m.v; } else gl[x] = -Infinity; }
-  var out = new Float64Array(J), base = m.bookedContrib - m.fixedDates, months = m.months || 1, hit = 0, loss = 0;
+  for (x = 0; x < n; x++) { if (prices[x] > 0) { gl[x] = m.G[x] - Math.log(prices[x]); ct[x] = prices[x] * m.R[x] * m.kNet - m.v; } else gl[x] = -Infinity; }
+  var out = new Float64Array(J), bd = m.bookedDraw, months = m.months || 1, hit = 0, loss = 0;
   for (j = 0; j < J; j++) {
-    var b = mB[j], row = j * n, tot = base;
+    var b = mB[j], row = j * n, tot = bd[j] - m.fixedDates;
     for (x = 0; x < n; x++) if (L[row + x] + b * gl[x] > V[row + x]) tot += ct[x];   /* sold in this draw (see prepare) */
     out[j] = tot / months;
     if (out[j] >= m.target) hit++;
@@ -635,40 +775,43 @@ function currentPrices(m) {
 /* the stats, byMonth and per-night table for one plan (prices aligned with m.open) */
 function summarise(m, prices, rk) {
   var e = expect(m, prices, 0), weak = expect(m, prices, -m.s.weakDemand), q = quick(m, e);
-  var sold = m.bookedN + e.sold, rev = m.bookedRev + e.rev, profit = m.bookedContrib + e.contrib - m.fixedDates;
+  var sold = m.bookedSold + e.sold, rev = m.bookedRev + e.rev, profit = m.bookedContrib + e.contrib - m.fixedDates;
   var margin = q.adr * (1 - m.pct) - m.v, fixed = m.costs.fixedMonthly;
   function occNeeded(extra) { if (fixed + extra <= 0) return 0; return margin > 0 ? (fixed + extra) / (DAYS_PER_MONTH * margin) : null; }
   var groups = { weekday: { nights: 0, open: 0, sold: 0, sum: 0, priced: 0 }, weekend: { nights: 0, open: 0, sold: 0, sum: 0, priced: 0 }, peak: { nights: 0, open: 0, sold: 0, sum: 0, priced: 0 } };
   var mon = m.monthKeys.map(function (key, i) { return { month: key, label: m.monthLabels[i], nights: 0, open: 0, booked: 0, blocked: 0, soldNights: 0, revenue: 0, contrib: 0, sum: 0, priced: 0, curSum: 0, curN: 0, changes: 0 }; });
-  var prMap = {}, nightly = [], changes = 0, up = 0, down = 0, added = 0, moveSum = 0, moveN = 0, chgSum = 0, minP = null, maxP = null;
-  var tierAbove = {}, tierBelow = {}, x = 0;
+  var prMap = {}, nightly = [], changes = 0, up = 0, down = 0, added = 0, moveSum = 0, moveN = 0, chgSum = 0, bigN = 0, minP = null, maxP = null;
+  var tierAbove = {}, tierBelow = {}, tierClose = {}, x = 0;
   m.all.forEach(function (n) {
     var gk = n.peak ? 'peak' : n.g ? 'weekend' : 'weekday', gr = groups[gk], mo = mon[n.mi], price = null, chance = 0;
     gr.nights++; mo.nights++;
     if (n.status === 'open') {
-      var p = prices[x], pb = e.pb[x];
+      var p = prices[x], pb = e.pb[x], xo = x;
       x++;
       gr.open++; mo.open++;
       if (n.current) { mo.curSum += n.current; mo.curN++; }
       if (p > 0) {
         price = p; chance = pb; prMap[n.iso] = p;
         gr.sold += pb; gr.sum += p; gr.priced++;
-        mo.soldNights += pb; mo.revenue += pb * p * (1 - m.leak); mo.contrib += pb * (p * m.kNet - m.v); mo.sum += p; mo.priced++;
+        mo.soldNights += pb; mo.revenue += pb * p * n.R * (1 - m.leak); mo.contrib += pb * (p * n.R * m.kNet - m.v); mo.sum += p; mo.priced++;
         if (minP == null || p < minP) minP = p;
         if (maxP == null || p > maxP) maxP = p;
         if (p !== n.current) { changes++; mo.changes++; if (!n.current) added++; else if (p > n.current) up++; else down++; }
-        if (n.current) { moveSum += Math.abs(p / n.current - 1); chgSum += p / n.current - 1; moveN++; }
+        if (n.current) { moveSum += Math.abs(p / n.current - 1); chgSum += p / n.current - 1; moveN++; if (Math.abs(p / n.current - 1) >= BIG_MOVE - 1e-9) bigN++; }
         m.tiers.forEach(function (t) {
-          var tp = num(t.prices[n.iso]);
+          var tp = num(t.prices[n.iso]), lim = t.lim[xo];
           if (!(tp > 0)) return;
           if (t.better && p >= tp) tierAbove[t.name] = (tierAbove[t.name] || 0) + 1;
-          if (!t.better && p < tp) tierBelow[t.name] = (tierBelow[t.name] || 0) + 1;
+          else if (!t.better && p <= tp) tierBelow[t.name] = (tierBelow[t.name] || 0) + 1;
+          else if (t.better ? p > lim + 1e-9 : p < lim - 1e-9) tierClose[t.name] = (tierClose[t.name] || 0) + 1;
         });
       }
     } else if (n.status === 'booked') {
-      chance = 1; gr.sold++; mo.booked++; mo.soldNights++; mo.revenue += n.booked; mo.contrib += n.booked * (1 - m.pct) - m.v;
+      chance = n.bSold; gr.sold += n.bSold; mo.booked++; mo.soldNights += n.bSold; mo.revenue += n.bRev; mo.contrib += n.bCt;
     } else mo.blocked++;
-    nightly.push({ iso: n.iso, dow: n.dow, status: n.status, peak: n.peak, current: n.current, price: price, chance: chance });
+    var row = { iso: n.iso, dow: n.dow, status: n.status, peak: n.peak, current: n.current, price: price, chance: chance };
+    if (n.deal && n.status === 'open') row.deal = true;
+    nightly.push(row);
   });
   function grp(g) { return { nights: g.nights, open: g.open, avgPrice: g.priced ? g.sum / g.priced : null, occ: g.nights ? g.sold / g.nights : 0 }; }
   function tierList(o) { return Object.keys(o).map(function (k) { return { name: k, nights: o[k] }; }); }
@@ -684,11 +827,11 @@ function summarise(m, prices, rk) {
     avgPrice: (groups.weekday.priced + groups.weekend.priced + groups.peak.priced) ? (groups.weekday.sum + groups.weekend.sum + groups.peak.sum) / (groups.weekday.priced + groups.weekend.priced + groups.peak.priced) : null,
     minPrice: minP, maxPrice: maxP,
     weakDemandProfitPerMonth: m.months ? (m.bookedContrib + weak.contrib - m.fixedDates) / m.months : 0,
-    weakDemandSold: m.bookedN + weak.sold,
+    weakDemandSold: m.bookedSold + weak.sold,
     lateShare: sold > 0 ? e.late / sold : 0,
-    avgMove: moveN ? moveSum / moveN : 0, avgChange: moveN ? chgSum / moveN : 0,
+    avgMove: moveN ? moveSum / moveN : 0, avgChange: moveN ? chgSum / moveN : 0, bigMoves: bigN, pricedToday: moveN,
     up: up, down: down, added: added,
-    tierAbove: tierList(tierAbove), tierBelow: tierList(tierBelow),
+    tierAbove: tierList(tierAbove), tierBelow: tierList(tierBelow), tierClose: tierList(tierClose),
     reachesTarget: q.profitPerMonth >= m.target,
     vsCurrent: null
   };
@@ -737,8 +880,16 @@ function prosCons(m, st, ctx) {
   if (m.tiers.length) {
     var verb = ctx.isCurrent ? ' costs ' : ' would cost ';
     st.tierAbove.forEach(function (t) { cons.push('On ' + plural(t.nights, 'night') + ' this unit' + verb + 'as much as or more than ' + t.name + ', a better unit type in this building.'); });
-    st.tierBelow.forEach(function (t) { cons.push('On ' + plural(t.nights, 'night') + ' this unit' + verb + 'less than ' + t.name + ', a cheaper unit type in this building.'); });
-    if (!st.tierAbove.length && !st.tierBelow.length) pros.push('Keeps the right order against the other unit types in this building.');
+    st.tierBelow.forEach(function (t) { cons.push('On ' + plural(t.nights, 'night') + ' this unit' + (ctx.isCurrent ? ' costs ' : ' would cost ') + 'no more than ' + t.name + ', a cheaper unit type in this building.'); });
+    var gapW = pct(m.s.tierGap), better = {};
+    m.tiers.forEach(function (t) { better[t.name] = t.better; });
+    st.tierClose.forEach(function (t) {
+      cons.push('On ' + plural(t.nights, 'night') + ' this unit' + (ctx.isCurrent ? ' is' : ' would be') + ' priced within ' + gapW + ' of ' + t.name + ', ' + (better[t.name] ? 'a better' : 'a cheaper') + ' unit type in this building.');
+    });
+    if (!st.tierAbove.length && !st.tierBelow.length && !st.tierClose.length) {
+      pros.push(m.s.tierGap > 0 ? 'Keeps the other unit types in this building in order, at least ' + gapW + ' apart (or as far apart as today, where that is less).'
+        : 'Keeps the right order against the other unit types in this building.');
+    }
   }
 
   /* the occupancy it needs, against what is likely to sell and the market, compared as the rounded percentages shown */
@@ -774,7 +925,10 @@ function prosCons(m, st, ctx) {
     else if (dS <= -0.5) pros.push('About ' + plural(count(-dS), 'fewer stay') + per + ': less cleaning, wear and guest messages.');
     if (dS >= 1) pros.push('More stays bring more reviews and better placement on booking sites.');
     else if (dS <= -1) cons.push('Fewer stays mean fewer new reviews, which can lower placement on booking sites.');
-    if (st.avgMove >= 0.15) cons.push('Moves prices about ' + pct(st.avgMove) + ' from today on average, and the forecast is less sure about prices guests have not seen.');
+    if (st.bigMoves > 0 && st.bigMoves * 3 >= st.pricedToday) {
+      cons.push((st.bigMoves === st.pricedToday ? (st.pricedToday === 1 ? 'Moves the night with a price today' : 'Moves all ' + st.pricedToday + ' nights with a price today')
+        : 'Moves ' + st.bigMoves + ' of the ' + st.pricedToday + ' nights with a price today') + ' by ' + pct(BIG_MOVE) + ' or more, and the forecast is less sure about prices guests have not seen.');
+    }
     else if (st.avgMove <= 0.05 && st.up + st.down > 0) pros.push('Stays close to today\'s prices, so the forecast is on firmer ground.');
     /* peak nights kept at today's price while ordinary nights go above them */
     if (m.keepPeaks && st.peak.avgPrice != null && ((st.weekday.avgPrice != null && st.weekday.avgPrice > st.peak.avgPrice) || (st.weekend.avgPrice != null && st.weekend.avgPrice > st.peak.avgPrice))) {
@@ -784,8 +938,10 @@ function prosCons(m, st, ctx) {
 
   /* weak demand */
   var wd = st.weakDemandProfitPerMonth, wp = ctx.weakPct;
-  if (target > 0 && wd >= target) pros.push('Still makes about ' + about(wd) + ' a month if demand is ' + wp + '% weaker.');
-  else if (target <= 0 && wd >= 0) pros.push('Still covers its costs if demand is ' + wp + '% weaker.');
+  if (target <= 0 && wd >= 0) pros.push('Still covers its costs if demand is ' + wp + '% weaker.');
+  /* an amount that rounds to nothing is "about breaks even", not "about RM 0 a month"; short of a target, a con */
+  else if (round10(wd) === 0) (target > 0 ? cons : pros).push('If demand is ' + wp + '% weaker, the unit about breaks even.');
+  else if (target > 0 && wd >= target) pros.push('Still makes about ' + about(wd) + ' a month if demand is ' + wp + '% weaker.');
   else if (wd >= 0) cons.push('If demand is ' + wp + '% weaker, profit falls to about ' + about(wd) + ' a month.');
   else cons.push('If demand is ' + wp + '% weaker, the unit loses about ' + about(-wd) + ' a month.');
 
@@ -821,7 +977,7 @@ function model(input) {
   var key;
   try {
     key = JSON.stringify([input.today, input.nights, input.costs, input.profitPerMonth, input.assumptions, input.history, input.otherTiers,
-      input.keepPeaks, input.floor, input.ceiling, input.seed, input.draws, input.basePrice]);
+      input.keepPeaks, input.floor, input.ceiling, input.seed, input.draws, input.basePrice, input.lastMinute, input.specialDates]);
   } catch (e) { key = null; }
   var m = key && cache.key === key ? cache.m : prepare(input);
   if (key) { cache.key = key; cache.m = m; }
@@ -837,6 +993,8 @@ function plan(input) {
     today: m.today, nights: m.N, open: m.n, booked: m.bookedN, blocked: m.blockedN, months: m.months, target: m.target, P0: m.P0,
     costs: JSON.parse(JSON.stringify(m.costs)), required: requiredRates(input && input.costs, m.target, { avgStay: s.avgStay, discountLeak: s.discountLeak, paybackMonths: m.costs.paybackMonths }),
     assumptions: copySettings(s), calibration: JSON.parse(JSON.stringify(m.calibration)), seed: m.seed, draws: m.draws,
+    limits: { floor: m.limits.floor, ceiling: m.limits.ceiling },
+    deal: m.deal ? { pct: m.deal.pct, days: m.deal.days, nights: m.dealN } : null,
     reachable: false, recommended: null, options: [], frontier: [], demandCurve: [], notes: []
   };
   if (!m.N) { res.notes.push('Choose some dates to plan.'); return res; }
@@ -898,9 +1056,13 @@ function plan(input) {
   /* Most profit, Fill and Premium, then the guarantees: Most profit has the highest expected profit, Fill the highest
      occupancy and Premium the highest ADR among the options that reach the goal (an option that beats one of them on
      its own measure takes its place, and the two merge into one card). Today's prices take another role only when they
-     price every open night inside the floor and ceiling: otherwise a card named for the planner would show prices the
-     planner would not choose (no price at all, or outside the owner's limits). */
-  var curOK = !m.missing && m.open.every(function (n) { return n.current >= m.floor && n.current <= m.ceiling; });
+     price every open night inside the prices the planner tries (the floor and ceiling, and the other unit types'
+     prices): otherwise a card named for the planner would show prices the planner would not choose (no price at all,
+     outside the owner's limits, or out of order with the building's other unit types). */
+  var curOK = !m.missing && m.open.every(function (n, xx) {
+    var lo = m.cP[m.cOff[xx]], hi = m.cP[m.cOff[xx] + m.cN[xx] - 1];
+    return n.current >= m.floor && n.current <= m.ceiling && n.current >= lo - 1e-9 && n.current <= hi + 1e-9;
+  });
   var picks = { current: cur, fill: fillN && fillN.prices, balanced: null, profit: profitN.prices, premium: premN && premN.prices };
   var S = {};
   function full(pr) { var key = sig(pr); if (!S[key]) S[key] = summarise(m, pr, risk(m, pr, J)); return S[key]; }
@@ -976,9 +1138,12 @@ function plan(input) {
   function makesFor(one) { return one ? (target > 0 ? 'makes ' + goalText : 'covers all costs') : makes; }
   /* where Fill or Premium stopped: the owner's floor or ceiling when it cut most nights' range, else minFactor, maxFactor */
   var byFloor = m.floor > 0 && m.nFloorLo * 2 >= m.nVar, byCeil = m.ceiling < Infinity && m.nCeilHi * 2 >= m.nVar;
+  /* or the building's other unit types, when they cut most nights' range at that end */
+  var tu = Object.keys(m.tierUp), td = Object.keys(m.tierDn);
+  var byTierLo = !byFloor && td.length > 0 && m.nTierLo * 2 >= m.nVar, byTierHi = !byCeil && tu.length > 0 && m.nTierHi * 2 >= m.nVar;
   var ofWhat = m.missing === m.n ? ' of the usual price)' : ' of today\'s)';
-  var lowWords = byFloor ? 'the lowest price you allow (' + money(Math.ceil(m.floor / m.step - 1e-9) * m.step) + ')' : 'the lowest prices the planner tries (' + pct(s.minFactor) + ofWhat;
-  var highWords = byCeil ? 'the highest price you allow (' + money(Math.floor(m.ceiling / m.step + 1e-9) * m.step) + ')' : 'the highest prices the planner tries (' + pct(s.maxFactor) + ofWhat;
+  var lowWords = byFloor ? 'the lowest price you allow (' + money(Math.ceil(m.floor / m.step - 1e-9) * m.step) + ')' : byTierLo ? 'the lowest prices that keep this unit above ' + joinWords(td) : 'the lowest prices the planner tries (' + pct(s.minFactor) + ofWhat;
+  var highWords = byCeil ? 'the highest price you allow (' + money(Math.floor(m.ceiling / m.step + 1e-9) * m.step) + ')' : byTierHi ? 'the highest prices that keep this unit below ' + joinWords(tu) : 'the highest prices the planner tries (' + pct(s.maxFactor) + ofWhat;
   function cap(t) { return t.charAt(0).toUpperCase() + t.slice(1); }
   function chanceShort(p) { return p >= 0.95 ? 'almost certain' : p < 0.05 ? 'less than 1 in 20' : p >= 0.45 && p < 0.55 ? 'about even' : 'about ' + Math.round(p * 10) + ' in 10'; }
   function summaryOf(k, stt) {
@@ -1050,15 +1215,32 @@ function plan(input) {
   if (m.bookedUnknown) res.notes.push(plural(m.bookedUnknown, 'booked night has', 'booked nights have') + ' no amount recorded, so ' + (m.bookedUnknown === 1 ? 'it is' : 'they are') + ' counted at today\'s price less the usual discount.');
   var P0From = m.calibration.P0From;
   if (P0From !== 'weekdays' && P0From !== 'all nights') res.notes.push('There are no prices in these dates to start from, so the usual price is taken as ' + money(m.P0) + (P0From === 'base price' ? ', the unit\'s base price.' : P0From === 'booked' ? ', from what the booked nights brought in.' : P0From === 'costs' ? ', what the costs need.' : '.'));
+  /* without the unit's own history the level comes from the market figure, and the plans only adjust today's prices */
+  var hst = m.calibration.history;
+  if (m.n && (P0From === 'weekdays' || P0From === 'all nights') && (!hst || hst.weight < 0.25)) {
+    res.notes.push('This unit has little sales history yet, so the forecast assumes today\'s ' + (P0From === 'weekdays' ? 'Sunday to Thursday price' : 'usual price') + ' sells about ' + pct(m.baseOcc) + ' of nights. The plans adjust today\'s prices; they do not work out a market price from scratch.');
+  }
   if (m.keepPeaks) {
     var kept = 0, held = 0;
     m.open.forEach(function (n, xx) { if (n.peak) { if (m.cP[m.cOff[xx]] === n.current) kept++; else held++; } });
     if (kept) res.notes.push(plural(kept, 'peak night keeps', 'peak nights keep') + ' today\'s price in every plan.');
     if (held) res.notes.push(plural(held, 'peak night is', 'peak nights are') + ' held at the lowest or highest price allowed instead of today\'s price.');
   }
+  /* the building's other unit types limited the prices */
+  if (m.nTier && (tu.length || td.length)) {
+    res.notes.push('To keep the unit types in this building in order' + (m.s.tierGap > 0 ? ' and at least ' + pct(m.s.tierGap) + ' apart (or as far apart as today, where that is less)' : '') +
+      ', the plans keep this unit ' + [tu.length ? 'below ' + joinWords(tu) : '', td.length ? 'above ' + joinWords(td) : ''].filter(Boolean).join(' and ') +
+      '. That limits the prices of ' + plural(m.nTier, 'night') + '.');
+  }
+  /* the workspace's last-minute deal still applies on top of these prices; the forecast counts it */
+  if (m.dealN) {
+    res.notes.push('Your last-minute deal takes ' + pct(m.deal.pct) + ' off ' + (m.dealN === m.n ? (m.n === 1 ? 'the open night' : 'every open night') : m.dealN + ' of the ' + plural(m.n, 'open night')) + ' when ' + (m.dealN === 1 ? 'it is' : 'they are') + ' booked in the last ' + plural(m.deal.days, 'day') +
+      ' before the night. The forecast counts it, and the prices here are the ones before the deal.');
+  }
   var still = reachable ? (target > 0 ? 'makes ' + goalText : 'covers all costs') : 'covers costs';
-  if (fillAtEnd) res.notes.push(NAMES.fill + ' stopped at ' + lowWords + ' and still ' + still + ' on average, so even lower prices could sell more nights.' + (byFloor ? '' : ' Lowest price to try, in the assumptions, sets this limit.'));
-  if (premAtEnd) res.notes.push(NAMES.premium + ' stopped at ' + highWords + ' and still ' + still + ' on average, so higher prices might still work.' + (byCeil ? '' : ' Highest price to try, in the assumptions, sets this limit.'));
+  /* (stopped by the other unit types: the note on them above says it) */
+  if (fillAtEnd && !byTierLo) res.notes.push(NAMES.fill + ' stopped at ' + lowWords + ' and still ' + still + ' on average, so even lower prices could sell more nights.' + (byFloor ? '' : ' Lowest price to try, in the assumptions, sets this limit.'));
+  if (premAtEnd && !byTierHi) res.notes.push(NAMES.premium + ' stopped at ' + highWords + ' and still ' + still + ' on average, so higher prices might still work.' + (byCeil ? '' : ' Highest price to try, in the assumptions, sets this limit.'));
   if (m.n && balSt.lateShare >= 0.6) res.notes.push('Guests book late for these dates: ' + tenthsOf(balSt.lateShare) + ' of the nights likely to sell usually book in the last ' + LATE_DAYS + ' days before arrival, so the calendar fills late.');
   if (!reachable && m.n) {
     var bestPlan = profitSt, short = target - bestPlan.profitPerMonth;
@@ -1067,16 +1249,35 @@ function plan(input) {
         (balSt.pTarget >= 0.05 ? '; the recommended plan still has ' + chanceNoun(balSt.pTarget) + ' of reaching it.' : '.'));
     } else res.notes.push('On average, no plan covers all costs in these dates. The best one loses about ' + money(round10(-bestPlan.profitPerMonth)) + ' a month.');
     var e = expect(m, picks.profit, 0), openPM = e.contrib / m.months, allSold = 0;
-    for (x = 0; x < m.n; x++) if (picks.profit[x] > 0) allSold += picks.profit[x] * m.kNet - m.v;
+    for (x = 0; x < m.n; x++) if (picks.profit[x] > 0) allSold += picks.profit[x] * m.R[x] * m.kNet - m.v;
     var allSoldPM = (m.bookedContrib + allSold - m.fixedDates) / m.months;
     var more = openPM > 0 ? short / openPM : null;
     res.notes.push((target > 0 ? 'To reach it' : 'To cover them') + ', costs would need to be about ' + money(round10(short)) + ' a month lower' +
       (allSoldPM < target || more == null ? '; more bookings alone would not do it, as even selling every open night at those prices ' + (allSoldPM >= 0 ? 'makes about ' + money(round10(allSoldPM)) : 'loses about ' + money(round10(-allSoldPM))) + ' a month.'
         : ', or about ' + Math.max(5, Math.round(more * 20) * 5) + '% more bookings at the same prices.'));
     if (bestPlan.profitPerMonth < 0 && target > 0) res.notes.push('On average, no plan covers all costs in these dates either.');
+    /* Fill and Premium look for prices that cover all costs: say why their cards are missing */
+    if (!picks.fill || !picks.premium) res.notes.push('There is no ' + NAMES.fill + ' or ' + NAMES.premium + ' plan: both look for prices that cover all costs, and on average none does in these dates.');
   } else if (!reachable) {
     var bp = curStats.profitPerMonth;
     res.notes.push((m.bookedN ? 'The booked nights ' : 'With nothing to sell, the unit ') + (bp >= 0 ? 'make about ' + money(round10(bp)) : 'loses about ' + money(round10(-bp))) + ' a month' + (target > 0 ? ', short of the ' + money(target) + ' target.' : '.'));
+  }
+  /* how much guests react to price is the least certain part of the forecast: with a weaker reaction (beta lowered by
+     betaSd), would the most profitable prices move the other way from today's? Then say so, with what is at stake */
+  if (m.n && s.betaSd > 0 && balSt.pricedToday) {
+    var bLow = Math.exp(-s.betaSd), lowPr = new Float64Array(m.n), recPr = picks.balanced, chgLow = 0, nLow = 0;
+    var lowCt = function (pr) { var t = 0; for (var xx = 0; xx < m.n; xx++) if (pr[xx] > 0) t += pbar(m, xx, pr[xx], 0, bLow) * (pr[xx] * m.R[xx] * m.kNet - m.v); return t; };
+    for (x = 0; x < m.n; x++) {
+      var off = m.cOff[x], bestV = -Infinity;
+      for (var c = off; c < off + m.cN[x]; c++) { var val = pbar(m, x, m.cP[c], 0, bLow) * m.cCt[c]; if (val > bestV) { bestV = val; lowPr[x] = m.cP[c]; } }
+      if (m.open[x].current) { chgLow += lowPr[x] / m.open[x].current - 1; nLow++; }
+    }
+    chgLow = nLow ? chgLow / nLow : 0;
+    if (Math.abs(chgLow) >= 0.01 && Math.abs(balSt.avgChange) >= 0.01 && (chgLow > 0) !== (balSt.avgChange > 0)) {
+      var d1 = (expect(m, recPr, 0).contrib - expect(m, lowPr, 0).contrib) / m.months, d2 = (lowCt(lowPr) - lowCt(recPr)) / m.months;
+      res.notes.push('How much guests react to price is the least certain part of the forecast. If they react less than assumed, the most profitable prices would be ' + (chgLow > 0 ? 'higher' : 'lower') + ' than today\'s rather than ' + (chgLow > 0 ? 'lower' : 'higher') +
+        '. The difference in profit between the two is about ' + money(Math.max(10, round10(Math.max(d1, d2)))) + ' a month.');
+    }
   }
   return res;
 }
