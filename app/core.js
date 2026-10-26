@@ -416,6 +416,7 @@
     chat: '<path d="M21 11.5a8.4 8.4 0 0 1-1 4 8.5 8.5 0 0 1-7.5 4.5 8.4 8.4 0 0 1-4-1L3 20l1-5.5a8.4 8.4 0 0 1-1-4A8.5 8.5 0 0 1 11.5 2a8.5 8.5 0 0 1 9.5 9.5z"/>',
     tasks: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     pricing: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+    planner: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
     automations: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     invoices: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
     expenses: '<path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
@@ -1453,6 +1454,7 @@
     ['channels', 'Channels', [['connect', 'Connect and set up channels', 'Booking.com, Agoda, Airbnb, Expedia, Trip.com', 'do'], ['rates', 'Change rates and restrictions', 'Rates, minimum stay, stop sell, closed to arrival or departure', 'do'], ['sync', 'Send full updates', '', 'do']]],
     ['inventory', 'Inventory', [['in', 'Record stock in', 'Purchases and deliveries', 'do'], ['out', 'Record stock used', 'What was used, by whom, for which unit', 'do'], ['adjust', 'Correct stock counts', 'Stock takes and write-offs', 'do'], ['items', 'Add and edit items', 'The item list and reorder levels', 'do'], ['money', 'See stock costs', 'Purchase prices, stock value and spend', 'see']]],
     ['pricing', 'Pricing', [['change', 'Change prices', 'Apply suggested prices and edit nightly rates', 'do'], ['rules', 'Edit pricing rules', 'Minimums, weekend and event uplifts', 'do']]],
+    ['planner', 'Profit planner', [], true],
     ['automations', 'Automations', [['toggle', 'Turn automations on or off', '', 'do'], ['edit', 'Edit messages and rules', '', 'do']]],
     ['owner', 'Owner portal', [['statements', 'Send owner statements', '', 'do'], ['payouts', 'Approve owner payouts', '', 'do', true]]],
     ['staff', 'Staff access', [['invite', 'Invite people', '', 'do'], ['roles', 'Change roles and permissions', '', 'do', true]]],
@@ -1607,7 +1609,7 @@
   ['ratePlans', 'channelRates'].forEach(function (k) { S.records(k, 'demo'); });
   REG.channelLog = { type: 'blob', kind: 'demo', cap: 500 };
   REG.channelSim = { type: 'blob', kind: 'demo' };
-  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
+  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings', 'ratePlanner'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
 
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
   function capBlob(key, v) { var r = REG[key]; return r && r.cap && Array.isArray(v) && v.length > r.cap ? v.slice(0, r.cap) : v; }
@@ -1871,10 +1873,10 @@
      =================================================================== */
   O.LANGS = [['en', 'English', 'EN'], ['bn', 'বাংলা', 'Bangla'], ['ms', 'Bahasa Malaysia', 'MS'], ['zh', '中文（福建話）', 'Hokkien']];
   var NAV_I18N = {
-    en: { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Guest Inbox', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' },
-    bn: { overview: 'ওভারভিউ', operate: 'পরিচালনা', insights: 'বিশ্লেষণ', finance: 'ফাইন্যান্স', grow: 'প্রবৃদ্ধি', manage: 'ব্যবস্থাপনা', dashboard: 'ড্যাশবোর্ড', bookings: 'বুকিং', calendar: 'ক্যালেন্ডার', reviews: 'রিভিউ', inbox: 'গেস্ট ইনবক্স', tasks: 'কাজ ও পরিষ্কার', statistics: 'পরিসংখ্যান', reports: 'রিপোর্ট', invoices: 'ইনভয়েস ও রসিদ', expenses: 'খরচ', financials: 'আর্থিক হিসাব', website: 'ওয়েবসাইট নির্মাতা', guestapp: 'গেস্ট অ্যাপ', properties: 'প্রপার্টি', channels: 'চ্যানেল', inventory: 'ইনভেন্টরি', pricing: 'মূল্য নির্ধারণ', automations: 'স্বয়ংক্রিয়তা', owner: 'মালিক পোর্টাল', staff: 'স্টাফ অ্যাক্সেস', brand: 'ব্র্যান্ড ও সেটআপ', more: 'আরও', home: 'হোম', platform: 'প্ল্যাটফর্ম অ্যাডমিন' },
-    ms: { overview: 'Gambaran', operate: 'Operasi', insights: 'Analisis', finance: 'Kewangan', grow: 'Perkembangan', manage: 'Pengurusan', dashboard: 'Papan Pemuka', bookings: 'Tempahan', calendar: 'Kalendar', reviews: 'Ulasan', inbox: 'Peti Masuk Tetamu', tasks: 'Tugasan & Pembersihan', statistics: 'Statistik', reports: 'Laporan', invoices: 'Invois & Resit', expenses: 'Perbelanjaan', financials: 'Penyata Kewangan', website: 'Pembina Laman Web', guestapp: 'Aplikasi Tetamu', properties: 'Hartanah', channels: 'Saluran', inventory: 'Inventori', pricing: 'Harga', automations: 'Automasi', owner: 'Portal Pemilik', staff: 'Akses Kakitangan', brand: 'Jenama & Persediaan', more: 'Lagi', home: 'Utama', platform: 'Pentadbir platform' },
-    zh: { overview: '总览', operate: '营运', insights: '分析', finance: '财务', grow: '拓展', manage: '管理', dashboard: '仪表板', bookings: '订单', calendar: '日历', reviews: '评价', inbox: '住客收件箱', tasks: '任务与清洁', statistics: '统计', reports: '报表', invoices: '发票与收据', expenses: '支出', financials: '财务报表', website: '网站建设器', guestapp: '住客应用', properties: '房源', channels: '渠道', inventory: '库存', pricing: '定价', automations: '自动化', owner: '业主门户', staff: '员工权限', brand: '品牌与设置', more: '更多', home: '首页', platform: '平台管理' }
+    en: { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Guest Inbox', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' },
+    bn: { overview: 'ওভারভিউ', operate: 'পরিচালনা', insights: 'বিশ্লেষণ', finance: 'ফাইন্যান্স', grow: 'প্রবৃদ্ধি', manage: 'ব্যবস্থাপনা', dashboard: 'ড্যাশবোর্ড', bookings: 'বুকিং', calendar: 'ক্যালেন্ডার', reviews: 'রিভিউ', inbox: 'গেস্ট ইনবক্স', tasks: 'কাজ ও পরিষ্কার', statistics: 'পরিসংখ্যান', reports: 'রিপোর্ট', invoices: 'ইনভয়েস ও রসিদ', expenses: 'খরচ', financials: 'আর্থিক হিসাব', website: 'ওয়েবসাইট নির্মাতা', guestapp: 'গেস্ট অ্যাপ', properties: 'প্রপার্টি', channels: 'চ্যানেল', inventory: 'ইনভেন্টরি', pricing: 'মূল্য নির্ধারণ', planner: 'লাভ পরিকল্পনা', automations: 'স্বয়ংক্রিয়তা', owner: 'মালিক পোর্টাল', staff: 'স্টাফ অ্যাক্সেস', brand: 'ব্র্যান্ড ও সেটআপ', more: 'আরও', home: 'হোম', platform: 'প্ল্যাটফর্ম অ্যাডমিন' },
+    ms: { overview: 'Gambaran', operate: 'Operasi', insights: 'Analisis', finance: 'Kewangan', grow: 'Perkembangan', manage: 'Pengurusan', dashboard: 'Papan Pemuka', bookings: 'Tempahan', calendar: 'Kalendar', reviews: 'Ulasan', inbox: 'Peti Masuk Tetamu', tasks: 'Tugasan & Pembersihan', statistics: 'Statistik', reports: 'Laporan', invoices: 'Invois & Resit', expenses: 'Perbelanjaan', financials: 'Penyata Kewangan', website: 'Pembina Laman Web', guestapp: 'Aplikasi Tetamu', properties: 'Hartanah', channels: 'Saluran', inventory: 'Inventori', pricing: 'Harga', planner: 'Perancang Untung', automations: 'Automasi', owner: 'Portal Pemilik', staff: 'Akses Kakitangan', brand: 'Jenama & Persediaan', more: 'Lagi', home: 'Utama', platform: 'Pentadbir platform' },
+    zh: { overview: '总览', operate: '营运', insights: '分析', finance: '财务', grow: '拓展', manage: '管理', dashboard: '仪表板', bookings: '订单', calendar: '日历', reviews: '评价', inbox: '住客收件箱', tasks: '任务与清洁', statistics: '统计', reports: '报表', invoices: '发票与收据', expenses: '支出', financials: '财务报表', website: '网站建设器', guestapp: '住客应用', properties: '房源', channels: '渠道', inventory: '库存', pricing: '定价', planner: '利润规划', automations: '自动化', owner: '业主门户', staff: '员工权限', brand: '品牌与设置', more: '更多', home: '首页', platform: '平台管理' }
   };
   O.t = function (key) { return (NAV_I18N[O.state.lang] || NAV_I18N.en)[key] || NAV_I18N.en[key] || key; };
 
@@ -1887,9 +1889,9 @@
     ['insights', ['statistics', 'reports']],
     ['finance', ['invoices', 'expenses', 'financials']],
     ['grow', ['website', 'guestapp']],
-    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'automations', 'owner', 'staff', 'brand']]
+    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'planner', 'automations', 'owner', 'staff', 'brand']]
   ];
-  O.OWNER_ONLY = { financials: true };
+  O.OWNER_ONLY = { financials: true, planner: true };
   O.allowed = function (id) { if (O.EXTRA_PAGES && O.EXTRA_PAGES[id]) return O.EXTRA_PAGES[id].allowed ? O.EXTRA_PAGES[id].allowed() : true; return O.OWNER_ONLY[id] ? O.isOwner() : O.can(id, 'view'); };
   /* pages outside the menu groups (e.g. the platform admin area added by auth.js): {id: {allowed: fn}} */
   O.EXTRA_PAGES = O.EXTRA_PAGES || {};
