@@ -24,7 +24,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const list = (dir, ext) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).sort().map((f) => path.join(dir, f)) : []);
 const jsSafe = (code) => code.replace(/<\/(script)/gi, '<\\/$1');
 /* CommonJS files the page and the api/ functions both use: [file, name under O] */
-const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg']]; /* in this order: guestmsg uses O.assign */
+const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg'], ['api/_lib/shared/rateplan.cjs', 'rateplan']]; /* in this order: guestmsg uses O.assign */
 
 function page() {
   let shell = read(path.join(APP, 'shell.html'));
