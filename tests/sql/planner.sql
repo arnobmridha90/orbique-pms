@@ -87,8 +87,8 @@ do $$ declare v jsonb; begin
   if v->1->>'undoneAt' is distinct from '2026-10-24T12:00' then raise exception 'a stale copy un-did the undo: %', v->1; end if;
   raise notice 'ok: an undone push stays undone, newest first';
 end $$;
--- Undo of PA hands its night on to the later PB and stamps both; a device that missed it saves stale copies of both:
--- PA stays undone and PB keeps the hand-off, so undoing PB later puts back RM250, not PA's RM300
+-- a device that missed the Undo of PA and a change to PB saves stale copies of both: PA stays undone and PB keeps
+-- its newer copy
 select pg_temp.save('{"units":{},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","nights":{"2026-11-01":{"from":300,"to":320}}},{"id":"PA","at":"2026-08-01T10:00","pid":"p1","nights":{"2026-11-01":{"from":250,"to":300}}}]}');
 select pg_temp.save('{"units":{},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","changedAt":"2026-10-26T08:00","nights":{"2026-11-01":{"from":250,"to":320}}},{"id":"PA","at":"2026-08-01T10:00","pid":"p1","undoneAt":"2026-10-26T08:00","changedAt":"2026-10-26T08:00","nights":{"2026-11-01":{"from":250,"to":300}}}]}');
 select pg_temp.save('{"units":{"p3":{"costs":{"rent":10},"updatedAt":"2026-10-26T08:30"}},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","nights":{"2026-11-01":{"from":300,"to":320}}},{"id":"PA","at":"2026-08-01T10:00","pid":"p1","nights":{"2026-11-01":{"from":250,"to":300}}}]}');
@@ -97,9 +97,9 @@ do $$ declare v jsonb; a jsonb; b jsonb; begin
   select e into a from jsonb_array_elements(v->'pushes') e where e->>'id' = 'PA';
   select e into b from jsonb_array_elements(v->'pushes') e where e->>'id' = 'PB';
   if a->>'undoneAt' is distinct from '2026-10-26T08:00' then raise exception 'PA lost its undo: %', a; end if;
-  if b->'nights'->'2026-11-01'->>'from' is distinct from '250' then raise exception 'PB lost the hand-off: %', b; end if;
+  if b->'nights'->'2026-11-01'->>'from' is distinct from '250' then raise exception 'PB lost its newer copy: %', b; end if;
   if v->'units'->'p3' is null then raise exception 'the stale save lost its own unit: %', v->'units'; end if;
-  raise notice 'ok: a stale save keeps the undo and the hand-off it missed';
+  raise notice 'ok: a stale save keeps the undo and the change it missed';
 end $$;
 -- neither undone: the copy changed last wins, the new one on a tie
 select pg_temp.save('{"units":{},"pushes":[{"id":"PB","at":"2026-08-02T10:00","pid":"p1","changedAt":"2026-10-26T09:00","nights":{"2026-11-01":{"from":260,"to":320}}}]}');
@@ -109,7 +109,7 @@ do $$ begin
 end $$;
 -- an Undo is never lost: a copy that is not undone loses to the undone one even when it was changed later, in either order
 select pg_temp.save('{"units":{},"pushes":[{"id":"PC","at":"2026-08-04T10:00","pid":"p1","undoneAt":"2026-10-26T09:00","changedAt":"2026-10-26T09:00","nights":{"2026-11-03":{"from":200,"to":220}}}]}');
-select pg_temp.save('{"units":{},"pushes":[{"id":"PC","at":"2026-08-04T10:00","pid":"p1","changedAt":"2026-10-26T09:30","nights":{"2026-11-03":{"from":190,"to":220,"handedAt":"2026-10-26T09:30"}}}]}');
+select pg_temp.save('{"units":{},"pushes":[{"id":"PC","at":"2026-08-04T10:00","pid":"p1","changedAt":"2026-10-26T09:30","nights":{"2026-11-03":{"from":190,"to":220,"doneAt":"2026-10-26T09:30"}}}]}');
 select pg_temp.save('{"units":{},"pushes":[{"id":"PD","at":"2026-08-05T10:00","pid":"p1","changedAt":"2026-10-26T09:30","nights":{"2026-11-04":{"from":190,"to":220}}}]}');
 select pg_temp.save('{"units":{},"pushes":[{"id":"PD","at":"2026-08-05T10:00","pid":"p1","undoneAt":"2026-10-26T09:00","changedAt":"2026-10-26T09:00","nights":{"2026-11-04":{"from":200,"to":220}}}]}');
 do $$ declare c jsonb; dd jsonb; begin
@@ -126,15 +126,15 @@ do $$ begin
   if (select e->>'n' from jsonb_array_elements(pg_temp.saved()->'pushes') e where e->>'id' = 'PE') is distinct from '2' then raise exception 'a tie did not go to the new copy'; end if;
   raise notice 'ok: on the same stamp the new copy wins';
 end $$;
--- an Undo in the same minute as the later push (changedAt equal to its at): a stale copy without changedAt still loses
-select pg_temp.save('{"units":{},"pushes":[{"id":"PF","at":"2026-08-07T10:20","pid":"p1","changedAt":"2026-08-07T10:20","nights":{"2026-11-05":{"from":250,"to":320,"handedAt":"2026-08-07T10:20"}}}]}');
+-- an Undo in the same minute as the push (changedAt equal to its at): a stale copy without changedAt still loses
+select pg_temp.save('{"units":{},"pushes":[{"id":"PF","at":"2026-08-07T10:20","pid":"p1","changedAt":"2026-08-07T10:20","nights":{"2026-11-05":{"from":250,"to":320,"doneAt":"2026-08-07T10:20"}}}]}');
 select pg_temp.save('{"units":{},"pushes":[{"id":"PF","at":"2026-08-07T10:20","pid":"p1","nights":{"2026-11-05":{"from":300,"to":320}}}]}');
 do $$ declare f jsonb; begin
   select e into f from jsonb_array_elements(pg_temp.saved()->'pushes') e where e->>'id' = 'PF';
-  if f->'nights'->'2026-11-05'->>'from' is distinct from '250' then raise exception 'a same-minute hand-off was lost'; end if;
+  if f->'nights'->'2026-11-05'->>'from' is distinct from '250' then raise exception 'a night undone in the same minute was lost'; end if;
   -- the record itself, not only its night: the stale copy (no changedAt) must not be picked
   if f->>'changedAt' is distinct from '2026-08-07T10:20' then raise exception 'the stale copy of PF was picked: %', f; end if;
-  raise notice 'ok: a hand-off in the minute of the push is kept';
+  raise notice 'ok: a night undone in the minute of the push is kept';
 end $$;
 -- two undone copies, the saved one from before changedAt existed (undoneAt only, later): undoneAt stands in for it
 select pg_temp.save('{"units":{},"pushes":[{"id":"PH","at":"2026-08-09T10:00","pid":"p1","undoneAt":"2026-10-26T10:30","undoneN":3}]}');
@@ -143,13 +143,13 @@ do $$ begin
   if (select e->>'undoneN' from jsonb_array_elements(pg_temp.saved()->'pushes') e where e->>'id' = 'PH') is distinct from '3' then raise exception 'a later undone copy without changedAt lost to an earlier one'; end if;
   raise notice 'ok: undoneAt counts where changedAt is missing';
 end $$;
--- the undone copy is picked, and still takes a night the other copy handed on later
+-- the undone copy is picked, and still takes a night the other copy marked undone later
 select pg_temp.save('{"units":{},"pushes":[{"id":"PI","at":"2026-08-10T10:00","pid":"p1","undoneAt":"2026-10-26T10:00","changedAt":"2026-10-26T10:00","nights":{"2026-11-08":{"from":300,"to":320}}}]}');
-select pg_temp.save('{"units":{},"pushes":[{"id":"PI","at":"2026-08-10T10:00","pid":"p1","changedAt":"2026-10-26T10:05","nights":{"2026-11-08":{"from":250,"to":320,"handedAt":"2026-10-26T10:05"}}}]}');
+select pg_temp.save('{"units":{},"pushes":[{"id":"PI","at":"2026-08-10T10:00","pid":"p1","changedAt":"2026-10-26T10:05","nights":{"2026-11-08":{"from":250,"to":320,"doneAt":"2026-10-26T10:05"}}}]}');
 do $$ declare i jsonb; begin
   select e into i from jsonb_array_elements(pg_temp.saved()->'pushes') e where e->>'id' = 'PI';
-  if i->>'undoneAt' is null or i->'nights'->'2026-11-08'->>'from' is distinct from '250' then raise exception 'the undone copy lost the later hand-off: %', i; end if;
-  raise notice 'ok: an undone copy keeps a night handed on later';
+  if i->>'undoneAt' is null or i->'nights'->'2026-11-08'->>'from' is distinct from '250' then raise exception 'the undone copy lost a night undone later: %', i; end if;
+  raise notice 'ok: an undone copy keeps a night undone later';
 end $$;
 -- one unit saved by two devices in the same minute: the new copy wins
 select pg_temp.save('{"units":{"p7":{"costs":{"rent":1000},"updatedAt":"2026-10-26T11:00"}},"pushes":[]}');
@@ -158,15 +158,15 @@ do $$ begin
   if (pg_temp.saved()->'units'->'p7'->'costs'->>'rent') is distinct from '1100' then raise exception 'a unit tie did not go to the new copy: %', pg_temp.saved()->'units'->'p7'; end if;
   raise notice 'ok: on the same updatedAt the new unit copy wins';
 end $$;
--- two devices each hand a different night to the same push (one missed the other): both hand-offs are kept
+-- two devices each undo a different night of the same push (one missed the other): both nights stay undone
 select pg_temp.save('{"units":{},"pushes":[{"id":"PG","at":"2026-08-08T10:00","pid":"p1","nights":{"2026-11-06":{"from":300,"to":320},"2026-11-07":{"from":200,"to":210}}}]}');
-select pg_temp.save('{"units":{},"pushes":[{"id":"PG","at":"2026-08-08T10:00","pid":"p1","changedAt":"2026-10-26T09:00","nights":{"2026-11-06":{"from":250,"to":320,"handedAt":"2026-10-26T09:00"},"2026-11-07":{"from":200,"to":210}}}]}');
-select pg_temp.save('{"units":{},"pushes":[{"id":"PG","at":"2026-08-08T10:00","pid":"p1","changedAt":"2026-10-26T09:05","nights":{"2026-11-06":{"from":300,"to":320},"2026-11-07":{"from":150,"to":210,"handedAt":"2026-10-26T09:05"}}}]}');
+select pg_temp.save('{"units":{},"pushes":[{"id":"PG","at":"2026-08-08T10:00","pid":"p1","changedAt":"2026-10-26T09:00","nights":{"2026-11-06":{"from":250,"to":320,"doneAt":"2026-10-26T09:00"},"2026-11-07":{"from":200,"to":210}}}]}');
+select pg_temp.save('{"units":{},"pushes":[{"id":"PG","at":"2026-08-08T10:00","pid":"p1","changedAt":"2026-10-26T09:05","nights":{"2026-11-06":{"from":300,"to":320},"2026-11-07":{"from":150,"to":210,"doneAt":"2026-10-26T09:05"}}}]}');
 do $$ declare g jsonb; begin
   select e into g from jsonb_array_elements(pg_temp.saved()->'pushes') e where e->>'id' = 'PG';
-  if g->'nights'->'2026-11-06'->>'from' is distinct from '250' or g->'nights'->'2026-11-07'->>'from' is distinct from '150' then raise exception 'a hand-off was lost: %', g->'nights'; end if;
+  if g->'nights'->'2026-11-06'->>'from' is distinct from '250' or g->'nights'->'2026-11-07'->>'from' is distinct from '150' then raise exception 'a night undone was lost: %', g->'nights'; end if;
   if g->>'changedAt' is distinct from '2026-10-26T09:05' then raise exception 'the later copy was not picked: %', g; end if;
-  raise notice 'ok: hand-offs from two devices are both kept';
+  raise notice 'ok: nights undone on two devices are both kept';
 end $$;
 -- a record without an id (the app never writes one) is kept once, not doubled on every save
 select pg_temp.save('{"units":{},"pushes":[{"at":"2026-08-03T11:00","pid":"p1","n":1}]}');

@@ -10,8 +10,9 @@
 --     push record when it saved costs, and the pushed prices could no longer be undone; a stale push would drop costs
 --     another device saved. The trigger merges the saved copy into the new one: every unit either copy has, the one saved
 --     last (updatedAt) where both have it; every push record either copy has, by id, the undone copy where only one is
---     undone; where neither or both are, the one changed last (changedAt, which Undo stamps on the push it undoes and on a later
---     push it hands nights to), with each night from the copy that handed it on last (handedAt); newest first, at most 30
+--     undone; where neither or both are, the one changed last (changedAt, which Undo stamps on the push it undoes), with
+--     each night from the copy that marked it undone last (doneAt, so nights undone on two devices are all kept); newest
+--     first, at most 30
 --     (as the app keeps them). Server writes (no signed-in user) are stored as sent.
 --
 -- Why: the planner page is owner-only (O.OWNER_ONLY), and its Save says only account owners see the costs, but 0001 let
@@ -51,9 +52,9 @@ begin
     full join jsonb_each(case when jsonb_typeof(ov->'units') = 'object' then ov->'units' else '{}'::jsonb end) o on o.key = n.key;
   -- pushes: the new copy's records, each against the saved copy's record with the same id: the undone one where only
   -- one is undone (an Undo is never lost), else the one changed last (changedAt, else undoneAt; a copy that never changed
-  -- has neither and loses to one that did), the new copy on a tie. Undo stamps changedAt on the push it undoes and on a
-  -- later push it hands nights to, and handedAt on each night it hands on: when both copies have a night, the one handed
-  -- on last is kept, so two devices that each handed different nights to the same push keep both. Then the saved copy's
+  -- has neither and loses to one that did), the new copy on a tie. Undo stamps changedAt on the push it undoes, and
+  -- doneAt on each night it puts back: when both copies have a night, the one marked undone last is kept, so two devices
+  -- that each undid different nights of the same push keep both. Then the saved copy's
   -- records the new copy does not have. Saved records without an id are dropped (the app gives every push one). Newest
   -- first, at most 30
   with n as (
@@ -73,14 +74,14 @@ begin
            n.p as np
       from n left join lateral (select x.p from o x where n.p->>'id' is not null and x.p->>'id' = n.p->>'id' limit 1) s on true
   ), m as (
-    -- the picked copy, with each night from whichever copy handed it on last (the picked copy's on a tie)
+    -- the picked copy, with each night from whichever copy marked it undone last (the picked copy's on a tie)
     select case
              when k.sp is null or jsonb_typeof(k.sp->'nights') is distinct from 'object' or jsonb_typeof(k.np->'nights') is distinct from 'object' then k.p
              else jsonb_set(k.p, '{nights}', (
                select coalesce(jsonb_object_agg(coalesce(a.key, b.key),
                         case when a.key is null then b.value
                              when b.key is null then a.value
-                             when coalesce(b.value->>'handedAt', '') collate "C" > coalesce(a.value->>'handedAt', '') collate "C" then b.value
+                             when coalesce(b.value->>'doneAt', '') collate "C" > coalesce(a.value->>'doneAt', '') collate "C" then b.value
                              else a.value end), '{}'::jsonb)
                  from jsonb_each(k.p->'nights') a
                  full join jsonb_each(case when k.p = k.sp then k.np->'nights' else k.sp->'nights' end) b on b.key = a.key))
