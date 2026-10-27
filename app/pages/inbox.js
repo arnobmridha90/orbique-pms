@@ -19,7 +19,9 @@
    of the guest's last WhatsApp message. Guest messages show in the team's language (inboxSettings.lang) with the original a tap
    away; "Translate" on a reply shows it in the guest's language to check before it goes. Chats from numbers or booking-site
    threads that match no booking wait at the top of the list to be linked. Photos, files and voice notes still go out only as
-   internal notes; guests' WhatsApp files open through the server. */
+   internal notes; guests' WhatsApp files open through the server. Agoda's guest emails show only what the guest wrote
+   (api/_lib/email-in.js agodaMessage); a special request carries Agoda's answer buttons (m.actions), which open Agoda's
+   own page, and the chat notes the answer picked (c.picks by message xid: {label, at, staffId}). */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
@@ -156,6 +158,13 @@
 .pg-inbox .bub .subj{font-weight:700;font-size:12px;margin-bottom:3px;}
 .pg-inbox .bub .efiles{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);margin-top:5px;}
 .pg-inbox .bub .efiles svg{width:12px;height:12px;}
+.pg-inbox .bub .acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;padding-top:7px;border-top:1px solid var(--border);}
+.pg-inbox .bub .acts .acts-h{flex-basis:100%;font-size:11.5px;color:var(--muted);}
+.pg-inbox .bub .acts .acts-h b{color:var(--text);}
+.pg-inbox .bub .acts a.act{display:inline-flex;align-items:center;min-height:30px;padding:4px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--brand-text);font-size:12.5px;font-weight:700;text-decoration:none;}
+.pg-inbox .bub .acts a.act:hover{border-color:var(--brand);}
+.pg-inbox .bub .acts a.act.on{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);}
+.pg-inbox .bub .acts span.act{display:inline-flex;align-items:center;min-height:30px;padding:4px 12px;border-radius:999px;border:1px dashed var(--border);color:var(--muted);font-size:12.5px;}
 .pg-inbox .ib-tabs{display:flex;gap:4px;margin:0 12px 8px;padding:3px;border-radius:10px;background:var(--surface-2);}
 .pg-inbox .ib-tabs button{flex:1;border:0;background:none;border-radius:8px;padding:6px 8px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;}
 .pg-inbox .ib-tabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);}
@@ -839,7 +848,23 @@
     }
     var txt = esc(codeSafe(c, m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.text));
     if (m.from === 'note') txt = txt.replace(mentionRe(), '<b class="mention">@$1</b>');
-    return { html: '<span class="txt">' + txt + '</span>' + xlHTML(m, key) };
+    return { html: '<span class="txt">' + txt + '</span>' + xlHTML(m, key) + actsHTML(c, m, i) };
+  }
+  /* a booking site's answer buttons on a guest message (an Agoda special request: Accepted / Subject to availability /
+     Not accepted). Each opens the site's own page, which records the answer; the chat remembers which one was picked. */
+  function actOk(a) { return !!a && typeof a.label === 'string' && typeof a.url === 'string' && a.url.length <= 2000 && /^https:\/\/portal\.agoda\.com\/[^\s"'<>\\?#]*\/PropertyMessage\/[^\s"'<>\\]*$/i.test(a.url); }
+  function actsHTML(c, m, i) {
+    var all = m.from === 'guest' && Array.isArray(m.actions) ? m.actions : [], list = [];
+    all.forEach(function (a, k) { if (list.length < 4 && actOk(a)) list.push({ a: a, k: k }); });
+    if (!list.length) return '';
+    var pick = m.xid && c.picks && c.picks[m.xid], site = c.ota || 'the booking site';
+    var head = pick ? 'You answered <b>' + esc(pick.label) + '</b> on ' + esc(site) + (typeof pick.at === 'string' && pick.at.length >= 16 ? ' · ' + esc(fmt.dateTime(pick.at)) : '') + (staff(pick.staffId) ? ' · ' + esc(staff(pick.staffId).name) : '')
+      : canSend() ? 'Answer the request on ' + esc(site) + ':' : esc(site) + ' asks for an answer. Someone who can reply to guests can give it.';
+    return '<div class="acts"><span class="acts-h">' + head + '</span>' + list.map(function (it) {
+      var a = it.a, k = it.k;   /* k: its place in m.actions, which the click looks up */
+      return canSend() ? '<a class="act' + (pick && pick.label === a.label ? ' on' : '') + '" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer nofollow" data-pickact="' + i + ':' + k + '">' + esc(a.label) + '</a>'
+        : '<span class="act">' + esc(a.label) + '</span>';
+    }).join('') + '</div>';
   }
   function threadHTML(c) {
     if (!c.messages.length) {
@@ -1567,6 +1592,18 @@
       }
 
       /* ---------- events ---------- */
+      /* an answer link opens the booking site's page, which records the answer; the chat notes which one was picked
+         (data-pickact: the message's index, then the answer's index in m.actions) */
+      function pickAct(x, c) {
+        var pq = x.dataset.pickact.split(':'), pm = c && c.messages[+pq[0]], pa = pm && Array.isArray(pm.actions) && pm.actions[+pq[1]];
+        if (!pm || !pm.xid || !actOk(pa) || !canSend()) return;
+        c.picks = c.picks || {};
+        c.picks[pm.xid] = { label: pa.label, at: nowISO(), staffId: O.state.viewer };
+        O.emit('data', { type: 'inbox-pick', id: c.id });
+        setTimeout(function () { paintThread(false); }, 0);
+      }
+      /* a middle click opens the link in a new tab too */
+      page.addEventListener('auxclick', function (e) { var x = e.button === 1 && e.target.closest && e.target.closest('[data-pickact]'); if (x) pickAct(x, conv(st.sel)); });
       page.addEventListener('click', function (e) {
         var x, c = conv(st.sel);
         var menu = O.$('.ib-menu.open', page); if (menu && !e.target.closest('.ib-more')) menu.classList.remove('open');
@@ -1580,6 +1617,7 @@
           if (!isPhone()) { var f0 = (st.tab === 'updates' ? visibleUpds() : visibleConvs())[0]; if (f0) select(f0.id, false); else { st.sel = null; paintChat(true); } }
           return;
         }
+        if ((x = e.target.closest('[data-pickact]'))) { pickAct(x, c); return; }
         if ((x = e.target.closest('[data-golink]'))) { var gm = c && c.messages[+x.dataset.golink]; if (gm && gm.link && O.allowed(gm.link.page)) O.go(gm.link.page, gm.link.id ? { id: gm.link.id } : {}); return; }
         if ((x = e.target.closest('[data-qr]'))) { useQuickReply(x.dataset.qr); return; }
         if ((x = e.target.closest('[data-play]'))) { togglePlay(x.dataset.play); return; }
