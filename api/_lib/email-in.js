@@ -9,6 +9,7 @@
  *   orgForAddresses(sb, list)                which workspace one of these addresses belongs to
  *   classify(email)                          {platform, kind: 'message' | 'notice', replyTo, name}
  *   bodyText(email), stripQuoted(text)       the readable text of an email
+ *   agodaMessage(email)                      an Agoda guest email: the guest's words, Agoda's translation, a special request's answer links
  *   receiveEmail(sb, cfg, orgId, email, opts)  one email -> a guest message (answerable by email) or a notification
  *   sendEmail(cfg, msg, opts)                one reply by email (from the workspace's address, so answers come back)
  *
@@ -160,23 +161,174 @@ export function classify(email) {
 
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };
 
-/** HTML -> readable plain text (links keep their address). */
+/* a character reference as text: a space for one that names no character */
+const codePoint = (n) => (n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : ' ');
+
+/* script, style, head and title blocks taken out, in one pass (a regex with a lazy match would scan to the end of the
+   email again for every block left open) */
+function dropBlocks(html) {
+  const re = /<(script|style|head|title)\b/gi, done = {};
+  let out = '', at = 0, m;
+  while ((m = re.exec(html))) {
+    const name = m[1].toLowerCase();
+    if (done[name] || m.index < at) continue;
+    const close = new RegExp('</' + name + '\\s*>', 'gi');
+    close.lastIndex = m.index;
+    const c = close.exec(html);
+    if (!c) { done[name] = 1; continue; }   // never closed: as the regex did, leave it
+    out += html.slice(at, m.index) + ' ';
+    at = c.index + c[0].length; re.lastIndex = at;
+  }
+  return out + html.slice(at);
+}
+
+/** HTML -> readable plain text (links keep their address). Tags never span a '<', so every pattern stays linear. */
 export function htmlText(html) {
-  return String(html || '')
-    .replace(/<(script|style|head|title)[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<a\s[^>]*href\s*=\s*["']?(https?:[^"'\s>]+)["']?[^>]*>([\s\S]*?)<\/a>/gi, (m0, href, inner) => {
-      const t = inner.replace(/<[^>]+>/g, '').trim();
+  return dropBlocks(String(html || ''))
+    .replace(/<a\s[^<>]*href\s*=\s*["']?(https?:[^"'\s<>]+)["']?[^<>]*>([\s\S]{0,8000}?)<\/a>/gi, (m0, href, inner) => {
+      const t = inner.replace(/<[^<>]+>/g, '').trim();
       return t && t !== href ? t + ' (' + href + ')' : href;
     })
-    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h[1-6]|table|blockquote)>/gi, '\n').replace(/<li[^>]*>/gi, '• ')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h[1-6]|table|blockquote)>/gi, '\n').replace(/<li[^<>]*>/gi, '• ')
+    .replace(/<[^<>]+>/g, ' ')
     .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+|#39);/gi, (m0, e) => {
       if (ENT[e.toLowerCase()] !== undefined) return ENT[e.toLowerCase()];
-      if (/^#x/i.test(e)) return String.fromCodePoint(parseInt(e.slice(2), 16) || 32);
-      if (/^#\d/.test(e)) return String.fromCodePoint(Number(e.slice(1)) || 32);
+      if (/^#x/i.test(e)) return codePoint(parseInt(e.slice(2), 16));
+      if (/^#\d/.test(e)) return codePoint(Number(e.slice(1)));
       return m0;
     })
     .replace(/[ \t ]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* ---------- Agoda's guest emails ---------- */
+
+/* Agoda sends each guest message in an email of its own: a logo with a tracking link, "New message from …" or "New
+   inquiry from …", the guest's name and the time, the message and Google's translation of it, buttons, tips, the
+   booking, the earlier messages and a legal footer. agodaMessage keeps what the guest wrote, Agoda's translation when
+   it differs, and the answer buttons of a special request (links to Agoda's own site only). It reads the HTML part by
+   the ids Agoda gives it, else the text part, and gives null for an email laid out some other way (that one shows
+   whole, as before). */
+
+/* the inner HTML of the first element with this id, or null */
+function byId(html, id) {
+  const m = new RegExp('<([a-z][a-z0-9]*)\\b[^<>]{0,2000}?\\bid\\s*=\\s*["\']?' + id + '(?=["\'\\s/>])[^<>]{0,2000}>', 'i').exec(html);
+  if (!m) return null;
+  const tag = new RegExp('<(/?)' + m[1] + '\\b[^<>]{0,2000}>', 'gi'), start = m.index + m[0].length;
+  tag.lastIndex = start;
+  let depth = 1, x;
+  while ((x = tag.exec(html))) {
+    if (!x[1]) { if (!/\/>$/.test(x[0])) depth++; } else if (--depth === 0) return html.slice(start, x.index);
+  }
+  return html.slice(start);
+}
+const AG_ENT = { rsquo: '\u2019', lsquo: '\u2018', rdquo: '\u201d', ldquo: '\u201c', ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', eacute: '\u00e9', egrave: '\u00e8', aacute: '\u00e1', agrave: '\u00e0', iacute: '\u00ed', oacute: '\u00f3', uacute: '\u00fa', ntilde: '\u00f1', ccedil: '\u00e7', uuml: '\u00fc', ouml: '\u00f6', auml: '\u00e4', bull: '\u2022', middot: '\u00b7', times: '\u00d7', euro: '\u20ac', pound: '\u00a3', copy: '\u00a9', reg: '\u00ae', trade: '\u2122', deg: '\u00b0' };
+const unEnt = (s) => String(s || '').replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m0, e) => {
+  const k = e.toLowerCase();
+  if (ENT[k] !== undefined) return ENT[k];
+  if (AG_ENT[e] !== undefined) return AG_ENT[e];
+  if (/^#x/i.test(e)) return codePoint(parseInt(e.slice(2), 16));
+  if (/^#\d/.test(e)) return codePoint(Number(e.slice(1)));
+  return m0;
+});
+const tidyText = (t) => String(t || '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+  .split('\n').map((l) => l.replace(/[ \t\u00a0]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+const asText = (h) => tidyText(unEnt(htmlText(String(h || '').replace(/<img\b[^<>]{0,2000}>/gi, ' ').replace(/&amp;/gi, '&#38;'))));
+const AG_CONFIRM = /^please confirm below if you agree to the special requests\.?$/i;
+const dropConfirm = (t) => t.split('\n').filter((l) => !AG_CONFIRM.test(l)).join('\n').trim();
+
+function agodaHtml(html) {
+  // a reply or an inquiry: the message as translated, then the original
+  const orig = byId(html, 'mainMessageContent'), tl = byId(html, 'mainTranslatedMessageContent');
+  if (orig !== null || tl !== null) return { text: asText(orig !== null ? orig : tl), translated: orig !== null && tl !== null ? asText(tl) : null };
+  // a new message or a special request: a card with the sender, a rule, the message, Google's translation, buttons
+  const card = byId(html, 'card');
+  const hr = card ? card.search(/<hr\b[^>]*>/i) : -1;
+  if (hr < 0) return null;
+  let body = card.slice(hr).replace(/^<hr\b[^>]*>/i, '');
+  const end = body.search(/<[a-z][^<>]{0,2000}?\bid\s*=\s*["']?(translated-message|special-request-button|replyLink|nudge-property-notice-card)/i);
+  if (end >= 0) body = body.slice(0, end);
+  const special = /special-request-button/i.test(card);
+  body = body.replace(/<p\b[^<>]{0,2000}?\bid\s*=\s*["']?salutation\b[^<>]{0,2000}>[\s\S]{0,2000}?<\/p>/i, ' ');
+  const box = byId(html, 'translated-message');
+  return { text: special ? dropConfirm(asText(body)) : asText(body), translated: box !== null ? asText(box).replace(/^google translate\s*/i, '').trim() : null };
+}
+
+const AG_HEAD = /^(new (message|inquiry|request|reply) from|reply from|message from)\b/i;
+const AG_TIME = /\b\d{1,2}:\d{2}\s*(?:[AP]M\s+)?(?:[A-Z]{2,5}\b|GMT[+-]\d{1,2}(?::?\d{2})?)/;
+const AG_ZONE = '(?:[A-Z]{2,5}|GMT[+-]\\d{1,2}(?::?\\d{2})?)';
+/* a time line, or the end of one wrapped onto the next line ("PM ICT") */
+const AG_STAMP = new RegExp('^(([A-Z][a-z]{2,8}\\.? \\d{1,2},? (\\d{4} )?)?\\d{1,2}:\\d{2}\\s*([AP]M\\s+)?' + AG_ZONE + '|[AP]M ' + AG_ZONE + ')( [A-Z][a-z]{2,8}\\.? \\d{1,2},? (\\d{4} )?\\d{1,2}:\\d{2}(\\s*([AP]M\\s+)?' + AG_ZONE + ')?)*$');
+const AG_XL = /^the above text was translated automatically\b/i;
+const AG_END = /^(did you know\?|reply in ycs app|reply through ycs\b|booking details$|responding to this inquiry is easy|important: this feature allows direct communication|except to the extent that agoda|this email was sent by: agoda)/i;
+
+function agodaPlain(text) {
+  const L = String(text || '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t\u00a0]+/g, ' ').trim());
+  const next = (i) => { while (i < L.length && !L[i]) i++; return i; };
+  const google = (i) => /^google translate$/i.test(L[i]) || (/^google$/i.test(L[i]) && /^translate$/i.test(L[next(i + 1)] || ''));
+  const stop = (i) => /^-{8,}$/.test(L[i]) || AG_XL.test(L[i]) || AG_END.test(L[i]) || google(i) || (/^accepted\b/i.test(L[i]) && /^subject to\b/i.test(L[next(i + 1)] || ''));
+  const take = (i) => { const out = []; for (; i < L.length && !stop(i); i++) out.push(L[i]); return { text: tidyText(out.join('\n')), end: i }; };
+  const h = L.findIndex((l) => AG_HEAD.test(l));
+  if (h < 0) return null;
+  let s = -1;
+  for (let i = next(h + 1), seen = 0; i < L.length && seen < 3; i = next(i + 1), seen++) if (AG_TIME.test(L[i])) { s = i + 1; break; }
+  if (s < 0) return null;
+  while (s < L.length && (!L[s] || /^-{8,}$/.test(L[s]) || AG_STAMP.test(L[s]) || /^booking id:? *\d+$/i.test(L[s]))) s++;
+  const a = take(s);
+  let msg = a.text, translated = null;
+  if (a.end < L.length && AG_XL.test(L[a.end])) {
+    // the message as translated, "… from the original message below:", the original
+    let j = a.end;
+    while (j < L.length && j - a.end < 3 && !/below:$/i.test(L[j])) j++;
+    if (j < L.length && /below:$/i.test(L[j])) { translated = msg; msg = take(j + 1).text || msg; }
+  } else if (a.end < L.length && google(a.end)) {
+    // the message, then "Google translate" and the translation
+    translated = take((/^google$/i.test(L[a.end]) ? next(a.end + 1) : a.end) + 1).text || null;
+  }
+  if (L.some((l) => AG_CONFIRM.test(l))) msg = dropConfirm(msg.replace(/^dear [^\n]{1,120},\n/i, ''));
+  return { text: msg, translated };
+}
+
+/* the answer buttons of a special request: [{kind, label, url}], links to agoda.com over https only */
+const AG_ACTS = [['accepted', 'Accepted'], ['subject-to-availability', 'Subject to availability'], ['not-approved', 'Not accepted']];
+export function agodaUrl(raw) {
+  const s = unEnt(String(raw || '').trim());
+  if (!s || s.length > 2000 || /[\s"'<>\\]/.test(s)) return null;
+  let u;
+  try { u = new URL(s); } catch (e) { return null; }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port || u.hostname.toLowerCase() !== 'portal.agoda.com' || !/^\/[^?#]*\/propertymessage\//i.test(u.pathname)) return null;
+  return u.href;
+}
+export function agodaActions(html) {
+  const found = {};
+  const re = /<a\b([^<>]{0,4000})>([\s\S]{0,4000}?)<\/a>/gi;
+  let m;
+  const src = String(html || ''), card = byId(src, 'card'), part = card !== null ? card : src;   // not the earlier messages quoted below
+  while ((m = re.exec(part))) {
+    const attrs = m[1];
+    const id = (/\bid\s*=\s*["']?([\w-]+)/i.exec(attrs) || [])[1] || '';
+    const label = asText(m[2]).toLowerCase();
+    const act = AG_ACTS.find(([k]) => id === 'special-request-button-' + k) ||
+      (/\bclass\s*=\s*["'][^"']*special-request-button/i.test(attrs) ? AG_ACTS.find(([, t]) => t.toLowerCase() === label) : null);
+    if (!act || found[act[0]]) continue;
+    const href = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+    const url = href && agodaUrl(href[1] || href[2] || href[3]);
+    if (url) found[act[0]] = { kind: act[0], label: act[1], url };
+  }
+  return AG_ACTS.map(([k]) => found[k]).filter(Boolean);
+}
+
+/** An Agoda guest email -> {text, translated (Agoda's, when it differs), actions} or null (not laid out the way Agoda does). */
+const AG_MAX_HTML = 400000;
+export function agodaMessage(email) {
+  try { return agodaRead(email); } catch (e) { return null; }   // then the email shows whole, as before
+}
+function agodaRead(email) {
+  let html = typeof email.html === 'string' ? email.html : '';
+  if (html.length > AG_MAX_HTML) html = '';   // far bigger than Agoda's: its text part only
+  const got = (html && agodaHtml(html)) || agodaPlain(email.text) || (html && agodaPlain(asText(html))) || null;
+  if (!got || !got.text) return null;
+  const same = (a, b) => String(a || '').replace(/\s+/g, ' ').trim().toLowerCase() === String(b || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return { text: got.text, translated: got.translated && !same(got.translated, got.text) ? got.translated : null, actions: html ? agodaActions(html) : [] };
 }
 
 /* marketing mailers (Trip.com and others) start the text part with "[https://…/open.gif?…]" image and tracking links,
@@ -321,7 +473,8 @@ export async function receiveEmail(sb, orgId, email, opts = {}) {
     return Object.assign({ kind: 'notice', bookingId: b ? b.id : null }, r);
   }
   if (!c.replyTo) return { status: 'ignored', kind: 'message' };
-  const text = clip(stripQuoted(full), MAX_TEXT) || subject;
+  const ag = c.platform === 'agoda' ? agodaMessage(email) : null;
+  const text = clip(ag ? ag.text : stripQuoted(full), MAX_TEXT) || subject;
   const extra = { contact: { name: c.name || c.replyTo, phone: null }, kind: 'email', emSubject: subject, emRef: clip(email.message_id, 300) || null };
   if (c.platform) extra.ota = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', tripcom: 'Trip.com', expedia: 'Expedia' }[c.platform];
   const convId = await k.findConv(sb, orgId, 'em', c.replyTo, b && b.id, extra, now);
@@ -329,8 +482,12 @@ export async function receiveEmail(sb, orgId, email, opts = {}) {
   const msg = { from: 'guest', type: 'text', text, time: k.myt(at), via: 'email', xid, subject };
   if (c.name) msg.sender = c.name;
   if (files.length) msg.files = files;
-  const tr = k.translated ? await k.translated(text, await k.inboxSettings(sb, orgId), opts) : {};
+  if (ag && ag.actions.length) msg.actions = ag.actions;
+  const set = k.translated ? await k.inboxSettings(sb, orgId) : null;
+  const tr = set ? await k.translated(text, set, opts) : {};
   Object.assign(msg, tr);
+  // Agoda's own translation (into English) when there is no other
+  if (ag && ag.translated && !msg.tr && set && set.autoTranslate && set.lang === 'en') msg.tr = { to: 'en', text: clip(ag.translated, MAX_TEXT) };
   const v = await k.appendMsg(sb, orgId, convId, msg, 1, tr.lang ? { lang: tr.lang } : null);
   return { status: v ? 'stored' : 'duplicate', kind: 'message', conversationId: convId, bookingId: b ? b.id : null };
 }
