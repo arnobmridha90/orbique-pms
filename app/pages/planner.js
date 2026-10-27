@@ -151,6 +151,7 @@
     '.pg-planner .pp-tbl .pk{font-size:10px;font-weight:800;color:var(--accent-text);background:var(--accent-soft);border-radius:4px;padding:0 4px;margin-left:4px;}',
     '.pg-planner .pp-scroll{max-height:560px;overflow:auto;}',
     '.pg-planner .pp-tbl .sm-o{display:none;}',
+    '.pg-planner .pp-tbl .pp-was{display:block;font-size:11px;font-weight:400;color:var(--muted);}',
     '.pg-planner .pos, .pp-modal .pos{color:var(--ok);} .pg-planner .neg, .pp-modal .neg{color:var(--bad);}',
     '.pg-planner .pp-prev-f{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;}',
     '.pg-planner .pp-prev-f .small{color:var(--text-2);}',
@@ -828,12 +829,34 @@
     var keep = '<span class="pp-keep">Keep peak nights at today\'s price<button type="button" class="switch' + (v.dr.keepPeaks ? ' on' : '') + '" role="switch" aria-checked="' + (v.dr.keepPeaks ? 'true' : 'false') + '" aria-label="Keep peak nights at today\'s price" data-keep-peaks></button></span>';
     var body;
     if (st.view === 'month') {
-      body = '<div class="table-wrap"><table class="table pp-tbl"><thead><tr><th>Month</th><th class="num sm-x">Open nights</th><th class="num">Today</th><th class="num">New</th><th class="num sm-x">Changes</th><th class="num">Likely sold</th><th class="num">Profit in the month</th></tr></thead><tbody>' +
+      /* a rate cell: the plan's average for that kind of night in the month, today's average under it when different,
+         the range on hover */
+      var rate = function (k, peakCount) {
+        if (!k || !k.open) return '<span class="faint">–</span>';
+        if (k.avgPrice == null) return '<span class="faint">Not priced</span>';
+        var range = k.minPrice != null && Math.round(k.maxPrice) !== Math.round(k.minPrice) ? price(k.minPrice) + ' to ' + price(k.maxPrice) : '';
+        var was = k.currentAvgPrice != null && Math.round(k.currentAvgPrice) !== Math.round(k.avgPrice) ? '<span class="pp-was">today ' + price(k.currentAvgPrice) + '</span>' : '';
+        return '<span' + (range ? ' title="' + esc(range.replace(/ /g, ' ')) + '"' : '') + '><b>' + price(k.avgPrice) + '</b>' + (peakCount ? '<span class="faint"> × ' + peakCount + '</span>' : '') + '</span>' + was;
+      };
+      var total = function (kind) {
+        var t = { open: 0, priced: 0, sum: 0, curN: 0, curSum: 0, minPrice: null, maxPrice: null };
+        card.byMonth.forEach(function (m) {
+          var k = m[kind]; t.open += k.open;
+          if (k.avgPrice != null) { t.priced += k.priced; t.sum += k.avgPrice * k.priced; }
+          if (k.currentAvgPrice != null) { t.curN += k.currentN; t.curSum += k.currentAvgPrice * k.currentN; }
+          if (k.minPrice != null && (t.minPrice == null || k.minPrice < t.minPrice)) t.minPrice = k.minPrice;
+          if (k.maxPrice != null && (t.maxPrice == null || k.maxPrice > t.maxPrice)) t.maxPrice = k.maxPrice;
+        });
+        return { open: t.open, avgPrice: t.priced ? t.sum / t.priced : null, currentAvgPrice: t.curN ? t.curSum / t.curN : null, minPrice: t.minPrice, maxPrice: t.maxPrice };
+      };
+      var tp = total('peak');
+      body = '<div class="card-body small muted" style="padding-bottom:0">Average nightly rate this plan sets in each month for Sun to Thu nights, Fri and Sat nights, and peak nights (× how many). Today\'s average shows under it when the plan changes it. Booked and blocked nights are left out.</div>' +
+        '<div class="table-wrap"><table class="table pp-tbl"><thead><tr><th>Month</th><th class="num">Sun–Thu</th><th class="num">Fri–Sat</th><th class="num">Peak nights</th><th class="num sm-x">Changes</th><th class="num">Likely sold</th><th class="num">Profit in the month</th></tr></thead><tbody>' +
         card.byMonth.map(function (m) {
-          return '<tr' + (m.changes ? ' class="chg"' : '') + '><td><b><span class="sm-x">' + esc(m.label) + '</span><span class="sm-o">' + esc(m.label.slice(0, 3) + (/\d{4}$/.test(m.label) ? ' ' + m.label.slice(-4) : '')) + '</span></b><span class="faint sm-x"> · ' + fmt.plural(m.nights, 'night') + (m.booked ? ', ' + m.booked + ' booked' : '') + (m.blocked ? ', ' + m.blocked + ' blocked' : '') + '</span></td>' +
-            '<td class="num sm-x">' + m.open + '</td><td class="num">' + price(m.currentAvgPrice) + '</td><td class="num"><b>' + price(m.avgPrice) + '</b></td><td class="num sm-x">' + (m.changes || '<span class="faint">0</span>') + '</td>' +
+          return '<tr' + (m.changes ? ' class="chg"' : '') + '><td><b><span class="sm-x">' + esc(m.label) + '</span><span class="sm-o">' + esc(m.label.slice(0, 3) + (/\d{4}$/.test(m.label) ? ' ' + m.label.slice(-4) : '')) + '</span></b><span class="pp-was sm-x">' + fmt.plural(m.nights, 'night') + (m.booked ? ', ' + m.booked + ' booked' : '') + (m.blocked ? ', ' + m.blocked + ' blocked' : '') + '</span></td>' +
+            '<td class="num">' + rate(m.weekday) + '</td><td class="num">' + rate(m.weekend) + '</td><td class="num">' + rate(m.peak, m.peak.open) + '</td><td class="num sm-x">' + (m.changes || '<span class="faint">0</span>') + '</td>' +
             '<td class="num">' + pct(m.occ) + '</td><td class="num">' + price(m.profit) + '</td></tr>';
-        }).join('') + '</tbody><tfoot><tr><td><span class="sm-x">All dates (total)</span><span class="sm-o">Total</span></td><td class="num sm-x">' + card.stats.openNights + '</td><td class="num">' + price(avgCurrent(card)) + '</td><td class="num">' + price(card.stats.avgPrice) + '</td><td class="num sm-x">' + card.changes + '</td><td class="num">' + pct(card.stats.occ) + '</td><td class="num">' + price(card.stats.profit) + '</td></tr></tfoot></table></div>';
+        }).join('') + '</tbody><tfoot><tr><td><span class="sm-x">All dates</span><span class="sm-o">All</span></td><td class="num">' + rate(total('weekday')) + '</td><td class="num">' + rate(total('weekend')) + '</td><td class="num">' + rate(tp, tp.open) + '</td><td class="num sm-x">' + card.changes + '</td><td class="num">' + pct(card.stats.occ) + '</td><td class="num">' + price(card.stats.profit) + '</td></tr></tfoot></table></div>';
     } else {
       var rows = card.nightly.filter(function (n) { return st.nights === 'all' || (n.status === 'open' && n.price != null && n.price !== n.current); });
       body = '<div class="card-body" style="padding-bottom:8px">' + U.seg([['all', 'All nights'], ['changes', 'Only changes']], st.nights, 'data-nview') + '</div>' +
@@ -852,7 +875,6 @@
       (isCur || !card.changes ? '' : pushBtn(card.key, 'btn-primary').replace('>' + O.icon('upload') + 'Push<', '>' + O.icon('upload') + 'Push ' + fmt.plural(card.changes, 'new price') + '<')) + '</div>';
     return '<div class="card pp-prev pp-dim" id="pp-preview"><div class="card-head"><div class="hd"><h3 tabindex="-1">Preview: ' + esc(card.name) + '</h3><div class="sub">' + esc(changeText(card)) + '. ' + esc(sc.line) + '.</div></div><div class="row-flex wrap">' + seg + keep + '</div></div>' + body + foot + '</div>';
   }
-  function avgCurrent(card) { var s = 0, n = 0; card.nightly.forEach(function (x) { if (x.status === 'open' && x.current) { s += x.current; n++; } }); return n ? s / n : null; }
 
   /* ------------------------------------------------------------------ history and assumptions (outside the repainted results) */
   function historyCard(P) {

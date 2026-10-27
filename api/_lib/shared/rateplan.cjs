@@ -856,7 +856,9 @@ function summarise(m, prices, rk) {
   var margin = q.adr * (1 - m.pct) - m.v, fixed = m.costs.fixedMonthly;
   function occNeeded(extra) { if (fixed + extra <= 0) return 0; return margin > 0 ? (fixed + extra) / (DAYS_PER_MONTH * margin) : null; }
   var groups = { weekday: { nights: 0, open: 0, sold: 0, sum: 0, priced: 0 }, weekend: { nights: 0, open: 0, sold: 0, sum: 0, priced: 0 }, peak: { nights: 0, open: 0, sold: 0, sum: 0, priced: 0 } };
-  var mon = m.monthKeys.map(function (key, i) { return { month: key, label: m.monthLabels[i], nights: 0, open: 0, booked: 0, blocked: 0, soldNights: 0, revenue: 0, contrib: 0, sum: 0, priced: 0, curSum: 0, curN: 0, changes: 0 }; });
+  var mon = m.monthKeys.map(function (key, i) { return { month: key, label: m.monthLabels[i], nights: 0, open: 0, booked: 0, blocked: 0, soldNights: 0, revenue: 0, contrib: 0, sum: 0, priced: 0, curSum: 0, curN: 0, changes: 0, kinds: [kindAcc(), kindAcc(), kindAcc()] }; });
+  /* per month: the new and today's prices of open nights by kind (0 Sun-Thu, 1 Fri-Sat, 2 peak) */
+  function kindAcc() { return { open: 0, sum: 0, priced: 0, curSum: 0, curN: 0, lo: null, hi: null }; }
   var prMap = {}, nightly = [], changes = 0, up = 0, down = 0, added = 0, moveSum = 0, moveN = 0, chgSum = 0, bigN = 0, minP = null, maxP = null;
   var tierAbove = {}, tierBelow = {}, tierClose = {}, x = 0;
   m.all.forEach(function (n) {
@@ -865,8 +867,10 @@ function summarise(m, prices, rk) {
     if (n.status === 'open') {
       var p = prices[x], pb = e.pb[x], xo = x;
       x++;
-      gr.open++; mo.open++;
-      if (n.current) { mo.curSum += n.current; mo.curN++; }
+      var kd = mo.kinds[n.peak ? 2 : n.g ? 1 : 0];
+      gr.open++; mo.open++; kd.open++;
+      if (n.current) { mo.curSum += n.current; mo.curN++; kd.curSum += n.current; kd.curN++; }
+      if (p > 0) { kd.sum += p; kd.priced++; if (kd.lo == null || p < kd.lo) kd.lo = p; if (kd.hi == null || p > kd.hi) kd.hi = p; }
       if (p > 0) {
         price = p; chance = pb; prMap[n.iso] = p;
         gr.sold += pb; gr.sum += p; gr.priced++;
@@ -890,6 +894,7 @@ function summarise(m, prices, rk) {
     if (n.deal && n.status === 'open') row.deal = true;
     nightly.push(row);
   });
+  function kindOut(k) { return { open: k.open, priced: k.priced, avgPrice: k.priced ? k.sum / k.priced : null, currentAvgPrice: k.curN ? k.curSum / k.curN : null, currentN: k.curN, minPrice: k.lo, maxPrice: k.hi }; }
   function grp(g) { return { nights: g.nights, open: g.open, avgPrice: g.priced ? g.sum / g.priced : null, occ: g.nights ? g.sold / g.nights : 0 }; }
   function tierList(o) { return Object.keys(o).map(function (k) { return { name: k, nights: o[k] }; }); }
   var stats = {
@@ -916,7 +921,8 @@ function summarise(m, prices, rk) {
     var share = m.costs.fixedMonthly * r.nights / DAYS_PER_MONTH;
     return { month: r.month, label: r.label, nights: r.nights, open: r.open, booked: r.booked, blocked: r.blocked,
       soldNights: r.soldNights, occ: r.nights ? r.soldNights / r.nights : 0, revenue: r.revenue, profit: r.contrib - share,
-      avgPrice: r.priced ? r.sum / r.priced : null, currentAvgPrice: r.curN ? r.curSum / r.curN : null, changes: r.changes };
+      avgPrice: r.priced ? r.sum / r.priced : null, currentAvgPrice: r.curN ? r.curSum / r.curN : null, changes: r.changes,
+      weekday: kindOut(r.kinds[0]), weekend: kindOut(r.kinds[1]), peak: kindOut(r.kinds[2]) };
   });
   return { stats: stats, byMonth: byMonth, nightly: nightly, prices: prMap, changes: changes };
 }

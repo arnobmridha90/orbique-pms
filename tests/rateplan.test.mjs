@@ -447,6 +447,29 @@ test('byMonth adds up to the whole', () => {
   }
 });
 
+test('byMonth rates by kind of night match the nightly table', () => {
+  for (const o of PLAN800.options) {
+    const g = (n) => (n.peak ? 'peak' : ['Fri', 'Sat'].includes(new Date(n.iso + 'T00:00:00Z').toUTCString().slice(0, 3)) ? 'weekend' : 'weekday');
+    o.byMonth.forEach((m) => {
+      const rows = o.nightly.filter((n) => n.iso.slice(0, 7) === m.month && n.status === 'open');
+      for (const kind of ['weekday', 'weekend', 'peak']) {
+        const ks = rows.filter((n) => g(n) === kind), priced = ks.filter((n) => n.price > 0), cur = ks.filter((n) => n.current > 0);
+        const k = m[kind];
+        assert.equal(k.open, ks.length, m.month + ' ' + kind + ' open');
+        assert.equal(k.priced, priced.length);
+        if (priced.length) {
+          close(k.avgPrice, priced.reduce((a, n) => a + n.price, 0) / priced.length, 1e-9);
+          assert.equal(k.minPrice, Math.min(...priced.map((n) => n.price)));
+          assert.equal(k.maxPrice, Math.max(...priced.map((n) => n.price)));
+        } else assert.equal(k.avgPrice, null);
+        if (cur.length) close(k.currentAvgPrice, cur.reduce((a, n) => a + n.current, 0) / cur.length, 1e-9);
+        else assert.equal(k.currentAvgPrice, null);
+      }
+      assert.equal(m.weekday.open + m.weekend.open + m.peak.open, m.open);
+    });
+  }
+});
+
 /* ---------------------------------------------------------------- out of reach and edge cases */
 test('the Kozi fixture at RM1,500: out of reach, with notes on the shortfall', () => {
   const r = PLAN;

@@ -409,7 +409,10 @@ byMonth, nightly, pros, cons}` where `stats` has `occ` (all nights in the dates)
 after discounts), `listAdr`, `avgPrice` (mean of the open nights' prices, the cards' Average rate), `revpar`,
 `revenue`, `costs`, `profit`, `profitPerMonth`, `p10`, `p50`, `p90`, `pTarget`, `pLoss`, `pBreakEven`, `breakEvenOcc`,
 `targetOcc`, `stays`, `weekday`, `weekend`, `peak`, `minPrice`, `maxPrice`, `lateShare`, `weakDemandProfitPerMonth`, and
-`vsCurrent`.
+`vsCurrent`. Each `byMonth` row (one per calendar month) has `nights`, `open`, `booked`, `blocked`, `soldNights`, `occ`,
+`revenue`, `profit`, `avgPrice`, `currentAvgPrice`, `changes`, and `weekday`, `weekend` and `peak`: that month's open
+nights of the kind (Sun-Thu, Fri-Sat, peak) as `{open, priced, avgPrice, currentAvgPrice, currentN, minPrice, maxPrice}`,
+which the By month preview shows as the plan's month-by-month rate plan.
 
 `R.plan` for 365 nights takes about 0.2 to 0.3 s on the test container (a test keeps it under 2 s), so it runs on the
 page's main thread.
