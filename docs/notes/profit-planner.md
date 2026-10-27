@@ -32,7 +32,7 @@ possible for its occupancy) and recommends the one with the best chance of reach
 | `tests/rateplan.test.mjs` | `node --test` unit tests for the engine; add to the "Unit tests" step in `.github/workflows/ci.yml`. |
 | `app/pages/planner.js` | The page (`O.page('planner', …)`), styles with `O.css('planner', …)` like the other pages. |
 | `app/core.js` | Nav entry after `pricing` in the Manage group, owner-only (`O.OWNER_ONLY.planner = true`: it shows costs and profit), the label in all four nav dictionaries (en "Profit Planner" in Title Case like the other English labels, bn, ms, zh), an icon, and the `ratePlanner` blob registered as a `config` blob. It also registers `lastMinuteDeal` (the workspace's last-minute deal, which the channel manager applies) as a `config` blob, so the page can read it. |
-| `app/pages/pricing.js` | Knows the planner's `how: 'planner'`: the night panel says "Set by the profit planner", the table "Open · profit planner". A "Profit Planner" button in the page's own toolbar, next to Auto-apply, opens the planner for the same unit (the top bar keeps its two buttons, so it does not wrap on tablets and phones). Below 560px it is a 40px icon button (named "Profit Planner") beside the unit select, so the date range and Auto-apply keep their row. |
+| `app/pages/pricing.js` | Knows the planner's `how: 'planner'`: the night panel says "Set by the profit planner", the table "Open · profit planner". A "Profit Planner" button in the page's own toolbar, right after the unit select (so Tab reaches it in the order it shows), opens the planner for the same unit (the top bar keeps its two buttons, so it does not wrap on tablets and phones). Below 560px it is a 40px icon button (named "Profit Planner") beside the unit select, so the date range and Auto-apply keep their row. |
 | `supabase/migrations/0016_planner_owner_only.sql` | The `ratePlanner` blob is read and written by owners only (RLS on `public.blobs`), and an app save of it is merged with what is saved (below). Applies on deploy; re-runnable. |
 | `tests/sql/planner.sql` | The 0016 rules and the merge, run by `tests/sql/run.sh` ("== profit planner (0016)"), which also re-runs 0016 to check it is re-runnable. |
 
@@ -62,7 +62,12 @@ never changed has neither and loses to one that did, even in the same minute; th
 missed an Undo cannot bring back a stale copy of the later push the Undo handed nights to. Within that record each night
 comes from the copy that handed it on last (`handedAt`; the picked copy on a tie), so two devices that each handed
 different nights to the same push keep both. Saved records without an `id` are dropped (the app gives every push one).
-Newest first, at most 30. ISO
+Newest first, at most 30. The app never stamps `changedAt`, `handedAt` or `updatedAt` before the stamp already there
+(it uses that stamp when it is later than its own clock), so a device whose clock runs behind still wins with a change
+it made after seeing the other device's. One case stays lost: when a device that missed another device's Undo of push B
+then undoes the earlier push A, it hands A's nights to B, which is already undone; those nights never reach the push B's
+Undo handed them to, and undoing that push later puts back A's price. Like the case above, it needs a device that
+missed a live update, and here also three pushes on the same nights. ISO
 times compare byte by byte (`collate "C"`), whatever the database's collation. The merged value comes back to every device through the live
 connection like any other change. Writes from the server (no signed-in user) are stored as sent. The practice copy has
 no server, so two tabs of it still work last-write-wins.
@@ -275,21 +280,23 @@ cheaper one. `tierGap` is kept to a tenth of a percent and written exactly ("4.5
 step apart). Which type is better is worked out from the usual (median) prices over the dates; a type whose usual price
 is less than one rounding step from this unit's (at most 2%, at least 1%) is a peer, with no order kept against it and
 a note ("Twin has about the same usual price as this unit, so the plans keep no order against it"). The notes name only
-the types whose limit set the bound that night, not every type with a price.
+the types whose limit set the bound on that note's own nights, not every type with a price.
 
 When a cheaper and a better type are too close for the gap (no step fits both limits), that night keeps the order only,
 with a note ("On 75 nights Standard and Premium are too close in price to keep this unit 5% from both, so there the
 plans only keep it between them"); when no step fits strictly between them at all, the night takes one price, the step
 nearest today's price when it is between them, else nearest halfway, the lower step on a tie and never above the better
 type's price, so this unit is never dearer than the better type; it then has no choice of price (like a night whose own
-limits leave one), and a note says so ("On 24 nights no price in steps of RM 10 fits between Standard and Premium, so
-there the plans use a single price, the step nearest today's price or halfway, never above the dearer type"). When the
+limits leave none), and a note says so, naming the types whose order leaves no step between them ("On 24 nights no
+price in steps of RM 10 fits between Standard and Premium, so there the plans use a single price, the step nearest
+today's price or halfway, never above the dearer type"). When the
 owner's floor or ceiling, or the range of prices tried, leaves no price inside the limits, the night takes the end of
 that range nearest them (the floor and ceiling win) and its own note names the cause ("On 12 nights your lowest price,
 RM 250, leaves no room under Deluxe, so the plans use it there"; "the lowest price tried (60% of today's)", "(60% of
-the usual price)" when none of those nights has a price today; "your highest price"; "the highest price tried (180% of
-today's)"). Each night is in one of these notes at most, and only nights that keep the gap count in the order note
-below.
+the usual price)" when none of those nights has a price today, "(60% of today's price, or of the usual price on nights
+with none)" when some have none; "your highest price"; "the highest price tried (180% of today's)", with the same three
+forms). Each night is in one of these notes at most, each note names the types that left no room on its own nights,
+and only nights that keep the gap count in the order note below.
 
 Each type is still planned on its own, against the others' prices at the time, so the gap is a minimum, not a target.
 Pushing the recommended plan of each type in turn keeps the building's ladder (Standard below Boutique below Premium)
@@ -354,12 +361,17 @@ with all the draws.
 
 Options that come out with the same prices are merged into one card with both names (`keys`, `names`). Tags:
 "Recommended" on Balanced; out of reach, Fill and Premium say "Misses the target", or "Breaks even only" when they make
-less than RM50 a month either way. When Fill or Premium stopped at a limit (the owner's floor or ceiling when it cut
-most nights' range, else the other unit types' prices when they did, counting the nights where they left no room and
-the lowest or highest price allowed was used, else Lowest or Highest price to try), the summary names that limit ("The
-highest prices that keep this unit below Deluxe, which still make RM 800 a month on average."; "…below Deluxe, or your
-lowest price where that leaves no room, …") and, except for the unit types (their notes say it), a note says lower or
-higher prices could still work.
+less than RM50 a month either way. When Fill or Premium stopped at a limit, the summary names the limit that sets that
+end of the final range on most nights with a choice of price: the owner's floor or ceiling; else the other unit types'
+prices, counting the nights where they left no room and the lowest or highest price allowed was used; else Lowest or
+Highest price to try ("The highest prices that keep this unit below Deluxe, which still make RM 800 a month on
+average."; "…below Deluxe, or your lowest price where that leaves no room, …"). A limit counts on a night only where it
+is that end of the night's final range, so a ceiling inside the range that a better type then cuts lower counts for the
+type, not the ceiling. When none of them is on most of those nights, the summary says "the highest prices allowed" (or
+"lowest"). Except for the unit types (their notes say it), a note says lower or higher prices could still work, and adds
+"Highest price to try, in the assumptions, sets this limit" only when the range tried is that limit. When most of the nights the
+plans price have no choice of price (a single price between the other types, or limits that leave none), the plans are
+mostly one set of prices, so the summaries name no end and nothing is said to have stopped.
 
 `notes`, in this order: nothing to price; dates under 14 nights ("the monthly figures are rough"); open nights with no
 price today; booked nights with no amount; where `P0` came from when not today's prices; little history (when the
@@ -514,7 +526,7 @@ Then one `O.channel.setDays` call on the unit type's main plan (`O.channel.mainP
 price log's `how` is "Fill the calendar plan from the profit planner" ("Your own mix from the profit planner"), so
 Pricing's Recent changes reads "Fill the calendar plan from the profit planner: 63 nights (11 Oct – 3 Jan)".
 
-Undo puts back the nights still at the push's price:
+Undo puts back the nights still at the push's price that no later push holds:
 
 - An own price goes back with its old `how` (one `setDays` per `how`) and then its old `by` and `at` on every unit
   Undo writes, so Pricing does not date the old price to the undo; a night with no own price before is cleared (back
@@ -536,8 +548,12 @@ Undo puts back the nights still at the push's price:
 - The confirm, the toast and the audit line name the units Undo writes ("for all 3 Deluxe units", "for Studio 3A only"
   when the type has other units) and the push's own plan when it goes back by itself.
 - A night a later push (not undone, same unit or type) changed again from this push's price is handed over: the later
-  push takes this push's `from` (and gets `changedAt`, for the save merge), so undoing it later puts back the price
-  from before both, in any order.
+  push takes this push's `from` (and gets `changedAt`, for the save merge, and the night `handedAt`), so undoing it
+  later puts back the price from before both, in any order. The next later push with the night decides first when it
+  still holds it (the price now is its price): handed over when its `from` is this push's price, even when its price is
+  this push's price again (with pushes A, B and C, undoing B hands C the price A set as its `from`, so undoing A then
+  hands that night to C, not back to the price before A while C is live); kept otherwise (a price set by hand between
+  the two pushes, which undoing the later push puts back).
 - Nights changed by hand since keep their newer price and past nights are skipped; the confirm says how many, and for
   a unit type which units.
 - After the confirm closes it looks the push record up again by its id (the push history may have arrived from another

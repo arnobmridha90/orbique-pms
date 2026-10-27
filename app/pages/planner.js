@@ -29,12 +29,15 @@
   };
   function canChange() { return O.can('pricing.change'); }
   function audit(text) { D.auditLog = D.auditLog || []; D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'pricing', text: text }); }
+  /* a stamp for the save merge (changedAt, handedAt, updatedAt): now, or the stamp already there when it is later (another
+     device's, whose clock runs ahead), so a change made after seeing it is never stamped before it */
+  function stamp(was) { return typeof was === 'string' && was > D.NOW ? was : D.NOW; }
 
   /* ------------------------------------------------------------------ styles */
   O.css('planner', [
     '.pg-planner{display:flex;flex-direction:column;gap:14px;}',
     '.pg-planner .toolbar{margin-bottom:0;}',
-    '.pg-planner .pp-prop{min-width:240px;max-width:340px;}',
+    '.pg-planner .pp-prop{min-width:240px;max-width:340px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}',
     '.pg-planner .pp-hz{width:auto;min-width:150px;}',
     '.pg-planner .pp-until{width:auto;}',
     '.pg-planner .pp-saved .pill{white-space:nowrap;}',
@@ -219,6 +222,8 @@
   function isArchived(x) { return !!(x && (x.archived === true || x.status === 'archived')); }
   function unitList() { return D.properties.filter(function (p) { return !isArchived(p) && O.inView(p); }); }
   function typeOf(P) { return P && P.unitTypeId && O.unitType ? O.unitType(P.unitTypeId) : null; }
+  /* the unit select's words: the unit and its type */
+  function unitLabel(P) { var ut = typeOf(P); return P.name + (ut ? ' · ' + ut.name : ''); }
   function mainPlanOf(P) { return P && P.unitTypeId && O.channel ? O.channel.mainPlan(P.unitTypeId) : null; }
   function rangeText(list) { return list.length === 1 ? d.fmt(list[0]) : d.fmtRange(list[0], list[list.length - 1]); }
   function cap1(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
@@ -1094,23 +1099,28 @@
   /* what Undo would do now. back: nights still at this push's price on the units, to put back. plan: when the push's own
      plan is no longer the main plan, its nights still at this push's price, to put back on that plan. hand: nights a later
      push (not undone) changed again from this push's price; that push takes over this one's "from", so undoing it later
-     puts back the price from before both. kept: nights changed by hand since, which keep their newer price */
+     puts back the price from before both. kept: nights changed by hand since, which keep their newer price. A later push
+     that still holds the night (the price now is its price) comes first, even when its price is this push's again (an
+     Undo in between handed it this push's price as its "from") */
   function undoPlan(rec, P) {
     var list = pushList(), idx = list.indexOf(rec), pc = priceCtx(P), T = D.TODAY, r = undoRoute(rec, P);
     var map = r.plan && !r.viaMain ? O.channel.rateMap() : null, out = { route: r, back: [], plan: [], hand: [], kept: 0, gone: 0 };
     Object.keys(rec.nights || {}).sort().forEach(function (iso) {
-      var x = rec.nights[iso], i, nr, y, day, b;
+      var x = rec.nights[iso], i, nr, y = null, day, b, now;
       if (iso < T) { out.gone++; return; }
       b = { iso: iso, from: x.from, to: x.to, own: !!x.own, how: x.how || 'manual' };
       if (x.own && x.at) { b.at = x.at; if (x.by != null) b.by = x.by; }
       if (map) { day = O.channel.dayIn(map, r.plan.id, iso); if (day && day.src === 'manual' && Number(day.rate) === x.to) out.plan.push(b); }
-      if (priceNow(P.id, iso, pc) === x.to) { out.back.push(b); return; }
+      /* the next later push (not undone) with this night */
       for (i = idx - 1; i >= 0; i--) {
         nr = list[i]; y = nr.nights && nr.nights[iso];
-        if (!y || nr.undoneAt || !sameScope(nr, rec)) continue;
-        if (y.from === x.to) { out.hand.push({ rec: nr, iso: iso }); return; }
-        break;
+        if (y && !nr.undoneAt && sameScope(nr, rec)) break;
+        y = null;
       }
+      now = priceNow(P.id, iso, pc);
+      if (y && now === y.to) { if (y.from === x.to) out.hand.push({ rec: nr, iso: iso }); else out.kept++; return; }
+      if (now === x.to) { out.back.push(b); return; }
+      if (y && y.from === x.to) { out.hand.push({ rec: nr, iso: iso }); return; }
       out.kept++;
     });
     return out;
@@ -1225,11 +1235,11 @@
       u.hand.forEach(function (h) {
         var x = rec.nights[h.iso], y = h.rec.nights[h.iso];
         /* the later push changed too: the save merge keeps the newer copy, and per night the one handed on last */
-        y.from = x.from; y.handedAt = D.NOW; h.rec.changedAt = D.NOW;
+        y.from = x.from; y.handedAt = stamp(y.handedAt); h.rec.changedAt = stamp(h.rec.changedAt);
         if (x.own) { y.own = true; y.how = x.how || 'manual'; if (x.at) y.at = x.at; else delete y.at; if (x.by != null) y.by = x.by; else delete y.by; }
         else { delete y.own; delete y.how; delete y.at; delete y.by; }
       });
-      rec.undoneAt = D.NOW; rec.undoneBy = O.state.viewer; rec.undoneN = back.length; rec.changedAt = D.NOW;
+      rec.undoneAt = D.NOW; rec.undoneBy = O.state.viewer; rec.undoneN = back.length; rec.changedAt = stamp(rec.changedAt);
       if (u.hand.length) rec.handedN = u.hand.length;
       if (u.plan.length) rec.planN = u.plan.length;
       if (back.length) {
@@ -1273,7 +1283,7 @@
       var bd = t ? O.building(t.buildingId) : null;
 
       root.innerHTML = '<div class="pg-planner" data-pid="' + esc(pid) + '">' +
-        '<div class="toolbar"><select class="select pp-prop" data-prop aria-label="Unit">' + units.map(function (u) { var ut = typeOf(u); return '<option value="' + esc(u.id) + '"' + (u.id === pid ? ' selected' : '') + '>' + esc(u.name + (ut ? ' · ' + ut.name : '')) + '</option>'; }).join('') + '</select>' +
+        '<div class="toolbar"><select class="select pp-prop" data-prop aria-label="Unit" title="' + esc(unitLabel(P)) + '">' + units.map(function (u) { return '<option value="' + esc(u.id) + '"' + (u.id === pid ? ' selected' : '') + '>' + esc(unitLabel(u)) + '</option>'; }).join('') + '</select>' +
         '<select class="select pp-hz" data-hz aria-label="Dates">' + HORIZONS.map(function (h) { return '<option value="' + h[0] + '"' + (hz === h[0] ? ' selected' : '') + '>' + h[1] + '</option>'; }).join('') + '<option value="until"' + (isUntil ? ' selected' : '') + '>Until a date…</option></select>' +
         (isUntil ? '<input type="date" class="input pp-until" data-until aria-label="Last night to plan" min="' + d.add(T, 1) + '" max="' + d.add(T, MAX_DAYS - 1) + '" value="' + end + '">' : '') +
         '<span class="pp-saved" data-saved></span></div>' +
@@ -1366,7 +1376,7 @@
         var vS = toSave(dr), b = ownBlob();
         if (!hasInputs(dr)) { U.toast('Enter at least one cost or a profit target to save', 'bad'); return; }
         if (!limitsOf(dr).ok) { U.toast('Never above needs to be higher than Never below. Fix the price limits, then save.', 'bad'); var lc = O.$('#pp-l-ceiling', pg); if (lc) lc.focus(); return; }
-        b.units[pid] = { costs: vS.costs, profitPerMonth: vS.profitPerMonth, assumptions: vS.assumptions, horizon: vS.horizon, keepPeaks: vS.keepPeaks, floor: vS.floor, ceiling: vS.ceiling, updatedAt: D.NOW, by: O.state.viewer };
+        b.units[pid] = { costs: vS.costs, profitPerMonth: vS.profitPerMonth, assumptions: vS.assumptions, horizon: vS.horizon, keepPeaks: vS.keepPeaks, floor: vS.floor, ceiling: vS.ceiling, updatedAt: stamp(b.units[pid] && b.units[pid].updatedAt), by: O.state.viewer };
         dr.base = canon(toSave(dr));
         /* the activity log is seen by staff: the costs and the target stay out of it */
         audit('Saved the profit planner costs and target for ' + P.name);

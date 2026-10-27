@@ -864,6 +864,38 @@ test('unit types: a type priced like this one is a peer, the floor and the range
   assert.ok(r0.notes.some((t) => /^To keep the unit types in this building in order, the plans/.test(t)), r0.notes.join(' | '));
 });
 
+test('unit types: Fill and Premium name the limit that sets their prices, and each note names the types on its own nights', () => {
+  const ns = nights('2026-10-27', 90, BOOKED), wk = (n) => n.dow === 5 || n.dow === 6;
+  const mk = (f, keep) => Object.fromEntries(ns.filter(keep || (() => true)).map((n) => [n.iso, f(n)]));
+  /* a ceiling inside every night's range, with Deluxe cutting lower still: Deluxe sets Premium's prices, not the ceiling */
+  const rc = R.plan(input({ profitPerMonth: 800, ceiling: 300, draws: 500, otherTiers: [{ name: 'Deluxe', prices: mk((n) => n.current + 20) }] }));
+  const prem = optionWith(rc, 'premium');
+  assert.match(prem.summary, /^The highest prices that keep this unit below Deluxe, which still make RM 800 a month on average\./);
+  assert.ok(!rc.notes.concat(prem.summary).some((t) => /price you allow|stopped at/.test(t)), rc.notes.join(' | '));
+  const rf = R.plan(input({ profitPerMonth: 800, floor: 150, draws: 500, otherTiers: [{ name: 'Studio', prices: mk((n) => n.current - 20) }] }));
+  assert.match(optionWith(rf, 'fill').summary, /^The lowest prices that keep this unit above Studio, which still make RM 800 a month on average/);
+  /* a single price on most nights: no end is named, nothing stopped */
+  const ns30 = nights('2026-10-27', 30, BOOKED), up6 = ns30.map((n) => Object.assign({}, n, { current: n.current + 6 }));
+  const pair = (keep) => [{ name: 'Standard', prices: Object.fromEntries(ns30.filter(keep).map((n) => [n.iso, n.current + 3])), better: false },
+    { name: 'Premium', prices: Object.fromEntries(ns30.filter(keep).map((n) => [n.iso, n.current + 9])), better: true }];
+  for (const extra of [{}, { floor: 200 }, { profitPerMonth: 0 }]) {
+    const r1 = R.plan(input(Object.assign({ nights: up6, draws: 500, assumptions: { rounding: 10 }, otherTiers: pair(() => true) }, extra)));
+    const texts = r1.options.map((o) => o.summary).concat(r1.notes);
+    assert.ok(!texts.some((t) => /\(60%|\(180%|stopped at|you allow|planner tries/.test(t)), texts.join(' | '));
+  }
+  const r6 = R.plan(input({ nights: up6, profitPerMonth: 0, draws: 500, assumptions: { rounding: 10 }, otherTiers: pair((n, i) => i % 6 !== 0) }));
+  assert.ok(!r6.options.map((o) => o.summary).concat(r6.notes).some((t) => /\(60%|\(180%|stopped at|planner tries/.test(t)), r6.notes.join(' | '));
+  /* the single-price note names the types whose order leaves no step: RM240 fits between Standard and Deluxe */
+  const flat = ns30.map((n) => Object.assign({}, n, { current: 236 })), at = (v) => Object.fromEntries(ns30.map((n) => [n.iso, v]));
+  const ro = R.plan(input({ nights: flat, draws: 500, assumptions: { rounding: 10 }, otherTiers: [{ name: 'Standard', prices: at(233), better: false }, { name: 'Premium', prices: at(239), better: true }, { name: 'Deluxe', prices: at(241), better: true }] }));
+  assert.ok(ro.notes.some((t) => /^On \d+ nights no price in steps of RM 10 fits between Standard and Premium, so/.test(t)), ro.notes.join(' | '));
+  /* the floor note and the range-tried note each name their own nights' types */
+  const tiers = [{ name: 'Deluxe', prices: mk((n) => n.current + 10, (n) => !wk(n)), better: true }, { name: 'Suite', prices: mk((n) => n.current, wk), better: true }];
+  const rn = R.plan(input({ profitPerMonth: 800, floor: 250, draws: 500, assumptions: { minFactor: 1 }, otherTiers: tiers }));
+  assert.ok(rn.notes.some((t) => /^On \d+ nights your lowest price, RM 250, leaves no room under Deluxe, so/.test(t)), rn.notes.join(' | '));
+  assert.ok(rn.notes.some((t) => /^On \d+ nights the lowest price tried \(100% of today's\) leaves no room under Suite, so/.test(t)), rn.notes.join(' | '));
+});
+
 test('money in sentences comes from input.money when given', () => {
   const r = R.plan(input({ profitPerMonth: 800, money: (n) => 'MYR' + Math.round(n), draws: 300 }));
   assert.ok(r.options[0].pros.concat(r.options[0].cons).some((t) => /MYR800/.test(t)));
