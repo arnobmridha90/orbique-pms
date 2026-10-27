@@ -896,6 +896,44 @@ test('unit types: Fill and Premium name the limit that sets their prices, and ea
   assert.ok(rn.notes.some((t) => /^On \d+ nights the lowest price tried \(100% of today's\) leaves no room under Suite, so/.test(t)), rn.notes.join(' | '));
 });
 
+test('a floor (ceiling) on the same step as the lowest (highest) price tried is named as the owner\'s limit', () => {
+  const flat = nights('2026-10-27', 60, BOOKED).map((n) => Object.assign({}, n, { current: 250 }));
+  /* RM150 is 60% of RM250 and RM450 is 180%: both ends meet on every night */
+  const rf = R.plan(input({ nights: flat, floor: 150, profitPerMonth: 0, draws: 500, assumptions: { rounding: 10 } }));
+  assert.match(optionWith(rf, 'fill').summary, /^The lowest price you allow \(RM 150\)/);
+  const tf = rf.notes.concat(optionWith(rf, 'fill').summary);
+  assert.ok(!tf.some((t) => /planner tries|price to try/.test(t)), tf.join(' | '));
+  assert.ok(rf.notes.some((t) => /^Fill the calendar stopped at the lowest price you allow \(RM 150\)/.test(t)), rf.notes.join(' | '));
+  /* low costs, so Premium climbs to the top */
+  const costs = Object.fromEntries(Object.entries(COSTS).map(([a, b]) => [a, Math.round(b * 0.1)]));
+  const rc = R.plan(input({ nights: flat, ceiling: 450, costs, profitPerMonth: 0, draws: 500, assumptions: { rounding: 10 } }));
+  assert.match(optionWith(rc, 'premium').summary, /^The highest price you allow \(RM 450\)/);
+  assert.ok(!rc.notes.concat(optionWith(rc, 'premium').summary).some((t) => /highest prices? the planner tries|Highest price to try/.test(t)), rc.notes.join(' | '));
+  assert.ok(rc.notes.some((t) => /^Premium rates stopped at the highest price you allow \(RM 450\)/.test(t)), rc.notes.join(' | '));
+});
+
+test('most open nights with no price today: the lowest prices tried are a share of the usual price, named that way', () => {
+  const ns = nights('2026-10-27', 90, BOOKED).map((n, i) => Object.assign({}, n, { current: i % 3 ? null : n.current }));
+  const costs = Object.fromEntries(Object.entries(COSTS).map(([a, b]) => [a, Math.round(b * 0.2)]));
+  const r = R.plan(input({ nights: ns, profitPerMonth: 0, basePrice: 230, costs, draws: 500 }));
+  const fill = optionWith(r, 'fill');
+  assert.match(fill.summary, /^The lowest prices the planner tries \(60% of today's price, or of the usual price on nights with none\)/);
+  assert.ok(r.notes.some((t) => /stopped at the lowest prices the planner tries \(60% of today's price, or of the usual price on nights with none\)/.test(t)), r.notes.join(' | '));
+});
+
+test('unit types with no name or the same name get a number, so a note never reads "between X and X"', () => {
+  const ns = nights('2026-10-27', 30, BOOKED), up6 = ns.map((n) => Object.assign({}, n, { current: n.current + 6 }));
+  const mk = (d) => Object.fromEntries(ns.map((n) => [n.iso, n.current + d]));
+  for (const nm of [[undefined, ''], ['Deluxe', 'Deluxe']]) {
+    const r = R.plan(input({ nights: up6, draws: 300, assumptions: { rounding: 10 }, otherTiers: [{ name: nm[0], prices: mk(3), better: false }, { name: nm[1], prices: mk(9), better: true }] }));
+    const one = r.notes.find((t) => /fits between/.test(t));
+    assert.ok(one, r.notes.join(' | '));
+    const m = one.match(/fits between (.+?) and (.+?), so/);
+    assert.ok(m && m[1] !== m[2], one);
+    assert.match(one, /\(2\)/);
+  }
+});
+
 test('money in sentences comes from input.money when given', () => {
   const r = R.plan(input({ profitPerMonth: 800, money: (n) => 'MYR' + Math.round(n), draws: 300 }));
   assert.ok(r.options[0].pros.concat(r.options[0].cons).some((t) => /MYR800/.test(t)));

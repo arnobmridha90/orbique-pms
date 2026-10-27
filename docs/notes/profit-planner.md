@@ -280,7 +280,9 @@ cheaper one. `tierGap` is kept to a tenth of a percent and written exactly ("4.5
 step apart). Which type is better is worked out from the usual (median) prices over the dates; a type whose usual price
 is less than one rounding step from this unit's (at most 2%, at least 1%) is a peer, with no order kept against it and
 a note ("Twin has about the same usual price as this unit, so the plans keep no order against it"). The notes name only
-the types whose limit set the bound on that note's own nights, not every type with a price.
+the types whose limit set the bound on that note's own nights, not every type with a price. Each type is named once: a
+type sent with no name is "another unit type", and a name already used gets a number ("Deluxe (2)"), so no note reads
+"between Deluxe and Deluxe".
 
 When a cheaper and a better type are too close for the gap (no step fits both limits), that night keeps the order only,
 with a note ("On 75 nights Standard and Premium are too close in price to keep this unit 5% from both, so there the
@@ -362,9 +364,11 @@ with all the draws.
 Options that come out with the same prices are merged into one card with both names (`keys`, `names`). Tags:
 "Recommended" on Balanced; out of reach, Fill and Premium say "Misses the target", or "Breaks even only" when they make
 less than RM50 a month either way. When Fill or Premium stopped at a limit, the summary names the limit that sets that
-end of the final range on most nights with a choice of price: the owner's floor or ceiling; else the other unit types'
+end of the final range on most nights with a choice of price: the owner's floor or ceiling (also when it is on the same
+step as the end of the range tried, so the advice to widen the range never shows when widening it changes nothing); else the other unit types'
 prices, counting the nights where they left no room and the lowest or highest price allowed was used; else Lowest or
-Highest price to try ("The highest prices that keep this unit below Deluxe, which still make RM 800 a month on
+Highest price to try, in the same three forms as the notes below ("60% of today's price, or of the usual price on
+nights with none") ("The highest prices that keep this unit below Deluxe, which still make RM 800 a month on
 average."; "…below Deluxe, or your lowest price where that leaves no room, …"). A limit counts on a night only where it
 is that end of the night's final range, so a ceiling inside the range that a better type then cuts lower counts for the
 type, not the ceiling. When none of them is on most of those nights, the summary says "the highest prices allowed" (or
@@ -451,7 +455,8 @@ first. Numbers are compared as rounded, the way they are shown, so no sentence s
 
 ## The page
 
-1. Toolbar: unit picker (units in view, not archived), dates (next 30, 60, 90, 180 days, or until a date), saved state.
+1. Toolbar: unit picker (units in view, not archived), dates (next 30, 60, 90, 180 days, or until a date), saved state
+   ("Saved 27 Oct, 9:40 AM", never later than this device's clock, when another device saved with its clock ahead).
    An until-date runs from tomorrow to a year ahead; a typed date outside that goes to the nearest end, and a saved
    date that has passed falls back to the next 90 days (the select shows it), so a passed date never plans one night.
    The context line under it says who shares the price ("4 units share this price; 47-5, 47-7 and 48-1 are blocked on
@@ -526,7 +531,7 @@ Then one `O.channel.setDays` call on the unit type's main plan (`O.channel.mainP
 price log's `how` is "Fill the calendar plan from the profit planner" ("Your own mix from the profit planner"), so
 Pricing's Recent changes reads "Fill the calendar plan from the profit planner: 63 nights (11 Oct – 3 Jan)".
 
-Undo puts back the nights still at the push's price that no later push holds:
+Undo puts back the nights still at the push's price that no later push has:
 
 - An own price goes back with its old `how` (one `setDays` per `how`) and then its old `by` and `at` on every unit
   Undo writes, so Pricing does not date the old price to the undo; a night with no own price before is cleared (back
@@ -547,15 +552,29 @@ Undo puts back the nights still at the push's price that no later push holds:
   - no main plan now: back to their own price from before the push, or cleared.
 - The confirm, the toast and the audit line name the units Undo writes ("for all 3 Deluxe units", "for Studio 3A only"
   when the type has other units) and the push's own plan when it goes back by itself.
-- A night a later push (not undone, same unit or type) changed again from this push's price is handed over: the later
-  push takes this push's `from` (and gets `changedAt`, for the save merge, and the night `handedAt`), so undoing it
-  later puts back the price from before both, in any order. The next later push with the night decides first when it
-  still holds it (the price now is its price): handed over when its `from` is this push's price, even when its price is
-  this push's price again (with pushes A, B and C, undoing B hands C the price A set as its `from`, so undoing A then
-  hands that night to C, not back to the price before A while C is live); kept otherwise (a price set by hand between
-  the two pushes, which undoing the later push puts back).
+- The later pushes that wrote the night decide it while they still hold it. A later push wrote a unit's price when it
+  is not undone and went to that unit, or, for a push through the unit type's rate plan, when it went through the plan
+  too (it wrote every unit of the type, with one `from` for all); a push on one unit alone writes no other unit. They
+  still hold the night while its price now is the latest one's (and not the same amount set by hand since, below).
+  Then the next of them decides, whatever its own price is now: handed over when its `from` is this push's price, even
+  when its price is this push's price again. The later push takes this push's `from` (and gets `changedAt`, for the save
+  merge, and the night `handedAt`), so undoing it later puts back the price from before both, in any order (with pushes
+  A, B and C, undoing B hands C the price A set as its `from`, so undoing A then hands that night to C, not back to the
+  price before A while C is live). Kept otherwise (a price set by hand between the two pushes, which undoing the later
+  push puts back). When they no longer hold it, or no later push wrote it, the price now decides: back when it is still
+  this push's price, kept otherwise.
+- Once the units of a type can differ (the push went through the type's plan and that plan is no longer the main
+  plan, so a push or a price set in Pricing can go to one unit alone), Undo looks at each unit by itself: a night goes
+  back only on the units still at the push's price, each unit's own later push takes the hand-over for that unit, and
+  the confirm, the toast and the audit line say when some units keep a newer price ("Some of the units were changed
+  after the push and keep their newer price on these nights"). Undoing every push, in any order, with no price set by
+  hand in between, ends on the prices from before them all.
 - Nights changed by hand since keep their newer price and past nights are skipped; the confirm says how many, and for
-  a unit type which units.
+  a unit type which units. A price set by hand since the push (in Pricing or Channels: its stamp in `priceOverrideMeta`
+  has a `how` other than `planner` and an `at` no earlier than the push's) counts as changed even when it is the same
+  amount as the push's price, both on the night now and as the price a later push started from; without a stamp, or
+  with a clock behind the push's, the amount alone decides. When Undo would change nothing (every night changed since,
+  or passed), it says so in a toast and the push stays in the history as it is.
 - After the confirm closes it looks the push record up again by its id (the push history may have arrived from another
   device while the dialog was open, as new objects; if the record is gone it says to press Undo again) and checks again
   (a second Enter, or prices or rate plans that changed while it was open),
