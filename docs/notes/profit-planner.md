@@ -45,8 +45,14 @@ D.ratePlanner = {
                            keepPeaks: true, floor: 200 | null, ceiling: 600 | null,   // price limits, RM a night
                            updatedAt, by } },
   pushes: [ { id, at, by, pid, typeId, planId, option, name, n,   // name: the card's name ("Balanced and Most profit")
-              nights: { iso: { from, to, own, how, by, at, handedAt } },   // own, how, by and at only for a night that had
+              nights: { iso: { from, to, own, how, by, at, froms, fsets, pday, handedAt } },
+                                                                // own, how, by and at only for a night that had
                                                                 // its own price before (by and at: who set it and when);
+                                                                // froms, fsets and pday only for a push through the
+                                                                // plan while the type's units had different prices:
+                                                                // each unit's price, whether each other unit had its
+                                                                // own price ({how, by, at} or null), and the plan's own
+                                                                // price that night (0: it followed the first unit);
                                                                 // handedAt: when an Undo of an earlier push handed it on
               undoneAt, undoneBy, undoneN, handedN, planN,
               changedAt } ]   // set by Undo on the push it undoes and on a later push it hands nights to; newest first, at most 30
@@ -482,7 +488,7 @@ first. Numbers are compared as rounded, the way they are shown, so no sentence s
 7. Preview: by month ("Profit in the month", with a total row for all the dates) and by night (date, today, new,
    change, status; the change column is left out on phones), toggle "Keep peak nights at today's price". Opening it
    scrolls its title to just below the top bar.
-8. Push history with Undo. Each row names the plan as its card did ("Balanced and Most profit"); the subtitle names the unit type when it has more than one unit, else the unit.
+8. Push history with Undo. Each row names the plan as its card did ("Balanced and Most profit"); the subtitle names the unit type when it has more than one unit, else the unit. A push that went to one unit alone of a type with more units says so ("for 47-1 only").
 9. Assumptions (collapsed): every `R.ASSUMPTIONS` value with its source and a reset, plus what calibration used. The
    summary ("1 value changed from the defaults") and "Reset all" follow every edit; the plans use the values straight
    away, and Save costs and target keeps them for next time.
@@ -527,7 +533,9 @@ Then one `O.channel.setDays` call on the unit type's main plan (`O.channel.mainP
 `opts {emit: false, audit: false, how: 'planner'}`; a unit without a main plan writes `D.priceOverrides` /
 `D.priceOverrideMeta` directly like `applyPrices` in pricing.js. Then `D.priceLog`, the audit log, the push record in
 `D.ratePlanner.pushes` (for a night that had its own price, `own: true`, its `how`, and who set it and when, `by` and
-`at`, so Undo can put the label and Pricing's history back too), and one `O.emit('data', {type: 'pricing'})`. The
+`at`, so Undo can put the label and Pricing's history back too; through the main plan, when the units of the type
+have different prices that night, also `froms`, `fsets` and `pday`, so Undo can give each unit its own price back), and
+one `O.emit('data', {type: 'pricing'})`. The
 price log's `how` is "Fill the calendar plan from the profit planner" ("Your own mix from the profit planner"), so
 Pricing's Recent changes reads "Fill the calendar plan from the profit planner: 63 nights (11 Oct – 3 Jan)".
 
@@ -553,22 +561,29 @@ Undo puts back the nights still at the push's price that no later push has:
 - The confirm, the toast and the audit line name the units Undo writes ("for all 3 Deluxe units", "for Studio 3A only"
   when the type has other units) and the push's own plan when it goes back by itself.
 - The later pushes that wrote the night decide it while they still hold it. A later push wrote a unit's price when it
-  is not undone and went to that unit, or, for a push through the unit type's rate plan, when it went through the plan
-  too (it wrote every unit of the type, with one `from` for all); a push on one unit alone writes no other unit. They
-  still hold the night while its price now is the latest one's (and not the same amount set by hand since, below).
-  Then the next of them decides, whatever its own price is now: handed over when its `from` is this push's price, even
-  when its price is this push's price again. The later push takes this push's `from` (and gets `changedAt`, for the save
-  merge, and the night `handedAt`), so undoing it later puts back the price from before both, in any order (with pushes
-  A, B and C, undoing B hands C the price A set as its `from`, so undoing A then hands that night to C, not back to the
-  price before A while C is live). Kept otherwise (a price set by hand between the two pushes, which undoing the later
-  push puts back). When they no longer hold it, or no later push wrote it, the price now decides: back when it is still
-  this push's price, kept otherwise.
-- Once the units of a type can differ (the push went through the type's plan and that plan is no longer the main
-  plan, so a push or a price set in Pricing can go to one unit alone), Undo looks at each unit by itself: a night goes
-  back only on the units still at the push's price, each unit's own later push takes the hand-over for that unit, and
-  the confirm, the toast and the audit line say when some units keep a newer price ("Some of the units were changed
-  after the push and keep their newer price on these nights"). Undoing every push, in any order, with no price set by
-  hand in between, ends on the prices from before them all.
+  is not undone and went to that unit, or when it went through the unit type's rate plan (it wrote every unit of the
+  type, also after a push on one unit alone); a push on one unit alone writes no other unit. They still hold the night
+  while its price now is the latest one's (and not the same amount set by hand since, below). Then the next of them
+  decides, whatever its own price is now: handed over when its `from` for that unit is this push's price, even when its
+  price is this push's price again. The later push takes this push's `from` for each unit that hands the night over,
+  and whether that was the unit's own price and who set it; the other units keep the later push's (it also gets
+  `changedAt`, for the save merge, and the night `handedAt`). So undoing it later puts back the price from before both,
+  in any order (with pushes A, B and C, undoing B hands C the price A set as its `from`, so undoing A then hands that
+  night to C, not back to the price before A while C is live). With another main plan now, the later push's `from`
+  becomes the price that plan gives, since this push only takes its price off. Kept otherwise (a price set by hand
+  between the two pushes, which undoing the later push puts back). When they no longer hold it, or no later push wrote
+  it, the price now decides: back when it is still this push's price, kept otherwise.
+- The units of a type can differ: while the plan is not the main plan a push or a price set in Pricing goes to one
+  unit alone, and they keep their prices when it is made the main plan again. So Undo of a push through the plan looks
+  at each unit by itself, still the main plan or not: a night goes back only on the units still at the push's price,
+  each unit's own later push takes the hand-over for that unit, and the confirm, the toast and the audit line say when
+  some units keep a newer price ("Some of the units were changed after the push and keep their newer price on these
+  nights"; "changed again by later pushes" when more than one later push takes nights). Through the main plan, the
+  units that keep a newer price get it back right after the plan's `setDays`. A push that went through the plan while
+  the units differed puts back each unit's own price (`froms`, with who set it, `fsets`), clears it on a unit that had
+  none, and gives the plan's day its own price back (`pday`). The price log files the undo under each unit that changed
+  when only some did. Undoing every push, in any order, with no price set by hand in between, ends on the prices from
+  before them all, also when the plan stopped and started being the main plan in between.
 - Nights changed by hand since keep their newer price and past nights are skipped; the confirm says how many, and for
   a unit type which units. A price set by hand since the push (in Pricing or Channels: its stamp in `priceOverrideMeta`
   has a `how` other than `planner` and an `at` no earlier than the push's) counts as changed even when it is the same

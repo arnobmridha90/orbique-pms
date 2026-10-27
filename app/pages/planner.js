@@ -342,6 +342,19 @@
     var ov = D.priceOverrides && D.priceOverrides[pid], mm = D.priceOverrideMeta && D.priceOverrideMeta[pid];
     return ov && Number(ov[iso]) > 0 && mm && mm[iso] ? mm[iso] : null;
   }
+  /* a unit's own price on a night as Undo keeps it: who set it and how ({how, at, by}), or null when it has none */
+  function ownStamp(pid, iso) {
+    var ov = D.priceOverrides && D.priceOverrides[pid], mm = D.priceOverrideMeta && D.priceOverrideMeta[pid], m = mm && mm[iso], st;
+    if (!(ov && Number(ov[iso]) > 0)) return null;
+    st = { how: (m && m.how) || 'manual' };
+    if (m && m.at) { st.at = m.at; if (m.by != null) st.by = m.by; }
+    return st;
+  }
+  /* the price a unit follows with no price of its own on a night: its type's main rate plan, else the pricing model */
+  function followPrice(pid, iso) {
+    var P = D.propById[pid], mp = P ? mainPlanOf(P) : null, r = mp && O.channel ? O.channel.planRateIn(O.channel.rateMap(), mp, iso) : 0;
+    return r > 0 ? r : modelRate(pid, iso);
+  }
   function priceCtx(P) { var mp = mainPlanOf(P); return { mp: mp, map: mp && O.channel ? O.channel.rateMap() : null }; }
   /* this unit's nights: live bookings and blocks */
   function occIndex(pid) {
@@ -875,7 +888,7 @@
       var undo = x.undoneAt ? '<span class="pill neutral">Undone ' + esc(d.fmt(x.undoneAt.slice(0, 10))) + '</span>'
         : '<button type="button" class="btn btn-ghost btn-sm" data-undo="' + esc(x.id) + '"' + (edit ? '' : ' disabled title="' + esc(WHY_CHANGE) + '"') + '>' + O.icon('refresh') + 'Undo</button>';
       return '<div class="pp-hrow' + (x.undoneAt ? ' undone' : '') + '"><div class="main"><div class="t">' + esc(name) + ' · ' + fmt.plural(x.n || isos.length, 'night') + (isos.length ? ' (' + esc(rangeText(isos)) + ')' : '') + '</div>' +
-        '<div class="s">' + esc(fmt.dateTime(x.at)) + ' by ' + esc(staffName(x.by)) + (u && u.id !== P.id ? ' from ' + esc(u.short || u.name) : '') + (x.undoneAt && x.undoneBy ? ' · undone by ' + esc(staffName(x.undoneBy)) : '') + '</div></div>' + undo + '</div>';
+        '<div class="s">' + esc(fmt.dateTime(x.at)) + ' by ' + esc(staffName(x.by)) + (u && !x.planId && t && histUnits(t) > 1 ? ' for ' + esc(u.short || u.name) + ' only' : u && u.id !== P.id ? ' from ' + esc(u.short || u.name) : '') + (x.undoneAt && x.undoneBy ? ' · undone by ' + esc(staffName(x.undoneBy)) : '') + '</div></div>' + undo + '</div>';
     }).join('');
     return '<div class="card pp-hist"><div class="card-head"><div class="hd"><h3>Push history</h3><div class="sub">' + (t && histUnits(t) > 1 ? 'Pushes for ' + esc(t.name) + ' units' : 'Pushes for ' + esc(P.short || P.name)) + '. Undo puts back the prices from before a push.</div></div></div>' +
       (rows || '<div class="card-body">' + U.empty('Nothing pushed yet. When you push a plan, it shows here with a way to undo it.') + '</div>') + '</div>';
@@ -982,12 +995,24 @@
   function pushNights(card, P) {
     var T = D.TODAY, last = d.add(T, 499), pc = priceCtx(P), occ = occIndex(P.id), out = [];
     var meta = (D.priceOverrideMeta && D.priceOverrideMeta[P.id]) || {};
+    /* through the main plan the push writes every unit of the type and the plan's day. Where the units' prices differ now
+       (a push or a Pricing change on one unit while the plan was not the main plan), Undo needs each one: froms keeps
+       each unit's price, fsets whether each other unit had a price of its own and who set it, pday the plan's own price
+       that night (0: it followed the first unit) */
+    var mates = pc.mp && P.unitTypeId ? O.unitsOfType(P.unitTypeId).filter(function (u) { return !isArchived(u); }) : [];
     card.nightly.forEach(function (n) {
       if (n.status !== 'open' || !(n.price > 0) || n.iso < T || n.iso > last || occ.booked[n.iso] || occ.blocked[n.iso]) return;
       var now = priceNow(P.id, n.iso, pc);
       if (now === n.price) return;
-      var x = { iso: n.iso, from: now, to: n.price, own: ownPrice(P.id, n.iso, pc) }, mt = meta[n.iso];
+      var x = { iso: n.iso, from: now, to: n.price, own: ownPrice(P.id, n.iso, pc) }, mt = meta[n.iso], fr = {}, diff = false;
       if (x.own) { x.how = (mt && mt.how) || 'manual'; if (mt && mt.at) { x.at = mt.at; if (mt.by != null) x.by = mt.by; } }
+      if (mates.length > 1) mates.forEach(function (u) { var v = u.id === P.id ? now : priceNow(u.id, n.iso, pc); fr[u.id] = v; if (v !== now) diff = true; });
+      if (diff) {
+        x.froms = fr; x.fsets = {};
+        mates.forEach(function (u) { if (u.id !== P.id) x.fsets[u.id] = ownStamp(u.id, n.iso); });
+        var day = O.channel.dayIn(pc.map, pc.mp.id, n.iso);
+        x.pday = day && day.src === 'manual' && Number(day.rate) > 0 ? Number(day.rate) : 0;
+      }
       out.push(x);
     });
     return out;
@@ -1068,6 +1093,7 @@
     list.forEach(function (x) {
       var y = nights[x.iso] = x.own ? { from: x.from, to: x.to, own: true, how: x.how } : { from: x.from, to: x.to };
       if (x.own && x.at) { y.at = x.at; if (x.by != null) y.by = x.by; }   /* who set the old price and when, for Undo */
+      if (x.froms) { y.froms = x.froms; y.fsets = x.fsets; y.pday = x.pday; }
     });
     var b = ownBlob();
     b.pushes.unshift({ id: O.uid('PP'), at: D.NOW, by: O.state.viewer, pid: P.id, typeId: t ? t.id : null, planId: mp ? mp.id : null, option: card.key, name: card.key === 'custom' ? 'Your own mix' : card.name, n: list.length, nights: nights });
@@ -1078,13 +1104,21 @@
     U.toast(fmt.plural(list.length, 'new price') + ' saved for ' + sc.short + '. ' + channelNote(P, !!mp));
     O.emit('data', { type: 'pricing' });
   }
-  /* a later push nr wrote unit un's price on its nights, for the Undo of rec: a push on that unit, or, when rec went
-     through the unit type's rate plan, a later push through the plan too (it wrote every unit of the type, one "from" for
-     all). A push on one unit alone writes no other unit, and a push through the plan says nothing about an earlier push
-     on one unit alone (its "from" is its own unit's price) */
-  function wrote(nr, rec, un) { return nr.pid === un.id || !!(rec.planId && nr.planId && rec.typeId && nr.typeId === rec.typeId); }
+  /* a later push nr wrote unit un's price on its nights, for the Undo of rec: a push on that unit, or a later push
+     through the unit type's rate plan (it wrote every unit of the type; froms keeps each unit's price before it where
+     they differed). A push on one unit alone writes no other unit */
+  function wrote(nr, rec, un) { return nr.pid === un.id || !!(nr.planId && rec.typeId && nr.typeId === rec.typeId); }
   /* a price set by hand (Pricing, Channels) since this push, going by its stamp {how, at}: not this push's price even
      when it is the same amount. Without a stamp, or with a clock behind, the amount alone decides */
+  /* a night's price before a push on one unit: froms where the units' prices differed, else from */
+  function fromOf(x, un) { return x.froms && x.froms[un.id] != null ? x.froms[un.id] : x.from; }
+  /* whether that unit had a price of its own before the push, and who set it ({how, at, by}), or null */
+  function setOf(x, un) {
+    if (x.fsets && Object.prototype.hasOwnProperty.call(x.fsets, un.id)) return x.fsets[un.id];
+    if (!x.own) return null;
+    var st = { how: x.how || 'manual' }; if (x.at) { st.at = x.at; if (x.by != null) st.by = x.by; }
+    return st;
+  }
   function handSince(m, rec) { return !!(m && m.how && m.how !== 'planner' && m.at && rec.at && m.at >= rec.at); }
   /* how Undo writes a push now. plan: the rate plan the push went to, while it exists and is not archived. viaMain: it is
      still the type's main plan, so one setDays puts back its days and the units' prices together. moved: the type has
@@ -1115,13 +1149,15 @@
      by hand since), the next of them decides: handed over when it started from this push's price (also when its price is
      this push's again), kept otherwise (a price set by hand between the two pushes). Otherwise the price now decides:
      back when it is still this push's, not the same amount set by hand since.
-     each: the push went through the type's rate plan and that plan no longer writes every unit, so the units can differ:
-     each unit is looked at by itself, a night goes back only on the units still at this push's price (b.units), and part
-     counts the nights where some units keep a newer price */
+     each: the push went through the type's rate plan, so it wrote every unit of the type. Their prices can differ since
+     (the plan stopped being the main plan, a push or a Pricing change went to one unit, the plan was made main again),
+     so each unit is looked at by itself: a night goes back only on the units still at this push's price (b.units), part
+     counts the nights where the other units keep a newer price, a night where no unit goes back counts as kept when any
+     unit keeps a newer price and as handed over only when every unit is, and later counts the pushes taking nights over */
   function undoPlan(rec, P) {
     var list = pushList(), idx = list.indexOf(rec), pc = priceCtx(P), T = D.TODAY, r = undoRoute(rec, P);
-    var map = r.plan && !r.viaMain ? O.channel.rateMap() : null, out = { route: r, back: [], plan: [], hand: [], handN: 0, kept: 0, part: 0, gone: 0 };
-    var each = !!(rec.planId && !r.viaMain && r.units.length > 1), units = each ? r.units : [P], seen = {};
+    var map = r.plan && !r.viaMain ? O.channel.rateMap() : null, out = { route: r, back: [], plan: [], hand: [], handN: 0, kept: 0, part: 0, later: 0, gone: 0 };
+    var each = !!(rec.planId && r.units.length > 1), units = each ? r.units : [P], seen = {}, later = {};
     function decide(un, iso, x) {
       var i, nr, w, y = null, yr = null, z = null, zr = null, now = priceNow(un.id, iso, pc), sn = stampNow(un.id, iso);
       for (i = idx - 1; i >= 0; i--) {
@@ -1130,7 +1166,7 @@
         if (!y) { y = w; yr = nr; }
         z = w; zr = nr;
       }
-      if (y && now === z.to && !handSince(sn, zr)) return y.from === x.to && !(y.own && handSince(y, rec)) ? yr : 'kept';
+      if (y && now === z.to && !handSince(sn, zr)) return fromOf(y, un) === x.to && !handSince(setOf(y, un), rec) ? yr : 'kept';
       return now === x.to && !handSince(sn, rec) ? 'back' : 'kept';
     }
     Object.keys(rec.nights || {}).sort().forEach(function (iso) {
@@ -1138,19 +1174,27 @@
       if (iso < T) { out.gone++; return; }
       b = { iso: iso, from: x.from, to: x.to, own: !!x.own, how: x.how || 'manual' };
       if (x.own && x.at) { b.at = x.at; if (x.by != null) b.by = x.by; }
+      if (x.froms) { b.froms = x.froms; if (x.fsets) b.fsets = x.fsets; if (x.pday != null) b.pday = x.pday; }
       if (map) { day = O.channel.dayIn(map, r.plan.id, iso); if (day && day.src === 'manual' && Number(day.rate) === x.to) out.plan.push(b); }
       units.forEach(function (un) {
         var v = decide(un, iso, x);
         if (v === 'back') bu.push(un.id);
         else if (v === 'kept') kept++;
-        else { handed++; if (!seen[v.id + iso]) { seen[v.id + iso] = 1; out.hand.push({ rec: v, iso: iso }); } }
+        else {
+          handed++; later[v.id] = 1;
+          if (!seen[v.id + '|' + iso]) out.hand.push(seen[v.id + '|' + iso] = { rec: v, iso: iso, units: [] });
+          seen[v.id + '|' + iso].units.push(un.id);
+        }
       });
-      if (handed) out.handN++;
-      if (bu.length) { if (each) { b.units = bu; if (kept) out.part++; } out.back.push(b); }
+      if (bu.length) { if (each) { b.units = bu; if (bu.length < units.length) out.part++; } out.back.push(b); }
       else if (kept) out.kept++;
+      else if (handed) out.handN++;
     });
+    out.later = Object.keys(later).length;
     return out;
   }
+  /* a night of a push as its plan's day before it: the plan's own price kept at the push where the units differed */
+  function planDay(x) { return x.froms && x.pday != null ? { iso: x.iso, own: x.pday > 0, from: x.pday, how: 'manual' } : x; }
   /* a rate plan's days back to their price from before the push (with how it was set), or back to the model */
   function writeDays(planId, xs) {
     var byHow = {}, clear = [];
@@ -1171,7 +1215,7 @@
       if (n && np) out.push(r.plan.name + ', the rate plan the push went to, gets its prices from before the push back on ' + fmt.plural(np, 'night') + ' too.');
     }
     if (u.part) out.push('Some of the units were changed after the push and keep their newer price ' + (u.part === n ? (n === 1 ? 'on that night' : 'on these nights') : 'on ' + (u.part === 1 ? 'one' : u.part) + ' of these nights') + '.');
-    if (u.handN) out.push(fmt.plural(u.handN, 'night was', 'nights were') + ' changed again by a later push; undoing that push will put back the prices from before this one.');
+    if (u.handN) out.push(fmt.plural(u.handN, 'night was', 'nights were') + (u.later > 1 ? ' changed again by later pushes; undoing those pushes' : ' changed again by a later push; undoing that push') + ' will put back the prices from before this one.');
     if (u.kept) out.push(fmt.plural(u.kept, 'night was', 'nights were') + ' changed after the push and ' + (u.kept === 1 ? 'keeps its' : 'keep their') + ' newer price.');
     if (u.gone) out.push(fmt.plural(u.gone, 'night has', 'nights have') + ' passed.');
     return out.join(' ');
@@ -1185,9 +1229,10 @@
       if (n) out.push('Prices from before the push are back on ' + fmt.plural(n, 'night') + ' for ' + r.who + '.');
       if (np) out.push(n ? r.plan.name + ' has its prices from before the push back on ' + fmt.plural(np, 'night') + ' too.' : 'Prices from before the push are back on ' + fmt.plural(np, 'night') + ' of ' + r.plan.name + '.');
     }
-    if (!out.length) return 'This push is undone. Undo the later push to put back the prices from before it on ' + fmt.plural(u.handN, 'night') + '.';
+    var lp = u.later > 1 ? 'the later pushes' : 'the later push';
+    if (!out.length) return 'This push is undone.' + (u.handN ? ' Undo ' + lp + ' to put back the prices from before it on ' + fmt.plural(u.handN, 'night') + '.' : u.kept ? ' ' + fmt.plural(u.kept, 'night keeps its', 'nights keep their') + ' newer price.' : '');
     if (u.part) out.push('On ' + fmt.plural(u.part, 'night') + ' some units keep a price set after the push.');
-    if (u.handN) out.push(fmt.plural(u.handN, 'other night goes', 'other nights go') + ' back when you undo the later push.');
+    if (u.handN) out.push(fmt.plural(u.handN, 'other night goes', 'other nights go') + ' back when you undo ' + lp + '.');
     return out.join(' ') + ' ' + channelNote(P, !!(r.plan && (r.viaMain || np)));
   }
   function undoAudit(u) {
@@ -1197,11 +1242,13 @@
     if (n && !r.moved) out.push(fmt.plural(n, 'nightly price') + range(u.back) + was(n) + ' for ' + r.whoFull);
     if (np) out.push(fmt.plural(np, 'nightly price') + range(u.plan) + was(np) + ' on ' + r.plan.name);
     if (n && r.moved) out.push('the prices of ' + r.whoFull + ' come from ' + r.main.name + ', the main rate plan, on ' + fmt.plural(n, 'night') + range(u.back));
-    if (!out.length) return 'Undid a profit planner push for ' + r.whoFull + ': its ' + fmt.plural(u.handN, 'night goes', 'nights go') + ' back with the later push';
+    var lp = u.later > 1 ? ' back with the later pushes' : ' back with the later push';
+    if (!out.length) return 'Undid a profit planner push for ' + r.whoFull + (u.handN ? ': its ' + fmt.plural(u.handN, 'night goes', 'nights go') + lp : ': every night keeps its newer price');
     if (u.part) out.push('some units keep a newer price on ' + fmt.plural(u.part, 'night'));
-    if (u.handN) out.push(fmt.plural(u.handN, 'night goes', 'nights go') + ' back with the later push');
+    if (u.handN) out.push(fmt.plural(u.handN, 'night goes', 'nights go') + lp);
     return 'Undid a profit planner push: ' + out.join('; ');
   }
+  function handKey(u) { return u.hand.map(function (h) { return h.rec.id + '|' + h.iso + '|' + h.units.join('+'); }).join(','); }
   function undoPush(id) {
     if (!canChange()) { U.toast(WHY_CHANGE, 'bad'); return; }
     if (O.$('.modal-back')) return;   /* one dialog at a time */
@@ -1217,14 +1264,45 @@
       if (!rec) { U.toast('The push history changed while this was open. Press Undo again to see what it would put back.', 'bad'); return; }
       if (rec.undoneAt) return;
       var u = undoPlan(rec, P), r = u.route, back = u.back, isos = back.map(function (x) { return x.iso; });
-      if (canon(u.back) !== canon(u0.back) || canon(u.plan) !== canon(u0.plan) || u.hand.length !== u0.hand.length || r.key !== u0.route.key) {
+      if (canon(u.back) !== canon(u0.back) || canon(u.plan) !== canon(u0.plan) || handKey(u) !== handKey(u0) || u.kept !== u0.kept || r.key !== u0.route.key) {
         U.toast('Prices changed while this was open. Press Undo again to see what it would put back.', 'bad'); return;
       }
       /* the push's own plan when it is no longer the main plan, by itself: a plan that is not the main plan writes no
          unit prices, and the plans that follow it recompute */
-      if (u.plan.length) writeDays(r.plan.id, u.plan);
+      if (u.plan.length) writeDays(r.plan.id, u.plan.map(planDay));
       /* still the main plan: setDays puts back its days and every unit's price together */
-      if (r.viaMain) writeDays(r.plan.id, back);
+      if (r.viaMain) {
+        /* setDays on the main plan writes every unit: a unit that keeps a newer price on a night gets it back right after */
+        var keepOv = [];
+        back.forEach(function (x) {
+          if (!x.units) return;
+          r.units.forEach(function (un) {
+            if (x.units.indexOf(un.id) >= 0) return;
+            var o = D.priceOverrides && D.priceOverrides[un.id], m = D.priceOverrideMeta && D.priceOverrideMeta[un.id];
+            keepOv.push({ id: un.id, iso: x.iso, p: o ? o[x.iso] : undefined, m: m && m[x.iso] ? JSON.parse(JSON.stringify(m[x.iso])) : undefined });
+          });
+        });
+        writeDays(r.plan.id, back.map(planDay));
+        /* where the units' prices differed before the push, the plan's day has its own price back and each unit its own */
+        var refill = false;
+        back.forEach(function (x) {
+          if (!x.froms) return;
+          r.units.forEach(function (un) {
+            if (x.units && x.units.indexOf(un.id) < 0) return;
+            var f = fromOf(x, un), st = setOf(x, un), o = D.priceOverrides[un.id] = D.priceOverrides[un.id] || {}, m = D.priceOverrideMeta[un.id] = D.priceOverrideMeta[un.id] || {};
+            if (st && f > 0) { o[x.iso] = f; m[x.iso] = { how: st.how || 'manual', by: O.state.viewer, at: D.NOW }; } else { delete o[x.iso]; delete m[x.iso]; }
+            refill = true;
+          });
+        });
+        keepOv.forEach(function (k) {
+          var o = D.priceOverrides[k.id] = D.priceOverrides[k.id] || {}, m = D.priceOverrideMeta[k.id] = D.priceOverrideMeta[k.id] || {};
+          if (k.p != null) o[k.iso] = k.p; else delete o[k.iso];
+          if (k.m) m[k.iso] = k.m; else delete m[k.iso];
+          refill = true;
+        });
+        /* a main plan's model days follow its first unit's price */
+        if (refill && P.unitTypeId) O.channel.fill([P.unitTypeId]);
+      }
       else if (back.length) {
         /* the units' prices directly: back to their own price from before the push, or cleared. With another main plan now,
            the units follow it, so the pushed price only comes off and that plan's prices stay as they are */
@@ -1233,7 +1311,8 @@
           var o = D.priceOverrides[un.id] = D.priceOverrides[un.id] || {}, meta = D.priceOverrideMeta[un.id] = D.priceOverrideMeta[un.id] || {};
           back.forEach(function (x) {
             if (x.units && x.units.indexOf(un.id) < 0) return;   /* this unit was changed since: it keeps its price */
-            if (!r.moved && x.own && x.from > 0) { o[x.iso] = x.from; meta[x.iso] = { how: x.how, by: O.state.viewer, at: D.NOW }; } else { delete o[x.iso]; delete meta[x.iso]; }
+            var f = fromOf(x, un), st = setOf(x, un);
+            if (!r.moved && st && f > 0) { o[x.iso] = f; meta[x.iso] = { how: st.how || 'manual', by: O.state.viewer, at: D.NOW }; } else { delete o[x.iso]; delete meta[x.iso]; }
           });
         });
         /* a main plan's model days follow its first unit's price */
@@ -1241,11 +1320,12 @@
       }
       /* a price put back keeps who set it and when (Pricing's history), not the time of the undo */
       if (!r.moved) back.forEach(function (x) {
-        if (!x.own || !(x.from > 0) || !x.at) return;
         r.units.forEach(function (un) {
           if (x.units && x.units.indexOf(un.id) < 0) return;
+          var f = fromOf(x, un), st = setOf(x, un);
+          if (!st || !st.at || !(f > 0)) return;
           var mm = D.priceOverrideMeta && D.priceOverrideMeta[un.id], ov = D.priceOverrides && D.priceOverrides[un.id];
-          if (mm && mm[x.iso] && ov && Number(ov[x.iso]) === x.from) mm[x.iso] = { how: x.how, by: x.by != null ? x.by : mm[x.iso].by, at: x.at };
+          if (mm && mm[x.iso] && ov && Number(ov[x.iso]) === f) mm[x.iso] = { how: st.how || 'manual', by: st.by != null ? st.by : mm[x.iso].by, at: st.at };
         });
       });
       /* the record is undone only once every night shows its old price again */
@@ -1253,12 +1333,13 @@
       back.forEach(function (x) {
         (x.units ? x.units.map(function (id) { return D.propById[id]; }).filter(Boolean) : [cu]).forEach(function (un) {
           var ov = D.priceOverrides && D.priceOverrides[un.id];
-          var ok = r.moved ? !(ov && Number(ov[x.iso]) > 0) : x.own && x.from > 0 ? priceNow(un.id, x.iso, pc) === x.from : !ownPrice(un.id, x.iso, pc);
+          var f = fromOf(x, un), st = setOf(x, un), has = !!(ov && Number(ov[x.iso]) > 0);
+          var ok = r.moved ? !has : st && f > 0 ? priceNow(un.id, x.iso, pc) === f : x.froms ? !has : !ownPrice(un.id, x.iso, pc);
           if (!ok) badAt[x.iso] = 1;
         });
       });
-      u.plan.forEach(function (x) {
-        var day = O.channel.dayIn(map, r.plan.id, x.iso), man = !!(day && day.src === 'manual' && Number(day.rate) > 0);
+      u.plan.forEach(function (x0) {
+        var x = planDay(x0), day = O.channel.dayIn(map, r.plan.id, x.iso), man = !!(day && day.src === 'manual' && Number(day.rate) > 0);
         if (x.own && x.from > 0 ? !(man && Number(day.rate) === x.from) : man) badAt[x.iso] = 1;
       });
       var bad = Object.keys(badAt).length;
@@ -1268,10 +1349,31 @@
         return;
       }
       u.hand.forEach(function (h) {
-        var x = rec.nights[h.iso], y = h.rec.nights[h.iso];
+        var x = rec.nights[h.iso], y = h.rec.nights[h.iso], yu = D.propById[h.rec.pid] || P, st = null;
+        /* the plan's own price before each push (0: it followed the first unit), where the push did not keep it */
+        var px = x.pday != null ? x.pday : x.own ? x.from : 0, py = y.pday != null ? y.pday : y.own ? y.from : 0;
         /* the later push changed too: the save merge keeps the newer copy, and per night the one handed on last */
-        y.from = x.from; y.handedAt = stamp(y.handedAt); h.rec.changedAt = stamp(h.rec.changedAt);
-        if (x.own) { y.own = true; y.how = x.how || 'manual'; if (x.at) y.at = x.at; else delete y.at; if (x.by != null) y.by = x.by; else delete y.by; }
+        y.handedAt = stamp(y.handedAt); h.rec.changedAt = stamp(h.rec.changedAt);
+        /* with another main plan now this push only takes its price off, so the later push hands the night to that plan */
+        if (r.moved) { y.from = followPrice(h.rec.pid, h.iso); ['froms', 'fsets', 'pday', 'own', 'how', 'at', 'by'].forEach(function (k) { delete y[k]; }); return; }
+        /* each unit that hands the night over takes this push's price from before it, for that unit, and whether it was
+           the unit's own price and who set it; the other units keep the later push's */
+        if (!h.rec.planId) { y.from = fromOf(x, yu); st = setOf(x, yu); delete y.froms; delete y.fsets; delete y.pday; }
+        else {
+          var mates = h.rec.typeId && O.unitsOfType ? O.unitsOfType(h.rec.typeId).filter(function (un) { return !isArchived(un); }) : [], cur = {}, sets = {}, same = true, f0;
+          mates.forEach(function (un) { var mine = h.units.indexOf(un.id) >= 0; cur[un.id] = mine ? fromOf(x, un) : fromOf(y, un); sets[un.id] = mine ? setOf(x, un) : setOf(y, un); });
+          Object.keys(cur).forEach(function (id) { if (f0 === undefined) f0 = cur[id]; else if (cur[id] !== f0) same = false; });
+          y.from = cur[h.rec.pid] != null ? cur[h.rec.pid] : x.from;
+          st = Object.prototype.hasOwnProperty.call(sets, h.rec.pid) ? sets[h.rec.pid] : setOf(x, yu);
+          if (same || !mates.length) { delete y.froms; delete y.fsets; delete y.pday; }
+          else {
+            y.froms = cur; y.fsets = {};
+            Object.keys(sets).forEach(function (id) { if (id !== h.rec.pid) y.fsets[id] = sets[id]; });
+            /* the plan's day before the later push was this push's when this one went through the plan too */
+            y.pday = rec.planId ? px : py;
+          }
+        }
+        if (st) { y.own = true; y.how = st.how || 'manual'; if (st.at) y.at = st.at; else delete y.at; if (st.by != null) y.by = st.by; else delete y.by; }
         else { delete y.own; delete y.how; delete y.at; delete y.by; }
       });
       rec.undoneAt = D.NOW; rec.undoneBy = O.state.viewer; rec.undoneN = back.length; rec.changedAt = stamp(rec.changedAt);
@@ -1279,7 +1381,14 @@
       if (u.plan.length) rec.planN = u.plan.length;
       if (back.length) {
         if (!Array.isArray(D.priceLog)) D.priceLog = [];
-        D.priceLog.unshift({ at: D.NOW, pid: P.id, n: back.length, by: (O.viewer() || {}).name || '', how: 'Profit planner push undone', first: isos[0], last: isos[isos.length - 1] });
+        /* filed under the push's unit, or under each unit that changed when only some of them did */
+        var byUnit = {};
+        if (u.part) back.forEach(function (x) { x.units.forEach(function (id) { (byUnit[id] = byUnit[id] || []).push(x.iso); }); });
+        else byUnit[P.id] = isos;
+        Object.keys(byUnit).forEach(function (id) {
+          var xs = byUnit[id];
+          D.priceLog.unshift({ at: D.NOW, pid: id, n: xs.length, by: (O.viewer() || {}).name || '', how: 'Profit planner push undone', first: xs[0], last: xs[xs.length - 1] });
+        });
       }
       audit(undoAudit(u));
       U.toast(undoToast(u, P));
