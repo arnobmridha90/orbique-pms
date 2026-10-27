@@ -48,11 +48,13 @@ D.ratePlanner = {
               nights: { iso: { from, to, own, how, by, at, froms, fsets, pday, handedAt } },
                                                                 // own, how, by and at only for a night that had
                                                                 // its own price before (by and at: who set it and when);
-                                                                // froms, fsets and pday only for a push through the
-                                                                // plan while the type's units had different prices:
-                                                                // each unit's price, whether each other unit had its
-                                                                // own price ({how, by, at} or null), and the plan's own
-                                                                // price that night (0: it followed the first unit);
+                                                                // froms and fsets only for a push through the plan
+                                                                // where the type's units differed (price, or whether
+                                                                // and how it was their own): each unit's price, and
+                                                                // each other unit's own price stamp ({how, by, at}) or
+                                                                // null; pday only where the plan's day was not what
+                                                                // the pushing unit's price says: its own price that
+                                                                // night (0: it followed the first unit);
                                                                 // handedAt: when an Undo of an earlier push handed it on
               undoneAt, undoneBy, undoneN, handedN, planN,
               changedAt } ]   // set by Undo on the push it undoes and on a later push it hands nights to; newest first, at most 30
@@ -533,9 +535,10 @@ Then one `O.channel.setDays` call on the unit type's main plan (`O.channel.mainP
 `opts {emit: false, audit: false, how: 'planner'}`; a unit without a main plan writes `D.priceOverrides` /
 `D.priceOverrideMeta` directly like `applyPrices` in pricing.js. Then `D.priceLog`, the audit log, the push record in
 `D.ratePlanner.pushes` (for a night that had its own price, `own: true`, its `how`, and who set it and when, `by` and
-`at`, so Undo can put the label and Pricing's history back too; through the main plan, when the units of the type
-have different prices that night, also `froms`, `fsets` and `pday`, so Undo can give each unit its own price back), and
-one `O.emit('data', {type: 'pricing'})`. The
+`at`, so Undo can put the label and Pricing's history back too; through the main plan, where the units of the type
+differ that night, in price or in whether and how the price is their own, also `froms` and `fsets`, and where the plan's
+day is not the pushing unit's own price, or is its own price while the unit has none, `pday`, so Undo can give each unit
+and the plan their own price back), and one `O.emit('data', {type: 'pricing'})`. The
 price log's `how` is "Fill the calendar plan from the profit planner" ("Your own mix from the profit planner"), so
 Pricing's Recent changes reads "Fill the calendar plan from the profit planner: 63 nights (11 Oct – 3 Jan)".
 
@@ -569,8 +572,9 @@ Undo puts back the nights still at the push's price that no later push has:
   and whether that was the unit's own price and who set it; the other units keep the later push's (it also gets
   `changedAt`, for the save merge, and the night `handedAt`). So undoing it later puts back the price from before both,
   in any order (with pushes A, B and C, undoing B hands C the price A set as its `from`, so undoing A then hands that
-  night to C, not back to the price before A while C is live). With another main plan now, the later push's `from`
-  becomes the price that plan gives, since this push only takes its price off. Kept otherwise (a price set by hand
+  night to C, not back to the price before A while C is live). The later push also takes this push's plan day from
+  before it (`pday`) when both went through the same plan. With another main plan now, the later push's `from` becomes
+  the price that plan gives, since this push only takes its price off. Kept otherwise (a price set by hand
   between the two pushes, which undoing the later push puts back). When they no longer hold it, or no later push wrote
   it, the price now decides: back when it is still this push's price, kept otherwise.
 - The units of a type can differ: while the plan is not the main plan a push or a price set in Pricing goes to one
@@ -581,7 +585,10 @@ Undo puts back the nights still at the push's price that no later push has:
   nights"; "changed again by later pushes" when more than one later push takes nights). Through the main plan, the
   units that keep a newer price get it back right after the plan's `setDays`. A push that went through the plan while
   the units differed puts back each unit's own price (`froms`, with who set it, `fsets`), clears it on a unit that had
-  none, and gives the plan's day its own price back (`pday`). The price log files the undo under each unit that changed
+  none, and gives the plan's day its own price back (`pday`). Still the main plan, the push's plan day also goes back by
+  itself (every unit keeps its price) when every unit has handed the night to a later push on another plan or on one
+  unit alone, and no later push through the same plan has the night; not when a unit keeps a price set since. The
+  price log files the undo under each unit that changed
   when only some did. Undoing every push, in any order, with no price set by hand in between, ends on the prices from
   before them all, also when the plan stopped and started being the main plan in between.
 - Nights changed by hand since keep their newer price and past nights are skipped; the confirm says how many, and for
