@@ -39,7 +39,7 @@
     '.pg-pricing .empty .e-icon svg{width:26px;height:26px;}',
     '.pg-pricing .kpi .k-val small{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px;}',
     '.pg-pricing .toolbar{margin-bottom:0;}',
-    '.pg-pricing .pr-prop{min-width:240px;max-width:320px;}',
+    '.pg-pricing .pr-prop{min-width:240px;max-width:320px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}',
     '.pg-pricing .pr-ctx{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--text-2);}',
     '.pg-pricing .pr-ctx .dot{width:3px;height:3px;border-radius:50%;background:var(--faint);}',
     '.pg-pricing .pr-ctx b{color:var(--text);}',
@@ -178,10 +178,10 @@
     '@media (max-width:1024px){.pg-pricing .pr-head3{grid-template-columns:repeat(3,minmax(0,1fr));}}',
     '@media (max-width:560px){',
     /* the unit select and the planner button share the first row, the date range and Auto-apply the second */
-    '  .pg-pricing .pr-prop{min-width:0;max-width:none;width:100%;order:-2;}',
+    '  .pg-pricing .pr-prop{min-width:0;max-width:none;width:100%;}',
     '  .pg-pricing .pr-prop.pr-prop-p{width:auto;flex:1 1 calc(100% - 50px);}',
     '  .pg-pricing .toolbar > *{max-width:100%;}',
-    '  .pg-pricing .pr-plan{order:-1;flex:none;width:40px;min-width:40px;height:40px;padding:0;justify-content:center;}',
+    '  .pg-pricing .pr-plan{flex:none;width:40px;min-width:40px;height:40px;padding:0;justify-content:center;}',
     '  .pg-pricing .pr-plan .pr-plan-l{display:none;}',
     '  .pg-pricing .pr-head3 .v{font-size:15px;}',
     '  .pg-pricing .hist{grid-template-columns:minmax(0,1fr);}',
@@ -858,9 +858,10 @@
 
       root.innerHTML = '<div class="pg-pricing">' +
         '<div class="toolbar"><select class="select pr-prop' + (O.allowed('planner') ? ' pr-prop-p' : '') + '" data-prop-sel aria-label="Property">' + D.properties.map(function (q) { return '<option value="' + q.id + '"' + (q.id === pid ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') + '</select>' +
-        '<span data-slot="range"></span><span class="spacer"></span>' +
-        /* the Profit planner for this unit, in the page's own toolbar (the top bar keeps to its two buttons) */
+        /* the Profit planner for this unit, beside the unit select in the page's own toolbar (the top bar keeps to its two
+           buttons); right after the select in the markup, so the keyboard reaches it in the order it shows */
         (O.allowed('planner') ? '<button type="button" class="btn btn-ghost btn-sm pr-plan" data-pr-plan aria-label="Profit Planner" title="Work out the prices that cover your costs and reach your profit target">' + O.icon('planner') + '<span class="pr-plan-l">Profit Planner</span></button>' : '') +
+        '<span data-slot="range"></span><span class="spacer"></span>' +
         '<span class="pr-auto"' + (editRules ? '' : ' title="' + esc(WHY_RULES) + '"') + '>Auto-apply <button type="button" class="switch' + (m.R.auto ? ' on' : '') + '" data-auto role="switch" aria-checked="' + (m.R.auto ? 'true' : 'false') + '" aria-label="Auto-apply suggestions daily"' + (editRules ? '' : ' disabled') + '></button></span></div>' +
         '<div class="pr-ctx"><b>' + esc(P.type || '') + '</b>' + (P.area ? '<span class="dot"></span>' + esc(P.area) : '') + '<span class="dot"></span>Base price ' + fmt.money(m.R.base, { cur: P }) + '<span class="dot"></span>' + s.open.length + ' of ' + fmt.plural(m.days.length, 'night') + ' open</div>' +
         kpiStrip(m, s) +

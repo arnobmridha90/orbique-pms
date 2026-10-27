@@ -45,8 +45,9 @@ D.ratePlanner = {
                            keepPeaks: true, floor: 200 | null, ceiling: 600 | null,   // price limits, RM a night
                            updatedAt, by } },
   pushes: [ { id, at, by, pid, typeId, planId, option, name, n,   // name: the card's name ("Balanced and Most profit")
-              nights: { iso: { from, to, own, how, by, at } },   // own, how, by and at only for a night that had its own
-                                                                // price before (by and at: who set it and when)
+              nights: { iso: { from, to, own, how, by, at, handedAt } },   // own, how, by and at only for a night that had
+                                                                // its own price before (by and at: who set it and when);
+                                                                // handedAt: when an Undo of an earlier push handed it on
               undoneAt, undoneBy, undoneN, handedN, planN,
               changedAt } ]   // set by Undo on the push it undoes and on a later push it hands nights to; newest first, at most 30
 }
@@ -56,9 +57,12 @@ A blob is last-write-wins, so a device that missed another device's push (its li
 push record when it saved costs, and the pushed prices could no longer be undone. Migration 0016 therefore merges every
 app save of `ratePlanner` with what is saved (`blobs_planner_merge`, a `before update` trigger): every unit either copy
 has, the one saved last (`updatedAt`) where both have it; every push record either copy has, by `id`, the undone copy
-where only one is undone (an Undo is never lost), else the copy changed last (`changedAt`, else `undoneAt`, else `at`;
-the new copy on a tie), so a device that missed an Undo cannot bring back a stale copy of the later push the Undo handed
-nights to. Saved records without an `id` are dropped (the app gives every push one). Newest first, at most 30. ISO
+where only one is undone (an Undo is never lost), else the copy changed last (`changedAt`, else `undoneAt`; a copy that
+never changed has neither and loses to one that did, even in the same minute; the new copy on a tie), so a device that
+missed an Undo cannot bring back a stale copy of the later push the Undo handed nights to. Within that record each night
+comes from the copy that handed it on last (`handedAt`; the picked copy on a tie), so two devices that each handed
+different nights to the same push keep both. Saved records without an `id` are dropped (the app gives every push one).
+Newest first, at most 30. ISO
 times compare byte by byte (`collate "C"`), whatever the database's collation. The merged value comes back to every device through the live
 connection like any other change. Writes from the server (no signed-in user) are stored as sent. The practice copy has
 no server, so two tabs of it still work last-write-wins.
@@ -269,18 +273,23 @@ dearer than the cheaper one. Where the two are closer than that today, today's g
 prices stay allowed when they are on the rounding step; and always strictly below a better type and strictly above a
 cheaper one. `tierGap` is kept to a tenth of a percent and written exactly ("4.5%"); at 0 the order alone is kept (one
 step apart). Which type is better is worked out from the usual (median) prices over the dates; a type whose usual price
-is within one rounding step (or 1%) of this unit's is a peer, with no order kept against it and a note ("Twin has about
-the same usual price as this unit, so the plans keep no order against it").
+is less than one rounding step from this unit's (at most 2%, at least 1%) is a peer, with no order kept against it and
+a note ("Twin has about the same usual price as this unit, so the plans keep no order against it"). The notes name only
+the types whose limit set the bound that night, not every type with a price.
 
 When a cheaper and a better type are too close for the gap (no step fits both limits), that night keeps the order only,
 with a note ("On 75 nights Standard and Premium are too close in price to keep this unit 5% from both, so there the
 plans only keep it between them"); when no step fits strictly between them at all, the night takes one price, the step
-nearest today's price when it is between them, else nearest halfway (the lower step on a tie, so this unit is never
-dearer than the better type), and a note says so. When the owner's floor or ceiling, or the range of prices tried,
-leaves no price inside the limits, the night takes the end of that range nearest them (the floor and ceiling win), it
-is not counted in the order note, and its own note names the cause ("On 12 nights your lowest price, RM 250, leaves no
-room under Deluxe, so the plans use it there"; "the lowest price tried (60% of today's)"; "your highest price"; "the
-highest price tried (180% of today's)").
+nearest today's price when it is between them, else nearest halfway, the lower step on a tie and never above the better
+type's price, so this unit is never dearer than the better type; it then has no choice of price (like a night whose own
+limits leave one), and a note says so ("On 24 nights no price in steps of RM 10 fits between Standard and Premium, so
+there the plans use a single price, the step nearest today's price or halfway, never above the dearer type"). When the
+owner's floor or ceiling, or the range of prices tried, leaves no price inside the limits, the night takes the end of
+that range nearest them (the floor and ceiling win) and its own note names the cause ("On 12 nights your lowest price,
+RM 250, leaves no room under Deluxe, so the plans use it there"; "the lowest price tried (60% of today's)", "(60% of
+the usual price)" when none of those nights has a price today; "your highest price"; "the highest price tried (180% of
+today's)"). Each night is in one of these notes at most, and only nights that keep the gap count in the order note
+below.
 
 Each type is still planned on its own, against the others' prices at the time, so the gap is a minimum, not a target.
 Pushing the recommended plan of each type in turn keeps the building's ladder (Standard below Boutique below Premium)
@@ -290,7 +299,8 @@ RM35 and RM45, but planning again lowers Boutique and Premium for two more round
 then 346) until every rung sits at the minimum gap (medians about 6.8% and 6.5%). A note says which limits applied: "To
 keep the unit types in this building in order and at least 5% apart (or as far apart as today, where that is less),
 the plans keep this unit below Deluxe and above Studio. That limits the prices of 75 nights." A plan's pro says the
-same only when every priced open night keeps the limits; prices that break the order get a con ("would cost as much as
+same only when every priced open night keeps the limits (beside a peer it names the types instead: "Keeps this unit in
+order against Deluxe and Studio, at least 5% apart …"); prices that break the order get a con ("would cost as much as
 or more than Deluxe", "no more than Studio"), and prices in order but closer than the limit another ("would be priced
 within 5% of Deluxe"). Peak nights kept at today's price are not moved. For each
 candidate the mean selling chance over K = 48 parameter draws, `P̄(p)`, is computed once. For a value `λ` (RM placed on
@@ -345,9 +355,11 @@ with all the draws.
 Options that come out with the same prices are merged into one card with both names (`keys`, `names`). Tags:
 "Recommended" on Balanced; out of reach, Fill and Premium say "Misses the target", or "Breaks even only" when they make
 less than RM50 a month either way. When Fill or Premium stopped at a limit (the owner's floor or ceiling when it cut
-most nights' range, else the other unit types' prices when they did, else Lowest or Highest price to try), the summary
-names that limit ("The highest prices that keep this unit below Deluxe, which still make RM 800 a month on average.")
-and, except for the unit types (their note says it), a note says lower or higher prices could still work.
+most nights' range, else the other unit types' prices when they did, counting the nights where they left no room and
+the lowest or highest price allowed was used, else Lowest or Highest price to try), the summary names that limit ("The
+highest prices that keep this unit below Deluxe, which still make RM 800 a month on average."; "…below Deluxe, or your
+lowest price where that leaves no room, …") and, except for the unit types (their notes say it), a note says lower or
+higher prices could still work.
 
 `notes`, in this order: nothing to price; dates under 14 nights ("the monthly figures are rough"); open nights with no
 price today; booked nights with no amount; where `P0` came from when not today's prices; little history (when the

@@ -1224,7 +1224,8 @@
       }
       u.hand.forEach(function (h) {
         var x = rec.nights[h.iso], y = h.rec.nights[h.iso];
-        y.from = x.from; h.rec.changedAt = D.NOW;   /* the later push changed too: the save merge keeps the newer copy */
+        /* the later push changed too: the save merge keeps the newer copy, and per night the one handed on last */
+        y.from = x.from; y.handedAt = D.NOW; h.rec.changedAt = D.NOW;
         if (x.own) { y.own = true; y.how = x.how || 'manual'; if (x.at) y.at = x.at; else delete y.at; if (x.by != null) y.by = x.by; else delete y.by; }
         else { delete y.own; delete y.how; delete y.at; delete y.by; }
       });
