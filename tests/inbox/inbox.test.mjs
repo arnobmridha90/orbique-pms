@@ -60,8 +60,8 @@ test('parse: text, photo, voice, document, location and ticks', () => {
   assert.equal(p.statuses.length, 1);
   assert.equal(p.statuses[0].status, 'failed');
   assert.match(p.statuses[0].error, /24 hours/);
-  assert.deepEqual(parseWebhook({ object: 'page', entry: [] }), { messages: [], statuses: [] });
-  assert.deepEqual(parseWebhook(null), { messages: [], statuses: [] });
+  assert.deepEqual(parseWebhook({ object: 'page', entry: [] }), { messages: [], statuses: [], echoes: [], history: [], historyProgress: [], contacts: [], accounts: [] });
+  assert.deepEqual(parseWebhook(null), { messages: [], statuses: [], echoes: [], history: [], historyProgress: [], contacts: [], accounts: [] });
 });
 
 test('send text: the Graph API call, and the token never in an error', async () => {
@@ -331,7 +331,7 @@ test('webhook endpoint: dormant until configured, verifies Meta, refuses unsigne
   r = res();
   await handler(req('POST', { raw, headers: { 'x-hub-signature-256': 'sha256=' + createHmac('sha256', 'app-secret').update(raw).digest('hex') } }), r, { config: WA, sb, opts: { translateConfig: { configured: false } } });
   assert.equal(r.statusCode, 200);
-  assert.deepEqual(JSON.parse(r.body), { ok: true, messages: 1, statuses: 0 });
+  assert.deepEqual(JSON.parse(r.body), { ok: true, messages: 1, statuses: 0, echoes: 0, history: 0, contacts: 0 });
   assert.ok(rpcs.some((x) => x.name === 'inbox_append'));
   const broken = fakeSb({ handler: () => ({ data: null, error: { message: 'db down' } }) });
   r = res();

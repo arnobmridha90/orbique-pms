@@ -231,6 +231,38 @@ Redeploy, then in Orbique open the **Guest inbox**, **Settings** (bottom of the 
 Meta before saving it. From then on guests' WhatsApp messages land in the chat of their booking (matched by the phone
 number on the booking); messages from numbers that match no booking wait at the top of the chat list to be linked.
 
+### Connect with Facebook (keeps the WhatsApp Business app: "coexistence")
+
+Instead of steps 3 to 5 and `WHATSAPP_TOKEN`, the owner can connect the number with Meta's Embedded Signup. A number that
+is in the WhatsApp Business phone app stays there: the team keeps using the phone, and Orbique gets the same chats.
+
+Needed once, in a Meta app that offers Embedded Signup (a Tech Provider app, with a **Facebook Login for Business**
+configuration for WhatsApp Embedded Signup):
+
+- In the app, **App settings**, **Basic**, **App domains**: your site's domain. In **Facebook Login for Business**,
+  **Settings**: the site under **Allowed domains for the JavaScript SDK** and `https://<your-site>/` under **Valid OAuth
+  redirect URIs**.
+- In Vercel: `WHATSAPP_APP_ID` (the app ID), `WHATSAPP_CONFIG_ID` (the Embedded Signup configuration ID),
+  `WHATSAPP_APP_SECRET` (that app's secret) and `WHATSAPP_VERIFY_TOKEN` (a long random password), and `APP_URL` if the site
+  is not on its Vercel production address. Redeploy.
+
+No webhook needs setting in the Meta app: Orbique points the WhatsApp account's webhooks at
+`https://<your-site>/api/whatsapp-webhook` itself when it connects (so one Meta app can serve other sites too).
+
+Then the owner opens the **Guest inbox**, **Settings**, **Connect with Facebook** on a computer, signs in to Facebook,
+chooses the business, picks **Connect your existing WhatsApp Business app**, enters the number, confirms on the phone
+(a QR code to scan with the WhatsApp Business app, version 2.24.17 or newer), and agrees to share the chat history.
+Orbique then:
+
+- keeps the token for that WhatsApp account on the server (table `whatsapp_tokens`, never sent to the browser);
+- shows messages sent from the phone in the chat, marked "From the WhatsApp app";
+- asks once for the phone's contacts (names for new chats) and up to 6 months of older chats. WhatsApp allows each only
+  within 24 hours of connecting; photos and files in older chats show as a note to open them in the app.
+
+The phone app must be opened at least every 14 days or WhatsApp disconnects it. If the number is disconnected from the
+phone (Settings, Account, Business Platform), Settings in the inbox says so and offers to connect again. Booking alerts
+by WhatsApp cannot go to the business number itself: set a different alert number.
+
 WhatsApp only allows a free-form reply within 24 hours of the guest's last message to you. Outside that window the inbox
 says so. Photos, files and voice notes from guests open in the inbox; sending
 them to guests is not supported yet.
