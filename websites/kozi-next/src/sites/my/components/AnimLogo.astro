@@ -1,0 +1,28 @@
+---
+// The Kozi logo, split into the parts that build it: the crosshair, the K, Z and I, the horizon, and the sun in the O
+// (clipped, so it can rise into place). The paths are the file's own (shared/assets/logo.svg), untouched: when the
+// animation ends it clears every transform, so the finished logo is exactly the file. The K, Z and I take the text
+// colour, so they read on the night sky; the amber parts keep their colour.
+// The animation itself is animateLogo in scripts/logo.ts. id: a unique name for the sun's clip.
+import raw from '@shared/assets/logo.svg?raw';
+
+interface Props { id: string; label?: string; class?: string }
+const { id, label = 'Kozi', class: cls } = Astro.props;
+const attrs = (tag: string) => [...raw.matchAll(new RegExp(`<${tag}\\b([^>]*?)\\/?>`, 'g'))].map((m) => m[1]);
+const get = (a: string, k: string) => new RegExp(`\\s${k}="([^"]*)"`).exec(a)?.[1] ?? '';
+const svg = attrs('svg')[0], g = attrs('g')[0], rects = attrs('rect'), paths = attrs('path');
+const [letters, sun, horizon] = paths;
+const rect = (a: string, c: string) => `<rect class="${c}" x="${get(a, 'x')}" y="${get(a, 'y')}" width="${get(a, 'width')}" height="${get(a, 'height')}" fill="${get(a, 'fill')}"/>`;
+const ink = (f: string) => (f.toUpperCase() === '#2B2622' ? 'currentColor' : f);
+const path = (d: string, a: string, c: string) => `<path class="${c}" d="${d}" fill="${ink(get(a, 'fill'))}"${get(a, 'fill-rule') ? ` fill-rule="${get(a, 'fill-rule')}"` : ''}/>`;
+const parts = [
+  `<clipPath id="kzsun-${id}"><rect x="300" y="-60" width="360" height="336"/></clipPath>`,
+  rect(rects[0], 'kz-v'),
+  rect(rects[1], 'kz-h'),
+  ...get(letters, 'd').split(/(?=M)/).map((d, i) => path(d.trim(), letters, `kz-l kz-l${i}`)),
+  `<g clip-path="url(#kzsun-${id})">${path(get(sun, 'd'), sun, 'kz-sun')}</g>`,
+  path(get(horizon, 'd'), horizon, 'kz-hz'),
+].join('');
+const html = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${get(svg, 'viewBox')}" role="img" aria-label="${label}"><g transform="${get(g, 'transform')}">${parts}</g></svg>`;
+---
+<span class:list={['kz-logo', cls]} data-logo set:html={html} />

@@ -6,7 +6,7 @@ import { BRAND } from '@shared/data/kozi';
 interface Props { site: 'my' | 'com'; over?: boolean }
 const { site, over = false } = Astro.props;
 const nav = site === 'my'
-  ? [{ href: '/stays/', label: 'Stays' }, { href: '/kuala-lumpur/', label: 'Kuala Lumpur' }, { href: '/guides/', label: 'Guides' }, { href: '/#direct', label: 'Book direct' }]
+  ? [{ href: '/stays/', label: 'Stays' }, { href: '/kuala-lumpur/', label: 'Kuala Lumpur' }, { href: '/guides/', label: 'Guides' }, { href: '/contact/', label: 'Contact' }]
   : [{ href: '/#destinations', label: 'Destinations' }, { href: '/#way', label: 'The Kozi way' }, { href: `${BRAND.my}/`, label: 'Malaysia' }];
 const here = Astro.url.pathname;
 ---
@@ -22,7 +22,6 @@ const here = Astro.url.pathname;
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" /></svg><span>MY</span>
         </a>
       )}
-      {site === 'my' && <button type="button" class="hd-member" data-member-open><span data-member-label>Sign in</span></button>}
       <a class="btn small hd-book" href={site === 'my' ? '/stays/' : `${BRAND.my}/stays/`}>Book a stay</a>
       <button type="button" class="hd-menu" aria-expanded="false" aria-controls="menu" data-menu-btn><span class="sr-only">Menu</span><i aria-hidden="true"></i><i aria-hidden="true"></i></button>
     </div>
@@ -32,7 +31,6 @@ const here = Astro.url.pathname;
 <div class="menu" id="menu" data-menu aria-label="Menu" role="dialog" aria-modal="true" inert>
   <nav class="menu-nav" aria-label="Menu">
     {nav.map((n, i) => <a href={n.href} style={`--i:${i}`}>{n.label}</a>)}
-    {site === 'my' && <button type="button" style={`--i:${nav.length}`} data-member-open>Member sign in</button>}
   </nav>
   <div class="menu-foot" style={`--i:${nav.length + 1}`}>
     <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a>
@@ -56,14 +54,14 @@ const here = Astro.url.pathname;
   .hd-nav a { position: relative; padding: 9px 12px; border-radius: 999px; font: 550 14.5px/1 var(--sans); letter-spacing: -0.003em; transition: background-color 200ms ease; }
   .hd-nav a[aria-current='page']::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 1.5px; background: currentColor; border-radius: 2px; }
   .hd-end { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-  .hd-country, .hd-member { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 12px; border-radius: 999px; font: 600 13.5px/1 var(--sans); transition: background-color 200ms ease, transform 160ms var(--ease-out); }
+  .hd-country { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 12px; border-radius: 999px; font: 600 13.5px/1 var(--sans); transition: background-color 200ms ease, transform 160ms var(--ease-out); }
   .hd-country svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; }
-  .hd-country:active, .hd-member:active { transform: scale(0.97); }
+  .hd-country:active { transform: scale(0.97); }
   .btn.small { height: 42px; padding: 0 18px; font-size: 14px; }
   .hd .hd-book { margin-left: 6px; }
   :root[data-ink='light'] .hd[data-over]:not([data-solid]) .hd-book { background: var(--cream); color: var(--ink); }
   @media (hover: hover) and (pointer: fine) {
-    .hd-nav a:hover, .hd-country:hover, .hd-member:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+    .hd-nav a:hover, .hd-country:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
   }
   .hd-menu { display: none; position: relative; width: 44px; height: 44px; border-radius: 50%; }
   .hd-menu i { position: absolute; left: 13px; right: 13px; height: 1.6px; background: currentColor; border-radius: 2px; transition: transform 260ms var(--ease-out); }
@@ -84,7 +82,7 @@ const here = Astro.url.pathname;
   :root.menu-open .hd .hd-book { background: var(--cream); color: var(--ink); }
 
   @media (max-width: 980px) {
-    .hd-nav, .hd-member, .hd-country { display: none; }
+    .hd-nav, .hd-country { display: none; }
     .hd-menu { display: block; }
     .hd-in { gap: 12px; }
   }

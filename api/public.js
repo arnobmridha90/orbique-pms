@@ -11,6 +11,8 @@
  *   POST member/start?ws  {email}            emails a 6-digit code
  *   POST member/verify?ws {email, code}      -> {token, expiresAt} (30 days; send it back as memberToken)
  *   POST stripe-webhook                      Stripe events (Stripe-Signature checked with STRIPE_WEBHOOK_SECRET)
+ *   GET  site?ws                             the published website content (api/_lib/site.js): {content | null, publishedAt}.
+ *                                            Read-only, so any origin may read it; cached for 60 seconds.
  *
  * Browsers: allowed origins get CORS headers (originAllowed). Errors are {ok: false, error, message} in plain English.
  */
@@ -19,6 +21,7 @@ import { requireAdminClient } from './_lib/supabase.js';
 import {
   loadSite, availability, calendar, checkout, bookingStatus, memberStart, memberVerify, stripeEvent, stripeConfig, stripeSignatureOk, originAllowed
 } from './_lib/website.js';
+import { publicContent } from './_lib/site.js';
 
 const ROUTES = {
   availability: { method: 'GET', run: (sb, site, q) => availability(sb, site, q) },
@@ -56,6 +59,18 @@ function corsHeaders(req, res) {
   return origin;
 }
 
+/* GET site?ws: the content the website shows. No sign-in, nothing private, so every origin may read it */
+async function siteContent(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '600');
+  if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
+  if (req.method !== 'GET' && req.method !== 'HEAD') { res.setHeader('Allow', 'GET, OPTIONS'); return send(res, 405, { ok: false, error: 'method', message: 'Use GET for this address.' }); }
+  const data = await publicContent(requireAdminClient(), query(req).ws);
+  return send(res, 200, Object.assign({ ok: true }, data), { 'Cache-Control': 'public, max-age=60' });
+}
+
 async function webhook(req, res) {
   const cfg = stripeConfig();
   if (!cfg.webhookSecret) return send(res, 503, { ok: false, error: 'not-configured', message: 'Payments are not set up.' });
@@ -74,6 +89,7 @@ export default async function handler(req, res) {
       if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return send(res, 405, { ok: false, error: 'method', message: 'Use POST for this address.' }); }
       return await webhook(req, res);
     }
+    if (route === 'site') return await siteContent(req, res);
     const origin = corsHeaders(req, res);
     if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
     const r = ROUTES[route];

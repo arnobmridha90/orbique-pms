@@ -1,13 +1,13 @@
 ---
-// After payment: the booking reference, the stay, and what happens between now and the door code.
-import Layout from '@shared/components/Layout.astro';
+// After payment: the booking reference, the stay, and what happens between now and arrival.
+import Shell from '@my/components/Shell.astro';
 import { BRAND, GUIDES, PROPERTY } from '@shared/data/kozi';
 import { ICONS } from '@shared/data/icons';
 const mdac = GUIDES.find((g) => g.slug.startsWith('mdac'))!;
 const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
 ---
-<Layout site="my" title="Your Kozi booking" description="Your Kozi booking." noindex>
-  <section class="wrap bc" data-confirmed data-email={BRAND.email}>
+<Shell cam="hero" dim title="Your Kozi booking" description="Your Kozi booking." noindex>
+  <section class="in bc" data-confirmed data-email={BRAND.email}>
     <div class="bc-sun" aria-hidden="true"><span></span></div>
     <p class="eyebrow bc-k" data-bc-k>Your booking</p>
     <h1 class="display bc-h"><span data-bc-h>Thank you.</span></h1>
@@ -26,13 +26,13 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
         <div data-bc-rate-row hidden><dt>Rate</dt><dd><span data-bc-rate>—</span><small data-bc-terms></small></dd></div>
         <div><dt>Where</dt><dd>{PROPERTY.building}<small>{PROPERTY.address}</small></dd></div>
       </dl>
-      <div data-bc-next>
+      <div class="glass" data-bc-next>
         <h2 class="display bc-h2">What happens next</h2>
         <ol class="bc-steps" role="list">
           <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.mail} /><div><b>Keep your reference</b><span>It's at the top of this page. Copy it, or add the stay to your calendar below.</span></div></li>
           <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.leaf} /><div><b>Visiting from abroad?</b><span>Fill in the free MDAC arrival card in the 3 days before you land. <a href={`/guides/${mdac.slug}/`}>Read our MDAC guide</a>.</span></div></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.key} /><div><b>Your door code</b><span>On arrival day it reaches you 30 minutes before {PROPERTY.checkIn}, so you can let yourself in.</span></div></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.chat} /><div><b>Questions before then?</b><span>Email <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a>. We reply in English, Bahasa Malaysia and Bahasa Indonesia.</span></div></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.key} /><div><b>How to check in</b><span>Before you arrive, we email you how to check in. Check-in is from {PROPERTY.checkIn}.</span></div></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.chat} /><div><b>Questions before then?</b><span>Email <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a>, and we'll reply.</span></div></li>
         </ol>
         <div class="bc-go">
           <button type="button" class="btn" data-bc-ics><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.clock} />Add to my calendar</button>
@@ -41,7 +41,7 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
       </div>
     </div>
   </section>
-</Layout>
+</Shell>
 
 <style is:global>
   .bc { position: relative; padding: calc(var(--hd-h) + clamp(50px, 8vw, 110px)) 0 clamp(90px, 10vw, 150px); }
@@ -65,9 +65,9 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
   .bc-status a { border-bottom: 1px solid var(--amber); color: var(--ink); }
   .bc-ref { margin: 22px 0 0; font-size: 16px; color: var(--ink-2); }
   .bc-ref b { font: 650 18px/1 var(--sans); letter-spacing: 0.06em; color: var(--ink); margin-right: 6px; }
-  .bc-test { display: inline-block; margin: 18px 0 0; padding: 10px 14px; border-radius: 12px; background: rgb(200 134 46 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); }
+  .bc-test { display: inline-block; margin: 18px 0 0; padding: 10px 14px; border-radius: 12px; background: rgb(231 165 76 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); }
   .bc-grid { display: grid; grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr); gap: clamp(36px, 6vw, 100px); margin-top: clamp(40px, 6vw, 80px); align-items: start; }
-  .bc-stay { margin: 0; padding: 8px 26px; border-radius: 26px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
+  .bc-stay { margin: 0; padding: 8px 26px; border-radius: 26px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
   .bc-stay div { display: grid; grid-template-columns: 110px 1fr; gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
   .bc-stay div:first-child { border-top: 0; }
   .bc-stay dt { font: 650 10.5px/20px var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
@@ -83,7 +83,7 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
   .bc-steps a { border-bottom: 1px solid var(--amber); }
   .bc-go { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
   .bc-ghost { color: var(--ink); }
-  @media (hover: hover) and (pointer: fine) { .bc-ghost:hover { background: rgb(43 38 34 / 0.05); } }
+  @media (hover: hover) and (pointer: fine) { .bc-ghost:hover { background: rgb(238 240 245 / 0.05); } }
   @media (max-width: 860px) { .bc-grid { grid-template-columns: 1fr; } }
   @media (prefers-reduced-motion: reduce) { .bc-sun span, .bc.is-wait .bc-sun span { animation: none; transform: none; } }
 </style>

@@ -1,0 +1,142 @@
+---
+// A building: our window marked in the live skyline (Kuala Lumpur), the tower itself, its suites and what is around
+// it. Made on request from the content; an address that is not one of our buildings answers 404. Vortex KLCC adds
+// its own facts and street (BUILDING_EXTRAS in data/kozi.ts); a building added in Orbique gets the plain version.
+import Shell from '@my/components/Shell.astro';
+import Head from '@my/components/Head.astro';
+import SuiteCard from '@my/components/SuiteCard.astro';
+import Photo from '@shared/components/Photo.astro';
+import { BRAND, BUILDING_EXTRAS, CC_BY_SA, CREDITS, POLICIES } from '@shared/data/kozi';
+import { ICONS } from '@shared/data/icons';
+import { buildingPath, cityPath, getContent, inKL, photoAbs } from '@shared/lib/content';
+import { crumbsLd, lodgingLd, orgLd, suiteLd } from '@shared/lib/seo';
+import { numberWord } from '@shared/lib/words';
+
+export const prerender = false;
+const site = await getContent(Astro);
+const { building: b } = site.find(Astro.params.city, Astro.params.building);
+if (!b) return new Response(null, { status: 404, statusText: 'Not found' });
+const x = BUILDING_EXTRAS[b.id];
+const kl = inKL(b);
+const suites = site.suitesOf(b);
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: b.city, path: cityPath(b.cityId) }, { name: b.name, path: buildingPath(b) }];
+const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(x?.maps ?? `${b.building}, ${b.address}`);
+const facts = [
+  { icon: 'pin', k: 'Address', v: `${b.building}, ${b.address}` },
+  { icon: 'key', k: 'Check-in', v: `From ${b.checkIn}.` },
+  { icon: 'clock', k: 'Check-out', v: `By ${b.checkOut}.` },
+  ...(x?.facts ?? []),
+];
+const photo = b.photos[0];
+const credit = photo?.key ? CREDITS[photo.key] : undefined;
+const types = [...new Set(suites.map((s) => s.bookType).filter(Boolean))];
+const [nameA, nameB] = b.name.includes(' @ ') ? [b.name.split(' @ ')[0] + ' @', b.name.split(' @ ').slice(1).join(' @ ')] : ['', b.name];
+const description = x?.description ?? `${b.name}: ${b.building}, ${b.address}. ${b.area ? `${b.area}. ` : ''}See the suites and live prices, and book direct.`.slice(0, 300);
+---
+<Shell site={site} title={`${b.name}: ${kl ? 'two-bedroom suites in Kuala Lumpur' : `suites in ${b.city}`}`} description={description} cam={kl ? 'vortex' : 'none'} dim={!kl}
+  image={photo ? photoAbs(photo, BRAND.my) : undefined}
+  jsonld={[crumbsLd(BRAND.my, crumbs), orgLd, lodgingLd(b, suites), ...suites.filter((s) => s.photos.length).map((s) => suiteLd(b, s))]}>
+  <Head crumbs={crumbs} eyebrow={x?.eyebrow ?? [b.city, b.area].filter(Boolean).join(' · ')} plain={!kl}>
+    <Fragment slot="title">{nameA && `${nameA} `}<em>{nameB}.</em></Fragment>
+    <Fragment slot="lede">{x?.lede ?? (b.area ? `${b.building}, ${b.area}.` : `${b.building}, ${b.address}.`)}</Fragment>
+    <div class="bd-cta">
+      <a class="btn amber bd-go" href="/stays/">Check prices</a><a class="btn" href="#suites">See the suites</a>
+      {types.length > 0 && <p class="bd-from" data-from data-types={types.join(',')}><span>From</span> <b data-from-rate>&nbsp;</b> <span>a night</span></p>}
+    </div>
+  </Head>
+
+  <section class="in glass bd-about" aria-labelledby="bd-about-h">
+    {photo && (
+      <figure class="bd-photo" data-reveal>
+        <Photo p={photo} sizes="(max-width: 900px) 92vw, 40vw" />
+        {credit && <figcaption>Photo: {credit.by}, <a href={credit.source} rel="noopener">Wikimedia Commons</a>, <a href={CC_BY_SA.url} rel="noopener license">{CC_BY_SA.name}</a></figcaption>}
+      </figure>
+    )}
+    <div class="bd-copy">
+      <p class="eyebrow" data-reveal>The building</p>
+      {x ? <h2 id="bd-about-h" class="display h3" data-split>{x.about[0]} <em>{x.about[1]}</em></h2>
+        : <h2 id="bd-about-h" class="display h3" data-split>{b.building}<em>.</em></h2>}
+      {b.intro && <p class="bd-p" data-reveal>{b.intro}</p>}
+      <ul class="bd-facts" role="list">
+        {facts.map((f, i) => (
+          <li data-reveal style={`--d:${i * 50}`}><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><div><b>{f.k}</b><span>{f.v}</span></div></li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  {suites.length > 0 && (
+    <section class="in bd-suites" id="suites" aria-labelledby="bd-suites-h">
+      <div class="bd-suites-head" data-reveal>
+        <div class="stack" style="gap:14px"><p class="eyebrow">The suites</p><h2 id="bd-suites-h" class="h3">{numberWord(suites.length)} {suites.length === 1 ? 'suite' : 'suites'} in {b.building}.</h2></div>
+        <p class="lede">Prices are for the whole suite, per night.</p>
+      </div>
+      <ul class="cards" role="list">
+        {suites.map((s, i) => <li data-reveal><SuiteCard s={s} b={b} heading="h3" eager={i === 0 && !kl} /></li>)}
+      </ul>
+    </section>
+  )}
+
+  <section class="in glass bd-near" aria-labelledby="bd-near-h">
+    <div class="bd-near-copy">
+      <p class="eyebrow" data-reveal>{x?.near.eyebrow ?? 'Finding us'}</p>
+      {x ? <h2 id="bd-near-h" class="display h3" data-split>{x.near.title[0]} <em>{x.near.title[1]}</em></h2>
+        : <h2 id="bd-near-h" class="display h3" data-split>{b.address}</h2>}
+      {x && <p class="bd-p" data-reveal>{x.near.text}</p>}
+      <a class="btn ghost bd-map" href={maps} rel="noopener" target="_blank" data-reveal><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.pin} />Open in Google Maps <span aria-hidden="true">↗</span></a>
+    </div>
+    {x && (
+      <ol class="bd-list" role="list">
+        {x.near.list.map((n, i) => (
+          <li data-reveal style={`--d:${i * 60}`}><span class="bd-n" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><div><b>{n.name}</b><span>{n.what}</span></div></li>
+        ))}
+      </ol>
+    )}
+    <p class="bd-rules" data-reveal>{POLICIES.rules} {POLICIES.tax}</p>
+  </section>
+</Shell>
+
+<style is:global>
+  .bd-suites { padding: clamp(60px, 8vw, 110px) 0; scroll-margin-top: var(--hd-h); }
+  .bd-suites-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 20px; margin-bottom: 28px; }
+  .bd-suites-head .lede { font-size: 16px; max-width: 30em; }
+  .bd-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 26px; margin-top: clamp(26px, 4cqh, 40px); }
+  /* a set width, so the price filling in can't move it under the button after the page has drawn */
+  .bd-from { flex: 1 1 15rem; margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 15px; opacity: 0; transition: opacity 400ms ease; }
+  .bd-from.is-ready { opacity: 1; }
+  .bd-from > span { opacity: 0.75; }
+  .bd-from b { font: 800 30px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; }
+
+  .bd-about { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: clamp(40px, 7vw, 120px); align-items: center; margin-top: clamp(40px, 6vw, 80px); }
+  .bd-photo { margin: 0; }
+  .bd-photo picture, .bd-photo img { display: block; width: 100%; }
+  .bd-photo img { height: auto; aspect-ratio: 4 / 4.6; object-fit: cover; object-position: 50% 18%; border-radius: 28px; background: var(--sand); }
+  .bd-photo figcaption { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+  .bd-photo figcaption a { border-bottom: 1px solid var(--line); }
+  .bd-copy .h3 { margin-top: 20px; max-width: 10.35em; }
+  .bd-p { margin: 22px 0 0; max-width: 31.05em; color: var(--ink-2); font-size: 17.5px; }
+  .bd-facts { list-style: none; margin: 34px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+  .bd-facts li { display: grid; grid-template-columns: 24px 1fr; gap: 14px; padding: 18px 0; border-top: 1px solid var(--line); }
+  .bd-facts svg, .bd-map svg { width: 22px; height: 22px; fill: none; stroke: var(--amber-deep); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .bd-facts b { display: block; font-weight: 650; }
+  .bd-facts span { display: block; margin-top: 3px; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); }
+
+  .bd-near { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px clamp(40px, 7vw, 120px); align-items: start; margin-bottom: clamp(60px, 8vw, 110px); }
+  .bd-near-copy .h3 { margin-top: 20px; }
+  .bd-map { margin-top: 30px; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  .bd-map svg { stroke: currentColor; }
+  @media (hover: hover) and (pointer: fine) { .bd-map:hover { background: rgb(238 240 245 / 0.05); } }
+  .bd-list { list-style: none; margin: 0; padding: 0; display: grid; }
+  .bd-list li { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 20px 0; border-top: 1px solid var(--line); }
+  .bd-list li:last-child { border-bottom: 1px solid var(--line); }
+  .bd-n { font: 800 24px/1 var(--display); font-variation-settings: var(--soft); color: var(--amber-deep); padding-top: 2px; }
+  .bd-list b { display: block; font: 800 22px/1.2 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; }
+  .bd-list span { display: block; margin-top: 3px; font-size: 15px; color: var(--muted); }
+  .bd-rules { grid-column: 1 / -1; margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+
+  @media (max-width: 900px) {
+    .bd-about, .bd-near { grid-template-columns: 1fr; }
+    .bd-photo img { aspect-ratio: 4 / 4.6; }
+  }
+  @media (max-width: 760px) { .bd-facts { grid-template-columns: 1fr; } }
+</style>

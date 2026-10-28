@@ -1,0 +1,223 @@
+---
+// A suite page: the photos, what the suite is like, the view, what's included, the rules, and the booking card with
+// live prices beside it all the way down (or "Email us to book" while it can't be booked online). Made on request
+// from the content; an address that is not one of our suites answers 404. A suite with no photos of its own yet
+// shows its building's photo and stays out of search.
+import Shell from '@my/components/Shell.astro';
+import SuiteCard from '@my/components/SuiteCard.astro';
+import Gallery from '@shared/components/Gallery.astro';
+import BookCard from '@shared/components/BookCard.astro';
+import EmailCard from '@shared/components/EmailCard.astro';
+import Photo from '@shared/components/Photo.astro';
+import { AMENITIES, BRAND, BUILDING_EXTRAS, POLICIES, VIEWS } from '@shared/data/kozi';
+import { landmarks, levelsOf } from '@my/lib/shots';
+import { ICONS } from '@shared/data/icons';
+import { buildingPath, cityPath, cover, getContent, inKL, photoAbs, suitePath } from '@shared/lib/content';
+import { crumbsLd, lodgingLd, suiteLd } from '@shared/lib/seo';
+
+export const prerender = false;
+const site = await getContent(Astro);
+const { building: b, suite } = site.find(Astro.params.city, Astro.params.building, Astro.params.suite);
+if (!b || !suite) return new Response(null, { status: 404, statusText: 'Not found' });
+const x = BUILDING_EXTRAS[b.id];
+const own = suite.photos.length > 0;
+const photos = own ? suite.photos : b.photos.slice(0, 1);
+const others = site.suitesOf(b).filter((s) => s.id !== suite.id);
+const crumbs = [{ name: b.city, path: cityPath(b.cityId) }, { name: b.name, path: buildingPath(b) }, { name: suite.name, path: suitePath(b, suite) }];
+const og = cover(suite, b);
+const ogAbs = own && og ? photoAbs(og, BRAND.my) : undefined;
+// the real photos of each view from this suite's windows, while the suite still shows them (lib/shots.ts)
+const marks = landmarks(site);
+const views = suite.views.map((v) => ({ id: v, name: VIEWS[v].name, shot: marks.find((m) => m.id === v)?.shots.find((sh) => sh.suite.id === suite.id) }));
+// the city's camera goes to this suite's floor on the tower and lights it
+const kl = inKL(b);
+const levels = levelsOf(suite);
+const cam = !kl ? 'none' : levels.length ? `floor-${levels[0]}` : 'vortex';
+const beds = !!x?.beds && suite.bedrooms === 2;
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const nth = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
+const facts = [
+  { icon: 'bed', k: plural(suite.bedrooms, 'bedroom'), v: beds ? 'A queen room, and a room with a queen and a single' : '' },
+  { icon: 'bath', k: plural(suite.bathrooms, 'bathroom'), v: x ? 'Hair dryer and iron in the suite' : '' },
+  { icon: 'guests', k: `Sleeps ${suite.sleeps}`, v: suite.extraBed ? `A ${nth(suite.sleeps + 1)} guest on an extra bed` : '' },
+  { icon: 'level', k: suite.levels || b.building, v: b.building },
+];
+const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(x?.maps ?? `${b.building}, ${b.address}`);
+const short = b.name.replace(/^Kozi @ /, '');
+const usual = suite.bedrooms === 2 && suite.bathrooms === 2 && suite.sleeps === 4;
+const title = suite.seoTitle ?? `${suite.name} at ${short}, ${b.city} | Kozi`;
+const description = suite.seoDescription ?? (usual
+  ? `${suite.name} at ${b.name}: two bedrooms, two bathrooms and a full kitchen for four in central ${b.city}. ${suite.line} See live prices and book direct.`
+  : `${suite.name} at ${b.name}, ${b.city}: ${plural(suite.bedrooms, 'bedroom')}, ${plural(suite.bathrooms, 'bathroom')}, sleeps ${suite.sleeps}. ${suite.line}`).trim();
+const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$/, ''), 'Suite'] : [suite.name, ''];
+---
+<Shell site={site} title={title} description={description} image={ogAbs} noindex={!own} cam={cam} hi={kl ? levels : undefined} dim={!kl}
+  jsonld={[crumbsLd(BRAND.my, crumbs), lodgingLd(b, site.suitesOf(b)), suiteLd(b, suite, ogAbs)]}>
+  <div class="in sp-top">
+    <nav class="crumbs sp-crumbs" aria-label="Breadcrumb">
+      <ol>{crumbs.map((c, i) => <li>{i < crumbs.length - 1 ? <a href={c.path}>{c.name}</a> : <span aria-current="page">{c.name}</span>}</li>)}</ol>
+    </nav>
+    <div class="sp-title">
+      <div>
+        <p class="eyebrow">{[b.name, suite.levels].filter(Boolean).join(' · ')}</p>
+        <h1 class="display sp-h" data-split>{nameA} {nameB && <em>{nameB}</em>}</h1>
+      </div>
+      {suite.line && <p class="sp-line">{suite.line}</p>}
+    </div>
+    {photos.length > 0 && <Gallery photos={photos} name={suite.name} note={own ? undefined : 'Suite photos are on the way'} />}
+  </div>
+
+  <div class="in sp-body">
+    <div class="sp-main glass">
+      <ul class="sp-facts" role="list">
+        {facts.map((f) => (
+          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><b>{f.k}</b>{f.v && <span>{f.v}</span>}</li>
+        ))}
+      </ul>
+
+      <section class="sp-sec" aria-labelledby="sp-about">
+        <h2 id="sp-about" class="display sp-h2">About the suite</h2>
+        {suite.story && <p class="sp-story">{suite.story}</p>}
+        {suite.highlights.length > 0 && <ul class="sp-chips" role="list">{suite.highlights.map((h) => <li>{h}</li>)}</ul>}
+      </section>
+
+      {beds && (
+        <section class="sp-sec" aria-labelledby="sp-sleep">
+          <h2 id="sp-sleep" class="display sp-h2">Where you'll sleep</h2>
+          <ul class="sp-beds" role="list">
+            <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.queen} /><b>Bedroom 1</b><span>Queen bed</span></li>
+            <li><span class="sp-bed2"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.queen} /><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.single} /></span><b>Bedroom 2</b><span>Queen bed and a single bed</span></li>
+            {suite.extraBed && <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.single} /><b>A fifth guest</b><span>Extra bed, RM60 a night</span></li>}
+          </ul>
+        </section>
+      )}
+
+      {views.length > 0 && (
+        <section class="sp-sec" aria-labelledby="sp-view">
+          <h2 id="sp-view" class="display sp-h2">The view</h2>
+          <p class="sp-p">{x && suite.id === 'premium'
+            ? 'There are two Premium Suites, on levels 26 and 47. Between them they look out on the Twin Towers, KL Tower and Merdeka 118, and which you see depends on the suite.'
+            : `From the windows: ${views.map((v) => v.name).join(' and ')}.`}</p>
+          <div class="sp-views">
+            {views.filter((v) => v.shot).map((v) => (
+              <figure class="sp-view" data-reveal>
+                <Photo p={v.shot!.photo} sizes="(max-width: 760px) 92vw, 30vw" />
+                <figcaption><b>{v.name}</b><span>{v.shot!.from}</span></figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section class="sp-sec" aria-labelledby="sp-in">
+        <h2 id="sp-in" class="display sp-h2">In the suite</h2>
+        <ul class="sp-amen" role="list">
+          {AMENITIES.map((a) => (
+            <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[a.icon]} /><div><b>{a.title}</b><span>{a.text}</span></div></li>
+          ))}
+        </ul>
+      </section>
+
+      <section class="sp-sec" aria-labelledby="sp-know">
+        <h2 id="sp-know" class="display sp-h2">Good to know</h2>
+        <dl class="sp-rules">
+          <div><dt>Check-in</dt><dd>From {b.checkIn}.</dd></div>
+          <div><dt>Check-out</dt><dd>By {b.checkOut}.</dd></div>
+          <div><dt>Cancellation</dt><dd>{POLICIES.cancel}</dd></div>
+          <div><dt>House rules</dt><dd>{POLICIES.rules}</dd></div>
+          <div><dt>Tourism tax</dt><dd>{POLICIES.tax}</dd></div>
+          {x && <div><dt>Pool and gym</dt><dd>{POLICIES.paid}</dd></div>}
+        </dl>
+      </section>
+
+      <section class="sp-sec" aria-labelledby="sp-near">
+        <h2 id="sp-near" class="display sp-h2">{x?.near.eyebrow ?? 'Where it is'}</h2>
+        <p class="sp-p">{b.building}, {b.address}.{b.area && ` ${b.area}.`}</p>
+        {x && (
+          <ul class="sp-near" role="list">
+            {x.near.list.map((n) => <li><b>{n.name}</b><span>{n.what}</span></li>)}
+          </ul>
+        )}
+        <a class="sp-map" href={maps} rel="noopener" target="_blank"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.pin} />Open in Google Maps <span aria-hidden="true">↗</span></a>
+      </section>
+    </div>
+    {suite.bookType ? <BookCard suite={suite} building={b} /> : <EmailCard suite={suite} building={b} />}
+  </div>
+
+  {others.length > 0 && (
+    <section class="in sp-others" aria-labelledby="sp-others-h">
+      <p class="eyebrow">Also at {short}</p>
+      <h2 id="sp-others-h" class="h3" data-split>The other <em>suites.</em></h2>
+      <ul class="cards" role="list">
+        {others.map((o) => <li data-reveal><SuiteCard s={o} b={b} /></li>)}
+      </ul>
+    </section>
+  )}
+</Shell>
+
+<style>
+  .sp-top { padding-top: calc(var(--hd-h) + 26px); text-shadow: 0 1px 14px rgb(5 7 13 / 0.85); }
+  :global(html:not(.no-city)) .sp-top { padding-top: calc(var(--hd-h) + 22vh); }
+  .sp-main { padding: clamp(22px, 3vw, 40px); }
+  .sp-main .sp-facts { padding-top: 0; }
+  .sp-crumbs { color: var(--ink-2); }
+  .sp-title { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); align-items: end; gap: 24px 60px; margin: 22px 0 30px; }
+  .sp-h { font-size: clamp(48px, 6.6vw, 104px); margin-top: 18px; }
+  .sp-line { margin: 0; max-width: 26em; justify-self: end; font: 400 clamp(17px, 1.5vw, 20px)/1.5 var(--sans); color: var(--soft-fg); }
+  .sp-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 400px); gap: clamp(40px, 6vw, 110px); padding: clamp(40px, 5vw, 64px) 0 clamp(80px, 9vw, 140px); }
+  .sp-facts { list-style: none; margin: 0; padding: 0 0 34px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; border-bottom: 1px solid var(--line); }
+  .sp-facts li { display: grid; gap: 6px; align-content: start; }
+  .sp-facts svg, .sp-beds svg, .sp-amen svg, .sp-map svg { width: 26px; height: 26px; fill: none; stroke: var(--amber-deep); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .sp-facts b { margin-top: 6px; font-weight: 650; font-size: 16px; }
+  .sp-facts span { font-size: 14px; line-height: 1.45; color: var(--muted); }
+  .sp-sec { padding: 40px 0; border-bottom: 1px solid var(--line); }
+  .sp-sec:last-child { padding-bottom: 0; }
+  .sp-sec:last-child { border-bottom: 0; }
+  .sp-h2 { font-size: clamp(30px, 2.8vw, 42px); line-height: 1.05; margin-bottom: 18px; }
+  .sp-story { margin: 0; max-width: 35.65em; font-size: 18px; line-height: 1.65; color: var(--ink-2); }
+  .sp-p { margin: 0 0 22px; max-width: 35.65em; color: var(--ink-2); }
+  .sp-chips { list-style: none; margin: 22px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .sp-chips li { padding: 9px 14px; border-radius: 999px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); font: 600 13.5px/1 var(--sans); }
+  .sp-beds { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .sp-beds li { display: grid; gap: 4px; padding: 20px; border-radius: 20px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
+  .sp-beds li > svg, .sp-bed2 { margin-bottom: 12px; }
+  .sp-bed2 { display: flex; gap: 4px; }
+  .sp-beds b { font-weight: 650; } .sp-beds span { font-size: 14.5px; color: var(--muted); }
+  .sp-views { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .sp-view { margin: 0; position: relative; border-radius: 20px; overflow: hidden; aspect-ratio: 4 / 5; background: var(--night); }
+  .sp-view:only-child { aspect-ratio: 16 / 10; }
+  .sp-view :global(img) { width: 100%; height: 100%; object-fit: cover; }
+  .sp-view figcaption { position: absolute; inset: auto 0 0; display: grid; gap: 2px; padding: 40px 16px 14px; color: var(--cream); background: linear-gradient(to top, rgb(14 12 18 / 0.78), transparent); }
+  .sp-view b { font: 800 20px/1.1 var(--display); font-variation-settings: var(--soft); }
+  .sp-view span { font-size: 13px; opacity: 0.8; }
+  .sp-amen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
+  .sp-amen li { display: grid; grid-template-columns: 26px 1fr; gap: 16px; }
+  .sp-amen b { display: block; font-weight: 650; } .sp-amen span { display: block; margin-top: 3px; font-size: 15px; color: var(--muted); line-height: 1.5; }
+  .sp-rules { margin: 0; display: grid; gap: 0; }
+  .sp-rules div { display: grid; grid-template-columns: 170px 1fr; gap: 20px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .sp-rules div:first-child { border-top: 0; padding-top: 0; }
+  .sp-rules dt { font-weight: 650; } .sp-rules dd { margin: 0; color: var(--ink-2); }
+  .sp-near { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+  .sp-near li { display: grid; gap: 2px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .sp-near b { font-weight: 650; } .sp-near span { font-size: 14.5px; color: var(--muted); }
+  .sp-map { display: inline-flex; align-items: center; gap: 10px; margin-top: 24px; font-weight: 650; border-bottom: 1px solid var(--amber); padding-bottom: 3px; }
+  .sp-map svg { width: 20px; height: 20px; }
+
+  .sp-others { padding: 0 0 clamp(80px, 9vw, 130px); }
+  .sp-others .h3 { margin: 18px 0 32px; }
+  @media (hover: hover) and (pointer: fine) { .sp-map:hover { border-color: var(--ink); } }
+
+  @media (max-width: 900px) {
+    .sp-title { grid-template-columns: 1fr; margin-bottom: 22px; }
+    .sp-line { justify-self: start; }
+    .sp-body { grid-template-columns: 1fr; padding-top: 30px; }
+    .sp-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 18px; }
+  }
+  @media (max-width: 760px) {
+    .sp-top { padding-top: calc(var(--hd-h) + 16px); }
+    .sp-body { padding-bottom: 120px; }
+    .sp-beds { grid-template-columns: 1fr; }
+    .sp-amen, .sp-near { grid-template-columns: 1fr; }
+    .sp-rules div { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>
