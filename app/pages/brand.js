@@ -281,14 +281,29 @@
       }
       var w = O.ws(), changed = DETAIL_KEYS.filter(function (k) { return v[k] !== (w[k] || ''); });
       if (!changed.length) { U.toast('Nothing to save. The details are up to date.'); return; }
+      var oldName = w.name || '', renamed = changed.indexOf('name') >= 0 && oldName ? renameCompanyOwner(oldName, v.name) : 0;
       DETAIL_KEYS.forEach(function (k) { w[k] = v[k]; });
       if (!wb()) D.workspaceBrand = { brand: w.brand, logo: w.logo && String(w.logo).length < 180000 ? w.logo : null, logoName: w.logoName || null };
       DETAIL_KEYS.forEach(function (k) { D.workspaceBrand[k] = v[k]; });
       if (!Array.isArray(D.auditLog)) D.auditLog = [];
       D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'brand', text: 'Updated the business details (' + changed.join(', ').replace('regNo', 'registration no.') + ')' });
       O.emit('data'); if (O.paintShell) O.paintShell();
-      U.toast('Business details saved for everyone. Invoices and the website use them now.');
+      U.toast('Business details saved for everyone. Invoices and the website use them now.' + (renamed ? ' Units owned by the company now show ' + v.name + ' as their owner.' : ''));
     };
+  }
+  /* Units the company owns itself store the business name as their owner (properties.js "company owned"), and owner
+     statements, sent statements and owner messages are matched by that name. A rename carries them over, so the owner
+     portal does not keep showing the old name. Returns how many units changed. */
+  function renameCompanyOwner(from, to) {
+    if (!from || !to || from === to) return 0;
+    var n = 0;
+    (D.properties || []).forEach(function (p) { if (p && p.owner === from) { p.owner = to; n++; } });
+    if (!n) return 0;
+    (D.sentLog || []).forEach(function (l) { if (l && l.owner === from) l.owner = to; });
+    (D.ownerMessages || []).forEach(function (m) { if (m && m.owner === from) m.owner = to; });
+    if (!Array.isArray(D.auditLog)) D.auditLog = [];
+    D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'brand', text: 'Renamed the owner of ' + n + ' company-owned unit' + (n === 1 ? '' : 's') + ' from ' + from + ' to ' + to });
+    return n;
   }
   function roleCard(role, label, desc, hex, edit) {
     return '<div class="role"><div class="chip-swatch" style="background:' + hex + ';color:' + C.ink(hex) + '">' + hex.toUpperCase() + '</div><div><div class="lbl">' + esc(label) + '</div><div class="desc">' + esc(desc) + '</div></div>' +

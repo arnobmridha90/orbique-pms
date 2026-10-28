@@ -15,7 +15,10 @@ function fake() {
       { org_id: ORG, user_id: 'u2', staff_id: 'S-2', role: 'ops', status: 'active' },
       { org_id: OTHER, user_id: 'u1', staff_id: 'S-9', role: 'owner', status: 'active' }
     ],
-    records: [{ org_id: ORG, coll: 'staff', id: 'S-1', deleted: false, data: { id: 'S-1', name: 'Old Name', initials: 'ON', role: 'owner', email: 'old@x.my' } }]
+    records: [{ org_id: ORG, coll: 'staff', id: 'S-1', deleted: false, data: { id: 'S-1', name: 'Old Name', initials: 'ON', role: 'owner', email: 'old@x.my' } },
+      { org_id: ORG, coll: 'properties', id: 'P-1', deleted: false, data: { id: 'P-1', name: 'Unit 1', owner: 'Old Co' } },
+      { org_id: ORG, coll: 'properties', id: 'P-2', deleted: false, data: { id: 'P-2', name: 'Unit 2', owner: 'Rajan Pillai' } },
+      { org_id: OTHER, coll: 'properties', id: 'P-3', deleted: false, data: { id: 'P-3', name: 'Unit 3', owner: 'Old Co' } }]
   };
   const users = { u1: { id: 'u1', email: 'old@x.my', user_metadata: { name: 'Old Name', must_change_password: false } }, u2: { id: 'u2', email: 'taken@x.my', user_metadata: {} } };
   const userUpdates = [];
@@ -25,7 +28,7 @@ function fake() {
     const api = {
       select() { return api; },
       update(p) { op = 'update'; patch = p; return api; },
-      eq(k, v) { f.push((r) => r[k] === v); return api; },
+      eq(k, v) { f.push((r) => (k.startsWith('data->>') ? (r.data || {})[k.slice(7)] : r[k]) === v); return api; },
       neq(k, v) { f.push((r) => r[k] !== v); return api; },
       maybeSingle() { const r = rows(); return Promise.resolve({ data: r[0] || null, error: null }); },
       then(res, rej) {
@@ -94,4 +97,11 @@ test('company name alone leaves the owner untouched', async () => {
 test('a blank company name is refused', async () => {
   const { sb } = fake();
   await assert.rejects(updateOperator(sb, { orgId: ORG, company: '   ' }, admin), /company name/i);
+});
+
+test('renaming the company carries its own units over to the new name, and only those', async () => {
+  const { sb, db } = fake();
+  await updateOperator(sb, { orgId: ORG, company: 'Kozi' }, admin);
+  const owner = (id) => db.records.find((r) => r.id === id).data.owner;
+  assert.deepEqual([owner('P-1'), owner('P-2'), owner('P-3')], ['Kozi', 'Rajan Pillai', 'Old Co']);
 });
