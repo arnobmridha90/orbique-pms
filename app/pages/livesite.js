@@ -20,8 +20,12 @@
   var QUALITY = [0.82, 0.74, 0.66];
   var VIEW_KEYS = SC.VIEWS;
   var st = { busy: false, importing: false };
-  var DR = null;            /* the open drawer: {dr, kind: 'unit'|'building', index (-1 new), draft, dirty, slugTouched, cityTouched, pm} */
+  /* the open drawer: {dr, kind: 'unit'|'building', isNew, ref (what was opened: {buildingId, id} of a unit, {id} of a
+     building; looked up again on Save and Remove, as someone else may add, remove or reorder meanwhile), draft, dirty,
+     slugTouched, cityTouched, pm} */
+  var DR = null;
   var builtinCache = null;  /* builtinPhotos from <site>/content.json */
+  var photoBase = null;     /* the site that answered for content.json: its bundled photos are there */
 
   O.css('livesite', `
 .pg-live{display:flex; flex-direction:column; gap:16px;}
@@ -177,6 +181,19 @@
   function buildingsOf(c) { return Array.isArray(c.buildings) ? c.buildings : (c.buildings = []); }
   function suitesOf(c) { return Array.isArray(c.suites) ? c.suites : (c.suites = []); }
   function buildingById(c, id) { return buildingsOf(c).filter(function (b) { return b && b.id === id; })[0] || null; }
+  /* units and buildings are found by their web addresses, not their place in the list */
+  function ukey(s) { return String(s && s.buildingId) + '/' + String(s && s.id); }
+  function bkey(b) { return String(b && b.id); }
+  function findAt(list, i, key, keyOf) {
+    if (list[i] && keyOf(list[i]) === key) return i;
+    for (var k = 0; k < list.length; k++) if (list[k] && keyOf(list[k]) === key) return k;
+    return -1;
+  }
+  function unitAt(c, ref) { return ref ? findAt(suitesOf(c), -1, ukey(ref), ukey) : -1; }
+  function buildingAt(c, ref) { return ref ? findAt(buildingsOf(c), -1, bkey(ref), bkey) : -1; }
+  /* where the drawer's unit or building is in the list now (-1: new, or gone) */
+  function drawerAt() { var c = draft(); if (!DR || DR.isNew || !c) return -1; return DR.kind === 'unit' ? unitAt(c, DR.ref) : buildingAt(c, DR.ref); }
+  var GONE = { unit: 'Someone else removed this unit or changed its web address while you had it open. Close it and open the unit again.', building: 'Someone else removed this building or changed its web address while you had it open. Close it and open the building again.' };
   function photosOf(x) { return x && Array.isArray(x.photos) ? x.photos : []; }
   function NO_EDIT() { return 'Your access does not include editing the website'; }
   function changed() { /* the draft differs from what the site shows */
@@ -199,12 +216,25 @@
 
   /* photos: a thumbnail for any photo, uploads in the test copy are kept in this browser */
   function localKey(id) { return 'livesite:photo:' + id; }
+  /* bundled photos are on the site that answered for content.json, else the site's address, else the preview site */
+  function photoHost() { return photoBase || siteUrl() || FALLBACK_SOURCE; }
   function thumb(p) {
     if (!p) return '';
     if (p.kind === 'upload' && String(p.base || '').indexOf(LOCAL_PREFIX) === 0) return O.store.get(localKey(p.id), '') || '';
-    return SC.photoSrc(p, 640, siteUrl());
+    return SC.photoSrc(p, 640, photoHost());
   }
-  function imgHTML(p, alt) { var s = thumb(p); return s ? '<img src="' + esc(s) + '" alt="' + esc(alt == null ? (p.alt || '') : alt) + '" loading="lazy" decoding="async">' : ''; }
+  /* a bundled photo that does not load from the site's address (the new site is not there yet) is tried on the preview site */
+  function fallbackSrc(p) { return p && p.kind === 'builtin' && photoHost() !== FALLBACK_SOURCE ? SC.photoSrc(p, 640, FALLBACK_SOURCE) : ''; }
+  function imgHTML(p, alt) {
+    var s = thumb(p), fb = fallbackSrc(p);
+    return s ? '<img src="' + esc(s) + '"' + (fb ? ' data-fb="' + esc(fb) + '"' : '') + ' alt="' + esc(alt == null ? (p.alt || '') : alt) + '" loading="lazy" decoding="async">' : '';
+  }
+  document.addEventListener('error', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG' || !t.getAttribute('data-fb')) return;
+    var fb = t.getAttribute('data-fb'); t.removeAttribute('data-fb');
+    if (fb && t.getAttribute('src') !== fb) t.setAttribute('src', fb);
+  }, true);
   function noPhoto(text) { return '<span class="none">' + O.icon('image') + (text ? esc(text) : '') + '</span>'; }
 
   /* ------------------------------------------------------------------ page */
@@ -251,7 +281,7 @@
   }
   function buildingRowHTML(c, b, i) {
     var n = suitesOf(c).filter(function (s) { return s && s.buildingId === b.id; }).length, ph = photosOf(b), edit = canEdit(), link = liveLink('building', b), shown = b.visible !== false;
-    return '<div class="lv-bd' + (shown ? '' : ' off') + '"><button type="button" class="lv-th" data-openb="' + i + '" aria-label="Edit ' + esc(b.name) + '">' + (ph[0] && thumb(ph[0]) ? imgHTML(ph[0], '') : O.icon('properties')) + '</button>' +
+    return '<div class="lv-bd' + (shown ? '' : ' off') + '" data-bk="' + esc(bkey(b)) + '"><button type="button" class="lv-th" data-openb="' + i + '" aria-label="Edit ' + esc(b.name) + '">' + (ph[0] && thumb(ph[0]) ? imgHTML(ph[0], '') : O.icon('properties')) + '</button>' +
       '<div style="min-width:0"><button type="button" class="t1" data-openb="' + i + '">' + esc(b.name || 'Unnamed building') + '</button><div class="t2">' + esc([b.city, b.area].filter(Boolean).join(' · ') || 'Add the city') + '</div>' +
       '<div class="t2">' + fmt.plural(n, 'unit') + ' · ' + fmt.plural(ph.length, 'photo') + (shown ? '' : ' · hidden') + '</div></div>' +
       '<div class="acts"><button type="button" class="switch' + (shown ? ' on' : '') + '" role="switch" aria-checked="' + shown + '" aria-label="Show ' + esc(b.name) + ' on the website" data-showb="' + i + '"' + (edit ? '' : ' disabled title="' + NO_EDIT() + '"') + '></button>' +
@@ -261,7 +291,7 @@
   }
   function unitCardHTML(s, i, k, n) {
     var ph = photosOf(s), edit = canEdit(), shown = s.visible !== false, link = liveLink('unit', s);
-    return '<div class="lv-card' + (shown ? '' : ' off') + '">' +
+    return '<div class="lv-card' + (shown ? '' : ' off') + '" data-uk="' + esc(ukey(s)) + '">' +
       '<button type="button" class="lv-ph" data-openu="' + i + '" aria-label="Edit ' + esc(s.name) + '">' + (ph[0] && thumb(ph[0]) ? imgHTML(ph[0], '') : noPhoto(ph.length ? '' : 'No photos yet')) +
       (shown ? '' : U.pill('Hidden', 'neutral')) + (ph.length ? '<span class="cnt">' + O.icon('image') + ph.length + '</span>' : '') + '</button>' +
       '<div class="lv-b"><button type="button" class="lv-nm" data-openu="' + i + '">' + esc(s.name || 'Unnamed unit') + '</button>' +
@@ -287,16 +317,31 @@
       if (a === 'start') { if (!canEdit()) return; D.siteContent = SC.empty(); save(); setTimeout(function () { openBuilding(-1); }, 0); return; }
       if (a === 'addbuilding') return openBuilding(-1);
       if (t.dataset.addunit) return openUnit(-1, t.dataset.addunit);
-      if (t.dataset.openu) return openUnit(+t.dataset.openu);
-      if (t.dataset.openb) return openBuilding(+t.dataset.openb);
+      /* the card's unit or building, found again by its web address (the list may have changed since it was drawn) */
+      var card = t.closest('[data-uk],[data-bk]');
+      var ui = c2 && card && card.hasAttribute('data-uk') ? findAt(suitesOf(c2), +(t.dataset.openu || t.dataset.showu || t.dataset.i), card.getAttribute('data-uk'), ukey) : -1;
+      var bi = c2 && card && card.hasAttribute('data-bk') ? findAt(buildingsOf(c2), +(t.dataset.openb || t.dataset.showb || t.dataset.i), card.getAttribute('data-bk'), bkey) : -1;
+      if (t.dataset.openu) return ui >= 0 ? openUnit(ui) : O.render(false);
+      if (t.dataset.openb) return bi >= 0 ? openBuilding(bi) : O.render(false);
       if (!c2 || !canEdit()) return;
-      if (t.dataset.showu) { var s = suitesOf(c2)[+t.dataset.showu]; if (s) { s.visible = s.visible === false; save(); U.toast(s.name + (s.visible ? ' will be shown' : ' will be hidden') + ' after you Publish.'); } return; }
-      if (t.dataset.showb) { var b = buildingsOf(c2)[+t.dataset.showb]; if (b) { b.visible = b.visible === false; save(); U.toast(b.name + (b.visible ? ' will be shown' : ' will be hidden') + ' after you Publish.'); } return; }
-      if (t.dataset.moveu) return moveUnit(c2, +t.dataset.i, t.dataset.moveu === 'up' ? -1 : 1);
-      if (t.dataset.moveb) { var i = +t.dataset.i, j = i + (t.dataset.moveb === 'up' ? -1 : 1), list = buildingsOf(c2); if (j < 0 || j >= list.length) return; var x = list[i]; list[i] = list[j]; list[j] = x; save(); }
+      if (t.dataset.showu) { var s = suitesOf(c2)[ui]; if (s) { s.visible = s.visible === false; save(); refocus('data-uk', ukey(s), ['[data-showu]']); U.toast(s.name + (s.visible ? ' will be shown' : ' will be hidden') + ' after you Publish.'); } else O.render(false); return; }
+      if (t.dataset.showb) { var b = buildingsOf(c2)[bi]; if (b) { b.visible = b.visible === false; save(); refocus('data-bk', bkey(b), ['[data-showb]']); U.toast(b.name + (b.visible ? ' will be shown' : ' will be hidden') + ' after you Publish.'); } else O.render(false); return; }
+      var other = { up: 'down', down: 'up' };
+      if (t.dataset.moveu) { var mu = suitesOf(c2)[ui]; if (!mu) return O.render(false); moveUnit(c2, ui, t.dataset.moveu === 'up' ? -1 : 1); refocus('data-uk', ukey(mu), ['[data-moveu=' + t.dataset.moveu + ']', '[data-moveu=' + other[t.dataset.moveu] + ']', '[data-showu]']); return; }
+      if (t.dataset.moveb) {
+        var list = buildingsOf(c2), j = bi + (t.dataset.moveb === 'up' ? -1 : 1); if (bi < 0) return O.render(false); if (j < 0 || j >= list.length) return;
+        var x = list[bi]; list[bi] = list[j]; list[j] = x; save();
+        refocus('data-bk', bkey(x), ['[data-moveb=' + t.dataset.moveb + ']', '[data-moveb=' + other[t.dataset.moveb] + ']', '[data-showb]']);
+      }
     });
     var deep = ctx.params || {};
     if (deep.unit != null && draft()) { var ui = +deep.unit; deep.unit = null; setTimeout(function () { openUnit(ui); }, 0); }
+  }
+  /* after a change redraws the page, keyboard focus goes back to the same card: the first of sels there that can take it */
+  function refocus(attr, key, sels) {
+    var card = O.$$('.pg-live [' + attr + ']').filter(function (el) { return el.getAttribute(attr) === key; })[0];
+    if (!card) return;
+    for (var k = 0; k < sels.length; k++) { var el = O.$(sels[k], card); if (el && !el.disabled) { try { el.focus(); } catch (e) {} return; } }
   }
   /* a unit moves past the next unit of the same building (other buildings' units keep their places) */
   function moveUnit(c, i, dir) {
@@ -314,7 +359,7 @@
   }
   function setSiteUrl(u) {
     var w = D.website && typeof D.website === 'object' && !Array.isArray(D.website) ? D.website : (D.website = {});
-    w.siteUrl = u; builtinCache = null;
+    w.siteUrl = u; builtinCache = null; photoBase = null;
   }
   function addressModal() {
     if (!canEdit()) { U.toast(NO_EDIT() + '.', 'bad'); return; }
@@ -338,13 +383,18 @@
   /* <site>/content.json (the site serves it to anyone), else the preview site's copy */
   function sourceJson() {
     var u = siteUrl();
-    var first = u ? fetchJson(u + '/content.json') : Promise.reject(new Error('no address'));
-    return first.catch(function () { return fetchJson(FALLBACK_SOURCE + '/content.json'); });
+    var first = u ? fetchJson(u + '/content.json').then(function (j) { photoBase = u; return j; }) : Promise.reject(new Error('no address'));
+    return first.catch(function () { return fetchJson(FALLBACK_SOURCE + '/content.json').then(function (j) { photoBase = FALLBACK_SOURCE; return j; }); });
   }
   function importNow(wrap) {
     if (!canEdit()) { U.toast(NO_EDIT() + '.', 'bad'); return; }
     var inp = wrap && O.$('[data-site0]', wrap);
-    if (inp && inp.value.trim()) { var u = normUrl(inp.value); if (!u) { U.toast('Use the full website address, for example https://www.example.com', 'bad'); inp.focus(); return; } setSiteUrl(u); }
+    if (inp) {
+      /* the address is needed for Publish to refresh the site, for "View on site" and for the bundled photos */
+      if (!inp.value.trim()) { U.toast('Add your website address first, for example https://www.example.com', 'bad'); inp.focus(); return; }
+      var u = normUrl(inp.value); if (!u) { U.toast('Use the full website address, for example https://www.example.com', 'bad'); inp.focus(); return; }
+      setSiteUrl(u);
+    }
     var c = draft(), go = function () {
       st.importing = true; O.render(false);
       sourceJson().then(function (j) {
@@ -424,11 +474,11 @@
   function area(name, val, rows, max) { return '<textarea class="textarea" id="lv-' + name + '" name="' + name + '" rows="' + rows + '" maxlength="' + max + '">' + esc(val || '') + '</textarea>'; }
   function check(name, on, label) { return '<label class="check"><input type="checkbox" name="' + name + '"' + (on ? ' checked' : '') + '><span>' + esc(label) + '</span></label>'; }
 
-  function openDrawer(kind, index, dr0) {
+  function openDrawer(kind, ref, dr0) {
     closeDrawer(true);
     var dr = U.drawer({ title: '', body: '', foot: '<span></span>' });
     dr.el.classList.add('lv-dr');
-    DR = Object.assign({ dr: dr, kind: kind, index: index, dirty: false }, dr0);
+    DR = Object.assign({ dr: dr, kind: kind, isNew: !ref, ref: ref, dirty: false }, dr0);
     var guard = function () {
       if (!DR) return;
       var up = DR.pm && DR.pm.pending.some(function (p) { return p.status !== 'error'; });
@@ -467,7 +517,9 @@
     var first = null;
     Object.keys(E).forEach(function (k) {
       setErr(k, E[k]);
-      var el = O.$('[name="' + k + '"]', DR.dr.el) || O.$('[data-err="' + k + '"]', DR.dr.el); if (el && !first) first = el;
+      var el = k === 'photos' ? O.$('.lv-pt .alt.bad', DR.dr.el) : O.$('[name="' + k + '"]', DR.dr.el);
+      if (!el) { el = O.$('[data-err="' + k + '"]', DR.dr.el); if (el) el.setAttribute('tabindex', '-1'); } /* a message with no field of its own */
+      if (el && !first) first = el;
     });
     if (first) { first.scrollIntoView({ block: 'center', behavior: 'smooth' }); if (first.focus) try { first.focus({ preventScroll: true }); } catch (e) {} }
     var n = Object.keys(E).length;
@@ -484,7 +536,7 @@
     var f = s ? clone(s) : { id: '', buildingId: bd, name: '', levels: '', line: '', story: '', highlights: [], views: [], bedrooms: 2, bathrooms: 2, sleeps: 4, extraBed: false, bookType: null, photos: [], visible: false };
     if (!Array.isArray(f.highlights)) f.highlights = [];
     if (!Array.isArray(f.views)) f.views = [];
-    openDrawer('unit', index, { draft: f, slugTouched: !!s });
+    openDrawer('unit', s ? { buildingId: s.buildingId, id: s.id } : null, { draft: f, slugTouched: !!s });
     var X = parts(), edit = canEdit();
     X.h.textContent = s ? (edit ? 'Edit ' + s.name : s.name) : 'Add a unit';
     X.sub.textContent = s ? 'Changes show on the website after you Publish' : 'New units start hidden. Show it when its photos are ready.';
@@ -494,7 +546,11 @@
       '<div class="r"><button type="button" class="btn btn-ghost" data-de="cancel">' + (edit ? 'Cancel' : 'Close') + '</button>' + (edit ? '<button type="button" class="btn btn-primary" data-de="save">' + (s ? 'Save' : 'Add unit') + '</button>' : '') + '</div>';
     if (!edit) O.$$('input, select, textarea, .lv-pt button, .lv-padd', X.body).forEach(function (x) { x.disabled = true; });
     paintUrl();
-    if (!s) setTimeout(function () { var n = O.$('[name=name]', DR && DR.dr.el); if (n && !(window.matchMedia && window.matchMedia('(max-width:760px)').matches)) n.focus(); }, 40);
+    /* a new unit starts in its name, unless the person is already in another field */
+    if (!s) setTimeout(function () {
+      var el = DR && DR.dr.el, n = el && O.$('[name=name]', el), a = document.activeElement;
+      if (n && !(a && a !== document.body && el.contains(a) && a.matches('input, select, textarea')) && !(window.matchMedia && window.matchMedia('(max-width:760px)').matches)) n.focus();
+    }, 40);
   }
   function unitFormHTML(f, isNew) {
     var c = draft(), bds = buildingsOf(c), tps = types();
@@ -545,7 +601,7 @@
     var c = draft(), u = host(siteUrl()) || 'your website';
     if (DR.kind === 'unit') { var b = buildingById(c, val('buildingId')); box.textContent = b ? u + '/' + b.cityId + '/' + b.id + '/' + (val('id') || '…') + '/' : 'Choose the building first.'; }
     else box.textContent = u + '/' + (val('cityId') || '…') + '/' + (val('id') || '…') + '/';
-    if (DR.index >= 0) box.textContent += ' Changing it changes the page\'s address.';
+    if (!DR.isNew) box.textContent += ' Changing it changes the page\'s address.';
   }
   function takenUnit(c, bdId, skip) { return suitesOf(c).filter(function (s, i) { return i !== skip && s && s.buildingId === bdId; }).map(function (s) { return s.id; }); }
   function onInput(e) {
@@ -555,8 +611,9 @@
     if (!t.name) return;
     DR.dirty = true; setErr(t.name, '');
     var c = draft();
-    if (DR.kind === 'unit' && t.name === 'name' && !DR.slugTouched) { var sl = O.$('[name=id]', DR.dr.el); sl.value = SC.uniqueSlug(t.value, takenUnit(c, val('buildingId'), DR.index)); }
-    if (DR.kind === 'building' && t.name === 'name' && !DR.slugTouched) { var bl = O.$('[name=id]', DR.dr.el); bl.value = SC.uniqueSlug(t.value, buildingsOf(c).filter(function (b, i) { return i !== DR.index; }).map(function (b) { return b.id; })); }
+    var at = drawerAt();
+    if (DR.kind === 'unit' && t.name === 'name' && !DR.slugTouched) { var sl = O.$('[name=id]', DR.dr.el); sl.value = SC.uniqueSlug(t.value, takenUnit(c, val('buildingId'), at)); }
+    if (DR.kind === 'building' && t.name === 'name' && !DR.slugTouched) { var bl = O.$('[name=id]', DR.dr.el); bl.value = SC.uniqueSlug(t.value, buildingsOf(c).filter(function (b, i) { return i !== at; }).map(function (b) { return b.id; })); }
     if (DR.kind === 'building' && t.name === 'city' && !DR.cityTouched) { var cb = O.$('[name=cityId]', DR.dr.el); cb.value = SC.slugify(t.value); }
     if (t.name === 'id') DR.slugTouched = true;
     if (t.name === 'cityId') DR.cityTouched = true;
@@ -584,13 +641,14 @@
     if (miss) { E.photos = miss === 1 ? 'Add a description to the photo marked in red.' : 'Add a description to the ' + miss + ' photos marked in red.'; DR.pm.paint(true); }
   }
   function saveUnit() {
-    var c = draft(), f = DR.draft, E = {};
+    var c = draft(), f = DR.draft, E = {}, isNew = DR.isNew, at = drawerAt();
+    if (!c || (!isNew && at < 0)) { U.toast(GONE.unit, 'bad'); return; }
     var name = String(val('name') || '').replace(/\s+/g, ' ').trim(), id = String(val('id') || '').trim().toLowerCase(), bdId = val('buildingId');
     if (!name) E.name = 'Add the unit\'s name.';
     if (!buildingById(c, bdId)) E.buildingId = 'Choose the building it is in.';
-    if (!id) id = SC.uniqueSlug(name, takenUnit(c, bdId, DR.index));
+    if (!id) id = SC.uniqueSlug(name, takenUnit(c, bdId, at));
     if (!SC.SLUG.test(id) || id.length > 60) E.id = 'Use small letters, numbers and single dashes, for example boutique-suite.';
-    else if (takenUnit(c, bdId, DR.index).indexOf(id) >= 0) E.id = 'Another unit in this building already uses this web address.';
+    else if (takenUnit(c, bdId, at).indexOf(id) >= 0) E.id = 'Another unit in this building already uses this web address.';
     var out = {
       id: id, buildingId: bdId, name: name, levels: String(val('levels') || '').trim(), line: String(val('line') || '').trim(), story: String(val('story') || '').trim(),
       highlights: f.highlights.slice(0, SC.MAX.highlights), views: VIEW_KEYS.filter(function (k) { return val('view-' + k); }),
@@ -601,18 +659,21 @@
     if (seoT) out.seoTitle = seoT; if (seoD) out.seoDescription = seoD;
     photoErrors(E);
     if (Object.keys(E).length) { showErrors(E); return; }
-    var list = suitesOf(c), isNew = DR.index < 0;
-    if (isNew) list.push(out); else list[DR.index] = out;
-    var where = isNew ? list.length - 1 : DR.index;
+    var list = suitesOf(c);
+    if (isNew) list.push(out); else list[at] = out;
+    var where = isNew ? list.length - 1 : at;
     DR.dirty = false; closeDrawer(true); save();
     U.toast((isNew ? name + ' added' : 'Saved ' + name) + '. Publish to show the change on the website.');
     return where;
   }
   function removeUnit() {
-    var c = draft(), s = suitesOf(c)[DR.index]; if (!s) return;
+    var at = drawerAt(), s = at >= 0 ? suitesOf(draft())[at] : null;
+    if (!s) { U.toast(GONE.unit, 'bad'); return; }
     U.confirm('Remove ' + s.name + ' from the website? Its page goes away after you Publish. Its photos stay in storage.', 'Remove', 'danger', 'Remove this unit?').then(function (ok) {
       if (!ok || !DR) return;
-      var i = suitesOf(c).indexOf(s); if (i >= 0) suitesOf(c).splice(i, 1);
+      var c = draft(), i = drawerAt(); /* again: the list may have changed while the question was open */
+      if (i < 0) { U.toast(GONE.unit, 'bad'); return; }
+      suitesOf(c).splice(i, 1);
       closeDrawer(true); save(); U.toast(s.name + ' removed. Publish to take it off the website.');
     });
   }
@@ -626,7 +687,7 @@
     if (!b && !canEdit()) { U.toast(NO_EDIT() + '.', 'bad'); return; }
     var first = buildingsOf(c)[0];
     var f = b ? clone(b) : { id: '', cityId: first ? first.cityId : '', city: first ? first.city : '', name: '', building: '', address: '', area: '', intro: '', checkIn: first ? first.checkIn : '3:00 pm', checkOut: first ? first.checkOut : '11:00 am', photos: [], visible: true };
-    openDrawer('building', index, { draft: f, slugTouched: !!b, cityTouched: !!(b || first) });
+    openDrawer('building', b ? { id: b.id } : null, { draft: f, slugTouched: !!b, cityTouched: !!(b || first) });
     var X = parts(), edit = canEdit();
     X.h.textContent = b ? (edit ? 'Edit ' + b.name : b.name) : 'Add a building';
     X.sub.textContent = b ? 'Changes show on the website after you Publish' : 'A building gets its own page, with its units under it.';
@@ -654,36 +715,41 @@
     paintUrl();
   }
   function saveBuilding() {
-    var c = draft(), E = {}, txt = function (n) { return String(val(n) || '').replace(/\s+/g, ' ').trim(); };
+    var c = draft(), E = {}, txt = function (n) { return String(val(n) || '').replace(/\s+/g, ' ').trim(); }, isNew = DR.isNew, at = drawerAt();
+    if (!c || (!isNew && at < 0)) { U.toast(GONE.building, 'bad'); return; }
     var out = {
       id: txt('id').toLowerCase(), cityId: txt('cityId').toLowerCase(), city: txt('city'), name: txt('name'), building: txt('building'), address: txt('address'), area: txt('area'),
       intro: String(val('intro') || '').trim(), checkIn: txt('checkIn'), checkOut: txt('checkOut'), photos: clone(DR.pm.list), visible: !!val('visible')
     };
     if (!out.name) E.name = 'Add the building\'s name.';
     if (!out.city) E.city = 'Add the city.';
-    if (!out.id && out.name) out.id = SC.uniqueSlug(out.name, buildingsOf(c).filter(function (b, i) { return i !== DR.index; }).map(function (b) { return b.id; }));
+    if (!out.id && out.name) out.id = SC.uniqueSlug(out.name, buildingsOf(c).filter(function (b, i) { return i !== at; }).map(function (b) { return b.id; }));
     if (!out.cityId && out.city) out.cityId = SC.slugify(out.city);
-    var others = buildingsOf(c).filter(function (b, i) { return i !== DR.index; });
+    var others = buildingsOf(c).filter(function (b, i) { return i !== at; });
     if (!SC.SLUG.test(out.id) || out.id.length > 60) E.id = 'Use small letters, numbers and single dashes, for example vortex-klcc.';
     else if (others.some(function (b) { return b.id === out.id; })) E.id = 'Another building already uses this web address.';
     if (out.city && (!SC.SLUG.test(out.cityId) || out.cityId.length > 60)) E.cityId = 'Use small letters, numbers and single dashes, for example kuala-lumpur.';
+    else if (SC.RESERVED.indexOf(out.cityId) >= 0) E.cityId = 'The website uses "' + out.cityId + '" for its own pages. Use the city\'s name, for example kuala-lumpur.';
     var same = others.filter(function (b) { return b.cityId === out.cityId && b.city !== out.city; })[0];
     if (!E.cityId && same) E.city = 'Another building uses this city web address with the city "' + same.city + '". Use the same spelling.';
     photoErrors(E);
     if (Object.keys(E).length) { showErrors(E); return; }
-    var list = buildingsOf(c), isNew = DR.index < 0, old = isNew ? null : list[DR.index];
-    if (isNew) list.push(out); else list[DR.index] = out;
+    var list = buildingsOf(c), old = isNew ? null : list[at];
+    if (isNew) list.push(out); else list[at] = out;
     if (old && old.id !== out.id) suitesOf(c).forEach(function (s) { if (s.buildingId === old.id) s.buildingId = out.id; });
     DR.dirty = false; closeDrawer(true); save();
     U.toast((isNew ? out.name + ' added. Now add its units.' : 'Saved ' + out.name + '.') + ' Publish to show the change on the website.');
   }
   function removeBuilding() {
-    var c = draft(), b = buildingsOf(c)[DR.index]; if (!b) return;
-    var n = suitesOf(c).filter(function (s) { return s.buildingId === b.id; }).length;
+    var c0 = draft(), at = drawerAt(), b = at >= 0 ? buildingsOf(c0)[at] : null;
+    if (!b) { U.toast(GONE.building, 'bad'); return; }
+    var n = suitesOf(c0).filter(function (s) { return s.buildingId === b.id; }).length;
     U.confirm('Remove ' + b.name + (n ? ' and its ' + fmt.plural(n, 'unit') : '') + ' from the website? The pages go away after you Publish. Photos stay in storage.', 'Remove', 'danger', 'Remove this building?').then(function (ok) {
       if (!ok || !DR) return;
-      var i = buildingsOf(c).indexOf(b); if (i >= 0) buildingsOf(c).splice(i, 1);
-      for (var k = suitesOf(c).length - 1; k >= 0; k--) if (suitesOf(c)[k].buildingId === b.id) suitesOf(c).splice(k, 1);
+      var c = draft(), i = drawerAt(); /* again: the list may have changed while the question was open */
+      if (i < 0) { U.toast(GONE.building, 'bad'); return; }
+      buildingsOf(c).splice(i, 1);
+      for (var k = suitesOf(c).length - 1; k >= 0; k--) if (suitesOf(c)[k] && suitesOf(c)[k].buildingId === b.id) suitesOf(c).splice(k, 1);
       closeDrawer(true); save(); U.toast(b.name + ' removed. Publish to take it off the website.');
     });
   }
@@ -714,8 +780,8 @@
     pm.paint = function (strictAlt) {
       var n = pm.list.length, room = SC.MAX.photos - n - pm.pending.length;
       box.innerHTML = '<div class="lv-photos">' + pm.list.map(function (p, i) { return tile(p, i, n, strictAlt); }).join('') + pm.pending.map(pendingTile).join('') +
-        (room > 0 ? '<label class="lv-padd">' + O.icon('camera') + '<b>Add photos</b><span>JPG, PNG, WebP or HEIC, up to 40 MB each</span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple hidden data-pmfile aria-label="Add photos"></label>' : '') +
-        (room > 0 && (siteUrl() || builtinCache) ? '<button type="button" class="lv-padd" data-pm="builtin">' + O.icon('image') + '<b>Bundled photos</b><span>Photos that come with the website</span></button>' : '') +
+        (room > 0 ? '<label class="lv-padd" tabindex="0" role="button" data-pmadd>' + O.icon('camera') + '<b>Add photos</b><span>JPG, PNG, WebP or HEIC, up to 40 MB each</span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple hidden data-pmfile aria-label="Add photos"></label>' : '') +
+        (room > 0 && (siteUrl() || builtinCache || photoBase) ? '<button type="button" class="lv-padd" data-pm="builtin">' + O.icon('image') + '<b>Bundled photos</b><span>Photos that come with the website</span></button>' : '') +
         '</div>' + (room <= 0 ? '<div class="hint">' + SC.MAX.photos + ' photos is the most. Remove one to add another.</div>' : '');
     };
     function move(from, to) {
@@ -725,15 +791,28 @@
     box.addEventListener('click', function (e) {
       var b = e.target.closest('[data-pm]'); if (!b || b.disabled) return;
       var a = b.dataset.pm, i = +b.dataset.i;
-      if (a === 'left') { move(i, i - 1); focusTile(i - 1, 'left'); }
-      if (a === 'right') { move(i, i + 1); focusTile(i + 1, 'right'); }
-      if (a === 'cover') { move(i, 0); U.toast('That photo is the cover now.'); }
-      if (a === 'del') { pm.list.splice(i, 1); changed(); pm.paint(); }
+      if (a === 'left') { move(i, i - 1); focusTile(i - 1, ['left', 'right']); }
+      if (a === 'right') { move(i, i + 1); focusTile(i + 1, ['right', 'left']); }
+      if (a === 'cover') { move(i, 0); focusTile(0, ['right']); U.toast('That photo is the cover now.'); }
+      if (a === 'del') { pm.list.splice(i, 1); changed(); pm.paint(); focusTile(Math.min(i, pm.list.length - 1), ['del']); }
       if (a === 'retry') { var p = byKey(b.dataset.k); if (p) { p.status = 'wait'; p.pct = 0; p.error = null; pm.paint(); enqueue(p); } }
       if (a === 'drop') { var q = byKey(b.dataset.k); if (q) { abortOne(q); pm.pending.splice(pm.pending.indexOf(q), 1); pm.paint(); } }
       if (a === 'builtin') pickBuiltin();
     });
-    function focusTile(i, dir) { var el = O.$('[data-pi="' + i + '"] [data-pm="' + dir + '"]', box) || O.$('[data-pi="' + i + '"] [data-pm]', box); if (el) try { el.focus(); } catch (e) {} }
+    /* keyboard focus after a change redraws the photos: the first button of dirs on tile i that is not switched off, else
+       its description, else Add photos */
+    function focusTile(i, dirs) {
+      var t = i >= 0 ? O.$('[data-pi="' + i + '"]', box) : null, el = null;
+      if (t) for (var k = 0; k < dirs.length && !el; k++) { var b = O.$('[data-pm="' + dirs[k] + '"]', t); if (b && !b.disabled) el = b; }
+      el = el || (t && O.$('[data-alt]', t)) || O.$('[data-pmadd]', box);
+      if (el) try { el.focus(); } catch (e) {}
+    }
+    /* Add photos from the keyboard: Enter or Space opens the file picker */
+    box.addEventListener('keydown', function (e) {
+      var t = e.target.closest && e.target.closest('[data-pmadd]');
+      if (!t || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault(); var f = O.$('[data-pmfile]', t); if (f && !f.disabled) f.click();
+    });
     box.addEventListener('input', function (e) {
       var t = e.target;
       if (t.matches('[data-alt]')) { var p = pm.list[+t.dataset.alt]; if (p) { p.alt = t.value; if (t.value.trim()) t.classList.remove('bad'); changed(); } }
@@ -880,7 +959,7 @@
         var have = {}; pm.list.forEach(function (p) { if (p.kind === 'builtin') have[p.key] = 1; });
         var items = (all || []).filter(function (b) { return b && typeof b.key === 'string' && Array.isArray(b.widths); });
         if (!items.length) { U.toast('The website lists no bundled photos.', 'bad'); return; }
-        var src = function (b) { return SC.photoSrc({ kind: 'builtin', key: b.key, widths: b.widths }, 640, siteUrl() || FALLBACK_SOURCE); };
+        var src = function (b) { return SC.photoSrc({ kind: 'builtin', key: b.key, widths: b.widths }, 640, photoHost()); };
         U.modal({
           title: 'Bundled photos', sub: 'Photos that come with the website. Tick the ones to add.', size: 'wide',
           body: '<div class="lv-pick">' + items.map(function (b, i) {

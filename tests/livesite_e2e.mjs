@@ -99,6 +99,7 @@ async function desktop(browser) {
   // a photo without a description stops the save
   await pg.click('.lv-dr [data-de=save]');
   check(await pg.locator('.lv-dr .lv-pt .alt.bad').count() === 1, 'a photo without a description is marked');
+  check(await pg.evaluate(() => document.activeElement.matches('.lv-pt .alt.bad')), 'focus goes to the photo description to fill in');
   await pg.fill('.lv-dr .lv-pt[data-pi="1"] .alt', 'Bedroom by day');
   await pg.click('.lv-dr .lv-pt[data-pi="1"] [data-pm=cover]');
   check(await pg.inputValue('.lv-dr .lv-pt[data-pi="0"] .alt') === 'Bedroom by day', '"Make cover" moves the photo first');
@@ -121,6 +122,21 @@ async function desktop(browser) {
   await pg.click('[data-showu="2"]');
   check((await suites(pg))[2].visible === true, 'showing the new unit');
 
+  // the keyboard keeps its place: after a move or a switch, focus is on the same unit's button again
+  const focused = () => pg.evaluate(() => { const a = document.activeElement, c = a && a.closest('[data-uk]'); return [c ? c.dataset.uk : null, a.dataset.moveu || (a.hasAttribute('data-showu') ? 'switch' : a.tagName)].join(' '); });
+  await pg.focus('[data-uk="vortex-klcc/boutique"] [data-moveu=down]');
+  await pg.keyboard.press('Enter');
+  check(await focused() === 'vortex-klcc/boutique down', 'keyboard: focus stays on the moved unit (' + await focused() + ')');
+  await pg.keyboard.press('Enter');
+  check(await focused() === 'vortex-klcc/boutique up', 'keyboard: at the end, focus moves to the other arrow (' + await focused() + ')');
+  await pg.keyboard.press('Enter'); await pg.keyboard.press('Enter');
+  check((await suites(pg)).map((x) => x.id).join() === 'standard,boutique,deluxe-suite,premium', 'keyboard: moved back');
+  await pg.focus('[data-uk="vortex-klcc/premium"] [data-showu]');
+  await pg.keyboard.press('Space');
+  check(await focused() === 'vortex-klcc/premium switch' && (await suites(pg))[3].visible === false, 'keyboard: the switch keeps focus (' + await focused() + ')');
+  await pg.keyboard.press('Space');
+  check((await suites(pg))[3].visible === true, 'keyboard: switched back on');
+
   // edit a field of an existing unit
   await pg.click('[data-openu="1"].lv-nm');
   await pg.fill('.lv-dr [name=levels]', 'Level 44');
@@ -131,6 +147,46 @@ async function desktop(browser) {
   await pg.click('.lv-dr [data-de=save]');
   const bq = await pg.evaluate(() => O.data.siteContent.suites[1]);
   check(bq.levels === 'Level 44' && bq.photos[1].key === 'boutique/01-living-room', 'editing Boutique Suite: floors and photo order');
+  // photo order from the keyboard: focus follows the photo, and skips an arrow that is switched off
+  await pg.click('[data-openu="1"].lv-nm');
+  const pfocus = () => pg.evaluate(() => { const a = document.activeElement, t = a && a.closest('[data-pi]'); return (t ? t.dataset.pi : '-') + ' ' + (a.dataset.pm || a.tagName); });
+  await pg.focus('.lv-dr [data-pi="1"] [data-pm=left]');
+  await pg.keyboard.press('Enter');
+  check(await pfocus() === '0 right', 'photos: moved to the cover spot, focus on its other arrow (' + await pfocus() + ')');
+  await pg.keyboard.press('Enter');
+  check(await pfocus() === '1 right', 'photos: moved back (' + await pfocus() + ')');
+  await pg.focus('.lv-dr [data-pi="2"] [data-pm=cover]');
+  await pg.keyboard.press('Enter');
+  check(await pfocus() === '0 right', 'photos: Make cover keeps focus on the photo (' + await pfocus() + ')');
+  await pg.focus('.lv-dr [data-pi="0"] [data-pm=del]');
+  await pg.keyboard.press('Enter');
+  check(await pfocus() === '0 del', 'photos: after removing, focus is on the next photo (' + await pfocus() + ')');
+  check(await pg.evaluate(() => O.$('.lv-dr [data-pmadd]').tabIndex === 0), 'photos: Add photos can be reached with the keyboard');
+  await pg.keyboard.press('Escape');
+  await pg.click('.modal-back .modal-foot .btn:last-child');
+  await pg.waitForSelector('.lv-dr', { state: 'detached' });
+  check(await pg.evaluate(() => O.data.siteContent.suites[1].photos.map((p) => p.key).join()) === bq.photos.map((p) => p.key).join(), 'photos: discarded changes leave the unit as it was');
+
+  // someone else changes the list while a drawer is open: Save and Remove find the unit by its web address
+  const before = await pg.evaluate(() => JSON.parse(JSON.stringify(O.data.siteContent)));
+  await pg.click('[data-uk="vortex-klcc/premium"] .lv-nm');
+  await pg.evaluate(() => { const c = JSON.parse(JSON.stringify(O.data.siteContent)); c.suites.unshift(c.suites.pop()); O.sync.remote([], [{ key: 'siteContent', data: c }]); });
+  await pg.fill('.lv-dr [name=levels]', 'Level 46');
+  await pg.click('.lv-dr [data-de=save]');
+  const after = await pg.evaluate(() => O.data.siteContent.suites.map((s) => s.id + ':' + s.levels));
+  check(after.join() === ['premium:Level 46'].concat(before.suites.slice(0, 3).map((s) => s.id + ':' + s.levels)).join(), 'a unit saved after someone reordered the list is the right one (' + after.join() + ')');
+  await pg.click('[data-uk="vortex-klcc/deluxe-suite"] .lv-nm');
+  await pg.evaluate(() => { const c = JSON.parse(JSON.stringify(O.data.siteContent)); c.suites = c.suites.filter((s) => s.id !== 'deluxe-suite'); O.sync.remote([], [{ key: 'siteContent', data: c }]); });
+  await pg.click('.lv-dr [data-de=remove]');
+  check(/Someone else removed this unit/.test(await pg.locator('.toast').last().innerText()) && await pg.locator('.lv-dr').count() === 1, 'removing a unit someone else removed says so, and removes nothing else');
+  await pg.click('.lv-dr [data-de=save]');
+  check(await pg.evaluate(() => O.data.siteContent.suites.length) === 3, 'saving it does not overwrite another unit');
+  await pg.click('.lv-dr [data-de=cancel]');
+  await pg.click('.modal-back .modal-foot .btn:last-child').catch(() => {});
+  await pg.evaluate((c) => { O.sync.remote([], [{ key: 'siteContent', data: c }]); O.render(false); }, before);
+  await pg.waitForTimeout(100);
+  check((await suites(pg)).map((x) => x.id).join() === 'standard,boutique,deluxe-suite,premium', 'the list is back as it was');
+
   // bundled photos picker
   await pg.click('[data-openu="1"].lv-nm');
   await pg.click('.lv-dr [data-pm="del"][data-i="0"]');
@@ -206,6 +262,41 @@ async function desktop(browser) {
   await ctx.close();
 }
 
+/* the site's address answers content.json but does not have the photos yet: thumbnails come from the preview site */
+async function fallback(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const pg = await ctx.newPage();
+  const errors = [];
+  pg.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  await pg.route('https://cdnjs.cloudflare.com/**', (r) => r.abort());
+  await pg.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/, (r) => r.abort());
+  await pg.route('https://www.staykozi.my/**', (r) => r.fulfill({ status: 404, body: 'not here' }));
+  await pg.route('https://staykozi-my-next.vercel.app/content.json', (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(koziContentJson()) }));
+  await pg.route('https://staykozi-my-next.vercel.app/photos/**', (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: svg('preview', 200) }));
+  await pg.goto('file://' + path.resolve(html));
+  await pg.waitForFunction(() => window.O && O._started, null, { timeout: 15000 });
+  await pg.evaluate(() => O.go('livesite'));
+  await pg.click('.lv-empty [data-act=import]');
+  check(await pg.locator('.lv-card').count() === 0 && /Add your website address first/.test(await pg.locator('.toast').last().innerText()), 'fallback: bringing in asks for the address first');
+  await pg.fill('[data-site0]', 'www.staykozi.my');
+  await pg.click('.lv-empty [data-act=import]');
+  await pg.waitForSelector('.lv-card');
+  await pg.waitForFunction(() => [...document.querySelectorAll('.pg-live img')].every((i) => i.complete), null, { timeout: 10000 });
+  const imgs = await pg.evaluate(() => [...document.querySelectorAll('.pg-live img')].map((i) => [i.currentSrc || i.src, i.naturalWidth]));
+  check(imgs.length >= 3 && imgs.every((x) => x[0].startsWith('https://staykozi-my-next.vercel.app/photos/') && x[1] > 0), 'fallback: card photos come from the site that answered (' + imgs.map((x) => x[0].replace(/^https:\/\/[^/]+/, '') + ' ' + x[1]).join(', ') + ')');
+  // later visits (nothing fetched yet): a photo that is not on the address is tried on the preview site
+  await pg.evaluate(() => { O.data.website.siteUrl = 'https://www.staykozi.my'; location.reload(); });
+  await pg.waitForFunction(() => window.O && O._started, null, { timeout: 15000 });
+  await pg.evaluate(() => O.go('livesite'));
+  await pg.waitForSelector('.lv-card');
+  await pg.waitForFunction(() => [...document.querySelectorAll('.pg-live img')].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 10000 }).catch(() => {});
+  const imgs2 = await pg.evaluate(() => [...document.querySelectorAll('.pg-live img')].map((i) => [i.src, i.naturalWidth]));
+  check(imgs2.length >= 3 && imgs2.every((x) => x[1] > 0), 'fallback: after a reload the photos still show (' + imgs2.map((x) => x[0].replace(/^https:\/\/([^/]+).*$/, '$1') + ' ' + x[1]).join(', ') + ')');
+  await shot(pg, 'f1-fallback-photos');
+  errors.forEach((e) => check(false, 'fallback ' + e));
+  await ctx.close();
+}
+
 async function phone(browser) {
   const { ctx, pg, errors } = await open(browser, { width: 390, height: 844 });
   await shot(pg, 'p1-empty');
@@ -247,6 +338,7 @@ async function phone(browser) {
 const browser = await chromium.launch({ executablePath: fs.existsSync(CHROME) ? CHROME : undefined, args: ['--no-sandbox'] });
 try {
   await desktop(browser);
+  await fallback(browser);
   await phone(browser);
 } catch (e) {
   fails.push('crashed: ' + (e && e.stack || e));
