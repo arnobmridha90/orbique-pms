@@ -68,7 +68,7 @@ export const GUIDE_PAGES: Guide[] = [
 <h2>Airport coupon taxi</h2>
 <p>Buy a prepaid coupon at the taxi counter in arrivals. Prices are fixed by zone and car size, so you know the cost before you leave.</p>
 <h2>Arriving late at night</h2>
-<p>After the last train, a Grab or a coupon taxi is the way in. Check-in is with your own door code, so a late arrival is no problem; just tell us your flight time.</p>
+<p>After the last train, a Grab or a coupon taxi is the way in. Just tell us your flight time, and we'll make sure your check-in works for a late arrival.</p>
 <h2>Touch 'n Go card</h2>
 <p>For trains and buses around the city, a Touch 'n Go card costs a RM10 issue fee plus the credit you load. You can buy one at the KLIA Ekspres counters and at convenience stores.</p>`,
     sources: [
@@ -102,7 +102,7 @@ export const GUIDE_PAGES: Guide[] = [
 <h2>Jalan Alor</h2>
 <p>Jalan Alor's night market is famous, but most of its Chinese stalls are not halal. Check each stall before you order.</p>
 <h2>Ask us</h2>
-<p>Our team speaks English, Bahasa Malaysia and Bahasa Indonesia. Message us and we'll point you to halal places that suit your plans.</p>`,
+<p>Email us and we'll point you to halal places that suit your plans.</p>`,
     sources: [
       { name: 'Malaysiakini: JAKIM on "no pork" signs', url: 'https://malaysiakini.com/news/330459' },
       { name: 'Have Halal Will Travel: Ahh-Yum, Suria KLCC', url: 'https://www.havehalalwilltravel.com/halal-restaurants/detail/ahh-yum-suria-klcc' },

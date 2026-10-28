@@ -1,6 +1,6 @@
 // The photo viewer: opens on the photo you tapped, swipes or steps with the arrow keys,
 // and keeps the page still behind it. The phone strip shows which photo you're on.
-import { lenis, reduced } from './app';
+import { reduced, scroller } from './scroll';
 
 export function init(root: HTMLElement) {
   const dlg = root.querySelector<HTMLDialogElement>('[data-lb]')!;
@@ -28,11 +28,11 @@ export function init(root: HTMLElement) {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-open-at]');
     if (!b || dlg.contains(b)) return;
     dlg.showModal();
-    lenis?.stop();
+    scroller.lenis?.stop();
     document.documentElement.classList.add('sheet-open');
     requestAnimationFrame(() => { goTo(Number(b.dataset.openAt), false); track.focus({ preventScroll: true }); });
   });
-  dlg.addEventListener('close', () => { lenis?.start(); document.documentElement.classList.remove('sheet-open'); });
+  dlg.addEventListener('close', () => { scroller.lenis?.start(); document.documentElement.classList.remove('sheet-open'); });
   dlg.addEventListener('click', (e) => { const s = (e.target as HTMLElement).closest<HTMLElement>('[data-lb-step]'); if (s) goTo(at + Number(s.dataset.lbStep)); });
   dlg.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') { e.preventDefault(); goTo(at + 1); }

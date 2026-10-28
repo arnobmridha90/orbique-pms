@@ -231,6 +231,38 @@ Redeploy, then in Orbique open the **Guest inbox**, **Settings** (bottom of the 
 Meta before saving it. From then on guests' WhatsApp messages land in the chat of their booking (matched by the phone
 number on the booking); messages from numbers that match no booking wait at the top of the chat list to be linked.
 
+### Connect with Facebook (keeps the WhatsApp Business app: "coexistence")
+
+Instead of steps 3 to 5 and `WHATSAPP_TOKEN`, the owner can connect the number with Meta's Embedded Signup. A number that
+is in the WhatsApp Business phone app stays there: the team keeps using the phone, and Orbique gets the same chats.
+
+Needed once, in a Meta app that offers Embedded Signup (a Tech Provider app, with a **Facebook Login for Business**
+configuration for WhatsApp Embedded Signup):
+
+- In the app, **App settings**, **Basic**, **App domains**: your site's domain. In **Facebook Login for Business**,
+  **Settings**: the site under **Allowed domains for the JavaScript SDK** and `https://<your-site>/` under **Valid OAuth
+  redirect URIs**.
+- In Vercel: `WHATSAPP_APP_ID` (the app ID), `WHATSAPP_CONFIG_ID` (the Embedded Signup configuration ID),
+  `WHATSAPP_APP_SECRET` (that app's secret) and `WHATSAPP_VERIFY_TOKEN` (a long random password), and `APP_URL` if the site
+  is not on its Vercel production address. Redeploy.
+
+No webhook needs setting in the Meta app: Orbique points the WhatsApp account's webhooks at
+`https://<your-site>/api/whatsapp-webhook` itself when it connects (so one Meta app can serve other sites too).
+
+Then the owner opens the **Guest inbox**, **Settings**, **Connect with Facebook** on a computer, signs in to Facebook,
+chooses the business, picks **Connect your existing WhatsApp Business app**, enters the number, confirms on the phone
+(a QR code to scan with the WhatsApp Business app, version 2.24.17 or newer), and agrees to share the chat history.
+Orbique then:
+
+- keeps the token for that WhatsApp account on the server (table `whatsapp_tokens`, never sent to the browser);
+- shows messages sent from the phone in the chat, marked "From the WhatsApp app";
+- asks once for the phone's contacts (names for new chats) and up to 6 months of older chats. WhatsApp allows each only
+  within 24 hours of connecting; photos and files in older chats show as a note to open them in the app.
+
+The phone app must be opened at least every 14 days or WhatsApp disconnects it. If the number is disconnected from the
+phone (Settings, Account, Business Platform), Settings in the inbox says so and offers to connect again. Booking alerts
+by WhatsApp cannot go to the business number itself: set a different alert number.
+
 WhatsApp only allows a free-form reply within 24 hours of the guest's last message to you. Outside that window the inbox
 says so. Photos, files and voice notes from guests open in the inbox; sending
 them to guests is not supported yet.
@@ -284,7 +316,7 @@ out by WhatsApp once Meta approves it.
 2. The workspace owner opens Guest inbox, Settings, Booking sites and presses **Switch on messages and reviews**. That installs the app on every connected building and fetches the reviews and recent conversations already there.
 Agoda and Trip.com do not offer messages through Channex; their emails come in through the booking email below.
 
-**Booking email (Resend Inbound).** Every workspace gets its own Orbique address (shown in Guest inbox, Settings, Booking email). The operator forwards their booking mailbox (for example bookings@theircompany.com) to it. Guests' emails become chats that can be answered by email; the booking sites' emails (bookings, changes, payouts, reviews, account notices) become updates on the stay, or under Email & updates.
+**Booking email (Resend Inbound).** Every workspace gets its own Orbique address (shown in Guest inbox, Settings, Booking email). The operator forwards their booking mailbox (for example bookings@theircompany.com) to it. Guests' emails become chats that can be answered by email; the booking sites' emails (bookings, changes, payouts, reviews, account notices) become updates on the stay, or under Email & updates. An Agoda guest email shows only what the guest wrote (with Agoda's translation when it is in another language); a special request also shows Agoda's Accepted / Subject to availability / Not accepted buttons, which open Agoda's own page to answer.
 1. Resend, Domains, the sending domain (the one in ALERT_EMAIL_FROM): switch on **Receiving** and add the MX record Resend shows to the domain's DNS (on Vercel: Domains, the domain, DNS records). It must be the domain's only MX record, or the one with the lowest priority.
 2. Resend, Webhooks, **Add webhook**: endpoint `https://<your site>/api/email-inbound`, event `email.received`. Copy its signing secret.
 3. Vercel, Settings, Environment Variables (Production): `RESEND_WEBHOOK_SECRET` = that secret (starts with `whsec_`). The `RESEND_API_KEY` already used for alerts must have **Full access** (a sending-only key cannot read received emails). Optional: `INBOUND_EMAIL_DOMAIN` when receiving uses another domain than ALERT_EMAIL_FROM.
@@ -324,6 +356,24 @@ says whether it went. A guest who starts checkout again for the same suite and d
 earlier unpaid hold is released and its Stripe page closed. If the guest does not pay within 30 minutes the hold is
 released and the nights open again. Refunds are made in Stripe. The thank-you page can ask
 `GET /api/public/booking?ws=<slug>&session_id=<Stripe session>` whether the stay is paid.
+
+## The Live website page: photos and units on the website
+
+The Live website page (Grow → Live Website) changes the buildings, units and photos on the workspace's own website and
+publishes them (`POST /api/site`, docs/API.md). The website reads what was published from
+`GET /api/public/site?ws=<slug>`. To set it up:
+
+1. Put the website's address in the page (Change, next to the address), for example `https://www.staykozi.my`. It is
+   saved as `siteUrl` in the `website` value.
+2. Make up a random value of at least 32 characters and add it in Vercel (Production) to both projects: to Orbique as
+   `SITE_REVALIDATE_TOKEN`, and to the website (websites/kozi-next) as `ISR_BYPASS_TOKEN`. Redeploy both. Without it, publishing still works and the website shows the
+   change within 5 minutes instead of at once. Orbique sends the token only to `www.staykozi.my` and `staykozi.my`;
+   for another website, set `SITE_REVALIDATE_HOSTS` in the Orbique project to its host names (comma separated).
+3. On the page, "Bring in what's on the website now" copies the website's current units and photos in as the draft.
+   Publish once to make it the published copy.
+
+Photos are stored in the public Supabase Storage bucket `site-photos` (created on the first upload, one folder per
+workspace). Removing a photo from a unit leaves its files in storage.
 
 ## Updating Orbique later
 

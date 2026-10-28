@@ -1,0 +1,24 @@
+---
+// The header: the logo (it builds itself on the first page of a visit, and the sun rises again when you point at it),
+// the main links and Book. On a phone the links fold into a menu.
+import AnimLogo from './AnimLogo.astro';
+interface Props { suites: string }  // where 'Suites' goes (lib/nav.ts)
+const here = Astro.url.pathname;
+const nav = [
+  { href: Astro.props.suites, label: 'Suites' },
+  { href: '/views/', label: 'The views' },
+  { href: '/guides/', label: 'KL guides' },
+  { href: '/contact/', label: 'Contact' },
+];
+const current = (href: string) => (here === href || (href !== '/' && here.startsWith(href)) ? 'page' : undefined);
+---
+<header class="top" data-hd>
+  <div class="in">
+    <a class="brand" href="/" aria-label="Kozi home" data-brand><AnimLogo id="hd" /><span>Kozi</span></a>
+    <nav class="main" id="nav" data-nav aria-label="Main">
+      {nav.map((n) => <a href={n.href} aria-current={current(n.href)}>{n.label}</a>)}
+      <a href="/stays/" class="btn amber" aria-current={current('/stays/')}>Book</a>
+    </nav>
+    <button class="btn menu-btn" type="button" aria-expanded="false" aria-controls="nav" data-menu-btn>Menu</button>
+  </div>
+</header>

@@ -23,9 +23,11 @@ import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, confl
 import { requireAdminClient, caller, getOrg, membership } from './_lib/supabase.js';
 import { channexConfig } from './_lib/channex.js';
 import { must, record, blob, tracked } from './_lib/channex-db.js';
-import { waConfig, fetchMedia, phoneNumberInfo, WhatsAppError } from './_lib/whatsapp.js';
+import { waConfig, withToken, fetchMedia, phoneNumberInfo, WhatsAppError } from './_lib/whatsapp.js';
+import { connectWithSignup } from './_lib/whatsapp-connect.js';
+import { appUrl } from './_lib/alerts.js';
 import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from './_lib/translate.js';
-import { canInbox, sendReply, patchMsg, numberOf, inboxSettings, receiveChannex } from './_lib/inbox.js';
+import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
 import { pullReviews, replyReview } from './_lib/reviews.js';
@@ -87,7 +89,11 @@ async function config(sb, body, me) {
   if (!demo && em.domain) { try { address = await addressFor(sb, em, ws.org, me.id); } catch (e) { console.error('[messages] email address:', e && e.message); } }
   const sites = await blob(sb, ws.org.id, 'inboxSites').catch(() => null);
   return {
-    whatsapp: { configured: wa.configured, number: num ? { phone: num.display_phone || null, name: num.verified_name || null } : null },
+    whatsapp: {
+      configured: wa.configured, manual: wa.configured && !!wa.token,
+      signup: wa.signup ? { appId: wa.appId, configId: wa.configId, version: wa.version } : null,
+      number: num ? { phone: num.display_phone || null, name: num.verified_name || null, coexist: !!num.coexist, sync: syncView(num.sync) } : null
+    },
     channex: channexMessages(cx, ws.org.id),
     translate: translateConfig().configured,
     lang: settings.lang, autoTranslate: settings.autoTranslate,
@@ -95,6 +101,13 @@ async function config(sb, body, me) {
     sites: sites && typeof sites === 'object' ? { on: !!sites.on, at: sites.at || null, buildings: Array.isArray(sites.buildings) ? sites.buildings : [] } : null,
     demo
   };
+}
+
+/** What the settings show about the phone app's contacts and older chats, and a disconnection from the phone. */
+function syncView(v) {
+  if (!v || typeof v !== 'object') return null;
+  const one = (x) => (x && typeof x === 'object' ? { at: x.at || null, ok: !x.error } : null);
+  return { contacts: one(v.contacts), history: one(v.history), disconnected: v.disconnected && typeof v.disconnected === 'object' ? { at: v.disconnected.at || null } : null };
 }
 
 async function sendAction(sb, body, me) {
@@ -157,8 +170,10 @@ async function media(sb, body, me) {
   const conv = await conversation(sb, ws.org.id, body.conversationId);
   const { m } = message(conv, body.index);
   if (!m.media || typeof m.media.id !== 'string') throw bad('no-file', 'This message has no file to open.');
-  const cfg = waConfig();
-  if (!cfg.configured) throw new ApiError(503, 'not-configured', 'WhatsApp is not set up on the server yet.');
+  const base = waConfig();
+  if (!base.configured) throw new ApiError(503, 'not-configured', 'WhatsApp is not set up on the server yet.');
+  const num = await numberOf(sb, ws.org.id);
+  const cfg = withToken(base, num ? await tokenOf(sb, num.phone_number_id) : '');
   try {
     const f = await fetchMedia(cfg, m.media.id, MEDIA_MAX);
     return { mime: f.mime, name: m.media.name || m.name || null, data: f.bytes.toString('base64') };
@@ -171,7 +186,7 @@ async function media(sb, body, me) {
 async function connectNumber(sb, body, me) {
   const ws = await workspace(sb, body, me, 'owner');
   const cfg = waConfig();
-  if (!cfg.configured) throw new ApiError(503, 'not-configured', 'WhatsApp is not set up on the server yet. Add WHATSAPP_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN in Vercel, then redeploy.');
+  if (!cfg.configured || !cfg.token) throw new ApiError(503, 'not-configured', 'Connecting by Phone number ID needs WHATSAPP_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN in Vercel. Use Connect with Facebook instead, or add them and redeploy.');
   const pnid = String(body.phoneNumberId || '').trim();
   if (!/^\d{6,25}$/.test(pnid)) throw bad('bad-id', 'Enter the Phone number ID from Meta (WhatsApp, API Setup): only digits.');
   const taken = must(await sb.from('whatsapp_numbers').select('org_id').eq('phone_number_id', pnid).maybeSingle(), 'load WhatsApp number');
@@ -186,6 +201,17 @@ async function connectNumber(sb, body, me) {
   must(await sb.from('whatsapp_numbers').delete().eq('org_id', ws.org.id).neq('phone_number_id', pnid), 'replace WhatsApp number');
   must(await sb.from('whatsapp_numbers').upsert({ phone_number_id: pnid, org_id: ws.org.id, display_phone: String(info.display_phone_number || '').slice(0, 40) || null, verified_name: String(info.verified_name || '').slice(0, 120) || null, created_by: me.id }, { onConflict: 'phone_number_id' }), 'save WhatsApp number');
   return { number: { phone: info.display_phone_number || null, name: info.verified_name || null } };
+}
+
+/** The owner finished Meta's Embedded Signup pop-up: body {code, wabaId?, phoneNumberId?}. */
+async function signupNumberAction(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'owner');
+  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so no WhatsApp number can be connected.');
+  const base = appUrl();
+  return connectWithSignup(sb, {
+    orgId: ws.org.id, userId: me.id, code: body.code, wabaId: body.wabaId, phoneNumberId: body.phoneNumberId,
+    callbackUrl: base ? base + '/api/whatsapp-webhook' : ''
+  }, { config: waConfig() });
 }
 
 async function disconnectNumber(sb, body, me) {
@@ -265,7 +291,7 @@ async function reviewReplyAction(sb, body, me) {
 
 const ACTIONS = {
   config, send: sendAction, translate: translateAction, preview, media,
-  'whatsapp-connect': connectNumber, 'whatsapp-disconnect': disconnectNumber,
+  'whatsapp-connect': connectNumber, 'whatsapp-signup': signupNumberAction, 'whatsapp-disconnect': disconnectNumber,
   'sites-on': sitesOn, 'review-reply': reviewReplyAction
 };
 

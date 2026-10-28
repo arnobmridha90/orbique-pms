@@ -19,7 +19,9 @@
    of the guest's last WhatsApp message. Guest messages show in the team's language (inboxSettings.lang) with the original a tap
    away; "Translate" on a reply shows it in the guest's language to check before it goes. Chats from numbers or booking-site
    threads that match no booking wait at the top of the list to be linked. Photos, files and voice notes still go out only as
-   internal notes; guests' WhatsApp files open through the server. */
+   internal notes; guests' WhatsApp files open through the server. Agoda's guest emails show only what the guest wrote
+   (api/_lib/email-in.js agodaMessage); a special request carries Agoda's answer buttons (m.actions), which open Agoda's
+   own page, and the chat notes the answer picked (c.picks by message xid: {label, at, staffId}). */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
@@ -156,6 +158,13 @@
 .pg-inbox .bub .subj{font-weight:700;font-size:12px;margin-bottom:3px;}
 .pg-inbox .bub .efiles{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);margin-top:5px;}
 .pg-inbox .bub .efiles svg{width:12px;height:12px;}
+.pg-inbox .bub .acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;padding-top:7px;border-top:1px solid var(--border);}
+.pg-inbox .bub .acts .acts-h{flex-basis:100%;font-size:11.5px;color:var(--muted);}
+.pg-inbox .bub .acts .acts-h b{color:var(--text);}
+.pg-inbox .bub .acts a.act{display:inline-flex;align-items:center;min-height:30px;padding:4px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--brand-text);font-size:12.5px;font-weight:700;text-decoration:none;}
+.pg-inbox .bub .acts a.act:hover{border-color:var(--brand);}
+.pg-inbox .bub .acts a.act.on{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);}
+.pg-inbox .bub .acts span.act{display:inline-flex;align-items:center;min-height:30px;padding:4px 12px;border-radius:999px;border:1px dashed var(--border);color:var(--muted);font-size:12.5px;}
 .pg-inbox .ib-tabs{display:flex;gap:4px;margin:0 12px 8px;padding:3px;border-radius:10px;background:var(--surface-2);}
 .pg-inbox .ib-tabs button{flex:1;border:0;background:none;border-radius:8px;padding:6px 8px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;}
 .pg-inbox .ib-tabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);}
@@ -839,7 +848,23 @@
     }
     var txt = esc(codeSafe(c, m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.text));
     if (m.from === 'note') txt = txt.replace(mentionRe(), '<b class="mention">@$1</b>');
-    return { html: '<span class="txt">' + txt + '</span>' + xlHTML(m, key) };
+    return { html: '<span class="txt">' + txt + '</span>' + xlHTML(m, key) + actsHTML(c, m, i) };
+  }
+  /* a booking site's answer buttons on a guest message (an Agoda special request: Accepted / Subject to availability /
+     Not accepted). Each opens the site's own page, which records the answer; the chat remembers which one was picked. */
+  function actOk(a) { return !!a && typeof a.label === 'string' && typeof a.url === 'string' && a.url.length <= 2000 && /^https:\/\/portal\.agoda\.com\/[^\s"'<>\\?#]*\/PropertyMessage\/[^\s"'<>\\]*$/i.test(a.url); }
+  function actsHTML(c, m, i) {
+    var all = m.from === 'guest' && Array.isArray(m.actions) ? m.actions : [], list = [];
+    all.forEach(function (a, k) { if (list.length < 4 && actOk(a)) list.push({ a: a, k: k }); });
+    if (!list.length) return '';
+    var pick = m.xid && c.picks && c.picks[m.xid], site = c.ota || 'the booking site';
+    var head = pick ? 'You answered <b>' + esc(pick.label) + '</b> on ' + esc(site) + (typeof pick.at === 'string' && pick.at.length >= 16 ? ' · ' + esc(fmt.dateTime(pick.at)) : '') + (staff(pick.staffId) ? ' · ' + esc(staff(pick.staffId).name) : '')
+      : canSend() ? 'Answer the request on ' + esc(site) + ':' : esc(site) + ' asks for an answer. Someone who can reply to guests can give it.';
+    return '<div class="acts"><span class="acts-h">' + head + '</span>' + list.map(function (it) {
+      var a = it.a, k = it.k;   /* k: its place in m.actions, which the click looks up */
+      return canSend() ? '<a class="act' + (pick && pick.label === a.label ? ' on' : '') + '" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer nofollow" data-pickact="' + i + ':' + k + '">' + esc(a.label) + '</a>'
+        : '<span class="act">' + esc(a.label) + '</span>';
+    }).join('') + '</div>';
   }
   function threadHTML(c) {
     if (!c.messages.length) {
@@ -861,14 +886,14 @@
         out.push('<div class="sysm' + (extra ? ' rich' : '') + '">' + O.icon(m.via === 'email' ? 'chat' : 'alert') + '<span>' + esc(m.text) + extra + '</span><span class="t">' + fmt.time(m.time) + '</span></div>'); prevKey = null; return;
       }
       var side = m.from === 'guest' ? 'in' : m.from === 'note' ? 'inote' : 'out';
-      var key = side + (m.staffId || '');
+      var key = side + (m.staffId || (m.app ? 'app' : ''));
       var gapMin = prevTime ? (Date.parse(m.time + ':00Z') - Date.parse(prevTime + ':00Z')) / 60000 : 99;
       var first = key !== prevKey || gapMin > 10;
       prevKey = key; prevTime = m.time;
       var inner = bubbleInner(c, m, i);
       var who = '';
       if (side === 'inote') who = '<div class="who">' + O.icon('lock') + 'Internal note · ' + esc((staff(m.staffId) || { name: 'Team' }).name) + '</div>';
-      else if (side === 'out' && first) who = '<div class="who">' + esc((staff(m.staffId) || { name: 'Team' }).name) + '</div>';
+      else if (side === 'out' && first) who = '<div class="who">' + esc(m.app && !m.staffId ? 'From the WhatsApp app' : (staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       var status = side === 'out' ? msgStatus(c, i) : null;
       var meta = '<span class="meta">' + (m.via && VIA[m.via] && side === 'in' ? '<span class="mvia">' + esc(VIA[m.via]) + '</span>' : '') + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
       if (m.via === 'email' && side === 'in' && (m.subject || (m.files && m.files.length))) inner = { html: (m.subject ? '<div class="subj">' + esc(m.subject) + '</div>' : '') + inner.html + (m.files && m.files.length ? '<div class="efiles">' + O.icon('clip') + 'In the original email: ' + esc(m.files.join(', ')) + '</div>' : '') };
@@ -1354,13 +1379,84 @@
           '<div class="small"><b>How to set it up:</b> use one email for all your bookings, for example bookings@yourcompany.com. Give it to Booking.com, Airbnb, Agoda, Trip.com and Expedia as the reservation email. Then, in that mailbox, forward every email to the address above (Gmail: Settings, Forwarding and POP/IMAP, Add a forwarding address; the confirmation email Gmail sends shows up under Email &amp; updates, so you can confirm it from here).</div>' +
           (em.configured ? '' : '<div class="note">Receiving is not finished on the server yet (RESEND_WEBHOOK_SECRET), so emails do not arrive yet.</div>');
       }
+      function waNumberHTML(n, owner, signup) {
+        var sy = n.sync || {}, bits = [];
+        if (n.coexist) bits.push('Also on the WhatsApp Business app on your phone. Messages you send from the phone show here as "From the WhatsApp app".');
+        if (n.coexist && sy.history) bits.push(sy.history.ok ? 'The chats of the last 6 months were asked for on ' + esc(d.fmt(String(sy.history.at).slice(0, 10))) + ' and come in over the next hours (if you agreed to share them on the phone).' : 'WhatsApp did not share the older chats. New messages still come in.');
+        return '<div class="row-flex"><span class="grow">Connected: <b>' + esc(n.phone || '') + '</b>' + (n.name ? ' (' + esc(n.name) + ')' : '') + '</span>' + (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-wa="off">Disconnect</button>' : '') + '</div>' +
+          (sy.disconnected ? '<div class="note">The number was disconnected from Orbique on the phone, so messages no longer come in. Connect it again to carry on.</div>' + (owner && signup ? '<div><button type="button" class="btn btn-primary btn-sm" data-wa="fb">Connect with Facebook again</button></div>' : '') : '') +
+          (bits.length ? '<div class="small muted">' + bits.join(' ') + '</div>' : '') +
+          (n.coexist && owner ? '<div class="small muted">To stop it fully, also disconnect it on the phone: WhatsApp Business app, Settings, Account, Business Platform.</div>' : '');
+      }
+      /* Meta's Embedded Signup pop-up for a number on the WhatsApp Business app (coexistence). Meta sends the chosen
+         account (and sometimes the number) in a window message, and a one-time code (valid about 30 seconds) in the
+         login callback; both go to the server at once. */
+      function fbSdk(s) { /* loads once per page; the state lives on window because this code runs again on every render */
+        var st = window.__orbiqueFb || (window.__orbiqueFb = {});
+        if (st.ready && window.FB) return Promise.resolve(window.FB);
+        if (st.p) return st.p;
+        st.p = new Promise(function (resolve, reject) {
+          function ready() {
+            if (!window.FB) { st.p = null; reject(new Error('Facebook did not load.')); return; }
+            if (!st.ready) window.FB.init({ appId: s.appId, autoLogAppEvents: true, xfbml: false, version: s.version });
+            st.ready = true; resolve(window.FB);
+          }
+          if (window.FB) { ready(); return; }
+          var t = setTimeout(function () { st.p = null; reject(new Error('Facebook did not load. Check your connection and try again.')); }, 20000);
+          window.fbAsyncInit = function () { clearTimeout(t); ready(); };
+          var el = document.createElement('script');
+          el.src = 'https://connect.facebook.net/en_US/sdk.js'; el.async = true; el.defer = true; el.crossOrigin = 'anonymous';
+          el.onerror = function () { clearTimeout(t); st.p = null; reject(new Error('Could not load Facebook. Check that nothing blocks connect.facebook.net and try again.')); };
+          document.body.appendChild(el);
+        });
+        return st.p;
+      }
+      function fbReady() { var st = window.__orbiqueFb; return st && st.ready && window.FB ? window.FB : null; }
+      /* FB.login runs straight from the click (FB must be loaded already: settingsModal loads it), so the pop-up is not blocked */
+      function fbSignup(s, FB) {
+        return (function () {
+          return new Promise(function (resolve, reject) {
+            var code = '', got = null, done = false, waitT = null;
+            function finish(err) {
+              if (done) return;
+              if (!err && !(code && got)) return;
+              done = true; clearTimeout(waitT); window.removeEventListener('message', onMsg);
+              if (err) reject(err); else resolve({ code: code, wabaId: got.waba_id || '', phoneNumberId: got.phone_number_id || '' });
+            }
+            function onMsg(e) {
+              var host = ''; try { host = new URL(e.origin).hostname; } catch (x) { return; }
+              if (!/(^|\.)facebook\.com$/.test(host)) return;
+              var d = e.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { return; } }
+              if (!d || d.type !== 'WA_EMBEDDED_SIGNUP') return;
+              var ev = String(d.event || ''), data = d.data || {};
+              if (ev.indexOf('FINISH') === 0) { got = { waba_id: String(data.waba_id || ''), phone_number_id: String(data.phone_number_id || '') }; finish(); }
+              else if (data.error_message) finish(new Error(String(data.error_message)));
+              else if (ev === 'CANCEL') finish(new Error(data.current_step ? 'The Facebook window was closed at the step "' + data.current_step + '". Nothing was connected.' : 'The Facebook window was closed. Nothing was connected.'));
+              else if (ev === 'ERROR') finish(new Error('Facebook reported an error. Nothing was connected.'));
+            }
+            window.addEventListener('message', onMsg);
+            FB.login(function (r) {
+              code = r && r.authResponse && r.authResponse.code ? String(r.authResponse.code) : '';
+              if (!code) { waitT = setTimeout(function () { finish(new Error('Facebook did not finish the sign-in. Nothing was connected.')); }, 3000); return; }
+              // the account message can come a moment after the code; without it the server finds the account itself
+              if (!got) waitT = setTimeout(function () { got = got || {}; finish(); }, 2500);
+              finish();
+            }, { config_id: s.configId, response_type: 'code', override_default_response_type: true, extras: { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' } });
+          });
+        })();
+      }
       function settingsModal() {
         var cfg = liveCfg() || { whatsapp: {} }, owner = O.auth.role && O.auth.role() === 'owner', wa = cfg.whatsapp || {};
         var setv = D.inboxSettings || {}, lang = setv.lang || cfg.lang || 'en', auto = setv.autoTranslate !== false;
-        var waHTML = !wa.configured ? '<div class="note">WhatsApp is not set up on the server yet. Orbique needs WHATSAPP_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN in Vercel (see Putting Orbique online, WhatsApp).</div>'
-          : wa.number ? '<div class="row-flex"><span class="grow">Connected: <b>' + esc(wa.number.phone || '') + '</b>' + (wa.number.name ? ' (' + esc(wa.number.name) + ')' : '') + '</span>' + (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-wa="off">Disconnect</button>' : '') + '</div>'
-          : owner ? '<div class="field"><label for="ib-pnid">Phone number ID from Meta</label><input id="ib-pnid" class="input" inputmode="numeric" placeholder="For example 109876543210987"><div class="small muted">Meta for Developers, your app, WhatsApp, API Setup: the "Phone number ID" under your business number.</div></div><button type="button" class="btn btn-primary btn-sm" data-wa="on">Connect WhatsApp</button>'
-          : '<div class="note">Ask the account owner to connect your WhatsApp business number.</div>';
+        var byId = '<div class="field"><label for="ib-pnid">Phone number ID from Meta</label><input id="ib-pnid" class="input" inputmode="numeric" placeholder="For example 109876543210987"><div class="small muted">Meta for Developers, your app, WhatsApp, API Setup: the "Phone number ID" under your business number.</div></div><button type="button" class="btn ' + (wa.signup ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-wa="on">Connect by Phone number ID</button>';
+        var waHTML = !wa.configured ? '<div class="note">WhatsApp is not set up on the server yet. Orbique needs WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN in Vercel, with WHATSAPP_APP_ID and WHATSAPP_CONFIG_ID to connect with Facebook (see Putting Orbique online, WhatsApp).</div>'
+          : wa.number ? waNumberHTML(wa.number, owner, !!wa.signup)
+          : !owner ? '<div class="note">Ask the account owner to connect your WhatsApp business number.</div>'
+          : (wa.signup ? '<div class="small">Connect the number you use on the <b>WhatsApp Business app</b>. It keeps working on your phone: messages you send from the phone show here too, and the chats of the last 6 months come in once.</div>' +
+              '<div><button type="button" class="btn btn-primary btn-sm" data-wa="fb">' + O.icon('whatsapp') + 'Connect with Facebook</button></div>' +
+              '<div class="small muted">A Facebook window opens. Choose your business, then "Connect your existing WhatsApp Business app", enter the number and confirm on your phone with the QR code the window shows (WhatsApp Business app 2.24.17 or newer). Use a computer browser for this step.</div>' +
+              (wa.manual ? '<details><summary class="small">Or connect a number that is only on the Cloud API</summary><div class="stack" style="margin-top:8px">' + byId + '</div></details>' : '')
+            : byId);
         var trHTML = cfg.translate ? '<div class="field"><label for="ib-lang">Show guest messages in</label><select id="ib-lang" class="select"' + (canEdit() ? '' : ' disabled') + '>' + LANGS.map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === lang ? ' selected' : '') + '>' + esc(l[1]) + '</option>'; }).join('') + '</select></div>' +
             '<label class="row-flex"><input type="checkbox" id="ib-auto"' + (auto ? ' checked' : '') + (canEdit() ? '' : ' disabled') + '> <span>Translate new guest messages as they arrive</span></label>'
           : '<div class="note">Translation is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).</div>';
@@ -1370,6 +1466,7 @@
           '<div class="section-title">Booking email</div>' + emailHTML() + '</div>');
         var mod = U.modal({ title: 'Inbox settings', body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
         function reload() { live.cfg = null; live.org = null; loadLive(function () { repaintLive(); }); }
+        if (owner && wa.signup && O.$('[data-wa="fb"]', body)) fbSdk(wa.signup).catch(function () {}); /* ready before the click */
         body.addEventListener('click', function (e) {
           var cp = e.target.closest('[data-copy]');
           if (cp) { var val = cp.dataset.copy; (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(val) : Promise.reject()).then(function () { U.toast('Address copied'); }, function () { U.toast('Select the address and copy it', 'bad'); }); return; }
@@ -1386,6 +1483,20 @@
           }
           var x = e.target.closest('[data-wa]'); if (!x) return;
           x.disabled = true;
+          if (x.dataset.wa === 'fb') {
+            var label = x.innerHTML, FB = fbReady();
+            if (!FB) { x.disabled = false; U.toast('Facebook is still loading. Try again in a moment.', 'bad'); fbSdk(wa.signup).catch(function (er) { U.toast(er.message, 'bad'); }); return; }
+            x.textContent = 'Waiting for Facebook…';
+            fbSignup(wa.signup, FB).then(function (r) {
+              x.textContent = 'Connecting…';
+              return O.auth.inbox('whatsapp-signup', r);
+            }).then(function (r) {
+              var hist = r.number && r.number.coexist && r.sync && r.sync.history && !r.sync.history.error;
+              U.toast('WhatsApp connected: ' + ((r.number && r.number.phone) || '') + (hist ? '. Your earlier chats come in over the next hours.' : r.number && r.number.coexist ? '. WhatsApp did not share the earlier chats; new messages come in.' : ''));
+              mod.close(); reload();
+            }, function (er) { x.disabled = false; x.innerHTML = label; U.toast(er.message, 'bad'); });
+            return;
+          }
           var call = x.dataset.wa === 'on' ? O.auth.inbox('whatsapp-connect', { phoneNumberId: (O.$('#ib-pnid', body).value || '').trim() }) : O.auth.inbox('whatsapp-disconnect');
           call.then(function (r) { U.toast(r.number ? 'WhatsApp connected: ' + (r.number.phone || '') : 'WhatsApp disconnected'); mod.close(); reload(); }, function (er) { x.disabled = false; U.toast(er.message, 'bad'); });
         });
@@ -1567,6 +1678,18 @@
       }
 
       /* ---------- events ---------- */
+      /* an answer link opens the booking site's page, which records the answer; the chat notes which one was picked
+         (data-pickact: the message's index, then the answer's index in m.actions) */
+      function pickAct(x, c) {
+        var pq = x.dataset.pickact.split(':'), pm = c && c.messages[+pq[0]], pa = pm && Array.isArray(pm.actions) && pm.actions[+pq[1]];
+        if (!pm || !pm.xid || !actOk(pa) || !canSend()) return;
+        c.picks = c.picks || {};
+        c.picks[pm.xid] = { label: pa.label, at: nowISO(), staffId: O.state.viewer };
+        O.emit('data', { type: 'inbox-pick', id: c.id });
+        setTimeout(function () { paintThread(false); }, 0);
+      }
+      /* a middle click opens the link in a new tab too */
+      page.addEventListener('auxclick', function (e) { var x = e.button === 1 && e.target.closest && e.target.closest('[data-pickact]'); if (x) pickAct(x, conv(st.sel)); });
       page.addEventListener('click', function (e) {
         var x, c = conv(st.sel);
         var menu = O.$('.ib-menu.open', page); if (menu && !e.target.closest('.ib-more')) menu.classList.remove('open');
@@ -1580,6 +1703,7 @@
           if (!isPhone()) { var f0 = (st.tab === 'updates' ? visibleUpds() : visibleConvs())[0]; if (f0) select(f0.id, false); else { st.sel = null; paintChat(true); } }
           return;
         }
+        if ((x = e.target.closest('[data-pickact]'))) { pickAct(x, c); return; }
         if ((x = e.target.closest('[data-golink]'))) { var gm = c && c.messages[+x.dataset.golink]; if (gm && gm.link && O.allowed(gm.link.page)) O.go(gm.link.page, gm.link.id ? { id: gm.link.id } : {}); return; }
         if ((x = e.target.closest('[data-qr]'))) { useQuickReply(x.dataset.qr); return; }
         if ((x = e.target.closest('[data-play]'))) { togglePlay(x.dataset.play); return; }

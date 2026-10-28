@@ -1,7 +1,8 @@
 /* WhatsApp Business Platform (Meta's Cloud API) for the api/ functions (server only; the token never reaches the browser).
  * Private module: Vercel does not expose files under api/_lib as endpoints.
  *
- *   waConfig()                                 the WHATSAPP_* settings (see docs/DEPLOY.md); configured only with all three
+ *   waConfig()                                 the WHATSAPP_* settings (see docs/DEPLOY.md)
+ *   withToken(cfg, token)                      the same settings with a number's own token (Embedded Signup), else as is
  *   verifyChallenge(query, cfg)                Meta's webhook check (GET): the challenge to echo, or null
  *   verifyWaSignature(appSecret, raw, header)  X-Hub-Signature-256: "sha256=" + HMAC-SHA256 of the exact body
  *   parseWebhook(body)                         {messages: [...], statuses: [...]} from one webhook delivery
@@ -9,6 +10,11 @@
  *   sendText(cfg, phoneNumberId, to, text)     -> the WhatsApp message id
  *   fetchMedia(cfg, mediaId, maxBytes)         -> {mime, bytes}
  *   phoneNumberInfo(cfg, phoneNumberId)        -> {display_phone_number, verified_name}
+ *   Embedded Signup (connecting a number that stays on the WhatsApp Business app, "coexistence"):
+ *   exchangeCode(cfg, code)                    the code from the pop-up -> the token for that WhatsApp account
+ *   signupNumber(cfg, token, {wabaId, phoneNumberId})  -> {wabaId, phoneNumberId, info} (finds what the pop-up left out)
+ *   subscribeApp(cfg, token, wabaId, callback) sends that WhatsApp account's webhooks to this site
+ *   requestSync(cfg, token, phoneNumberId, type)  'smb_app_state_sync' (contacts) or 'history' (older chats) -> request id
  *
  * Nothing here logs or returns the token, and error messages never include it.
  */
@@ -19,17 +25,30 @@ export const DEFAULT_VERSION = 'v23.0';
 /** Replies are free-form only within 24 hours of the guest's last message; after that WhatsApp needs an approved template. */
 export const WINDOW_MS = 24 * 3600 * 1000;
 
-export function waConfig() {
-  const env = process.env;
+/**
+ * configured: the webhook can be checked (WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN) and there is a way to get a token:
+ * WHATSAPP_TOKEN (a number connected by its Phone number ID) or Embedded Signup (signup: WHATSAPP_APP_ID and
+ * WHATSAPP_CONFIG_ID too, the Meta app and its Facebook Login for Business configuration).
+ */
+export function waConfig(env = process.env) {
   const cfg = {
     token: String(env.WHATSAPP_TOKEN || '').trim(),
     appSecret: String(env.WHATSAPP_APP_SECRET || '').trim(),
     verifyToken: String(env.WHATSAPP_VERIFY_TOKEN || '').trim(),
+    appId: /^\d{5,25}$/.test(String(env.WHATSAPP_APP_ID || '').trim()) ? String(env.WHATSAPP_APP_ID).trim() : '',
+    configId: /^\d{5,25}$/.test(String(env.WHATSAPP_CONFIG_ID || '').trim()) ? String(env.WHATSAPP_CONFIG_ID).trim() : '',
     version: /^v\d+\.\d+$/.test(String(env.WHATSAPP_GRAPH_VERSION || '').trim()) ? String(env.WHATSAPP_GRAPH_VERSION).trim() : DEFAULT_VERSION,
     baseUrl: String(env.WHATSAPP_GRAPH_URL || '').trim().replace(/\/+$/, '') || GRAPH_URL
   };
-  cfg.configured = !!(cfg.token && cfg.appSecret && cfg.verifyToken);
+  const hook = !!(cfg.appSecret && cfg.verifyToken);
+  cfg.signup = hook && !!(cfg.appId && cfg.configId);
+  cfg.configured = hook && (!!cfg.token || cfg.signup);
   return cfg;
+}
+
+/** The settings with a number's own token (from Embedded Signup); without one, WHATSAPP_TOKEN as before. */
+export function withToken(cfg, token) {
+  return token ? Object.assign({}, cfg, { token: String(token) }) : cfg;
 }
 
 const safeEq = (a, b) => {
@@ -92,20 +111,76 @@ export function messageContent(m) {
   return { type: 'text', text: 'A message WhatsApp could not show here (' + str(t, 30) + ')' };
 }
 
+const digitsOf = (v) => str(v, 30).replace(/\D/g, '');
+const msAt = (t) => (Number(t) > 0 ? Number(t) * 1000 : Date.now());
+
+/** Messages the business sent from the WhatsApp Business app (smb_message_echoes): edits and deletions are skipped. */
+function echoesOf(v, pnid, out) {
+  for (const m of arr(v.message_echoes)) {
+    if (!isObj(m) || !m.id || !m.to || m.type === 'revoke' || m.type === 'edit') continue;
+    out.echoes.push({ phoneNumberId: pnid, to: digitsOf(m.to), id: str(m.id, 200), at: msAt(m.timestamp), content: messageContent(m) });
+  }
+}
+
+/** The older chats WhatsApp shares once when a phone-app number is connected (history), one entry per chat. */
+function historyOf(v, pnid, business, out) {
+  for (const batch of arr(v.history)) {
+    if (!isObj(batch)) continue;
+    for (const t of arr(batch.threads)) {
+      const guest = digitsOf(t && t.id);
+      if (!guest || guest === business) continue;
+      const messages = [];
+      for (const m of arr(t.messages)) {
+        if (!isObj(m) || !m.id) continue;
+        const from = digitsOf(m.from);
+        const content = m.type === 'media_placeholder' ? { type: 'text', text: 'A photo or file (sent before Orbique was connected; open it in the WhatsApp app)' } : messageContent(m);
+        messages.push({ id: str(m.id, 200), fromGuest: from ? from === guest : false, at: msAt(m.timestamp), content });
+      }
+      if (messages.length) out.history.push({ phoneNumberId: pnid, guest, messages });
+    }
+    const md = isObj(batch.metadata) ? batch.metadata : {};
+    if (md.progress !== undefined) out.historyProgress.push({ phoneNumberId: pnid, phase: Number(md.phase) || 0, progress: Number(md.progress) || 0 });
+  }
+  for (const e of arr(v.errors)) if (isObj(e)) out.historyProgress.push({ phoneNumberId: pnid, error: Number(e.code) || 0 });
+}
+
+/** The phone app's contacts (smb_app_state_sync): names for numbers. */
+function contactsOf(v, pnid, out) {
+  for (const x of arr(v.state_sync)) {
+    if (!isObj(x) || x.type !== 'contact' || !isObj(x.contact)) continue;
+    const phone = digitsOf(x.contact.phone_number);
+    if (phone) out.contacts.push({ phoneNumberId: pnid, phone, name: str(x.contact.full_name || x.contact.first_name, 80), removed: x.action === 'remove' });
+  }
+}
+
 /**
  * One webhook delivery -> {messages: [{phoneNumberId, from, name, id, at (ms), content, contextId}],
- *                          statuses: [{phoneNumberId, id, status, at, recipient, error}]}
- * Anything that is not a WhatsApp messages change is ignored.
+ *                          statuses: [{phoneNumberId, id, status, at, recipient, error}],
+ *                          echoes: [{phoneNumberId, to, id, at, content}]            (sent from the WhatsApp Business app)
+ *                          history: [{phoneNumberId, guest, messages: [{id, fromGuest, at, content}]}],
+ *                          historyProgress: [{phoneNumberId, phase, progress} | {phoneNumberId, error}],
+ *                          contacts: [{phoneNumberId, phone, name, removed}],
+ *                          accounts: [{wabaId, event, reason}]}                       (account_update: disconnected, ...)
+ * Anything else is ignored.
  */
 export function parseWebhook(body) {
-  const out = { messages: [], statuses: [] };
+  const out = { messages: [], statuses: [], echoes: [], history: [], historyProgress: [], contacts: [], accounts: [] };
   if (!isObj(body) || body.object !== 'whatsapp_business_account') return out;
   for (const entry of arr(body.entry)) {
     for (const ch of arr(entry && entry.changes)) {
-      if (!ch || ch.field !== 'messages' || !isObj(ch.value)) continue;
+      if (!ch || !isObj(ch.value)) continue;
       const v = ch.value;
+      if (ch.field === 'account_update') {
+        const info = isObj(v.disconnection_info) ? v.disconnection_info : {};
+        out.accounts.push({ wabaId: str(entry && entry.id, 40), event: str(v.event, 60), reason: str(info.reason || '', 120) });
+        continue;
+      }
       const pnid = str(v.metadata && v.metadata.phone_number_id, 40);
       if (!pnid) continue;
+      if (ch.field === 'smb_message_echoes') { echoesOf(v, pnid, out); continue; }
+      if (ch.field === 'history') { historyOf(v, pnid, digitsOf(v.metadata && v.metadata.display_phone_number), out); continue; }
+      if (ch.field === 'smb_app_state_sync') { contactsOf(v, pnid, out); continue; }
+      if (ch.field !== 'messages') continue;
       const names = new Map(arr(v.contacts).filter(isObj).map((c) => [str(c.wa_id, 30), str(c.profile && c.profile.name, 80)]));
       for (const m of arr(v.messages)) {
         if (!isObj(m) || !m.id || !m.from) continue;
@@ -141,9 +216,11 @@ export class WhatsAppError extends Error {
   }
 }
 
-function scrub(text, token) {
-  const s = String(text || '');
-  return token && token.length >= 8 ? s.split(token).join('[token]') : s;
+/** The text without the token or any other secret in cfg.secret (space-separated). */
+function scrub(text, token, secret) {
+  let s = String(text || '');
+  for (const t of [token].concat(String(secret || '').split(' '))) if (t && t.length >= 8) s = s.split(t).join('[token]');
+  return s;
 }
 
 /** Plain English for the errors people will meet. */
@@ -151,7 +228,7 @@ export function explain(code, fallback) {
   if (code === 131047) return 'The guest last wrote more than 24 hours ago. WhatsApp only lets a business start a conversation with an approved template, so ask them to message you first, or reply through the booking site.';
   if (code === 131026) return 'This number cannot receive WhatsApp messages (it may not be on WhatsApp).';
   if (code === 131030) return 'This number is not on the allowed list of the WhatsApp test number. Add it in Meta, or use your real business number.';
-  if (code === 190) return 'The WhatsApp access token has expired or is wrong. Update WHATSAPP_TOKEN in Vercel.';
+  if (code === 190) return 'The WhatsApp access token has expired or is wrong. Connect WhatsApp again in Guest inbox, Settings (or update WHATSAPP_TOKEN in Vercel).';
   if (code === 131056) return 'Too many messages to this guest in a short time. Wait a minute and try again.';
   if (code === 133010) return 'The WhatsApp number is not registered with the Cloud API yet. Finish its setup in Meta.';
   return fallback;
@@ -162,10 +239,10 @@ export function explain(code, fallback) {
  *   opts {timeoutMs = 10000, fetch, raw (resolve the Response itself)}
  */
 export async function graph(cfg, method, path, body, opts = {}) {
-  if (!cfg.token) throw new WhatsAppError('WhatsApp is not set up on the server yet (WHATSAPP_TOKEN is missing).', { code: -1 });
+  if (!cfg.token && !opts.noAuth) throw new WhatsAppError('This WhatsApp number has no access token. Connect it again in Guest inbox, Settings (or set WHATSAPP_TOKEN in Vercel).', { code: -1 });
   const doFetch = opts.fetch || globalThis.fetch;
   const url = /^https:\/\//.test(path) ? path : cfg.baseUrl + '/' + cfg.version + path;
-  const headers = { Authorization: 'Bearer ' + cfg.token };
+  const headers = opts.noAuth ? {} : { Authorization: 'Bearer ' + cfg.token };
   const init = { method, headers };
   if (body !== undefined && body !== null) { headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
   const ctl = new AbortController();
@@ -182,13 +259,13 @@ export async function graph(cfg, method, path, body, opts = {}) {
     const err = (j && j.error) || {};
     const code = Number(err.code) || 0;
     const sub = Number(err.error_subcode) || 0;
-    const msg = scrub(err.error_user_msg || err.message || `WhatsApp answered ${res.status}.`, cfg.token);
+    const msg = scrub(err.error_user_msg || err.message || `WhatsApp answered ${res.status}.`, cfg.token, cfg.secret);
     console.error(`[whatsapp] ${method} ${path.split('?')[0]}: ${res.status} ${code}${sub ? '/' + sub : ''} ${msg}`);
     throw new WhatsAppError(explain(code, 'WhatsApp refused it: ' + msg), { status: res.status, code, retryable: res.status >= 500 || res.status === 429 });
   } catch (e) {
     if (e instanceof WhatsAppError) throw e;
     const timedOut = ctl.signal.aborted;
-    console.error(`[whatsapp] ${method} ${path.split('?')[0]}:`, timedOut ? 'timeout' : scrub(e && e.message, cfg.token));
+    console.error(`[whatsapp] ${method} ${path.split('?')[0]}:`, timedOut ? 'timeout' : scrub(e && e.message, cfg.token, cfg.secret));
     throw new WhatsAppError(timedOut ? 'WhatsApp did not answer in time. Please try again.' : 'Could not reach WhatsApp. Please try again.', { retryable: true });
   } finally {
     clearTimeout(timer);
@@ -229,4 +306,59 @@ export async function fetchMedia(cfg, mediaId, maxBytes, opts = {}) {
 /** The number's public details, which also proves the token can use it. */
 export async function phoneNumberInfo(cfg, phoneNumberId, opts = {}) {
   return graph(cfg, 'GET', '/' + encodeURIComponent(phoneNumberId) + '?fields=display_phone_number,verified_name', null, opts);
+}
+
+/* ---------- Embedded Signup ---------- */
+
+/** The one-time code from the Embedded Signup pop-up (valid about 30 seconds) -> the token for the business's account. */
+export async function exchangeCode(cfg, code, opts = {}) {
+  if (!cfg.appId || !cfg.appSecret) throw new WhatsAppError('Connecting with Facebook is not set up on the server yet (WHATSAPP_APP_ID and WHATSAPP_APP_SECRET).', { code: -1 });
+  const q = new URLSearchParams({ client_id: cfg.appId, client_secret: cfg.appSecret, code: String(code) });
+  const j = await graph(Object.assign({}, cfg, { token: '', secret: cfg.appSecret }), 'GET', '/oauth/access_token?' + q.toString(), null, Object.assign({ noAuth: true }, opts));
+  const t = j && typeof j.access_token === 'string' ? j.access_token : '';
+  if (!t) throw new WhatsAppError('Facebook did not give a token for this WhatsApp account. Try connecting again.');
+  return t;
+}
+
+/**
+ * The WhatsApp account and number the owner chose in the pop-up. The coexistence pop-up often sends only the account
+ * (waba_id), and sometimes neither: the account then comes from the token's scopes (debug_token) and the number from
+ * the account's numbers (the one on the WhatsApp Business app, else the only one).
+ * -> {wabaId, phoneNumberId, info: {display_phone_number, verified_name, is_on_biz_app, platform_type}}
+ */
+export async function signupNumber(cfg, token, given = {}, opts = {}) {
+  const use = withToken(cfg, token);
+  let wabaId = /^\d{5,25}$/.test(String(given.wabaId || '')) ? String(given.wabaId) : '';
+  let pnid = /^\d{5,25}$/.test(String(given.phoneNumberId || '')) ? String(given.phoneNumberId) : '';
+  if (!wabaId) {
+    const q = new URLSearchParams({ input_token: token, access_token: cfg.appId + '|' + cfg.appSecret });
+    const j = await graph(Object.assign({}, cfg, { secret: cfg.appSecret + ' ' + token }), 'GET', '/debug_token?' + q.toString(), null, Object.assign({ noAuth: true }, opts));
+    const scopes = arr(j && j.data && j.data.granular_scopes);
+    const s = scopes.find((x) => isObj(x) && x.scope === 'whatsapp_business_management' && arr(x.target_ids).length);
+    wabaId = s ? str(arr(s.target_ids)[0], 40) : '';
+    if (!wabaId) throw new WhatsAppError('Facebook did not say which WhatsApp account was chosen. Try connecting again and finish every step.');
+  }
+  const fields = 'display_phone_number,verified_name,is_on_biz_app,platform_type';
+  if (!pnid) {
+    const j = await graph(use, 'GET', '/' + encodeURIComponent(wabaId) + '/phone_numbers?fields=id,' + fields, null, opts);
+    const list = arr(j && j.data).filter((x) => isObj(x) && x.id);
+    const pick = list.find((x) => x.is_on_biz_app === true) || (list.length === 1 ? list[0] : null);
+    if (!pick) throw new WhatsAppError(list.length ? 'This WhatsApp account has several numbers and Facebook did not say which one was chosen. Try connecting again.' : 'This WhatsApp account has no number yet. Finish adding the number in the pop-up and try again.');
+    pnid = str(pick.id, 40);
+    return { wabaId, phoneNumberId: pnid, info: pick };
+  }
+  const info = await graph(use, 'GET', '/' + encodeURIComponent(pnid) + '?fields=' + fields, null, opts);
+  return { wabaId, phoneNumberId: pnid, info: info || {} };
+}
+
+/** Send the WhatsApp account's webhooks to this site's /api/whatsapp-webhook (callback: {url, verifyToken}). */
+export async function subscribeApp(cfg, token, wabaId, callback, opts = {}) {
+  const body = callback && callback.url ? { override_callback_uri: callback.url, verify_token: callback.verifyToken } : null;
+  return graph(withToken(cfg, token), 'POST', '/' + encodeURIComponent(wabaId) + '/subscribed_apps', body, opts);
+}
+
+/** Ask WhatsApp for the phone app's contacts ('smb_app_state_sync') or older chats ('history'); once each, within 24 hours. */
+export async function requestSync(cfg, token, phoneNumberId, type, opts = {}) {
+  const j = await graph(withToken(cfg, token), 'POST', '/' + encodeURIComponent(phoneNumberId) + '/smb_app_data', { messaging_product: 'whatsapp', sync_type: type }, opts);
+  return j && j.request_id ? str(j.request_id, 100) : null;
 }

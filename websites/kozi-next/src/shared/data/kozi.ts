@@ -1,18 +1,9 @@
 // Everything the site says about Kozi in one place. Facts come from the Vortex KLCC listing pack
 // (/mnt/project-files/otto-listings/vortex-klcc-listings.md); keep claims here true and checkable.
-import type { ImageMetadata } from 'astro';
-
-const all = import.meta.glob<{ default: ImageMetadata }>('/src/assets/photos/**/*.jpg', { eager: true });
-export function photo(key: string): ImageMetadata {
-  const hit = all[`/src/assets/photos/${key}.jpg`];
-  if (!hit) throw new Error(`No photo ${key}`);
-  return hit.default;
-}
-
 export const BRAND = {
   name: 'Kozi',
   tagline: 'Exceptional spaces. Memorable stays.',
-  email: 'hello@staykozi.com', // the only contact shown until Arnob confirms a phone and WhatsApp number
+  email: 'hello@staykozi.com', // the contact shown everywhere; the WhatsApp number guests book on comes from Orbique and shows only on /book/
   instagram: 'https://www.instagram.com/kozimalaysia/',
   facebook: 'https://www.facebook.com/profile.php?id=61595749560838',
   company: 'Orbique Global Sdn. Bhd.',
@@ -21,6 +12,8 @@ export const BRAND = {
   my: (import.meta.env.PUBLIC_MY_URL as string | undefined) || 'https://www.staykozi.my',
 };
 
+// Vortex KLCC as the fixed parts of the site know it (the footer, the confirmation page, the guides). The building's
+// own pages, and every list of suites, read the content instead.
 export const PROPERTY = {
   id: 'vortex-klcc',
   name: 'Kozi @ Vortex KLCC',
@@ -40,62 +33,8 @@ export const VIEWS: Record<View, { name: string; short: string }> = {
   city: { name: 'City skyline', short: 'City' },
 };
 
-export type Suite = {
-  id: 'standard' | 'boutique' | 'premium';
-  name: string; levels: string; line: string; story: string;
-  views: View[]; highlights: string[];
-  photos: { key: string; alt: string }[];
-  hasPhotos: boolean;
-};
-
-export const SUITES: Suite[] = [
-  {
-    id: 'boutique', name: 'Boutique Suite', levels: 'Level 43',
-    line: 'Wake up to the Petronas Twin Towers, with a study and a marble table for four.',
-    story: 'Warm gold and neutral tones, floor-length drapes and a living room that looks straight across the city to the Twin Towers. The second bedroom has a queen and a single, and the study is a quiet corner for a call home.',
-    views: ['petronas', 'kl-tower'], highlights: ['Twin Towers view', 'Study', 'Marble dining table'],
-    photos: [
-      { key: 'boutique/02-dining-and-living', alt: 'Dining table and living room in the Boutique Suite' },
-      { key: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk, seen from the Boutique Suite' },
-      { key: 'boutique/01-living-room', alt: 'Living room with floor-to-ceiling windows' },
-      { key: 'boutique/03-bedroom-1-view', alt: 'Main bedroom with a city view' },
-      { key: 'boutique/04-bedroom-2', alt: 'Second bedroom' },
-      { key: 'boutique/06-tv-klcc-view', alt: 'Living room with the Twin Towers outside' },
-      { key: 'boutique/08-kitchen', alt: 'The kitchen' },
-      { key: 'boutique/07-bathroom', alt: 'Bathroom with a walk-in shower' },
-      { key: 'boutique/09-coffee-tea', alt: 'Coffee and tea tray with a kettle' },
-      { key: 'boutique/05-bedroom-window-view', alt: 'The city by day from a bedroom window' },
-    ],
-    hasPhotos: true,
-  },
-  {
-    id: 'premium', name: 'Premium Suite', levels: 'Levels 26 and 47',
-    line: "Our best-finished suites, with the city's landmarks outside the window.",
-    story: 'Panelled feature walls, soft lighting, hotel-quality white linen and floor-to-ceiling windows that frame the Twin Towers, KL Tower or Merdeka 118, depending on the suite.',
-    views: ['petronas', 'kl-tower', 'merdeka'], highlights: ['Landmark views', 'Dressing desk', 'Dining for four'],
-    photos: [
-      { key: 'premium-a/01-dining-and-living', alt: 'Dining table under rattan lamps in a Premium Suite' },
-      { key: 'premium-b/06-bed-klcc-view', alt: 'Bed facing the Petronas Twin Towers by day' },
-      { key: 'premium-a/10-kl-tower-view-night', alt: 'KL Tower lit blue at dusk, seen from a Premium bedroom' },
-      { key: 'premium-a/08-master-bedroom-merdeka-118-night', alt: 'Main bedroom at dusk with Merdeka 118 outside' },
-      { key: 'premium-b/03-tv-klcc-night', alt: 'Living room at dusk with a Petronas tower outside' },
-      { key: 'premium-a/03-dining-living-daylight', alt: 'Dining and living room in daylight' },
-      { key: 'premium-b/07-master-bedroom-wide', alt: 'Main bedroom' },
-      { key: 'premium-b/09-dressing-desk', alt: 'Dressing desk' },
-      { key: 'premium-a/05-twin-bedroom-day', alt: 'Second bedroom in daylight' },
-      { key: 'premium-b/10-klcc-window-view', alt: 'The Petronas Twin Towers by day from a Premium window' },
-    ],
-    hasPhotos: true,
-  },
-  {
-    id: 'standard', name: 'Standard Suite', levels: 'Level 41',
-    line: 'Two bedrooms, two bathrooms and a full kitchen on the 41st floor, at our simplest price.',
-    story: 'Everything a family needs for a city stay: two bedrooms, two bathrooms, a full kitchen and your own washing machine, on the 41st floor of Vortex.',
-    views: [], highlights: ['Two bathrooms', 'Full kitchen', 'Washing machine'],
-    photos: [{ key: 'building/Vortex-KLCC-street-view-2025', alt: 'Vortex Suites KLCC from the street' }],
-    hasPhotos: false,
-  },
-];
+// The buildings and suites themselves are content: Orbique's "Live website" panel edits them, and data/content.json
+// holds the bundled copy (see lib/content.ts). What follows is what stays the same whatever the content says.
 
 // What is around Vortex (from the listing pack). Walking times are not measured yet, so none are given.
 export const NEARBY = [
@@ -106,9 +45,41 @@ export const NEARBY = [
   { name: 'Raja Chulan monorail', what: 'The rest of the city' },
 ];
 
+// What only Vortex KLCC's pages say, on top of its content: the building's facts and its street. A building added in
+// Orbique gets the plain version of these pages (its area, intro, address, check-in and check-out).
+export type BuildingExtra = {
+  eyebrow: string; lede: string; description: string; pin: string; maps: string;
+  chapter: string; // the home page's words about the building, beside the tower in the 3D city
+  about: [string, string]; facts: { icon: string; k: string; v: string }[];
+  beds: boolean; // every two-bedroom suite here has a queen room and a room with a queen and a single
+  near: { eyebrow: string; title: [string, string]; text: string; list: { name: string; what: string }[] };
+};
+export const BUILDING_EXTRAS: Record<string, BuildingExtra> = {
+  'vortex-klcc': {
+    eyebrow: 'Kuala Lumpur · Golden Triangle',
+    lede: 'Two-bedroom suites with two bathrooms and a full kitchen at Vortex Suites KLCC, on Jalan Sultan Ismail between KLCC and Bukit Bintang.',
+    description: 'Kozi @ Vortex KLCC: two-bedroom suites with two bathrooms and a full kitchen at Vortex Suites KLCC on Jalan Sultan Ismail, between KLCC and Bukit Bintang. See live prices and book direct.',
+    pin: 'Our suites, levels 26 to 47',
+    chapter: 'Our suites are in Vortex KLCC, the curved glass tower on Jalan Sultan Ismail. The Petronas Twin Towers, KL Tower and Merdeka 118 all share its skyline.',
+    maps: 'Vortex Suites KLCC, Jalan Sultan Ismail, Kuala Lumpur',
+    about: ['The rounded glass tower on', 'Jalan Sultan Ismail.'],
+    beds: true,
+    facts: [
+      { icon: 'shield', k: 'Security', v: '24-hour security in the building.' },
+      { icon: 'card', k: 'Pool and gym', v: 'In the building, for a fee. They are not included in the price of a stay.' },
+      { icon: 'train', k: 'Getting around', v: 'Raja Chulan monorail station is nearby, and Grab rides are easy to get at any hour.' },
+    ],
+    near: {
+      eyebrow: 'Around Vortex', title: ['Between KLCC and', 'Bukit Bintang.'],
+      text: 'Walk to Pavilion KL for shopping, to the Petronas Twin Towers and KLCC Park, and to the street food of Jalan Alor and the bars of Changkat Bukit Bintang.',
+      list: NEARBY,
+    },
+  },
+};
+
 // Countries with a Kozi site. staykozi.com lists them, and each country's site has its cities.
 export const COUNTRIES = [
-  { id: 'my', name: 'Malaysia', site: BRAND.my, domain: 'staykozi.my', languages: ['English', 'Bahasa Malaysia', 'Bahasa Indonesia'], currency: 'Malaysian ringgit (RM)' },
+  { id: 'my', name: 'Malaysia', site: BRAND.my, domain: 'staykozi.my', languages: ['English'], currency: 'Malaysian ringgit (RM)' },
 ];
 
 // Where Kozi is. Each city lists its buildings; the search and the global site read this.
@@ -117,8 +88,9 @@ export const DESTINATIONS = [
     buildings: [{ id: 'vortex-klcc', name: 'Kozi @ Vortex KLCC', area: 'Golden Triangle, between KLCC and Bukit Bintang' }] },
 ];
 
-// Real photos of each landmark from our windows (the Standard suite has none yet).
-export const VIEW_PHOTOS: Record<Exclude<View, 'city'>, { key: string; alt: string; from: string; suites: Suite['id'][] }[]> = {
+// Real photos of each landmark from our windows, by the suite (in content.json) they were taken from.
+// The Standard suite has none yet.
+export const VIEW_PHOTOS: Record<Exclude<View, 'city'>, { key: string; alt: string; from: string; suites: string[] }[]> = {
   petronas: [
     { key: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk above the city, seen from the Boutique Suite', from: 'From the Boutique Suite, Level 43', suites: ['boutique'] },
     { key: 'premium-b/10-klcc-window-view', alt: 'The Petronas Twin Towers by day through a Premium Suite window', from: 'From a Premium Suite', suites: ['premium'] },
@@ -142,11 +114,10 @@ export const AMENITIES = [
   { icon: 'kitchen', title: 'A full kitchen', text: 'Fridge, microwave, induction hob, kettle and cookware.' },
   { icon: 'washer', title: 'Washer in every suite', text: 'Pack light. Iron and hair dryer too.' },
   { icon: 'wifi', title: 'Wi-Fi and smart TV', text: 'Air conditioning in every room.' },
-  { icon: 'key', title: 'Self check-in', text: 'Your door code arrives 30 minutes before 3:00 pm.' },
-  { icon: 'chat', title: 'A team that answers', text: 'Message us in English, Bahasa Malaysia or Bahasa Indonesia.' },
+  { icon: 'chat', title: 'A team that answers', text: 'Email us before and during your stay, and a real person replies.' },
 ];
 export const POLICIES = {
-  cancel: 'Flexible rates are free to cancel until 7 days before arrival.',
+  cancel: 'Free cancellation until 7 days before arrival.',
   extraBed: 'An extra bed for a 5th guest is RM60 a night.',
   tax: 'Malaysia charges non-Malaysian guests a tourism tax of RM10 per room per night.',
   rules: 'No smoking, no parties. Quiet hours 10 pm to 8 am. ID for every guest before arrival.',
@@ -160,6 +131,14 @@ export const CREDITS: Record<string, { title: string; by: string; source: string
   'building/Vortex-KLCC-skyline-view-2017': { title: 'Vortex Suites KLCC, Kuala Lumpur', by: 'Renek78', source: 'https://commons.wikimedia.org/wiki/File:Vortex_Suites_KLCC,_Kuala_Lumpur.jpg', taken: '2 December 2017' },
 };
 export const CC_BY_SA = { name: 'CC BY-SA 4.0', url: 'https://creativecommons.org/licenses/by-sa/4.0/' };
+// The 3D city on staykozi.my is built from open map data; its licences ask for this credit (footer and /credits/).
+export const MAP_CREDIT = '3D city from map data: © OpenStreetMap contributors (ODbL), Overture Maps Foundation, Google Open Buildings (CC BY 4.0), Microsoft Building Footprints (ODbL).';
+export const MAP_SOURCES = [
+  { name: 'OpenStreetMap contributors', licence: 'ODbL', url: 'https://www.openstreetmap.org/copyright' },
+  { name: 'Overture Maps Foundation', licence: 'ODbL', url: 'https://docs.overturemaps.org/attribution/' },
+  { name: 'Google Open Buildings', licence: 'CC BY 4.0', url: 'https://sites.research.google/gr/open-buildings/' },
+  { name: 'Microsoft Building Footprints', licence: 'ODbL', url: 'https://github.com/microsoft/GlobalMLBuildingFootprints' },
+];
 
 export const GUIDES = [
   { slug: 'mdac-malaysia-digital-arrival-card', tag: 'Arrival', title: 'The MDAC arrival card, step by step', line: 'What to fill in before you land in Malaysia, and how to spot the fake sites.', photo: 'premium-b/10-klcc-window-view' },

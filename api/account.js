@@ -146,7 +146,9 @@ export async function updateOperator(sb, body, me) {
   }
 
   if (company !== null && company !== org.name) {
+    const was = org.name;
     check(await sb.from('orgs').update({ name: company }).eq('id', orgId), 'rename workspace');
+    await renameCompanyOwner(sb, orgId, was, company, me.id);
   }
 
   if (user) {
@@ -171,6 +173,17 @@ export async function updateOperator(sb, body, me) {
 
   const others = user ? check(await sb.from('members').select('org_id').eq('user_id', user.id).neq('org_id', orgId), 'count workspaces') : [];
   return { emailChanged: emailChanges, otherWorkspaces: (others || []).length };
+}
+
+/* Units the company owns itself carry the business name as their owner (the app's "company owned" choice), and owner
+   statements are grouped by that name, so a rename carries it over (as Brand & Setup does in the app). */
+export async function renameCompanyOwner(sb, orgId, from, to, by) {
+  if (!from || !to || from === to) return 0;
+  const rows = check(await sb.from('records').select('id, data').eq('org_id', orgId).eq('coll', 'properties').eq('deleted', false).eq('data->>owner', from), 'load company-owned units') || [];
+  for (const r of rows) {
+    check(await sb.from('records').update({ data: Object.assign({}, r.data, { owner: to }), updated_by: by || null }).eq('org_id', orgId).eq('coll', 'properties').eq('id', r.id), 'rename unit owner');
+  }
+  return rows.length;
 }
 
 /* ---------------- sign-in names: a mobile number and a username, set by the workspace owner ---------------- */

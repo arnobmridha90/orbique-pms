@@ -21,12 +21,14 @@ export const forbidden = (message) => new ApiError(403, 'not-allowed', message |
 export const conflict = (code, message) => new ApiError(409, code, message);
 export const tooMany = (message) => new ApiError(429, 'too-many', message || 'Too many requests. Please wait a few minutes and try again.');
 
-export function send(res, status, payload) {
+/** Answer with JSON. headers: extra or replacement headers, e.g. {'Cache-Control': 'public, max-age=60'}. */
+export function send(res, status, payload, headers) {
   const body = JSON.stringify(payload);
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (headers) for (const k of Object.keys(headers)) res.setHeader(k, headers[k]);
   res.end(body);
 }
 
@@ -55,7 +57,8 @@ export const ok = (res, data) => send(res, 200, Object.assign({ ok: true }, data
 
 /** Answer with a plain-English error. Unknown errors are logged (message only) and shown generically. */
 export function fail(res, err) {
-  if (err instanceof ApiError) return send(res, err.status, { ok: false, error: err.code, message: err.message });
+  /* err.details: more for the screen, such as the list of problems Publish found ({problems: [...]}) */
+  if (err instanceof ApiError) return send(res, err.status, Object.assign({}, err.details || {}, { ok: false, error: err.code, message: err.message }));
   console.error('[api] unexpected error:', err && err.message ? err.message : String(err));
   return send(res, 500, { ok: false, error: 'server', message: 'Something went wrong on our side. Please try again in a minute.' });
 }

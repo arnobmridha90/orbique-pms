@@ -39,7 +39,7 @@
     '.pg-pricing .empty .e-icon svg{width:26px;height:26px;}',
     '.pg-pricing .kpi .k-val small{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px;}',
     '.pg-pricing .toolbar{margin-bottom:0;}',
-    '.pg-pricing .pr-prop{min-width:240px;max-width:320px;}',
+    '.pg-pricing .pr-prop{min-width:240px;max-width:320px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}',
     '.pg-pricing .pr-ctx{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--text-2);}',
     '.pg-pricing .pr-ctx .dot{width:3px;height:3px;border-radius:50%;background:var(--faint);}',
     '.pg-pricing .pr-ctx b{color:var(--text);}',
@@ -177,8 +177,12 @@
     '.pg-pricing tr.cur-prop td:first-child{box-shadow:inset 3px 0 0 var(--brand-strong);}',
     '@media (max-width:1024px){.pg-pricing .pr-head3{grid-template-columns:repeat(3,minmax(0,1fr));}}',
     '@media (max-width:560px){',
+    /* the unit select and the planner button share the first row, the date range and Auto-apply the second */
     '  .pg-pricing .pr-prop{min-width:0;max-width:none;width:100%;}',
+    '  .pg-pricing .pr-prop.pr-prop-p{width:auto;flex:1 1 calc(100% - 50px);}',
     '  .pg-pricing .toolbar > *{max-width:100%;}',
+    '  .pg-pricing .pr-plan{flex:none;width:40px;min-width:40px;height:40px;padding:0;justify-content:center;}',
+    '  .pg-pricing .pr-plan .pr-plan-l{display:none;}',
     '  .pg-pricing .pr-head3 .v{font-size:15px;}',
     '  .pg-pricing .hist{grid-template-columns:minmax(0,1fr);}',
     '  .pg-pricing .rules .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}',
@@ -617,7 +621,7 @@
     rows += '<div class="wf-row tot"><div class="wl">Suggested price<div class="wd">Sum of the ' + fs.length + ' lines above</div></div><div class="wf-track" aria-hidden="true"><i class="tot" style="left:0;width:' + pos2(n.sugg).toFixed(1) + '%"></i></div><div class="wa">' + fmt.money(n.sugg, { cur: P }) + '</div></div>';
     var axis = '<div class="wf-row wf-axis" aria-hidden="true"><div></div><div class="ax" title="Bar scale in ' + esc(fmt.cur(P)) + '"><span>' + fmt.money(lo, { bare: true }) + '</span><span>' + fmt.money(hi, { bare: true }) + '</span></div><div></div></div>';
     var chg = n.change, chgPct = n.our ? chg / n.our : 0;
-    var top = '<div class="pr-head3"><div><div class="l">Current price</div><div class="v">' + fmt.money(n.our, { cur: P }) + '</div><div class="small muted">' + (n.how === 'suggestion' ? 'Suggestion applied' : n.how === 'manual' ? 'Set by you' : 'Model rate') + '</div></div>' +
+    var top = '<div class="pr-head3"><div><div class="l">Current price</div><div class="v">' + fmt.money(n.our, { cur: P }) + '</div><div class="small muted">' + (n.how === 'suggestion' ? 'Suggestion applied' : n.how === 'manual' ? 'Set by you' : n.how === 'planner' ? 'Set by the profit planner' : 'Model rate') + '</div></div>' +
       '<div class="sug"><div class="l">Suggested</div><div class="v">' + fmt.money(n.sugg, { cur: P }) + '</div><div class="small muted">' + (n.ev ? esc(n.ev.name) : n.run <= m.R.orphanMax ? 'Orphan night' : n.wk ? 'Weekend night' : 'Weekday night') + '</div></div>' +
       '<div><div class="l">Change</div><div class="v ' + (chg > 0 ? 'pos' : chg < 0 ? 'neg' : '') + '">' + (chg ? signed(chg, P) : 'None') + '</div><div class="small muted">' + (chg ? signedPct(chgPct, 1) + ' · ' + Math.round(n.pSell * 100) + '% chance to sell' : 'Already at the suggestion') + '</div></div></div>';
     var R = m.R, wk = weekStay(m, n.iso);
@@ -669,7 +673,7 @@
       var k = n.status.kind, open = k === 'open';
       var stCell = k === 'booked' ? '<span class="st ' + n.status.b.status + '"><i></i>' + (n.status.b.status === 'pending' ? 'Pending' : 'Booked') + '</span> ' + esc(n.status.b.guest.name.split(' ')[0])
         : k === 'blocked' ? '<span class="st block" title="Blocked"><i></i>' + (n.status.block.type === 'owner' ? 'Owner stay' : 'Maintenance') + '</span>'
-          : '<span class="pill ' + (n.manual ? 'brand' : 'ok') + '">' + (n.how === 'suggestion' ? 'Open · applied' : n.how === 'manual' ? 'Open · set by you' : 'Open') + '</span>' + (n.run <= m.R.orphanMax ? ' Orphan night' : '');
+          : '<span class="pill ' + (n.manual ? 'brand' : 'ok') + '">' + (n.how === 'suggestion' ? 'Open · applied' : n.how === 'manual' ? 'Open · set by you' : n.how === 'planner' ? 'Open · profit planner' : 'Open') + '</span>' + (n.run <= m.R.orphanMax ? ' Orphan night' : '');
       var paceW = Math.round(n.grpOTB * 100), expW = Math.round(n.usualOTB * 100);
       return '<tr data-iso="' + n.iso + '" class="' + (n.iso === sel ? 'sel ' : '') + (k !== 'open' ? 'bk ' : '') + (st.picked[n.iso] && open ? 'picked ' : '') + (n.wk ? 'wk' : '') + '">' +
         '<td>' + (open && edit ? '<input type="checkbox" data-pick-row="' + n.iso + '" aria-label="Select ' + d.fmt(n.iso) + '"' + (st.picked[n.iso] ? ' checked' : '') + (n.change ? '' : ' disabled title="Already at the suggestion"') + '>' : '') + '</td>' +
@@ -853,7 +857,10 @@
       var P = m.P;
 
       root.innerHTML = '<div class="pg-pricing">' +
-        '<div class="toolbar"><select class="select pr-prop" data-prop-sel aria-label="Property">' + D.properties.map(function (q) { return '<option value="' + q.id + '"' + (q.id === pid ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') + '</select>' +
+        '<div class="toolbar"><select class="select pr-prop' + (O.allowed('planner') ? ' pr-prop-p' : '') + '" data-prop-sel aria-label="Property">' + D.properties.map(function (q) { return '<option value="' + q.id + '"' + (q.id === pid ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') + '</select>' +
+        /* the Profit planner for this unit, beside the unit select in the page's own toolbar (the top bar keeps to its two
+           buttons); right after the select in the markup, so the keyboard reaches it in the order it shows */
+        (O.allowed('planner') ? '<button type="button" class="btn btn-ghost btn-sm pr-plan" data-pr-plan aria-label="Profit Planner" title="Work out the prices that cover your costs and reach your profit target">' + O.icon('planner') + '<span class="pr-plan-l">Profit Planner</span></button>' : '') +
         '<span data-slot="range"></span><span class="spacer"></span>' +
         '<span class="pr-auto"' + (editRules ? '' : ' title="' + esc(WHY_RULES) + '"') + '>Auto-apply <button type="button" class="switch' + (m.R.auto ? ' on' : '') + '" data-auto role="switch" aria-checked="' + (m.R.auto ? 'true' : 'false') + '" aria-label="Auto-apply suggestions daily"' + (editRules ? '' : ' disabled') + '></button></span></div>' +
         '<div class="pr-ctx"><b>' + esc(P.type || '') + '</b>' + (P.area ? '<span class="dot"></span>' + esc(P.area) : '') + '<span class="dot"></span>Base price ' + fmt.money(m.R.base, { cur: P }) + '<span class="dot"></span>' + s.open.length + ' of ' + fmt.plural(m.days.length, 'night') + ' open</div>' +
@@ -878,6 +885,8 @@
       ctx.setActions('<button type="button" class="btn btn-ghost btn-sm" data-pr-csv>' + O.icon('download') + 'Export CSV</button>' +
         (edit ? '<button type="button" class="btn btn-primary btn-sm" data-pr-all' + (openChanges.length ? '' : ' disabled') + '>' + O.icon('sparkle') + (openChanges.length ? (openChanges.length === 1 ? 'Apply 1 suggestion' : 'Apply all ' + openChanges.length + ' suggestions') : s.open.length ? 'All suggestions applied' : 'No open nights to price') + '</button>' : ''));
       var A = ctx.actionsEl;
+      var planBtn = O.$('[data-pr-plan]', root);
+      if (planBtn) planBtn.onclick = function () { O.go('planner', { propertyId: pid }); };
       O.$('[data-pr-csv]', A).onclick = function () {
         var rows = [['Date', 'Day', 'Status', 'Our price (' + fmt.cur(P) + ')', 'Competitor avg (' + fmt.cur(P) + ')', 'Competitor min', 'Competitor max', 'Index', 'Same weekday last year', 'Same weekday 2 years ago', 'Pace ' + m.groupName, 'Usual pace', 'Event', 'Suggested (' + fmt.cur(P) + ')', 'Change (' + fmt.cur(P) + ')', 'Factors']];
         m.days.forEach(function (x) {

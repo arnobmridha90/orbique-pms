@@ -29,8 +29,10 @@ Body `{action, ...}`. Sign-in is `Authorization: Bearer <the user's Supabase acc
 | `signup` | anyone | `{company, contactName, email, phone, units, message}` | `{ok}`. Inserts `subscription_requests` (an operator asking to subscribe). Validate and cap lengths. |
 | `create-operator` | platform admin | `{company, ownerName, ownerEmail, plan?}` | `{ok, orgId, staffId, email, tempPassword \| null, existing}`. Creates the org, the owner's account if new (confirmed, temporary password, `user_metadata = {name, must_change_password: true}`), the `members` row (role `owner`), and the owner's staff record (`records` coll `staff`: `{id: staffId, name, role: 'owner', roleLabel: 'Account owner', email}`). An existing user is added as owner without changing their password (`tempPassword: null, existing: true`). |
 | `update-operator` | platform admin | `{orgId, company?, staffId?, ownerName?, ownerEmail?}` | `{ok, emailChanged, otherWorkspaces}`. Renames the org and/or changes one owner's name and sign-in email (confirmed at once; password unchanged), and updates that owner's staff record in this workspace. Checks everything first: the staff id must be an owner of `orgId`, the new email must not belong to another account, and a platform admin's email is never changed here. A changed email applies in every workspace the owner belongs to (`otherWorkspaces` counts the others). |
-| `invite` | owner of `orgId` | `{orgId, staffId, name, email, phone?, role}` | `{ok, email, tempPassword \| null, existing}`. `role` is not `owner`. Creates or reuses the account, adds/updates `members` (org, user, staff_id, role, status active); creates the staff record if the org has none with that id. |
-| `reset-password` | owner of `orgId` (for members of that org) or a platform admin (for org owners) | `{orgId, staffId}` | `{ok, email, tempPassword}`. New temporary password, `must_change_password: true`. |
+| `invite` | owner of `orgId` | `{orgId, staffId, name, email?, phone?, role, username?, phoneLogin?, phoneCc?, password?, mustChange?}` | `{ok, email, username, phone, tempPassword \| null, passwordSet, existing}`. Needs an email, a username or `phoneLogin`; without an email the account gets a stand-in address (`staff-…@login.orbiquepms.com`, never mailed). Names for an existing account are only added, never removed, and only when it uses Orbique with this workspace alone. `role` is not `owner`. Creates or reuses the account, adds/updates `members` (org, user, staff_id, role, status active); creates the staff record if the org has none with that id. |
+| `reset-password` | owner of `orgId` (for members of that org who use Orbique with this workspace only) or a platform admin (for org owners) | `{orgId, staffId}` | `{ok, email, username, phone, tempPassword}`. New temporary password, `must_change_password: true`; clears the account's wrong tries. |
+| `set-login` | owner of `orgId`, for a member (not an owner, not themselves) who uses Orbique with this workspace only | `{orgId, staffId, username?, phoneLogin?, phone?, phoneCc?, password? \| tempPassword?, mustChange?}` | `{ok, email, username, phone, tempPassword, passwordSet}`. Sets the username (`''` removes it) and mobile sign-in (`phoneLogin`, with `phone`; a number starting with 0 gets `phoneCc`, default 60). Usernames and numbers are unique across Orbique; the change is all or nothing (409 when taken). |
+| `sign-in` | none | `{login, password}` | `{ok, access_token, refresh_token, expires_in, token_type}` for a mobile number or username (emails sign in with Supabase directly). Unknown and wrong give the same 400 `wrong-login`. Tries are counted before the password check: 8 per account and per unknown name, 40 per address, in 15 minutes (429). |
 
 Temporary passwords: easy to read aloud and type on a phone, e.g. `Mango-River-4821` (two words from a list + 4 digits, crypto random).
 
@@ -114,6 +116,48 @@ Booking-site chat through Channex (its paid Messages app) is built but switched 
 `inquiry`, `reservation_request`, `message_thread_booking_assigned`) arrive on `/api/channex-webhook` like booking events and go to the booking's conversation the same way (`xid` `cx:<id>`, the
 thread in `cx`). Conversation and message fields are described at the top of `supabase/migrations/0010_inbox.sql`.
 
+## POST /api/site
+
+The workspace's own website content (`api/site.js`, `api/_lib/site.js`), used by the Live website page
+(`app/pages/livesite.js`). Signed in, `{action, orgId, ...}`. "May edit" and "may publish" are the app's Staff Access
+actions `website.edit` and `website.publish` (owner and Operations by default; role settings and personal overrides
+from `rolePerms` / `staffMeta`; a suspended member may do neither), checked against the database.
+
+| action | who | body | answer |
+|---|---|---|---|
+| `upload-urls` | website.edit | `{orgId, count: 1..30, widths: [640, 1280?, 2400?]}` | `{photos: [{id, base, widths, uploads: [{width, path, signedUrl, token}]}], maxBytes}`. Creates the public Storage bucket `site-photos` on first use (JPEG only, 3 MB a file). The browser sends each file with `PUT <signedUrl>` (form data, header `x-upsert: true`); the files are `<base>-<width>.jpg` under `site-photos/<orgId>/`. |
+| `publish` | website.publish | `{orgId, draftHash?}` | Reads the draft (blob `siteContent`), checks it strictly, writes it to `siteContentLive` and refreshes the website's pages: `{publishedAt, publishedBy, live, refreshed, failed: [paths], note, warnings}`. |
+
+Publish refuses with 409 `draft-saving` when `draftHash` (`O.sitecontent.hash` of the draft the person sees) is not
+the saved draft's (the last change has not reached the server), 429 after 20 publishes in an hour, and 400
+`content-problems` with `problems: [{level, where, field, message}]` when the draft breaks a rule (an unknown building,
+a web address used twice, a photo without a description, an uploaded photo outside this workspace's folder, ...).
+A shown unit without photos is published with a warning. The content rules are in `api/_lib/shared/sitecontent.cjs`
+(also in the browser as `O.sitecontent`); `tests/site-content.test.mjs` and `tests/site.api.test.mjs` cover them.
+
+Refreshing the website: for every page the old and the new content imply (`/`, `/sitemap.xml`, `/views/`, each city,
+building and unit page; at most 50), `GET <siteUrl><path>` with header `x-prerender-revalidate: <SITE_REVALIDATE_TOKEN>`
+(5 s each, in parallel). `siteUrl` is the `website` blob's. A page that is no longer in the content may answer 404.
+The token is sent only when `siteUrl` is `https://` on a host in `SITE_REVALIDATE_HOSTS` (comma separated; default
+`www.staykozi.my,staykozi.my`), never to any other address a member saved. Without the token, the address or an
+allowed host nothing is refreshed and `note` says, in plain words, that the website shows the change within 5 minutes
+(the reason goes to the server log).
+
+Who may write the blobs (migration `0017_site_content.sql`): `siteContent` and `website` (the website settings,
+including `siteUrl`) only members `website_can(org, 'edit')` allows (the same rule); `siteContentLive` nobody but the
+server. A city's web address cannot be one of the site's own top-level names (`RESERVED` in sitecontent.cjs: `book`,
+`booking`, `guides`, `views`, `api`, ...).
+
+## GET /api/public/site?ws=<slug>
+
+No sign-in, any origin (`Access-Control-Allow-Origin: *`), cached for 60 seconds. The published content of the
+workspace whose `website.slug` is `ws`: `{ok: true, content: {version: 1, buildings, suites} | null, publishedAt,
+contact: {whatsapp}}` (`null` before the first publish). `contact.whatsapp` is the number guests book on, as wa.me
+wants it (country code and number, digits only, from `website.whatsapp`), or `null`; it comes whether or not the
+content has been published. Hidden buildings and units are included with `visible: false`; the website leaves
+them out. The content is checked again on the way out, so anything invalid is dropped. 404 for an unknown `ws`.
+The website reads it when it builds or refreshes a page.
+
 ## Database functions the browser calls (supabase.rpc)
 
 From `supabase/migrations/0001_core.sql`: `my_context()`, `platform_overview()`, `set_org_status(p_org, p_status)`,
@@ -130,7 +174,7 @@ Pages call them only when they exist (`O.auth && O.auth.enabled && O.auth.enable
 
 Channex (Channels page, app/pages/channels.js): `O.auth.call(path, body) -> Promise<json>` (POSTs with the signed-in
 token; a failure rejects with an Error carrying `.code`, `.status` and `.body`), `O.auth.channex(action, body)` (the same
-for `/api/channex`, with `orgId` added), `O.auth.inbox(action, body)` (the same for `/api/messages`) and `O.auth.channexRealtime(onChange) -> unsubscribe` (realtime on
+for `/api/channex`, with `orgId` added), `O.auth.inbox(action, body)` (the same for `/api/messages`; the Live website page calls `O.auth.call('/api/site', ...)` the same way, or `O.siteApi(action, body)` when a test sets it) and `O.auth.channexRealtime(onChange) -> unsubscribe` (realtime on
 channex_properties, channex_outbox and channex_alerts for the current org; the Sync log also polls).
 
 The browser side of Channex is `O.channel` (app/pages/channels.js): `mode()` ('live' on the server with Channex configured,

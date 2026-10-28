@@ -1,0 +1,22 @@
+---
+// The top of an inner page: the breadcrumb, a small amber line, the title in big type and a sentence under it, low on
+// the screen so the city shows above (Shell flies the camera). plain: shorter, for a page without the city.
+// Slots: title (may hold <em> for the amber words), lede, and anything else under them.
+import type { Crumb } from '@shared/lib/seo';
+interface Props { crumbs?: Crumb[]; eyebrow?: string; id?: string; size?: 'tall' | 'short'; plain?: boolean }
+const { crumbs = [], eyebrow, id = 'pg-h', size = 'tall', plain = false } = Astro.props;
+const title = await Astro.slots.render('title');
+---
+<section class:list={['nh', { 'nh-short': size === 'short', 'nh-plain': plain }]} aria-labelledby={id}>
+  <div class="in">
+    {crumbs.length > 0 && (
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>{crumbs.map((c, i) => <li>{c.path && i < crumbs.length - 1 ? <a href={c.path}>{c.name}</a> : <span aria-current="page">{c.name}</span>}</li>)}</ol>
+      </nav>
+    )}
+    {eyebrow && <p class="eyebrow">{eyebrow}</p>}
+    <h1 id={id} class="nh-h" set:html={title} />
+    {Astro.slots.has('lede') && <p class="lede nh-lede"><slot name="lede" /></p>}
+    <slot />
+  </div>
+</section>

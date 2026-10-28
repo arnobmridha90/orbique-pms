@@ -1,13 +1,13 @@
 ---
 // A guide: the live sky over the title, then the guide itself with its contents beside it,
 // every source at the end, and the other guides after that.
-import { getImage } from 'astro:assets';
-import Layout from '@shared/components/Layout.astro';
-import PageHead from '@shared/components/PageHead.astro';
+import Shell from '@my/components/Shell.astro';
+import Head from '@my/components/Head.astro';
 import Photo from '@shared/components/Photo.astro';
-import StayBand from '@shared/components/StayBand.astro';
+import BookBand from '@my/components/BookBand.astro';
 import { GUIDE_PAGES, type Guide } from '@shared/data/guides';
-import { BRAND, PROPERTY, photo } from '@shared/data/kozi';
+import { BRAND, PROPERTY } from '@shared/data/kozi';
+import { builtin, photoAbs } from '@shared/lib/content';
 import { crumbsLd, orgLd } from '@shared/lib/seo';
 
 export function getStaticPaths() {
@@ -25,27 +25,27 @@ const html = g.html.replace(/<h2>(.*?)<\/h2>/g, (_, t: string) => {
 });
 const path = `/guides/${g.slug}/`;
 const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Guides', path: '/guides/' }, { name: g.tag, path }];
-const og = await getImage({ src: photo(g.photo.key), width: 1200, height: 630, fit: 'cover', format: 'jpg', quality: 78 });
+const og = photoAbs(builtin(g.photo.key), BRAND.my);
 const article = {
   '@context': 'https://schema.org', '@type': 'Article', headline: g.title, description: g.desc, inLanguage: 'en',
-  image: new URL(og.src, BRAND.my).href, url: `${BRAND.my}${path}`, mainEntityOfPage: `${BRAND.my}${path}`,
+  image: og, url: `${BRAND.my}${path}`, mainEntityOfPage: `${BRAND.my}${path}`,
   author: { '@id': orgLd['@id'] }, publisher: { '@id': orgLd['@id'] }, citation: g.sources.map((s) => s.url),
 };
 const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
 ---
-<Layout site="my" title={`${g.title} | Kozi guides`} description={g.desc} image={og.src} over
+<Shell cam="guides" dim title={`${g.title} | Kozi guides`} description={g.desc} image={og}
   jsonld={[crumbsLd(BRAND.my, crumbs), orgLd, article]}>
   <div class="g-progress" data-g-progress aria-hidden="true"></div>
-  <PageHead crumbs={crumbs} eyebrow={`${g.tag} · Checked ${g.checked}`} size="short" seed={g.slug.length}>
+  <Head crumbs={crumbs} eyebrow={`${g.tag} · Checked ${g.checked}`} size="short">
     <Fragment slot="title" set:html={g.h1} />
     <Fragment slot="lede">{g.lede}</Fragment>
-  </PageHead>
+  </Head>
 
-  <div class="wrap g-wrap" data-guide>
+  <div class="in g-wrap" data-guide>
     <div class="g-body">
-      <article class="g-prose" data-g-prose>
+      <article class="g-prose glass" data-g-prose>
         <figure class="g-photo" style={g.photo.pos ? `--pos:${g.photo.pos}` : undefined}>
-          <Photo k={g.photo.key} alt={g.photo.alt} eager sizes="(max-width: 760px) 92vw, 760px" widths={[640, 960, 1280]} />
+          <Photo k={g.photo.key} alt={g.photo.alt} eager sizes="(max-width: 760px) 92vw, 760px" />
           <figcaption>{g.photo.alt}</figcaption>
         </figure>
         <Fragment set:html={html} />
@@ -67,8 +67,8 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
             <p class="g-k">On this page</p>
             <ol>{toc.map((t) => <li><a href={`#${t.id}`} data-g-toc={t.id}>{t.t}</a></li>)}</ol>
           </nav>
-          <a class="g-stay" href={PROPERTY.path}>
-            <div class="g-stay-media"><Photo k="boutique/02-dining-and-living" alt="" sizes="300px" widths={[480, 720]} /></div>
+          <a class="g-stay" href="/stays/">
+            <div class="g-stay-media"><Photo k="boutique/02-dining-and-living" alt="" sizes="300px" /></div>
             <div class="g-stay-body">
               <p class="g-k">Stay with us</p>
               <p class="g-stay-h">{PROPERTY.name}</p>
@@ -82,14 +82,14 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
   </div>
 
   <section class="g-more" aria-labelledby="g-more-h">
-    <div class="wrap">
+    <div class="in">
       <p class="eyebrow">Before you fly</p>
       <h2 id="g-more-h" class="display h3" data-split>More <em>guides.</em></h2>
       <ul class="g-cards" role="list">
         {others.map((o, i) => (
           <li data-reveal style={`--d:${i * 80}`}>
             <a class="g-card" href={`/guides/${o.slug}/`}>
-              <div class="g-card-media"><Photo k={o.photo.key} alt="" sizes="(max-width: 760px) 92vw, 44vw" widths={[480, 720, 960]} /></div>
+              <div class="g-card-media"><Photo k={o.photo.key} alt="" sizes="(max-width: 760px) 92vw, 44vw" /></div>
               <div class="g-card-body">
                 <p class="g-tag">{o.tag}</p>
                 <h3 class="display" set:html={o.h1} />
@@ -101,23 +101,23 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
       </ul>
     </div>
   </section>
-  <StayBand />
-</Layout>
+  <BookBand />
+</Shell>
 
 <style is:global>
   /* how far through the guide you are, as a thin line along the top */
   .g-progress { position: fixed; inset: 0 0 auto; z-index: 70; height: 2px; background: var(--amber); transform: scaleX(0); transform-origin: 0 50%; pointer-events: none; }
-  .g-wrap { padding: clamp(40px, 5vw, 72px) 0 clamp(80px, 9vw, 130px); }
+  .g-wrap { padding: clamp(32px, 4vw, 56px) 0 clamp(70px, 9vw, 120px); }
   .g-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: clamp(40px, 7vw, 120px); }
   .g-photo { margin: 0 0 clamp(30px, 4vw, 48px); position: relative; border-radius: 24px; overflow: hidden; aspect-ratio: 3 / 2; background: var(--sand); }
   .g-photo picture, .g-photo img { width: 100%; height: 100%; }
   .g-photo img { object-fit: cover; object-position: var(--pos, 50% 50%); }
-  .g-photo figcaption { position: absolute; left: 14px; bottom: 14px; max-width: calc(100% - 28px); padding: 8px 13px; border-radius: 999px; font: 550 12.5px/1.3 var(--sans);
-    color: var(--cream); background: rgb(20 18 26 / 0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .g-photo figcaption { position: absolute; left: 14px; bottom: 14px; max-width: calc(100% - 28px); padding: 8px 13px; border-radius: 999px; font: 550 12.5px/1.3 var(--sans); text-wrap: balance;
+    color: var(--cream); background: rgb(5 7 13 / 0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 
-  .g-prose { max-width: 40.25em; font-size: 18px; line-height: 1.72; color: var(--ink-2); }
+  .g-prose { max-width: 46em; font-size: 18px; line-height: 1.72; color: var(--ink-2); min-width: 0; }
   .g-prose > :first-child { margin-top: 0; }
-  .g-prose h2 { margin: 2.4em 0 0.6em; font: 330 clamp(28px, 2.6vw, 38px)/1.08 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.018em; color: var(--ink); scroll-margin-top: calc(var(--hd-h) + 28px); }
+  .g-prose h2 { margin: 2.4em 0 0.6em; font: 800 clamp(28px, 2.6vw, 38px)/1.08 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.018em; color: var(--ink); scroll-margin-top: calc(var(--hd-h) + 28px); }
   .g-prose p { margin: 0 0 1.05em; }
   .g-prose b { color: var(--ink); font-weight: 650; }
   .g-prose a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--amber); text-decoration-thickness: 1.5px; text-underline-offset: 3px; transition: text-decoration-color 200ms ease; }
@@ -149,6 +149,7 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
 
   .g-stick { position: sticky; top: calc(var(--hd-h) + 28px); display: grid; gap: 30px; }
   .g-k { margin: 0 0 12px; font: 650 10.5px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .g-toc { padding: 20px 22px; border-radius: 22px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
   .g-toc ol { list-style: none; margin: 0; padding: 0; display: grid; border-left: 1px solid var(--line); }
   .g-toc a { position: relative; display: block; padding: 7px 0 7px 16px; font-size: 14.5px; line-height: 1.35; color: var(--muted); transition: color 200ms ease; }
   .g-toc a::before { content: ''; position: absolute; left: -1px; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--amber); transform: scaleY(0); transition: transform 250ms var(--ease-out); }
@@ -162,20 +163,20 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
   .g-stay-media img { object-fit: cover; transition: transform 900ms var(--ease-out); }
   .g-stay-body { padding: 18px 20px 20px; }
   .g-stay-body .g-k { margin-bottom: 8px; color: var(--amber-deep); }
-  .g-stay-h { margin: 0; font: 400 22px/1.15 var(--display); font-variation-settings: var(--soft); color: var(--ink); }
+  .g-stay-h { margin: 0; font: 800 22px/1.15 var(--display); font-variation-settings: var(--soft); color: var(--ink); }
   .g-stay-body p:not(.g-k):not(.g-stay-h) { margin: 6px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); }
   .g-stay-go { display: inline-block; margin-top: 12px; font-weight: 650; font-size: 14.5px; }
   .g-stay-go span { display: inline-block; transition: transform 200ms var(--ease-out); }
   @media (hover: hover) and (pointer: fine) {
-    .g-stay:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 24px 50px -36px rgb(43 38 34 / 0.5); }
+    .g-stay:hover { box-shadow: inset 0 0 0 1px rgb(238 240 245 / 0.2), 0 24px 50px -36px rgb(0 0 0 / 0.5); }
     .g-stay:hover .g-stay-media img { transform: scale(1.04); }
     .g-stay:hover .g-stay-go span { transform: translateX(3px); }
   }
 
-  .g-more { padding: clamp(80px, 9vw, 130px) 0; background: var(--paper); border-top: 1px solid var(--line); }
+  .g-more { padding: 0 0 clamp(60px, 8vw, 110px); }
   .g-more .h3 { margin: 18px 0 40px; }
   .g-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-  .g-card { display: grid; grid-template-columns: 0.9fr 1fr; height: 100%; border-radius: 26px; overflow: hidden; background: var(--cream); box-shadow: inset 0 0 0 1px var(--line); transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
+  .g-card { display: grid; grid-template-columns: 0.9fr 1fr; height: 100%; border-radius: 26px; overflow: hidden; background: var(--panel-solid); box-shadow: inset 0 0 0 1px var(--line); transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
   .g-card:active { transform: scale(0.99); }
   .g-card-media { position: relative; min-height: 240px; background: var(--sand); }
   .g-card-media picture, .g-card-media img { width: 100%; height: 100%; }
@@ -185,7 +186,7 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
   .g-card h3 { font-size: clamp(26px, 2.2vw, 32px); line-height: 1.04; }
   .g-card-body p:last-child { margin: 0; font-size: 15px; color: var(--ink-2); }
   @media (hover: hover) and (pointer: fine) {
-    .g-card:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 30px 60px -40px rgb(43 38 34 / 0.5); }
+    .g-card:hover { box-shadow: inset 0 0 0 1px rgb(238 240 245 / 0.2), 0 30px 60px -40px rgb(0 0 0 / 0.5); }
     .g-card:hover .g-card-media img { transform: scale(1.04); }
   }
 
@@ -199,6 +200,7 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
   }
   @media (max-width: 760px) {
     .g-photo { aspect-ratio: 4 / 3; border-radius: 20px; }
+    .g-prose.glass { padding: 18px; border-radius: 22px; }
     .g-prose { font-size: 17px; }
     .g-stay, .g-card { grid-template-columns: 1fr; }
     .g-stay-media, .g-card-media { aspect-ratio: 16 / 10; min-height: 0; }

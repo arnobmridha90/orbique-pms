@@ -1,0 +1,20 @@
+---
+// The end of a page that isn't about booking: a glass card that sends you to the dates search, or to email.
+import { BRAND, POLICIES, PROPERTY } from '@shared/data/kozi';
+interface Props { eyebrow?: string; title?: string }
+const { eyebrow = 'Stay with us', title = 'Your dates. Your suite.' } = Astro.props;
+---
+<section class="in bb" aria-labelledby="bb-h">
+  <div class="glass bb-card" data-reveal>
+    <p class="eyebrow">{eyebrow}</p>
+    <h2 id="bb-h" class="h3">{title}</h2>
+    <p class="lede">Two-bedroom suites at {PROPERTY.name}. Pick your nights and see the price for the whole suite. {POLICIES.cancel}</p>
+    <div class="quick"><a class="btn amber" href="/stays/">Choose your dates</a><a class="btn" href={`mailto:${BRAND.email}`}>{BRAND.email}</a></div>
+  </div>
+</section>
+
+<style>
+  .bb { padding: 0 0 clamp(70px, 9vw, 120px); }
+  .bb-card { max-width: 760px; display: flex; flex-direction: column; gap: 16px; }
+  .bb-card .lede { font-size: 17px; }
+</style>

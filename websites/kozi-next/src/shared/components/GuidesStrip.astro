@@ -3,7 +3,7 @@ import { GUIDES } from '@shared/data/kozi';
 import Photo from './Photo.astro';
 ---
 <section class="gd" aria-labelledby="gd-h">
-  <div class="wrap">
+  <div class="in">
     <div class="gd-head">
       <div>
         <p class="eyebrow" data-reveal>Before you fly</p>
@@ -15,7 +15,7 @@ import Photo from './Photo.astro';
       {GUIDES.map((g, i) => (
         <li data-reveal style={`--d:${i * 90}`}>
           <a class="gd-card" href={`/guides/${g.slug}/`}>
-            <div class="gd-media"><Photo k={g.photo} alt="" sizes="(max-width: 760px) 84vw, 31vw" widths={[480, 720]} /></div>
+            <div class="gd-media"><Photo k={g.photo} alt="" sizes="(max-width: 760px) 84vw, 31vw" /></div>
             <p class="gd-tag">{g.tag}</p>
             <h3 class="gd-title">{g.title}</h3>
             <p class="gd-line">{g.line}</p>
@@ -27,15 +27,18 @@ import Photo from './Photo.astro';
 </section>
 
 <style is:global>
-  .gd { background: var(--paper); padding: clamp(96px, 12vw, 170px) 0; }
+  .gd { padding: clamp(60px, 8vw, 110px) 0; }
+  .gd-card { display: block; height: 100%; padding: 12px 12px 22px; border-radius: 24px; background: var(--panel-solid); border: 1px solid var(--line); text-decoration: none; transition: border-color 0.3s; }
+  .gd-card:hover { border-color: rgb(231 165 76 / 0.6); }
+  .gd-tag, .gd-title, .gd-line { padding-inline: 8px; }
   .gd-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: clamp(40px, 5vw, 70px); }
   .gd-head .h2 { margin-top: 22px; }
-  .gd-all { font-weight: 600; white-space: nowrap; border-bottom: 1px solid var(--ink); padding-bottom: 3px; }
+  .gd-all { font-weight: 600; white-space: nowrap; border-bottom: 1px solid var(--amber); padding-bottom: 3px; }
   .gd-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2vw, 28px); }
   .gd-media { aspect-ratio: 3 / 2; border-radius: 18px; overflow: hidden; background: var(--sand); }
   .gd-media img { width: 100%; height: 100%; object-fit: cover; transition: transform 1200ms var(--ease-out); }
   .gd-tag { margin: 18px 0 6px; font: 600 11px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--amber-deep); }
-  .gd-title { margin: 0; font: 400 clamp(22px, 1.9vw, 28px)/1.15 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.012em; }
+  .gd-title { margin: 0; font: 800 clamp(24px, 2.1vw, 30px)/1 var(--display); text-transform: uppercase; }
   .gd-line { margin: 8px 0 0; color: var(--ink-2); font-size: 15.5px; }
   @media (hover: hover) and (pointer: fine) { .gd-card:hover .gd-media img { transform: scale(1.04); } }
   @media (max-width: 760px) {

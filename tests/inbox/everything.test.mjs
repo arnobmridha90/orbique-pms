@@ -5,7 +5,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { verifySvix, classify, htmlText, bodyText, codeIn, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig, addressFor } from '../../api/_lib/email-in.js';
+import { verifySvix, classify, htmlText, bodyText, codeIn, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig, addressFor, agodaMessage, agodaActions, agodaUrl } from '../../api/_lib/email-in.js';
+import * as AG from './agoda-emails.mjs';
 import { reviewRecord, starsOf, platformOf } from '../../api/_lib/reviews.js';
 import { postNotice, receiveChannex, sendReply, canInbox } from '../../api/_lib/inbox.js';
 import { handleEvent } from '../../api/email-inbound.js';
@@ -250,4 +251,101 @@ test('a verification code shows without opening the email', () => {
   assert.equal(codeIn('Agoda: one-time passcode', 'Your OTP is 4821. It expires soon.'), '4821');
   assert.equal(codeIn('New booking 12345678', 'Booking 12345678 for 2 nights'), null);
   assert.equal(codeIn('Your login code', 'Call us on 2026 or visit'), null);
+});
+
+test('agoda: a special request keeps only the request, with its three answer links', () => {
+  const want = 'Requested: Non-smoking, Large bed, High floor, Quiet room\nAdditional notes: Away from elevator.';
+  const both = agodaMessage({ html: AG.specialHtml, text: AG.specialText });
+  assert.equal(both.text, want);
+  assert.equal(both.translated, null); // Google's "translation" is the same words
+  assert.deepEqual(both.actions, [
+    { kind: 'accepted', label: 'Accepted', url: AG.ANSWER(2) },
+    { kind: 'subject-to-availability', label: 'Subject to availability', url: AG.ANSWER(1) },
+    { kind: 'not-approved', label: 'Not accepted', url: AG.ANSWER(3) }
+  ]);
+  // the text part alone (no buttons there) and the HTML alone read the same
+  assert.equal(agodaMessage({ text: AG.specialText }).text, want);
+  assert.deepEqual(agodaMessage({ text: AG.specialText }).actions, []);
+  assert.equal(agodaMessage({ html: AG.specialHtml }).text, want);
+  for (const t of [both.text, agodaMessage({ text: AG.specialText }).text]) assert.doesNotMatch(t, /tracking|Dear Kozi|Please confirm|Google|Accepted|YCS|Did you know|Booking details|Except to the extent/);
+});
+
+test('agoda: a reply keeps the guest\'s words and Agoda\'s translation, not the tips or earlier messages', () => {
+  for (const email of [{ html: AG.replyHtml, text: AG.replyText }, { text: AG.replyText }, { html: AG.replyHtml }]) {
+    const r = agodaMessage(email);
+    assert.equal(r.text, '一间房加床，另一间是大床吗？\n谢谢');
+    assert.equal(r.translated, 'One room with an extra bed and one with a queen bed?\nThank you');
+    assert.deepEqual(r.actions, []);
+  }
+  // an email laid out some other way is left as it is
+  assert.equal(agodaMessage({ text: 'Hi, is early check-in possible?' }), null);
+  assert.equal(agodaMessage({ html: '<p>Hello</p>' }), null);
+});
+
+test('agoda: answer links go to Agoda\'s answer page over https only', () => {
+  assert.equal(agodaUrl('https://portal.agoda.com/en-us/PropertyMessage/PropertyMessage?a=1&amp;b=2'), 'https://portal.agoda.com/en-us/PropertyMessage/PropertyMessage?a=1&b=2');
+  assert.equal(agodaUrl('https://portal.agoda.com/en-us/PropertyMessage/PropertyMessage?a=1&#38;b=2'), 'https://portal.agoda.com/en-us/PropertyMessage/PropertyMessage?a=1&b=2');
+  for (const bad of ['http://portal.agoda.com/PropertyMessage/x', 'https://agoda.com.evil.io/PropertyMessage/x', 'https://evil.io/?u=agoda.com', 'javascript:alert(1)', 'https://u:p@portal.agoda.com/PropertyMessage/x',
+    'https://portal.agoda.com:8443/PropertyMessage/x', 'https://portal.agoda.com/a"b', '', 'https://a_b.agoda.com/PropertyMessage/x', 'https://tracking.agoda.com/click?redirectUrl=https://evil.example/',
+    'https://portal.agoda.com/other?x=/PropertyMessage/'])
+    assert.equal(agodaUrl(bad), null, bad);
+  const ok = 'https://portal.agoda.com/en-us/PropertyMessage/PropertyMessage?t=1';
+  const html = '<a id="special-request-button-accepted" href="https://evil.io/x">Accepted</a>' +
+    '<a class="special-request-button" href=\'' + ok + '\'><span> Not accepted </span></a>' +
+    '<a href="' + ok + '">Accepted</a>';
+  assert.deepEqual(agodaActions(html), [{ kind: 'not-approved', label: 'Not accepted', url: ok }]);
+  // buttons quoted in the earlier messages below the card are not this email's
+  const quoted = '<div id="card"><p>Hi</p></div><div class="history"><a id="special-request-button-accepted" href="' + ok + '">Accepted</a></div>';
+  assert.deepEqual(agodaActions(quoted), []);
+});
+
+test('agoda: odd and hostile emails never throw and stay quick', () => {
+  const t0 = Date.now();
+  for (const html of ['<a '.repeat(30000), '<b'.repeat(60000), '<p x'.repeat(30000), '<div id="card"' + '<a '.repeat(20000)])
+    agodaMessage({ html, text: 'hi' });
+  assert.ok(Date.now() - t0 < 5000, 'took ' + (Date.now() - t0) + ' ms');
+  assert.doesNotThrow(() => agodaMessage({ html: AG.specialHtml.replace('Quiet room', 'Quiet room &#x110000; &#55296;'), text: '' }));
+  const m = agodaMessage({ html: AG.specialHtml.replace('Quiet room', 'Quiet room &#x110000;'), text: '' });
+  assert.ok(m && /Quiet room/.test(m.text));
+});
+
+test('agoda: the text part copes with a wrapped time line and other time zones', () => {
+  const wrapped = AG.replyText.replace(/^(.*\d:\d\d) (PM [A-Z]{2,5})$/m, '$1\n$2');
+  if (wrapped !== AG.replyText) assert.equal(agodaMessage({ text: wrapped }).text, agodaMessage({ text: AG.replyText }).text);
+  const gmt = AG.specialText.replace(/(\d{1,2}:\d{2}) ?(?:[AP]M )?[A-Z]{2,5}\b/, '$1 GMT+08:00');
+  assert.equal(agodaMessage({ text: gmt }).text, agodaMessage({ text: AG.specialText }).text);
+});
+
+test('agoda: named entities read as their characters', () => {
+  const m = agodaMessage({ html: AG.specialHtml.replace('Quiet room', 'Quiet room &ndash; I&rsquo;ll arrive at the Caf&eacute;'), text: '' });
+  assert.ok(/Quiet room \u2013 I\u2019ll arrive at the Caf\u00e9/.test(m.text), m.text);
+});
+
+test('email in: an Agoda special request is stored as the request with its answer links', async () => {
+  const k = convStub();
+  k.inboxSettings = async () => ({ lang: 'en', autoTranslate: true });
+  const r = await receiveEmail(noBookings, ORG, { id: 'e9', from: 'Agoda <notifications@agoda-messaging.com>', reply_to: ['g-77@agoda-messaging.com'], subject: 'Special Request for Booking ID 1700000001 (Dec 31, 2026 - Jan 1, 2027)', text: AG.specialText, html: AG.specialHtml, created_at: '2026-10-26T09:28:00Z' }, { conv: k });
+  assert.equal(r.status, 'stored');
+  const find = k.log.find((x) => x[0] === 'find');
+  assert.deepEqual(find.slice(1, 3), ['em', 'g-77@agoda-messaging.com']); assert.equal(find[4].ota, 'Agoda');
+  const m = k.log.find((x) => x[0] === 'append')[2];
+  assert.equal(m.text, 'Requested: Non-smoking, Large bed, High floor, Quiet room\nAdditional notes: Away from elevator.');
+  assert.deepEqual(m.actions.map((a) => a.label), ['Accepted', 'Subject to availability', 'Not accepted']);
+  assert.equal(m.tr, undefined);
+  // a reply in another language: Agoda's translation shows when there is no translator of our own
+  const k2 = convStub();
+  k2.inboxSettings = async () => ({ lang: 'en', autoTranslate: true });
+  await receiveEmail(noBookings, ORG, { id: 'e10', from: 'Agoda <notifications@agoda-messaging.com>', reply_to: ['g-77@agoda-messaging.com'], subject: 'Reply from Mei Tan', text: AG.replyText, html: AG.replyHtml }, { conv: k2 });
+  const m2 = k2.log.find((x) => x[0] === 'append')[2];
+  assert.equal(m2.text, '一间房加床，另一间是大床吗？\n谢谢');
+  assert.deepEqual(m2.tr, { to: 'en', text: 'One room with an extra bed and one with a queen bed?\nThank you' });
+  assert.equal(m2.actions, undefined);
+  // the team turned translation off, or reads another language: the guest's words only
+  const k3 = convStub();
+  await receiveEmail(noBookings, ORG, { id: 'e11', from: 'Agoda <notifications@agoda-messaging.com>', reply_to: ['g-77@agoda-messaging.com'], subject: 'Reply from Mei Tan', text: AG.replyText }, { conv: k3 });
+  assert.equal(k3.log.find((x) => x[0] === 'append')[2].tr, undefined);
+  // an email from another site is read as before
+  const k4 = convStub();
+  await receiveEmail(noBookings, ORG, { id: 'e12', from: 'Guest <x@guest.booking.com>', subject: 'Hi', text: 'New inquiry from Bob\nBob 10:00 AM ICT\nHello\nDid you know?' }, { conv: k4 });
+  assert.match(k4.log.find((x) => x[0] === 'append')[2].text, /Did you know\?/);
 });

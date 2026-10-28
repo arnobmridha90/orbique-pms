@@ -1,27 +1,27 @@
 ---
-// Checkout: who's coming, then pay by card on Stripe's own page. The summary beside the form
-// shows the suite, the dates and the price, with the member price for members.
-import Layout from '@shared/components/Layout.astro';
+// Book: the stay the guest picked (suite, dates, guests), its price and rates, and who's coming. Then the stay goes to
+// our team as a WhatsApp message (or an email when Orbique has no WhatsApp number), and the team confirms it and how to
+// pay. Nothing is held or charged here. The suites and the number come from Orbique, so it is made on request.
+import Shell from '@my/components/Shell.astro';
 import Photo from '@shared/components/Photo.astro';
-import { SUITES } from '@shared/data/kozi';
+import { BRAND, POLICIES } from '@shared/data/kozi';
 import { ICONS } from '@shared/data/icons';
+import { cover, getContent, suitePath } from '@shared/lib/content';
 
-// nationality, sent to Orbique as the two-letter country code
-const COUNTRIES = [['Malaysia', 'MY'], ['Singapore', 'SG'], ['Indonesia', 'ID'], ['Brunei', 'BN'], ['Thailand', 'TH'], ['Philippines', 'PH'], ['Vietnam', 'VN'],
-  ['China', 'CN'], ['Hong Kong', 'HK'], ['Taiwan', 'TW'], ['Japan', 'JP'], ['South Korea', 'KR'], ['India', 'IN'], ['Bangladesh', 'BD'], ['Pakistan', 'PK'],
-  ['Sri Lanka', 'LK'], ['Saudi Arabia', 'SA'], ['United Arab Emirates', 'AE'], ['Qatar', 'QA'], ['Kuwait', 'KW'], ['Oman', 'OM'], ['Bahrain', 'BH'],
-  ['Australia', 'AU'], ['New Zealand', 'NZ'], ['United Kingdom', 'GB'], ['Ireland', 'IE'], ['Germany', 'DE'], ['France', 'FR'], ['Netherlands', 'NL'],
-  ['Italy', 'IT'], ['Spain', 'ES'], ['Switzerland', 'CH'], ['Sweden', 'SE'], ['Russia', 'RU'], ['Turkey', 'TR'], ['United States', 'US'], ['Canada', 'CA']];
+export const prerender = false;
+const site = await getContent(Astro);
+const wa = site.whatsapp;
+// every suite that can be booked online, for the summary card
+const units = site.suites.filter((s) => s.bookType).map((s) => ({ s, b: site.buildingOf(s) }));
 const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm', '9:00 pm to midnight', 'After midnight'];
 ---
-<Layout site="my" title="Confirm and pay | Kozi" description="Confirm your Kozi stay and pay securely by card." noindex>
-  <div class="wrap co" data-checkout>
+<Shell site={site} cam="aerial-low" dim title="Book your stay | Kozi" description={`Check your Kozi stay, then book it with our team${wa ? ' on WhatsApp' : ' by email'}.`} noindex>
+  <div class="in co" data-checkout data-email={BRAND.email} data-wa={wa ?? ''}>
     <a class="co-back" href="/stays/" data-co-back><span aria-hidden="true">←</span> <span data-co-back-label>Back to the suites</span></a>
-    <h1 class="display co-h" data-split>Confirm and <em>pay.</em></h1>
-    <p class="co-note" data-co-backnote hidden>You left the payment page, so you have not been charged.</p>
+    <h1 class="display co-h" data-split>{wa ? <Fragment>Book on <em>WhatsApp.</em></Fragment> : <Fragment>Book by <em>email.</em></Fragment>}</h1>
 
     <div class="co-grid">
-      <form class="co-form" data-co-form novalidate>
+      <form class="co-form glass" data-co-form novalidate>
         <section class="co-sec" aria-labelledby="co-rate" data-co-rate-sec hidden>
           <h2 id="co-rate" class="co-h2"><span aria-hidden="true"></span> Your rate</h2>
           <div class="co-rates" role="radiogroup" aria-labelledby="co-rate" data-co-rates></div>
@@ -29,21 +29,8 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
 
         <section class="co-sec" aria-labelledby="co-who">
           <h2 id="co-who" class="co-h2"><span aria-hidden="true"></span> Who's coming</h2>
-          <div class="co-row">
-            <label class="fld"><span>Full name</span><input name="name" autocomplete="name" required placeholder="As on your passport or ID" /></label>
-          </div>
           <div class="co-row co-2">
-            <label class="fld"><span>Email</span><input type="email" name="email" autocomplete="email" inputmode="email" required placeholder="you@example.com" /></label>
-            <label class="fld"><span>Mobile</span><input type="tel" name="phone" autocomplete="tel" inputmode="tel" required placeholder="+60 12 345 6789" /></label>
-          </div>
-          <div class="co-row co-2">
-            <label class="fld"><span>Nationality</span>
-              <select name="country" required autocomplete="country">
-                <option value="" disabled selected>Choose</option>
-                {COUNTRIES.map(([name, code]) => <option value={code}>{name}</option>)}
-                <option value="Other">Another country</option>
-              </select>
-            </label>
+            <label class="fld"><span>Your name</span><input name="name" autocomplete="name" required maxlength="80" aria-describedby="co-err" placeholder="As on your passport or ID" /></label>
             <label class="fld"><span>Arrival time</span>
               <select name="arrival">
                 <option value="">Not sure yet</option>
@@ -51,7 +38,6 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
               </select>
             </label>
           </div>
-          <p class="co-hint" data-co-tax></p>
         </section>
 
         <section class="co-sec" aria-labelledby="co-notes">
@@ -59,13 +45,18 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
           <label class="fld"><span>A note for the team <i>(optional)</i></span><textarea name="notes" rows="3" maxlength="600" placeholder="A cot for a baby, a late flight, a birthday..."></textarea></label>
         </section>
 
-        <section class="co-sec" aria-labelledby="co-pay">
-          <h2 id="co-pay" class="co-h2"><span aria-hidden="true"></span> Pay</h2>
-          <label class="co-agree"><input type="checkbox" name="agree" required /><span>I agree to the house rules (no smoking, no parties, quiet hours 10 pm to 8 am, ID for every guest) and the cancellation policy.</span></label>
-          <p class="mb-err co-err" role="alert" data-err></p>
-          <button class="btn amber co-go" type="submit" data-co-go><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.shield} /><span data-co-go-label>Continue to payment</span></button>
-          <p class="co-secure"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.card} />You pay on Stripe's secure page. We never see your card number.</p>
-          <p class="co-test" data-co-test hidden>Test mode: no payment is taken and no room is held. This shows how booking will work.</p>
+        <section class="co-sec" aria-labelledby="co-send">
+          <h2 id="co-send" class="co-h2"><span aria-hidden="true"></span> {wa ? 'Send it to us' : 'Email it to us'}</h2>
+          <p class="co-rules"><b>House rules:</b> {POLICIES.rules}</p>
+          <p class="form-err co-err" id="co-err" role="alert" data-err></p>
+          {wa
+            ? <a class="btn amber co-go" href={`https://wa.me/${wa}`} target="_blank" rel="noopener" aria-describedby="co-err" data-co-go><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.whatsapp} /><span>Continue on WhatsApp</span></a>
+            : <a class="btn amber co-go" href={`mailto:${BRAND.email}`} aria-describedby="co-err" data-co-go><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.mail} /><span>Email us to book</span></a>}
+          <p class="co-secure">{wa
+            ? 'WhatsApp opens with your stay written out. Send it, and our team replies to confirm your suite and how to pay.'
+            : <Fragment>Your email opens with your stay written out (or write to <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a>). Send it, and our team replies to confirm your suite and how to pay.</Fragment>}</p>
+          <p class="co-secure">Nothing is booked or charged until we confirm.</p>
+          <p class="co-test" data-co-test hidden>Test mode: these are sample prices.</p>
         </section>
       </form>
 
@@ -73,37 +64,39 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
         <div class="co-card">
           <div class="co-media" data-co-media></div>
           <div class="co-body">
-            <p class="co-where">Kozi @ Vortex KLCC · <span data-co-level></span></p>
+            <p class="co-where"><span data-co-where></span> · <span data-co-level></span></p>
             <h2 class="display co-name" data-co-name>Your suite</h2>
             <dl class="co-dates">
-              <div><dt>Check-in</dt><dd data-co-in>…</dd><dd class="co-t">from 3:00 pm</dd></div>
-              <div><dt>Check-out</dt><dd data-co-out>…</dd><dd class="co-t">by 11:00 am</dd></div>
+              <div><dt>Check-in</dt><dd data-co-in>…</dd><dd class="co-t" data-co-tin>from 3:00 pm</dd></div>
+              <div><dt>Check-out</dt><dd data-co-out>…</dd><dd class="co-t" data-co-tout>by 11:00 am</dd></div>
             </dl>
             <p class="co-who" data-co-who></p>
             <dl class="co-lines" data-co-lines aria-live="polite"></dl>
-            <div class="co-mem" data-member-note data-deal>
-              <p data-co-mem-line>Members pay less.</p>
-              <button type="button" class="bk-join" data-member-open>Sign in or join free <span aria-hidden="true">→</span></button>
-            </div>
             <ul class="co-notes" role="list">
-              <li data-co-cancel>Free cancellation until 7 days before arrival.</li>
+              <li data-co-cancel>{POLICIES.cancel}</li>
               <li data-co-taxnote></li>
             </ul>
           </div>
         </div>
       </aside>
     </div>
-    <div class="co-gone" data-co-gone hidden>
+    <div class="co-gone glass" data-co-gone hidden>
       <p class="co-gone-h display">We need your dates first.</p>
-      <p>Pick a suite and your dates, then come back here to pay.</p>
+      <p>Pick a suite and your dates, then come back here to book.</p>
       <a class="btn" href="/stays/">See the suites <span class="arr" aria-hidden="true">→</span></a>
     </div>
-    <noscript><p class="co-gone-h">Booking needs JavaScript. Please turn it on, or email us at hello@staykozi.com.</p></noscript>
+    <noscript><p class="co-gone-h">{wa
+      ? <Fragment>Please turn on JavaScript, or message us on <a href={`https://wa.me/${wa}`}>WhatsApp</a> with your dates.</Fragment>
+      : <Fragment>Please turn on JavaScript, or email us at <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a> with your dates.</Fragment>}</p></noscript>
   </div>
   <template data-co-photos>
-    {SUITES.map((s) => <div data-for={s.id} data-level={s.levels} data-name={s.name}><Photo k={s.photos[0].key} alt="" sizes="(max-width: 960px) 92vw, 430px" widths={[480, 860]} /></div>)}
+    {units.map(({ s, b }) => { const p = cover(s, b); return (
+      <div data-for={`${b.id}/${s.id}`} data-type={s.bookType} data-most={s.sleeps + (s.extraBed ? 1 : 0)} data-level={s.levels} data-name={s.name} data-building={b.name} data-in={b.checkIn} data-out={b.checkOut} data-href={suitePath(b, s)}>
+        {p && <Photo p={p} alt="" sizes="(max-width: 960px) 92vw, 430px" />}
+      </div>
+    ); })}
   </template>
-</Layout>
+</Shell>
 
 <style is:global>
   .co { padding: calc(var(--hd-h) + 30px) 0 clamp(90px, 10vw, 150px); }
@@ -113,44 +106,43 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
   .co-h { font-size: clamp(44px, 5.6vw, 88px); margin: 22px 0 clamp(30px, 4vw, 54px); }
   .co-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 430px); gap: clamp(36px, 6vw, 100px); align-items: start; }
   .co-sec { padding: 0 0 34px; margin-bottom: 34px; border-bottom: 1px solid var(--line); }
-  .co-sec:last-child { border-bottom: 0; }
-  .co-h2 { display: flex; align-items: center; gap: 14px; margin: 0 0 22px; font: 400 clamp(26px, 2.2vw, 32px)/1.1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.015em; }
-  .co-h2 span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--cream); font: 650 14px/1 var(--sans); }
+  .co-sec:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+  .co-h2 { display: flex; align-items: center; gap: 14px; margin: 0 0 22px; font: 800 clamp(26px, 2.2vw, 32px)/1.1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.015em; }
+  .co-h2 span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--amber); color: var(--amber-fg); font: 700 14px/1 var(--sans); }
   /* the steps number themselves, so the rate step can come and go */
   .co-form { counter-reset: co-step; }
   .co-sec:not([hidden]) .co-h2 span::before { counter-increment: co-step; content: counter(co-step); }
-  .co-note { margin: -12px 0 30px; padding: 12px 16px; border-radius: 14px; background: rgb(200 134 46 / 0.1); color: var(--amber-deep); font: 600 14px/1.45 var(--sans); max-width: 40em; }
   .co-rates { display: grid; gap: 12px; }
-  .co-rate { display: grid; grid-template-columns: 20px 1fr auto; gap: 14px; align-items: center; padding: 16px 18px; border-radius: 16px; background: #fff;
+  .co-rate { display: grid; grid-template-columns: 20px 1fr auto; gap: 14px; align-items: center; padding: 16px 18px; border-radius: 16px; background: rgb(238 240 245 / 0.08);
     box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; transition: box-shadow 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out); }
   .co-rate:active { transform: scale(0.99); }
-  .co-rate:has(input:checked) { box-shadow: inset 0 0 0 2px var(--ink); }
+  .co-rate:has(input:checked) { box-shadow: inset 0 0 0 2px var(--amber); }
   .co-rate:has(input:focus-visible) { outline: 2px solid var(--amber); outline-offset: 3px; }
-  .co-rate input { width: 20px; height: 20px; margin: 0; accent-color: var(--ink); }
+  .co-rate input { width: 20px; height: 20px; margin: 0; accent-color: var(--amber); }
   .co-rate-t { display: grid; gap: 4px; min-width: 0; }
   .co-rate-t b { font-size: 16px; font-weight: 650; }
   .co-rate-t small { font-size: 13.5px; line-height: 1.45; color: var(--muted); }
   .co-rate-t em { font-style: normal; font-weight: 650; color: var(--amber-deep); }
-  .co-rate-p { font: 400 23px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .co-rate-p { font: 800 23px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; white-space: nowrap; font-variant-numeric: tabular-nums; }
   @media (hover: hover) and (pointer: fine) { .co-rate:hover { background: var(--paper); } }
   .co-row { margin-bottom: 16px; }
   .co-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .fld > span i { text-transform: none; letter-spacing: 0; font-style: normal; font-weight: 500; }
-  .fld select { appearance: none; background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232b2622' stroke-width='1.8' stroke-linecap='round'><path d='m6 9 6 6 6-6'/></svg>") no-repeat right 14px center / 18px; padding-right: 40px; }
-  .fld [aria-invalid='true'] { border-color: #b42318; }
+  .fld select { appearance: none; background: rgb(238 240 245 / 0.08) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23EEF0F5' stroke-width='1.8' stroke-linecap='round'><path d='m6 9 6 6 6-6'/></svg>") no-repeat right 14px center / 18px; padding-right: 40px; }
+  .fld [aria-invalid='true'] { border-color: #FF9A7A; }
   .co-hint { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
   .co-hint:empty { display: none; }
-  .co-agree { display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; font-size: 15px; color: var(--ink-2); cursor: pointer; }
-  .co-agree input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--ink); }
+  .co-rules { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-2); }
   .co-err { margin-top: 14px; }
   .co-go { width: 100%; height: 60px; margin-top: 22px; font-size: 16.5px; }
   .co-go svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .co-go[aria-busy='true'] { opacity: 0.7; pointer-events: none; }
-  .co-secure { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 14px 0 0; font-size: 13.5px; color: var(--muted); }
-  .co-secure svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-  .co-test { margin: 14px 0 0; padding: 10px 12px; border-radius: 12px; background: rgb(200 134 46 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); text-align: center; }
+  .co-go[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
+  .co-secure { margin: 14px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); text-align: center; text-wrap: pretty; }
+  .co-secure + .co-secure { margin-top: 4px; }
+  .co-secure a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
+  .co-test { margin: 14px 0 0; padding: 10px 12px; border-radius: 12px; background: rgb(231 165 76 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); text-align: center; }
   .co-sum { position: sticky; top: calc(var(--hd-h) + 20px); }
-  .co-card { border-radius: 26px; overflow: hidden; background: var(--paper); box-shadow: 0 30px 70px -40px rgb(43 38 34 / 0.45), 0 0 0 1px var(--line); }
+  .co-card { border-radius: 26px; overflow: hidden; background: var(--paper); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 30px 70px -40px rgb(0 0 0 / 0.45), 0 0 0 1px var(--line); }
   .co-media { aspect-ratio: 16 / 9; background: var(--sand); }
   .co-media img { width: 100%; height: 100%; object-fit: cover; }
   .co-body { padding: 24px 26px 26px; }
@@ -166,15 +158,13 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
   .co-lines { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
   .co-lines div { display: flex; justify-content: space-between; gap: 16px; font-size: 15px; }
   .co-lines dt { color: var(--ink-2); } .co-lines dd { margin: 0; font-variant-numeric: tabular-nums; }
-  .co-lines .save dt, .co-lines .save dd { color: var(--amber-deep); font-weight: 600; }
   .co-lines .total { padding-top: 12px; border-top: 1px solid var(--line); font-weight: 650; font-size: 17px; }
   .co-lines .total dt { color: var(--ink); }
   .co-lines .total small { display: block; font-weight: 500; font-size: 12.5px; color: var(--muted); }
-  .co-mem { margin-top: 16px; padding: 14px 16px; border-radius: 16px; background: rgb(200 134 46 / 0.1); }
-  .co-mem p { margin: 0 0 6px; font-size: 14.5px; font-weight: 600; color: var(--amber-deep); }
   .co-notes { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; font-size: 13.5px; color: var(--muted); }
   .co-notes li:empty { display: none; }
-  .co-gone { padding: 40px 0; display: grid; justify-items: start; gap: 12px; }
+  .co-gone { max-width: 640px; display: grid; justify-items: start; gap: 12px; }
+  .co-gone p { margin: 0; color: var(--soft-fg); }
   .co-gone-h { font-size: clamp(30px, 3vw, 44px); margin: 0; }
   .co.empty .co-grid { display: none; }
   @media (max-width: 960px) {

@@ -6,7 +6,7 @@ interface Props { k?: string; eyebrow?: string; base?: string } // base: another
 const { k = 'premium-a/10-kl-tower-view-night', eyebrow = 'Stay with us', base = '' } = Astro.props;
 ---
 <section class="sb" aria-labelledby="sb-h">
-  <div class="sb-media" aria-hidden="true"><Photo k={k} alt="" sizes="100vw" widths={[800, 1280, 1800, 2400]} /></div>
+  <div class="sb-media" aria-hidden="true"><Photo k={k} alt="" sizes="100vw" /></div>
   <div class="wrap sb-in">
     <p class="eyebrow" data-reveal>{eyebrow}</p>
     <h2 id="sb-h" class="display h2" data-split>Wake up <em>above the city.</em></h2>

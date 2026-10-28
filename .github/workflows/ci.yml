@@ -44,8 +44,8 @@ jobs:
           done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort; echo public/sw.js)
           exit $fail
 
-      - name: Unit tests (unit assignment, guest message timing, booking alerts, website bookings)
-        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs
+      - name: Unit tests (unit assignment, guest message timing, booking alerts, website bookings, profit planner, live website content, staff sign-in)
+        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs
 
       - name: Config files are valid JSON
         run: |
@@ -54,7 +54,7 @@ jobs:
       - name: API functions load
         run: |
           node --input-type=module -e "
-            for (const f of ['health', 'account', 'channex', 'channex-worker', 'channex-webhook', 'alerts', 'messages', 'whatsapp-webhook', 'email-inbound', 'public']) {
+            for (const f of ['health', 'account', 'channex', 'channex-worker', 'channex-webhook', 'alerts', 'messages', 'whatsapp-webhook', 'email-inbound', 'public', 'site']) {
               const m = await import('./api/' + f + '.js');
               if (typeof m.default !== 'function') throw new Error('api/' + f + '.js has no default export');
             }

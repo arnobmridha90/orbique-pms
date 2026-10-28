@@ -1,0 +1,32 @@
+---
+// A suite as a card: its cover (the building's photo while it has none of its own), its floor, its line and the
+// lowest price soon (live, scripts/from.ts), or "Email us to book" while it can't be booked online. Pointing at the
+// card lights its floors on the tower in the city behind.
+import Photo from '@shared/components/Photo.astro';
+import { CC_BY_SA, CREDITS } from '@shared/data/kozi';
+import { cover, suitePath, type Building, type Suite } from '@shared/lib/content';
+import { levelsOf } from '@my/lib/shots';
+interface Props { s: Suite; b: Building; eager?: boolean; heading?: 'h2' | 'h3' }
+const { s, b, eager = false, heading: H = 'h3' } = Astro.props;
+const p = cover(s, b);
+const own = s.photos.length > 0;
+const credit = p?.key ? CREDITS[p.key] : undefined;
+---
+<a class="card" href={suitePath(b, s)} data-tilt data-levels={levelsOf(s).join(',') || undefined}>
+  <div class="ph">
+    {p && <Photo p={p} alt="" eager={eager} sizes="(max-width: 760px) 92vw, 400px" />}
+    {s.levels && <span class="lv">{s.levels}</span>}
+    {!own && <span class="note">Suite photos are on the way</span>}
+  </div>
+  <div class="bd">
+    <H>{s.name}</H>
+    {s.line && <p>{s.line}</p>}
+    {credit && <p class="credit">Photo of the building: {credit.by}, {CC_BY_SA.name}</p>}
+    <div class="ft">
+      {s.bookType
+        ? <p class="price" data-from data-types={s.bookType}><small>from </small><b data-from-rate>&nbsp;</b><small> a night</small></p>
+        : <p class="price is-ready"><small>Email us to book</small></p>}
+      <span class="btn small">See suite</span>
+    </div>
+  </div>
+</a>
