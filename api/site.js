@@ -17,28 +17,34 @@ import { ok, fail, send, cors, readJson, bearer, bad, uuid as uuidField } from '
 import { requireAdminClient, caller } from './_lib/supabase.js';
 import { requireWebsite, uploadUrls, publish } from './_lib/site.js';
 
-const ACTIONS = {
+export const ACTIONS = {
   'upload-urls': { need: 'edit', run: (sb, orgId, body) => uploadUrls(sb, orgId, body) },
   publish: { need: 'publish', run: (sb, orgId, body, me, m) => publish(sb, orgId, me, m, { draftHash: typeof body.draftHash === 'string' ? body.draftHash.slice(0, 16) : null }) }
 };
 
-export default async function handler(req, res) {
-  if (cors(req, res)) return;
-  try {
-    if (req.method !== 'POST') {
-      res.setHeader('Allow', 'POST');
-      return send(res, 405, { ok: false, error: 'method', message: 'Use POST for this address.' });
+/** The handler; tests pass stand-ins for the database client and the sign-in check (deps {admin, caller}). */
+export function createSiteHandler(deps = {}) {
+  const admin = deps.admin || requireAdminClient, who = deps.caller || caller;
+  return async function handler(req, res) {
+    if (cors(req, res)) return;
+    try {
+      if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return send(res, 405, { ok: false, error: 'method', message: 'Use POST for this address.' });
+      }
+      const body = await readJson(req);
+      const action = typeof body.action === 'string' ? body.action : '';
+      const spec = Object.prototype.hasOwnProperty.call(ACTIONS, action) ? ACTIONS[action] : null;
+      if (!spec) throw bad('bad-action', 'Unknown request.');
+      const sb = admin();
+      const me = await who(sb, bearer(req));
+      const orgId = uuidField(body.orgId);
+      const m = await requireWebsite(sb, orgId, me.id, spec.need);
+      return ok(res, await spec.run(sb, orgId, body, me, m));
+    } catch (err) {
+      return fail(res, err);
     }
-    const body = await readJson(req);
-    const action = typeof body.action === 'string' ? body.action : '';
-    const spec = Object.prototype.hasOwnProperty.call(ACTIONS, action) ? ACTIONS[action] : null;
-    if (!spec) throw bad('bad-action', 'Unknown request.');
-    const sb = requireAdminClient();
-    const me = await caller(sb, bearer(req));
-    const orgId = uuidField(body.orgId);
-    const m = await requireWebsite(sb, orgId, me.id, spec.need);
-    return ok(res, await spec.run(sb, orgId, body, me, m));
-  } catch (err) {
-    return fail(res, err);
-  }
+  };
 }
+
+export default createSiteHandler();

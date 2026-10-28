@@ -139,6 +139,27 @@ test('buildings: required fields, unique web addresses, one name per city', () =
   assert.deepEqual(C.check(c, {}).content.buildings.map((b) => b.id), ['vortex-klcc', 'kozi-penang']);
 });
 
+test("a city's web address cannot be one of the site's own pages", () => {
+  for (const word of ['guides', 'book', 'booking', 'contact', 'credits', 'views', 'stays', 'api', 'photos', 'city', 'sitemap', 'robots', '404', 'content']) {
+    assert.ok(C.RESERVED.includes(word), word + ' is reserved');
+  }
+  const c = koziContent();
+  c.buildings.push(Object.assign({}, c.buildings[0], { id: 'kozi-guide', name: 'Kozi Guide House', cityId: 'guides', city: 'Guides', photos: [] }));
+  c.suites.push(Object.assign({}, c.suites[1], { buildingId: 'kozi-guide', photos: [] }));
+  const r = strict(c);
+  assert.deepEqual(r.errors.filter((e) => /used by the website itself/.test(e)), [
+    'Kozi Guide House: the city\'s web address "guides" is used by the website itself. Use the city\'s name, for example kuala-lumpur.'
+  ]);
+  assert.deepEqual(r.problems.filter((p) => p.field === 'cityId').map((p) => p.where), ['Kozi Guide House']);
+  // forgiving (the public read): the building is dropped, so no page is made at /guides/<building>/
+  const loose = C.check(c, {}).content;
+  assert.deepEqual(loose.buildings.map((b) => b.id), ['vortex-klcc']);
+  assert.ok(!C.pagePaths(loose).some((p) => p.startsWith('/guides/')));
+  // a city that only starts with a reserved word is fine
+  const ok = koziContent(); ok.buildings[0].cityId = 'book-street'; ok.buildings[0].city = 'Book Street';
+  assert.deepEqual(strict(ok).errors, []);
+});
+
 test('warnings: shown units without photos, shown units in hidden buildings, buildings with nothing shown', () => {
   const c = koziContent();
   c.buildings[0].visible = false;

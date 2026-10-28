@@ -1,5 +1,6 @@
 -- Website content (supabase/migrations/0017_site_content.sql): siteContentLive is written only by the server; the
--- siteContent draft only by members who may edit the website (website_can, the app's Staff Access rule). Runs in one
+-- siteContent draft and the website settings only by members who may edit the website (website_can, the app's Staff
+-- Access rule). Runs in one
 -- transaction and rolls back. Any failed check raises an error.
 --
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/sql/site_content.sql
@@ -66,6 +67,17 @@ do $$ begin
   update public.blobs set data = '{"v":{}}' where key = 'siteContentLive';
   if found then raise exception 'owner updated siteContentLive'; end if;
   raise notice 'ok: an owner cannot change the published copy';
+end $$;
+-- the website settings (its address is where Publish sends the refresh): the same rule as the draft
+select pg_temp.expect('00000000-0000-4000-8000-00000000a001', 'website', true);
+select pg_temp.expect('00000000-0000-4000-8000-00000000a002', 'website', true);
+select pg_temp.expect('00000000-0000-4000-8000-00000000a004', 'website', false);
+select pg_temp.expect('00000000-0000-4000-8000-00000000a005', 'website', false);
+select pg_temp.as_user('00000000-0000-4000-8000-00000000a005');
+do $$ begin
+  update public.blobs set data = '{"v":{"siteUrl":"https://attacker.example"}}' where key = 'website';
+  if found then raise exception 'accountant updated the website settings'; end if;
+  raise notice 'ok: an accountant cannot change the website address';
 end $$;
 -- other blobs as before
 select pg_temp.expect('00000000-0000-4000-8000-00000000a005', 'priceLog', true);

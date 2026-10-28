@@ -10,7 +10,9 @@
 --   * blobs_insert, blobs_update:
 --       'siteContentLive' (the published copy) is written only by the server (service role, on Publish), never by a
 --       signed-in member, so what the site shows always passed the server's checks;
---       'siteContent' (the draft) is written only by members who may edit the website.
+--       'siteContent' (the draft) and 'website' (the website settings: its address, online booking types and prices,
+--       the website builder) are written only by members who may edit the website. Publish refreshes the pages of the
+--       address saved in 'website', so a member without website access must not be able to change it.
 --     Reading stays as in 0016: every member reads both (the page shows the draft and when it was last published).
 --
 -- Re-runnable: the function is replaced, the policies are dropped and created again.
@@ -57,14 +59,14 @@ create policy blobs_insert on public.blobs for insert to authenticated
   with check (public.can_write(org_id)
     and (key not in ('rolePerms', 'staffMeta', 'ratePlanner') or public.member_role(org_id) = 'owner')
     and key <> 'siteContentLive'
-    and (key <> 'siteContent' or public.website_can(org_id, 'edit')));
+    and (key not in ('siteContent', 'website') or public.website_can(org_id, 'edit')));
 drop policy if exists blobs_update on public.blobs;
 create policy blobs_update on public.blobs for update to authenticated
   using (public.can_write(org_id)
     and (key not in ('rolePerms', 'staffMeta', 'ratePlanner') or public.member_role(org_id) = 'owner')
     and key <> 'siteContentLive'
-    and (key <> 'siteContent' or public.website_can(org_id, 'edit')))
+    and (key not in ('siteContent', 'website') or public.website_can(org_id, 'edit')))
   with check (public.can_write(org_id)
     and (key not in ('rolePerms', 'staffMeta', 'ratePlanner') or public.member_role(org_id) = 'owner')
     and key <> 'siteContentLive'
-    and (key <> 'siteContent' or public.website_can(org_id, 'edit')));
+    and (key not in ('siteContent', 'website') or public.website_can(org_id, 'edit')));

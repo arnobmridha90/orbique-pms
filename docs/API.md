@@ -136,11 +136,15 @@ A shown unit without photos is published with a warning. The content rules are i
 Refreshing the website: for every page the old and the new content imply (`/`, `/sitemap.xml`, `/views/`, each city,
 building and unit page; at most 50), `GET <siteUrl><path>` with header `x-prerender-revalidate: <SITE_REVALIDATE_TOKEN>`
 (5 s each, in parallel). `siteUrl` is the `website` blob's. A page that is no longer in the content may answer 404.
-Without the token or the address nothing is refreshed and `note` says so: the website picks the change up within
-5 minutes on its own.
+The token is sent only when `siteUrl` is `https://` on a host in `SITE_REVALIDATE_HOSTS` (comma separated; default
+`www.staykozi.my,staykozi.my`), never to any other address a member saved. Without the token, the address or an
+allowed host nothing is refreshed and `note` says, in plain words, that the website shows the change within 5 minutes
+(the reason goes to the server log).
 
-Who may write the two blobs (migration `0017_site_content.sql`): `siteContent` only members `website_can(org, 'edit')`
-allows (the same rule); `siteContentLive` nobody but the server.
+Who may write the blobs (migration `0017_site_content.sql`): `siteContent` and `website` (the website settings,
+including `siteUrl`) only members `website_can(org, 'edit')` allows (the same rule); `siteContentLive` nobody but the
+server. A city's web address cannot be one of the site's own top-level names (`RESERVED` in sitecontent.cjs: `book`,
+`booking`, `guides`, `views`, `api`, ...).
 
 ## GET /api/public/site?ws=<slug>
 

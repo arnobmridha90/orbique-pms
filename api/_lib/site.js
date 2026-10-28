@@ -6,7 +6,8 @@
  *   requireWebsite(sb, orgId, user, action)   the same from the database, or a 403
  *   uploadUrls(sb, orgId, body)      signed upload URLs for new photos (Supabase Storage, public bucket site-photos)
  *   publish(sb, orgId, me, opts)     the draft -> siteContentLive, then the live site's pages are refreshed
- *   refreshSite(opts)                GET each page with x-prerender-revalidate (Vercel ISR's bypass token)
+ *   refreshSite(opts)                GET each page with x-prerender-revalidate (Vercel ISR's bypass token), only on a
+ *                                    host the operator allows (refreshHosts: SITE_REVALIDATE_HOSTS, else www.staykozi.my)
  *   publicContent(sb, ws)            the published content for GET /api/public/site
  *
  * Photos: <bucket>/<orgId>/<photoId>-<width>.jpg, public URL prefix <SUPABASE_URL>/storage/v1/object/public/site-photos/.
@@ -25,6 +26,9 @@ export const PUBLISH_PER_HOUR = 20;
 const HISTORY = 20;
 const REFRESH_TIMEOUT_MS = 5000;
 const SLUG = /^[a-z0-9][a-z0-9-]{1,40}$/;
+/* The sites Publish refreshes when SITE_REVALIDATE_HOSTS is not set. Any active member who may edit the website can
+ * change siteUrl, so the bypass token is sent only to a host on this list, never to whatever siteUrl says. */
+export const REFRESH_HOSTS = ['www.staykozi.my', 'staykozi.my'];
 
 /* ---------- who may do what (mirrors O.can in app/core.js and public.website_can in 0017) ---------- */
 
@@ -166,21 +170,37 @@ export async function publish(sb, orgId, me, membershipRow, opts = {}) {
   /* refresh the pages of both copies: a page that is gone now must stop showing */
   const nowPaths = C.pagePaths(res.content);
   const paths = nowPaths.concat(C.pagePaths(live && live.content).filter((p) => !nowPaths.includes(p))).slice(0, C.MAX_PATHS);
-  const refresh = await refreshSite({ siteUrl: settings.siteUrl, paths, gone: paths.filter((p) => !nowPaths.includes(p)), token: env.SITE_REVALIDATE_TOKEN, fetch: opts.fetch });
+  const refresh = await refreshSite({ siteUrl: settings.siteUrl, paths, gone: paths.filter((p) => !nowPaths.includes(p)), token: env.SITE_REVALIDATE_TOKEN, hosts: refreshHosts(env), fetch: opts.fetch });
   return { publishedAt, publishedBy, live: next, refreshed: refresh.refreshed, failed: refresh.failed, note: refresh.note, warnings: res.warnings };
 }
 
+/** The hosts Publish may refresh: SITE_REVALIDATE_HOSTS (comma separated, e.g. "www.staykozi.my,staykozi.my"), else REFRESH_HOSTS. */
+export function refreshHosts(env = process.env) {
+  const list = String(env.SITE_REVALIDATE_HOSTS || '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => /^[a-z0-9.-]+$/.test(h));
+  return list.length ? list : REFRESH_HOSTS.slice();
+}
+
+/** The site's origin when it is https on an allowed host (no port, no path, no user), else null. */
+export function refreshOrigin(siteUrl, hosts) {
+  let u;
+  try { u = new URL(String(siteUrl || '').trim()); } catch (e) { return null; }
+  if (u.protocol !== 'https:' || u.port || u.username || u.password || (u.pathname && u.pathname !== '/') || u.search || u.hash) return null;
+  return (hosts || []).includes(u.hostname.toLowerCase()) ? 'https://' + u.hostname.toLowerCase() : null;
+}
+
 /**
- * opts {siteUrl, paths, gone (paths no longer in the content: a 404 there is right), token, fetch, timeoutMs}
- * -> {refreshed: n, failed: [paths], note}. Without a token or site address nothing is sent.
+ * opts {siteUrl, paths, gone (paths no longer in the content: a 404 there is right), token, hosts (allowed hosts, see
+ * refreshHosts), fetch, timeoutMs} -> {refreshed: n, failed: [paths], note}. Without a token, a site address or an
+ * allowed host nothing is sent; the note is for the person who published (plain words, the details go to the log).
  */
 export async function refreshSite(opts) {
   const token = String(opts.token || '').trim();
-  const later = 'The site still picks the change up within 5 minutes on its own.';
-  if (!opts.siteUrl) return { refreshed: 0, failed: [], note: 'The website address is not set, so its pages were not refreshed. ' + later };
-  if (!token) return { refreshed: 0, failed: [], note: 'Instant refresh is not set up (SITE_REVALIDATE_TOKEN). ' + later };
+  const later = 'The website shows the change within 5 minutes.';
+  if (!opts.siteUrl) return { refreshed: 0, failed: [], note: 'Add the website address on this page so Publish can refresh it at once. ' + later };
+  if (!token) { console.warn('[api] site refresh skipped: SITE_REVALIDATE_TOKEN is not set'); return { refreshed: 0, failed: [], note: later }; }
+  const base = refreshOrigin(opts.siteUrl, opts.hosts || REFRESH_HOSTS);
+  if (!base) { console.warn('[api] site refresh skipped: the website address is not in SITE_REVALIDATE_HOSTS'); return { refreshed: 0, failed: [], note: later }; }
   const f = opts.fetch || globalThis.fetch, ms = opts.timeoutMs || REFRESH_TIMEOUT_MS, gone = opts.gone || [];
-  const base = String(opts.siteUrl).replace(/\/+$/, '');
   const results = await Promise.all((opts.paths || []).slice(0, C.MAX_PATHS).map(async (path) => {
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
     try {

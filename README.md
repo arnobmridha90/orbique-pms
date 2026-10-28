@@ -23,7 +23,7 @@ simulated for now: the app records what it would send.
 |---|---|
 | `app/` | The web app (plain JavaScript, no framework). `scripts/build.mjs` assembles it into one page. |
 | `app/server/*.js` | Production only: sign-in, workspaces, the Supabase adapter, platform admin, install support (`pwa.js`). |
-| `api/` | Two Vercel serverless functions: `GET /api/health` and `POST /api/account` (see `docs/API.md`). Files under `api/_lib/` are shared helpers; Vercel does not turn files or folders whose names start with `_` into endpoints. |
+| `api/` | The Vercel serverless functions, one per file (11 of the 12 the Hobby plan allows), for example `GET /api/health`, `POST /api/account` and `POST /api/site` (see `docs/API.md`). Files under `api/_lib/` are shared helpers; Vercel does not turn files or folders whose names start with `_` into endpoints. |
 | `supabase/migrations/` | The database schema, applied in name order by `scripts/migrate.mjs`. |
 | `public/` | Web app manifest, icons and the service worker (copied into `dist/`). |
 | `vercel.json` | Build command, output folder, rewrites (`/guest/<token>` and other paths serve the app) and cache headers. |
@@ -117,7 +117,8 @@ Set in Vercel (Project → Settings → Environment Variables). The Supabase int
 | `PLATFORM_OWNER_EMAILS` | API (optional) | Comma-separated emails (or their SHA-256) allowed to run "Set up Orbique", in addition to `config/platform-owners.json`. |
 | `APP_URL` | build (optional) | Base address for guest links. Defaults to the production domain Vercel reports. |
 | `ORBIQUE_MIGRATE_PREVIEW` | build (optional) | `1` runs migrations on preview deployments too. |
-| `SITE_REVALIDATE_TOKEN` | API (optional) | Secret. The website's page-refresh token (the same value the website has as its own `SITE_REVALIDATE_TOKEN`). With it, Publish on the Live website page refreshes the site's pages at once; without it the site updates within 5 minutes. |
+| `SITE_REVALIDATE_TOKEN` | API (optional) | Secret. The website's page-refresh token (the same value, at least 32 characters, that the website has as `ISR_BYPASS_TOKEN`). With it, Publish on the Live website page refreshes the site's pages at once; without it the site updates within 5 minutes. |
+| `SITE_REVALIDATE_HOSTS` | API (optional) | The website hosts Publish may refresh, comma separated (default `www.staykozi.my,staykozi.my`). The token is never sent to any other address. |
 
 ## First sign-in
 

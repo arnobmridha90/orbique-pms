@@ -333,9 +333,10 @@ publishes them (`POST /api/site`, docs/API.md). The website reads what was publi
 
 1. Put the website's address in the page (Change, next to the address), for example `https://www.staykozi.my`. It is
    saved as `siteUrl` in the `website` value.
-2. Make up a long random value and add it in Vercel to both projects, Orbique and the website, as
-   `SITE_REVALIDATE_TOKEN` (Production). Redeploy both. Without it, publishing still works and the website shows the
-   change within 5 minutes instead of at once.
+2. Make up a random value of at least 32 characters and add it in Vercel (Production) to both projects: to Orbique as
+   `SITE_REVALIDATE_TOKEN`, and to the website (websites/kozi-next) as `ISR_BYPASS_TOKEN`. Redeploy both. Without it, publishing still works and the website shows the
+   change within 5 minutes instead of at once. Orbique sends the token only to `www.staykozi.my` and `staykozi.my`;
+   for another website, set `SITE_REVALIDATE_HOSTS` in the Orbique project to its host names (comma separated).
 3. On the page, "Bring in what's on the website now" copies the website's current units and photos in as the draft.
    Publish once to make it the published copy.
 

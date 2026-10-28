@@ -5,9 +5,10 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { websiteAllowed, requireWebsite, uploadUrls, publish, refreshSite, publicContent, uploadPrefix, ensureBucket, _resetBucketCache, PUBLISH_PER_HOUR } from '../api/_lib/site.js';
-import siteHandler from '../api/site.js';
+import { websiteAllowed, requireWebsite, uploadUrls, publish, refreshSite, refreshHosts, refreshOrigin, publicContent, uploadPrefix, ensureBucket, _resetBucketCache, PUBLISH_PER_HOUR, REFRESH_HOSTS } from '../api/_lib/site.js';
+import siteHandler, { createSiteHandler } from '../api/site.js';
 import publicHandler from '../api/public.js';
+import { unauthorized } from '../api/_lib/http.js';
 import C from '../api/_lib/shared/sitecontent.cjs';
 import { koziContent } from './site-content.fixture.mjs';
 
@@ -244,8 +245,9 @@ test('publish: nothing to publish, a draft still saving, and at most 20 an hour'
 test('refreshSite: no token or no address skips with a note; each page has 5 seconds; at most 50 pages', async () => {
   const site = fakeSite();
   assert.deepEqual(await refreshSite({ siteUrl: 'https://www.staykozi.my', paths: ['/'], token: '', fetch: site }),
-    { refreshed: 0, failed: [], note: 'Instant refresh is not set up (SITE_REVALIDATE_TOKEN). The site still picks the change up within 5 minutes on its own.' });
-  assert.match((await refreshSite({ siteUrl: null, paths: ['/'], token: 't', fetch: site })).note, /address is not set/);
+    { refreshed: 0, failed: [], note: 'The website shows the change within 5 minutes.' });
+  assert.equal((await refreshSite({ siteUrl: null, paths: ['/'], token: 't', fetch: site })).note,
+    'Add the website address on this page so Publish can refresh it at once. The website shows the change within 5 minutes.');
   assert.equal(site.hits.length, 0);
   const slow = fakeSite({ '/slow/': 'hang', '/down/': 'throw' });
   const t0 = Date.now();
@@ -257,6 +259,40 @@ test('refreshSite: no token or no address skips with a note; each page has 5 sec
   const many = fakeSite();
   await refreshSite({ siteUrl: 'https://www.staykozi.my', paths: Array.from({ length: 70 }, (_, i) => '/p' + i + '/'), token: 't', fetch: many });
   assert.equal(many.hits.length, 50);
+});
+
+test('refreshSite sends the token only to the hosts the operator allows, whatever the saved address says', async () => {
+  assert.deepEqual(REFRESH_HOSTS, ['www.staykozi.my', 'staykozi.my']);
+  assert.deepEqual(refreshHosts({}), REFRESH_HOSTS);
+  assert.deepEqual(refreshHosts({ SITE_REVALIDATE_HOSTS: ' www.example.com , example.com,bad host/,' }), ['www.example.com', 'example.com']);
+  assert.equal(refreshOrigin('https://www.staykozi.my/', REFRESH_HOSTS), 'https://www.staykozi.my');
+  assert.equal(refreshOrigin('https://WWW.StayKozi.my', REFRESH_HOSTS), 'https://www.staykozi.my');
+  for (const bad of ['https://attacker.example', 'https://169.254.169.254', 'http://www.staykozi.my', 'https://www.staykozi.my:8443',
+    'https://www.staykozi.my.attacker.example', 'https://user@www.staykozi.my', 'https://www.staykozi.my/x', 'not a url', null]) {
+    assert.equal(refreshOrigin(bad, REFRESH_HOSTS), null, String(bad));
+  }
+  // a member saved another address: nothing is sent, the note is plain, and the token stays here
+  for (const siteUrl of ['https://attacker.example', 'https://169.254.169.254']) {
+    const site = fakeSite();
+    const r = await refreshSite({ siteUrl, paths: ['/', '/views/'], token: 'SECRET', fetch: site });
+    assert.equal(site.hits.length, 0, siteUrl);
+    assert.deepEqual(r, { refreshed: 0, failed: [], note: 'The website shows the change within 5 minutes.' });
+  }
+  // the operator's own list replaces the default one
+  const site = fakeSite();
+  await refreshSite({ siteUrl: 'https://www.staykozi.my', paths: ['/'], token: 'SECRET', hosts: refreshHosts({ SITE_REVALIDATE_HOSTS: 'kozi-preview.example' }), fetch: site });
+  assert.equal(site.hits.length, 0);
+  await refreshSite({ siteUrl: 'https://kozi-preview.example', paths: ['/'], token: 'SECRET', hosts: refreshHosts({ SITE_REVALIDATE_HOSTS: 'kozi-preview.example' }), fetch: site });
+  assert.deepEqual(site.hits, [{ url: 'https://kozi-preview.example/', token: 'SECRET' }]);
+  // and Publish uses the list: a draft published with siteUrl set elsewhere refreshes nothing
+  const sb = fakeSb(world());
+  sb.tables.blobs.find((b) => b.key === 'website').data.v.siteUrl = 'https://attacker.example';
+  const hits = fakeSite();
+  const pub = await publish(sb, ORG, OWNER, { staff_id: 'u1' }, { env: ENV, fetch: hits });
+  assert.equal(hits.hits.length, 0);
+  assert.equal(pub.refreshed, 0);
+  assert.equal(pub.note, 'The website shows the change within 5 minutes.');
+  assert.ok(liveOf(sb).content, 'the live copy is still written');
 });
 
 /* ---------- the public read ---------- */
@@ -308,6 +344,52 @@ test('POST /api/site: method, unknown action, sign-in and a missing database ans
   } finally {
     if (saved.url) process.env.SUPABASE_URL = saved.url;
     if (saved.key) process.env.SUPABASE_SERVICE_ROLE_KEY = saved.key;
+  }
+});
+
+test('POST /api/site: upload-urls needs website.edit, publish needs website.publish, checked for the signed-in member', async () => {
+  const sb = fakeSb(world({ blobs: [
+    blobRow('staffMeta', { s2: { overrides: { 'website.publish': false } }, u6: { status: 'suspended' } }),
+    blobRow('siteContentLive', { content: null, history: [] })
+  ] }));
+  sb.tables.members.push({ org_id: ORG, user_id: 'u-owner2', staff_id: 'u6', role: 'owner', status: 'active' });
+  const users = { 'tok-owner': OWNER, 'tok-ops': { id: 'u-ops' }, 'tok-front': { id: 'u-front' }, 'tok-owner2': { id: 'u-owner2' } };
+  const h = createSiteHandler({ admin: () => sb, caller: async (_sb, token) => { if (!users[token]) throw unauthorized(); return users[token]; } });
+  const call = async (token, action) => {
+    const res = fakeRes();
+    await h(fakeReq('POST', '/api/site', { action, orgId: ORG, count: 1, widths: [640] }, { authorization: 'Bearer ' + token }), res);
+    return { status: res.statusCode, body: JSON.parse(res.body) };
+  };
+  const _env = { url: process.env.SUPABASE_URL };
+  process.env.SUPABASE_URL = ENV.SUPABASE_URL; _resetBucketCache();
+  try {
+    // ops with the website at Edit but Publish switched off: may upload photos, may not publish
+    let r = await call('tok-ops', 'upload-urls');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.photos.length, 1);
+    r = await call('tok-ops', 'publish');
+    assert.equal(r.status, 403);
+    assert.equal(r.body.message, 'Your access does not include publishing the website.');
+    assert.equal(liveOf(sb).publishedAt, undefined, 'nothing was published');
+    // front desk has no website section: neither
+    for (const action of ['upload-urls', 'publish']) {
+      r = await call('tok-front', action);
+      assert.equal(r.status, 403, action);
+      assert.equal(r.body.message, 'Your access does not include ' + (action === 'publish' ? 'publishing' : 'editing') + ' the website.');
+    }
+    // a suspended owner: neither
+    for (const action of ['upload-urls', 'publish']) assert.equal((await call('tok-owner2', action)).status, 403, action);
+    // nobody signed in
+    assert.equal((await call('tok-nobody', 'publish')).status, 401);
+    // the owner may do both
+    assert.equal((await call('tok-owner', 'upload-urls')).status, 200);
+    r = await call('tok-owner', 'publish');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.publishedBy, 'Arnob Mridha');
+    assert.ok(liveOf(sb).publishedAt);
+  } finally {
+    if (_env.url === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = _env.url;
+    _resetBucketCache();
   }
 });
 

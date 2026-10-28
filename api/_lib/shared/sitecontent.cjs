@@ -11,6 +11,8 @@
  *          photos, visible, seoTitle?, seoDescription?}
  *   Photo {id, kind: 'builtin'|'upload', key? (builtin), base? (upload), widths, w, h, alt}
  * File for width W: builtin -> <siteUrl>/photos/<key>-<W>.jpg, upload -> <base>-<W>.jpg.
+ * Page addresses: /<cityId>/, /<cityId>/<building id>/, /<cityId>/<building id>/<suite id>/; a cityId cannot be one of
+ * the site's own top-level names (RESERVED: book, guides, views...).
  *
  *   check(content, opts)     the one validator: {content (cleaned), errors, warnings, problems: [{where, field, message, level}]}
  *                            opts.strict: Publish (every problem is an error, nothing is dropped quietly); otherwise
@@ -32,6 +34,9 @@ var WIDTHS = [640, 1280, 2400];
 var VIEWS = ['petronas', 'kl-tower', 'merdeka', 'city'];
 var VIEW_NAMES = { petronas: 'Petronas Twin Towers', 'kl-tower': 'KL Tower', merdeka: 'Merdeka 118', city: 'City skyline' };
 var SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/* the site's own top-level pages and folders: a city's web address (the first part of its pages' addresses) cannot be one
+   of these, or its pages and the site's own would share an address (the website's validator keeps the same list) */
+var RESERVED = ['api', 'book', 'booking', 'city', 'contact', 'content', 'credits', 'favicon', 'guides', 'photos', 'robots', 'sitemap', 'stays', 'views', '404'];
 var PHOTO_ID = /^[a-z0-9-]{4,64}$/;
 var PHOTO_KEY = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i;
 var BOOK_TYPE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -150,6 +155,7 @@ function check(input, opts) {
     var where = cleanText(b.name) || 'Building ' + (i + 1), o = {}, ok = true;
     var id = slugField(b.id, where, 'id', 'web address');
     var cityId = slugField(b.cityId, where, 'cityId', "city's web address");
+    if (cityId && RESERVED.indexOf(cityId) >= 0) { bad(where, 'cityId', where + ': the city\'s web address "' + cityId + '" is used by the website itself. Use the city\'s name, for example kuala-lumpur.'); cityId = null; }
     if (!id || !cityId) ok = false;
     o.id = id; o.cityId = cityId;
     BUILDING_TEXT.forEach(function (spec) { if (!text(b, spec, where, o)) ok = false; });
@@ -391,7 +397,7 @@ function hash(text) {
 function empty() { return { version: VERSION, buildings: [], suites: [] }; }
 
 var API = {
-  VERSION: VERSION, WIDTHS: WIDTHS, VIEWS: VIEWS, VIEW_NAMES: VIEW_NAMES, MAX: MAX, MAX_PATHS: MAX_PATHS, SLUG: SLUG, PHOTO_ID: PHOTO_ID,
+  VERSION: VERSION, WIDTHS: WIDTHS, VIEWS: VIEWS, VIEW_NAMES: VIEW_NAMES, MAX: MAX, MAX_PATHS: MAX_PATHS, SLUG: SLUG, RESERVED: RESERVED, PHOTO_ID: PHOTO_ID,
   check: check, diff: diff, pagePaths: pagePaths, planWidths: planWidths, photoSrc: photoSrc,
   slugify: slugify, uniqueSlug: uniqueSlug, readableAlt: readableAlt, canon: canon, hash: hash, empty: empty, hasOwn: hasOwn
 };
