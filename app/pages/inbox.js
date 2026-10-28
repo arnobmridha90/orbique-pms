@@ -1379,36 +1379,42 @@
           '<div class="small"><b>How to set it up:</b> use one email for all your bookings, for example bookings@yourcompany.com. Give it to Booking.com, Airbnb, Agoda, Trip.com and Expedia as the reservation email. Then, in that mailbox, forward every email to the address above (Gmail: Settings, Forwarding and POP/IMAP, Add a forwarding address; the confirmation email Gmail sends shows up under Email &amp; updates, so you can confirm it from here).</div>' +
           (em.configured ? '' : '<div class="note">Receiving is not finished on the server yet (RESEND_WEBHOOK_SECRET), so emails do not arrive yet.</div>');
       }
-      function waNumberHTML(n, owner) {
+      function waNumberHTML(n, owner, signup) {
         var sy = n.sync || {}, bits = [];
         if (n.coexist) bits.push('Also on the WhatsApp Business app on your phone. Messages you send from the phone show here as "From the WhatsApp app".');
         if (n.coexist && sy.history) bits.push(sy.history.ok ? 'The chats of the last 6 months were asked for on ' + esc(d.fmt(String(sy.history.at).slice(0, 10))) + ' and come in over the next hours (if you agreed to share them on the phone).' : 'WhatsApp did not share the older chats. New messages still come in.');
         return '<div class="row-flex"><span class="grow">Connected: <b>' + esc(n.phone || '') + '</b>' + (n.name ? ' (' + esc(n.name) + ')' : '') + '</span>' + (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-wa="off">Disconnect</button>' : '') + '</div>' +
-          (sy.disconnected ? '<div class="note">The number was disconnected from Orbique on the phone, so messages no longer come in. Connect it again to carry on.</div>' + (owner ? '<div><button type="button" class="btn btn-primary btn-sm" data-wa="fb">Connect with Facebook again</button></div>' : '') : '') +
+          (sy.disconnected ? '<div class="note">The number was disconnected from Orbique on the phone, so messages no longer come in. Connect it again to carry on.</div>' + (owner && signup ? '<div><button type="button" class="btn btn-primary btn-sm" data-wa="fb">Connect with Facebook again</button></div>' : '') : '') +
           (bits.length ? '<div class="small muted">' + bits.join(' ') + '</div>' : '') +
           (n.coexist && owner ? '<div class="small muted">To stop it fully, also disconnect it on the phone: WhatsApp Business app, Settings, Account, Business Platform.</div>' : '');
       }
       /* Meta's Embedded Signup pop-up for a number on the WhatsApp Business app (coexistence). Meta sends the chosen
          account (and sometimes the number) in a window message, and a one-time code (valid about 30 seconds) in the
          login callback; both go to the server at once. */
-      function fbSdk(s) {
-        if (window.FB && fbSdk.ready) return Promise.resolve(window.FB);
-        if (fbSdk.p) return fbSdk.p;
-        fbSdk.p = new Promise(function (resolve, reject) {
-          window.fbAsyncInit = function () {
-            if (!window.FB) { fbSdk.p = null; reject(new Error('Facebook did not load.')); return; }
-            window.FB.init({ appId: s.appId, autoLogAppEvents: true, xfbml: false, version: s.version });
-            fbSdk.ready = true; resolve(window.FB);
-          };
+      function fbSdk(s) { /* loads once per page; the state lives on window because this code runs again on every render */
+        var st = window.__orbiqueFb || (window.__orbiqueFb = {});
+        if (st.ready && window.FB) return Promise.resolve(window.FB);
+        if (st.p) return st.p;
+        st.p = new Promise(function (resolve, reject) {
+          function ready() {
+            if (!window.FB) { st.p = null; reject(new Error('Facebook did not load.')); return; }
+            if (!st.ready) window.FB.init({ appId: s.appId, autoLogAppEvents: true, xfbml: false, version: s.version });
+            st.ready = true; resolve(window.FB);
+          }
+          if (window.FB) { ready(); return; }
+          var t = setTimeout(function () { st.p = null; reject(new Error('Facebook did not load. Check your connection and try again.')); }, 20000);
+          window.fbAsyncInit = function () { clearTimeout(t); ready(); };
           var el = document.createElement('script');
           el.src = 'https://connect.facebook.net/en_US/sdk.js'; el.async = true; el.defer = true; el.crossOrigin = 'anonymous';
-          el.onerror = function () { fbSdk.p = null; reject(new Error('Could not load Facebook. Check that nothing blocks connect.facebook.net and try again.')); };
+          el.onerror = function () { clearTimeout(t); st.p = null; reject(new Error('Could not load Facebook. Check that nothing blocks connect.facebook.net and try again.')); };
           document.body.appendChild(el);
         });
-        return fbSdk.p;
+        return st.p;
       }
-      function fbSignup(s) {
-        return fbSdk(s).then(function (FB) {
+      function fbReady() { var st = window.__orbiqueFb; return st && st.ready && window.FB ? window.FB : null; }
+      /* FB.login runs straight from the click (FB must be loaded already: settingsModal loads it), so the pop-up is not blocked */
+      function fbSignup(s, FB) {
+        return (function () {
           return new Promise(function (resolve, reject) {
             var code = '', got = null, done = false, waitT = null;
             function finish(err) {
@@ -1437,18 +1443,18 @@
               finish();
             }, { config_id: s.configId, response_type: 'code', override_default_response_type: true, extras: { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' } });
           });
-        });
+        })();
       }
       function settingsModal() {
         var cfg = liveCfg() || { whatsapp: {} }, owner = O.auth.role && O.auth.role() === 'owner', wa = cfg.whatsapp || {};
         var setv = D.inboxSettings || {}, lang = setv.lang || cfg.lang || 'en', auto = setv.autoTranslate !== false;
         var byId = '<div class="field"><label for="ib-pnid">Phone number ID from Meta</label><input id="ib-pnid" class="input" inputmode="numeric" placeholder="For example 109876543210987"><div class="small muted">Meta for Developers, your app, WhatsApp, API Setup: the "Phone number ID" under your business number.</div></div><button type="button" class="btn ' + (wa.signup ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-wa="on">Connect by Phone number ID</button>';
         var waHTML = !wa.configured ? '<div class="note">WhatsApp is not set up on the server yet. Orbique needs WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN in Vercel, with WHATSAPP_APP_ID and WHATSAPP_CONFIG_ID to connect with Facebook (see Putting Orbique online, WhatsApp).</div>'
-          : wa.number ? waNumberHTML(wa.number, owner)
+          : wa.number ? waNumberHTML(wa.number, owner, !!wa.signup)
           : !owner ? '<div class="note">Ask the account owner to connect your WhatsApp business number.</div>'
           : (wa.signup ? '<div class="small">Connect the number you use on the <b>WhatsApp Business app</b>. It keeps working on your phone: messages you send from the phone show here too, and the chats of the last 6 months come in once.</div>' +
               '<div><button type="button" class="btn btn-primary btn-sm" data-wa="fb">' + O.icon('whatsapp') + 'Connect with Facebook</button></div>' +
-              '<div class="small muted">A Facebook window opens. Choose your business, then "Connect your existing WhatsApp Business app", enter the number and scan the QR code with the WhatsApp Business app (Settings, Linked devices). Use a computer browser for this step.</div>' +
+              '<div class="small muted">A Facebook window opens. Choose your business, then "Connect your existing WhatsApp Business app", enter the number and confirm on your phone with the QR code the window shows (WhatsApp Business app 2.24.17 or newer). Use a computer browser for this step.</div>' +
               (wa.manual ? '<details><summary class="small">Or connect a number that is only on the Cloud API</summary><div class="stack" style="margin-top:8px">' + byId + '</div></details>' : '')
             : byId);
         var trHTML = cfg.translate ? '<div class="field"><label for="ib-lang">Show guest messages in</label><select id="ib-lang" class="select"' + (canEdit() ? '' : ' disabled') + '>' + LANGS.map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === lang ? ' selected' : '') + '>' + esc(l[1]) + '</option>'; }).join('') + '</select></div>' +
@@ -1460,6 +1466,7 @@
           '<div class="section-title">Booking email</div>' + emailHTML() + '</div>');
         var mod = U.modal({ title: 'Inbox settings', body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
         function reload() { live.cfg = null; live.org = null; loadLive(function () { repaintLive(); }); }
+        if (owner && wa.signup && O.$('[data-wa="fb"]', body)) fbSdk(wa.signup).catch(function () {}); /* ready before the click */
         body.addEventListener('click', function (e) {
           var cp = e.target.closest('[data-copy]');
           if (cp) { var val = cp.dataset.copy; (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(val) : Promise.reject()).then(function () { U.toast('Address copied'); }, function () { U.toast('Select the address and copy it', 'bad'); }); return; }
@@ -1477,13 +1484,15 @@
           var x = e.target.closest('[data-wa]'); if (!x) return;
           x.disabled = true;
           if (x.dataset.wa === 'fb') {
-            var label = x.innerHTML;
+            var label = x.innerHTML, FB = fbReady();
+            if (!FB) { x.disabled = false; U.toast('Facebook is still loading. Try again in a moment.', 'bad'); fbSdk(wa.signup).catch(function (er) { U.toast(er.message, 'bad'); }); return; }
             x.textContent = 'Waiting for Facebook…';
-            fbSignup(wa.signup).then(function (r) {
+            fbSignup(wa.signup, FB).then(function (r) {
               x.textContent = 'Connecting…';
               return O.auth.inbox('whatsapp-signup', r);
             }).then(function (r) {
-              U.toast('WhatsApp connected: ' + ((r.number && r.number.phone) || '') + (r.number && r.number.coexist ? '. Your earlier chats come in over the next hours.' : ''));
+              var hist = r.number && r.number.coexist && r.sync && r.sync.history && !r.sync.history.error;
+              U.toast('WhatsApp connected: ' + ((r.number && r.number.phone) || '') + (hist ? '. Your earlier chats come in over the next hours.' : r.number && r.number.coexist ? '. WhatsApp did not share the earlier chats; new messages come in.' : ''));
               mod.close(); reload();
             }, function (er) { x.disabled = false; x.innerHTML = label; U.toast(er.message, 'bad'); });
             return;

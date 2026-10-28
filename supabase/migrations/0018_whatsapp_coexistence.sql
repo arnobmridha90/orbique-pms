@@ -51,6 +51,7 @@ end $$;
 -- Add p_msgs (a JSON array of messages) to conversation p_cid, once each (by xid), and p_patch to the conversation;
 -- p_unread is added to its unread count. The messages are then ordered by time (stable: messages with the same time
 -- keep their order, the ones already there first). With no new messages, p_patch is still applied (a contact's name).
+-- A waLastIn in p_patch is kept only when it is later than the conversation's.
 -- Returns how many were added (0 when the conversation is gone).
 create or replace function public.inbox_merge(p_org uuid, p_cid text, p_msgs jsonb, p_unread int, p_patch jsonb) returns int
 language plpgsql set search_path = '' as $$
@@ -66,6 +67,8 @@ begin
        and not (a.m ? 'xid' and exists (select 1 from jsonb_array_elements(public.inbox__msgs(v)) x(m) where x.m->>'xid' = a.m->>'xid'))
      order by coalesce(a.m->>'xid', a.k::text), a.k) d;
   n := jsonb_array_length(added);
+  -- waLastIn (the guest's last message, for WhatsApp's 24 hours) only moves forward: older chats can arrive after a new one
+  if p_patch ? 'waLastIn' and coalesce(v->>'waLastIn', '') >= coalesce(p_patch->>'waLastIn', '') then p_patch := p_patch - 'waLastIn'; end if;
   if n = 0 and coalesce(p_patch, '{}'::jsonb) = '{}'::jsonb then return 0; end if;
   select coalesce(jsonb_agg(z.m order by z.m->>'time', z.src, z.k), '[]'::jsonb) into merged from (
     select e.m, e.k, 0 as src from jsonb_array_elements(public.inbox__msgs(v)) with ordinality e(m, k)

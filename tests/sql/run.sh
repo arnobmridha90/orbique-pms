@@ -63,3 +63,6 @@ psqlq "$URL1" -f tests/sql/planner.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:
 
 echo "== website content (0017)"
 psqlq "$URL1" -f tests/sql/site_content.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
+
+echo "== WhatsApp coexistence (0018)"
+psqlq "$URL1" -f tests/sql/coexist.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'

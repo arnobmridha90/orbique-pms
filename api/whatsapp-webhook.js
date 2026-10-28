@@ -17,10 +17,10 @@
 import { send, cors, rawBody } from './_lib/http.js';
 import { requireAdminClient } from './_lib/supabase.js';
 import { waConfig, verifyChallenge, verifyWaSignature, parseWebhook } from './_lib/whatsapp.js';
-import { receiveWhatsApp, receiveWhatsAppStatus, receiveWhatsAppEcho, receiveWhatsAppHistory, receiveWhatsAppContact } from './_lib/inbox.js';
+import { receiveWhatsApp, receiveWhatsAppStatus, receiveWhatsAppEcho, receiveWhatsAppHistory, receiveWhatsAppContact, orgForNumber } from './_lib/inbox.js';
 import { accountUpdate } from './_lib/whatsapp-connect.js';
 
-export const MAX_BODY = 1024 * 1024;
+export const MAX_BODY = 3 * 1024 * 1024; // Meta's largest delivery (older chats, contacts); Vercel takes up to 4.5 MB
 /** Past this, the rest of a delivery waits for Meta to send it again (the function stops at 20 s). */
 export const STORE_BUDGET_MS = 14000;
 export const TRANSLATE_BUDGET_MS = 9000;
@@ -71,13 +71,15 @@ export default async function handler(req, res, deps = {}) {
     }
     for (const s of statuses) { const r = await receiveWhatsAppStatus(sb, s); if (r.status === 'updated') out.statuses++; }
     for (const x of echoes) { const r = await receiveWhatsAppEcho(sb, x, deps.opts); if (r.status === 'stored') out.echoes++; }
+    const orgs = new Map(); // a delivery is for one number; look its workspace up once
+    const orgOf = async (pnid) => { if (!orgs.has(pnid)) orgs.set(pnid, await orgForNumber(sb, pnid)); return orgs.get(pnid); };
     for (const c of contacts) {
       if (Date.now() - started > STORE_BUDGET_MS) return send(res, 500, Object.assign({ ok: false, error: 'busy', message: 'Stored part of it; send it again.' }, out));
-      const r = await receiveWhatsAppContact(sb, c); if (r.status === 'saved') out.contacts++;
+      const r = await receiveWhatsAppContact(sb, c, { orgId: await orgOf(c.phoneNumberId) }); if (r.status === 'saved') out.contacts++;
     }
     for (const h of history) {
       if (Date.now() - started > STORE_BUDGET_MS) return send(res, 500, Object.assign({ ok: false, error: 'busy', message: 'Stored part of it; send it again.' }, out));
-      const r = await receiveWhatsAppHistory(sb, h, deps.opts); out.history += r.added || 0;
+      const r = await receiveWhatsAppHistory(sb, h, Object.assign({}, deps.opts, { orgId: await orgOf(h.phoneNumberId) })); out.history += r.added || 0;
     }
     for (const a of accounts) await accountUpdate(sb, a);
   } catch (e) {

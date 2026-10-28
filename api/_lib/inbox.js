@@ -152,6 +152,12 @@ async function contactName(sb, orgId, phone) {
   return !r.error && r.data && r.data.name ? clip(r.data.name, 80) : '';
 }
 
+/** The contact for a chat the team's phone app wrote in: only with a name, so a guest's WhatsApp name already on the chat stays. */
+async function appContact(sb, orgId, phone) {
+  const name = await contactName(sb, orgId, phone);
+  return name ? { contact: { name, phone: '+' + phone } } : {};
+}
+
 /**
  * A message the team sent from the WhatsApp Business app on the phone (smb_message_echoes): stored in the guest's chat
  * as the team's, marked as sent from the app. It does not open WhatsApp's 24 hours for replies from Orbique.
@@ -164,7 +170,7 @@ export async function receiveWhatsAppEcho(sb, e, opts = {}) {
   if (await stored(sb, orgId, xid)) return { status: 'duplicate' };
   const now = opts.now || Date.now();
   const b = await bookingForPhone(sb, orgId, e.to, now);
-  const convId = await findConv(sb, orgId, 'wa', e.to, b && b.id, { contact: { name: (await contactName(sb, orgId, e.to)) || null, phone: '+' + e.to } }, now);
+  const convId = await findConv(sb, orgId, 'wa', e.to, b && b.id, await appContact(sb, orgId, e.to), now);
   if (!convId) throw new ApiError(500, 'server', 'Could not store the message.');
   const c = e.content || { type: 'text', text: '' };
   const msg = { from: 'staff', type: c.type, text: clip(c.text, MAX_TEXT), time: myt(e.at || now), via: 'whatsapp', xid, app: true };
@@ -183,14 +189,16 @@ export const HISTORY_MAX = 200;
  * -> {status: 'stored'|'duplicate'|'unknown_number', added, conversationId?}
  */
 export async function receiveWhatsAppHistory(sb, h, opts = {}) {
-  const orgId = await orgForNumber(sb, h.phoneNumberId);
+  const orgId = opts.orgId || await orgForNumber(sb, h.phoneNumberId);
   if (!orgId) return { status: 'unknown_number', added: 0 };
   const now = opts.now || Date.now();
   const list = (h.messages || []).slice().sort((a, b) => a.at - b.at).slice(-HISTORY_MAX);
   if (!list.length) return { status: 'duplicate', added: 0 };
+  // a chat is merged in one go, so when its newest message is here the whole chat is (Meta sending a delivery again)
+  if (await stored(sb, orgId, 'wa:' + list[list.length - 1].id)) return { status: 'duplicate', added: 0 };
   const b = await bookingForPhone(sb, orgId, h.guest, now);
   const lastGuest = list.filter((m) => m.fromGuest).pop();
-  const convId = await findConv(sb, orgId, 'wa', h.guest, b && b.id, { contact: { name: (await contactName(sb, orgId, h.guest)) || null, phone: '+' + h.guest } }, now);
+  const convId = await findConv(sb, orgId, 'wa', h.guest, b && b.id, await appContact(sb, orgId, h.guest), now);
   if (!convId) throw new ApiError(500, 'server', 'Could not store the chat.');
   const msgs = list.map((m) => {
     const c = m.content || { type: 'text', text: '' };
@@ -210,13 +218,14 @@ export async function receiveWhatsAppHistory(sb, h, opts = {}) {
  * A contact in the phone app (smb_app_state_sync): its name is kept for chats with that number, and given to the ones
  * already here that are not linked to a booking and have no name. -> {status: 'saved'|'removed'|'unknown_number'}
  */
-export async function receiveWhatsAppContact(sb, c) {
-  const orgId = await orgForNumber(sb, c.phoneNumberId);
+export async function receiveWhatsAppContact(sb, c, opts = {}) {
+  const orgId = opts.orgId || await orgForNumber(sb, c.phoneNumberId);
   if (!orgId) return { status: 'unknown_number' };
   if (c.removed || !c.name) {
     must(await sb.from('whatsapp_contacts').delete().eq('org_id', orgId).eq('phone', c.phone), 'remove contact');
     return { status: 'removed' };
   }
+  if (await contactName(sb, orgId, c.phone) === clip(c.name, 80)) return { status: 'saved' }; // already here (a delivery sent again)
   must(await sb.from('whatsapp_contacts').upsert({ org_id: orgId, phone: c.phone, name: clip(c.name, 80), updated_at: new Date().toISOString() }, { onConflict: 'org_id,phone' }), 'save contact');
   const convs = must(await sb.from('records').select('id, data').eq('org_id', orgId).eq('coll', 'conversations').eq('deleted', false).eq('data->>wa', c.phone).limit(5), 'load chats');
   for (const r of convs || []) {

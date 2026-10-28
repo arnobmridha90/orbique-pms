@@ -314,3 +314,17 @@ test('webhook endpoint: stores echoes and older chats from a signed delivery', a
   assert.ok(rpcs.some((x) => x.name === 'inbox_append' && x.args.p_msg.app === true));
   assert.ok(rpcs.some((x) => x.name === 'inbox_merge'));
 });
+
+test('a delivery sent again is cheap: a chat already merged and an unchanged contact are skipped; no name never clears one', async () => {
+  const now = Date.parse('2026-10-28T16:00:00Z');
+  const again = inboxDb({ dup: true });
+  const r = await receiveWhatsAppHistory(again.sb, { phoneNumberId: 'PN1', guest: '60123456789', messages: [{ id: 'H1', fromGuest: true, at: now - 3600e3, content: { type: 'text', text: 'hi' } }] }, { now, orgId: ORG });
+  assert.deepEqual([r.status, r.added], ['duplicate', 0]);
+  assert.equal(again.rpcs.length, 0);
+  const same = inboxDb({ contact: 'Ana Lopez' });
+  assert.equal((await receiveWhatsAppContact(same.sb, { phoneNumberId: 'PN1', phone: '60123456789', name: 'Ana Lopez', removed: false })).status, 'saved');
+  assert.deepEqual([same.writes.length, same.rpcs.length], [0, 0]);
+  const nameless = inboxDb();
+  await receiveWhatsAppEcho(nameless.sb, { phoneNumberId: 'PN1', to: '60123456789', id: 'wamid.E9', at: now, content: { type: 'text', text: 'ok' } });
+  assert.equal(nameless.rpcs.find((x) => x.name === 'inbox_conv').args.p_extra.contact, undefined);
+});
