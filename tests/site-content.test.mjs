@@ -259,3 +259,9 @@ test('helpers: web addresses, readable alt text, canon and hash', () => {
   assert.notEqual(C.hash('abc'), C.hash('abd'));
   assert.match(C.hash(''), /^[0-9a-f]{8}$/);
 });
+
+test('waNumber: the WhatsApp number as wa.me wants it, or nothing', () => {
+  for (const v of ['+60 17-123 4567', '0060171234567', '60171234567', '(+60) 17 123 4567', ' +6017.123.4567 ', '+60 (0)17-123 4567']) assert.equal(C.waNumber(v), '60171234567', v);
+  for (const v of ['017-123 4567', '0171234567', '+60 17', '+1234567890123456', 'call us', '', null, undefined, {}]) assert.equal(C.waNumber(v), '', String(v));
+  assert.equal(C.waNumber(60171234567), '60171234567');
+});

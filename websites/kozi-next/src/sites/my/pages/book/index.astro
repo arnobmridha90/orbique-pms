@@ -1,30 +1,24 @@
 ---
-// Checkout: who's coming, then pay by card on Stripe's own page. The summary beside the form
-// shows the suite, the dates and the price. The suites come from the content, so it is made on request.
+// Book: the stay the guest picked (suite, dates, guests), its price and rates, and who's coming. Then the stay goes to
+// our team as a WhatsApp message (or an email when Orbique has no WhatsApp number), and the team confirms it and how to
+// pay. Nothing is held or charged here. The suites and the number come from Orbique, so it is made on request.
 import Shell from '@my/components/Shell.astro';
 import Photo from '@shared/components/Photo.astro';
-import { BRAND } from '@shared/data/kozi';
+import { BRAND, POLICIES } from '@shared/data/kozi';
 import { ICONS } from '@shared/data/icons';
 import { cover, getContent, suitePath } from '@shared/lib/content';
 
 export const prerender = false;
 const site = await getContent(Astro);
+const wa = site.whatsapp;
 // every suite that can be booked online, for the summary card
 const units = site.suites.filter((s) => s.bookType).map((s) => ({ s, b: site.buildingOf(s) }));
-
-// nationality, sent to Orbique as the two-letter country code
-const COUNTRIES = [['Malaysia', 'MY'], ['Singapore', 'SG'], ['Indonesia', 'ID'], ['Brunei', 'BN'], ['Thailand', 'TH'], ['Philippines', 'PH'], ['Vietnam', 'VN'],
-  ['China', 'CN'], ['Hong Kong', 'HK'], ['Taiwan', 'TW'], ['Japan', 'JP'], ['South Korea', 'KR'], ['India', 'IN'], ['Bangladesh', 'BD'], ['Pakistan', 'PK'],
-  ['Sri Lanka', 'LK'], ['Saudi Arabia', 'SA'], ['United Arab Emirates', 'AE'], ['Qatar', 'QA'], ['Kuwait', 'KW'], ['Oman', 'OM'], ['Bahrain', 'BH'],
-  ['Australia', 'AU'], ['New Zealand', 'NZ'], ['United Kingdom', 'GB'], ['Ireland', 'IE'], ['Germany', 'DE'], ['France', 'FR'], ['Netherlands', 'NL'],
-  ['Italy', 'IT'], ['Spain', 'ES'], ['Switzerland', 'CH'], ['Sweden', 'SE'], ['Russia', 'RU'], ['Turkey', 'TR'], ['United States', 'US'], ['Canada', 'CA']];
 const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm', '9:00 pm to midnight', 'After midnight'];
 ---
-<Shell site={site} cam="aerial-low" dim title="Confirm and pay | Kozi" description="Confirm your Kozi stay and pay securely by card." noindex>
-  <div class="in co" data-checkout data-email={BRAND.email}>
+<Shell site={site} cam="aerial-low" dim title="Book your stay | Kozi" description={`Check your Kozi stay, then book it with our team${wa ? ' on WhatsApp' : ' by email'}.`} noindex>
+  <div class="in co" data-checkout data-email={BRAND.email} data-wa={wa ?? ''}>
     <a class="co-back" href="/stays/" data-co-back><span aria-hidden="true">←</span> <span data-co-back-label>Back to the suites</span></a>
-    <h1 class="display co-h" data-split>Confirm and <em>pay.</em></h1>
-    <p class="co-note" data-co-backnote hidden>You left the payment page, so you have not been charged.</p>
+    <h1 class="display co-h" data-split>{wa ? <Fragment>Book on <em>WhatsApp.</em></Fragment> : <Fragment>Book by <em>email.</em></Fragment>}</h1>
 
     <div class="co-grid">
       <form class="co-form glass" data-co-form novalidate>
@@ -35,21 +29,8 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
 
         <section class="co-sec" aria-labelledby="co-who">
           <h2 id="co-who" class="co-h2"><span aria-hidden="true"></span> Who's coming</h2>
-          <div class="co-row">
-            <label class="fld"><span>Full name</span><input name="name" autocomplete="name" required placeholder="As on your passport or ID" /></label>
-          </div>
           <div class="co-row co-2">
-            <label class="fld"><span>Email</span><input type="email" name="email" autocomplete="email" inputmode="email" required placeholder="you@example.com" /></label>
-            <label class="fld"><span>Mobile</span><input type="tel" name="phone" autocomplete="tel" inputmode="tel" required placeholder="+60 12 345 6789" /></label>
-          </div>
-          <div class="co-row co-2">
-            <label class="fld"><span>Nationality</span>
-              <select name="country" required autocomplete="country">
-                <option value="" disabled selected>Choose</option>
-                {COUNTRIES.map(([name, code]) => <option value={code}>{name}</option>)}
-                <option value="Other">Another country</option>
-              </select>
-            </label>
+            <label class="fld"><span>Your name</span><input name="name" autocomplete="name" required maxlength="80" aria-describedby="co-err" placeholder="As on your passport or ID" /></label>
             <label class="fld"><span>Arrival time</span>
               <select name="arrival">
                 <option value="">Not sure yet</option>
@@ -57,7 +38,6 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
               </select>
             </label>
           </div>
-          <p class="co-hint" data-co-tax></p>
         </section>
 
         <section class="co-sec" aria-labelledby="co-notes">
@@ -65,13 +45,18 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
           <label class="fld"><span>A note for the team <i>(optional)</i></span><textarea name="notes" rows="3" maxlength="600" placeholder="A cot for a baby, a late flight, a birthday..."></textarea></label>
         </section>
 
-        <section class="co-sec" aria-labelledby="co-pay">
-          <h2 id="co-pay" class="co-h2"><span aria-hidden="true"></span> Pay</h2>
-          <label class="co-agree"><input type="checkbox" name="agree" required /><span>I agree to the house rules (no smoking, no parties, quiet hours 10 pm to 8 am, ID for every guest) and the cancellation policy.</span></label>
-          <p class="form-err co-err" role="alert" data-err></p>
-          <button class="btn amber co-go" type="submit" data-co-go><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.shield} /><span data-co-go-label>Continue to payment</span></button>
-          <p class="co-secure"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.card} />You pay on Stripe's secure page. We never see your card number.</p>
-          <p class="co-test" data-co-test hidden>Test mode: no payment is taken and no room is held. This shows how booking will work.</p>
+        <section class="co-sec" aria-labelledby="co-send">
+          <h2 id="co-send" class="co-h2"><span aria-hidden="true"></span> {wa ? 'Send it to us' : 'Email it to us'}</h2>
+          <p class="co-rules"><b>House rules:</b> {POLICIES.rules}</p>
+          <p class="form-err co-err" id="co-err" role="alert" data-err></p>
+          {wa
+            ? <a class="btn amber co-go" href={`https://wa.me/${wa}`} target="_blank" rel="noopener" aria-describedby="co-err" data-co-go><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.whatsapp} /><span>Continue on WhatsApp</span></a>
+            : <a class="btn amber co-go" href={`mailto:${BRAND.email}`} aria-describedby="co-err" data-co-go><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.mail} /><span>Email us to book</span></a>}
+          <p class="co-secure">{wa
+            ? 'WhatsApp opens with your stay written out. Send it, and our team replies to confirm your suite and how to pay.'
+            : <Fragment>Your email opens with your stay written out (or write to <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a>). Send it, and our team replies to confirm your suite and how to pay.</Fragment>}</p>
+          <p class="co-secure">Nothing is booked or charged until we confirm.</p>
+          <p class="co-test" data-co-test hidden>Test mode: these are sample prices.</p>
         </section>
       </form>
 
@@ -88,7 +73,7 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
             <p class="co-who" data-co-who></p>
             <dl class="co-lines" data-co-lines aria-live="polite"></dl>
             <ul class="co-notes" role="list">
-              <li data-co-cancel>Free cancellation until 7 days before arrival.</li>
+              <li data-co-cancel>{POLICIES.cancel}</li>
               <li data-co-taxnote></li>
             </ul>
           </div>
@@ -97,10 +82,12 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
     </div>
     <div class="co-gone glass" data-co-gone hidden>
       <p class="co-gone-h display">We need your dates first.</p>
-      <p>Pick a suite and your dates, then come back here to pay.</p>
+      <p>Pick a suite and your dates, then come back here to book.</p>
       <a class="btn" href="/stays/">See the suites <span class="arr" aria-hidden="true">→</span></a>
     </div>
-    <noscript><p class="co-gone-h">Booking needs JavaScript. Please turn it on, or email us at hello@staykozi.com.</p></noscript>
+    <noscript><p class="co-gone-h">{wa
+      ? <Fragment>Please turn on JavaScript, or message us on <a href={`https://wa.me/${wa}`}>WhatsApp</a> with your dates.</Fragment>
+      : <Fragment>Please turn on JavaScript, or email us at <a href={`mailto:${BRAND.email}`}>{BRAND.email}</a> with your dates.</Fragment>}</p></noscript>
   </div>
   <template data-co-photos>
     {units.map(({ s, b }) => { const p = cover(s, b); return (
@@ -125,7 +112,6 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
   /* the steps number themselves, so the rate step can come and go */
   .co-form { counter-reset: co-step; }
   .co-sec:not([hidden]) .co-h2 span::before { counter-increment: co-step; content: counter(co-step); }
-  .co-note { margin: -12px 0 30px; padding: 12px 16px; border-radius: 14px; background: rgb(231 165 76 / 0.1); color: var(--amber-deep); font: 600 14px/1.45 var(--sans); max-width: 40em; }
   .co-rates { display: grid; gap: 12px; }
   .co-rate { display: grid; grid-template-columns: 20px 1fr auto; gap: 14px; align-items: center; padding: 16px 18px; border-radius: 16px; background: rgb(238 240 245 / 0.08);
     box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; transition: box-shadow 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out); }
@@ -146,14 +132,14 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
   .fld [aria-invalid='true'] { border-color: #FF9A7A; }
   .co-hint { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
   .co-hint:empty { display: none; }
-  .co-agree { display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; font-size: 15px; color: var(--ink-2); cursor: pointer; }
-  .co-agree input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--amber); }
+  .co-rules { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-2); }
   .co-err { margin-top: 14px; }
   .co-go { width: 100%; height: 60px; margin-top: 22px; font-size: 16.5px; }
   .co-go svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .co-go[aria-busy='true'] { opacity: 0.7; pointer-events: none; }
-  .co-secure { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 14px 0 0; font-size: 13.5px; color: var(--muted); }
-  .co-secure svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  .co-go[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
+  .co-secure { margin: 14px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); text-align: center; text-wrap: pretty; }
+  .co-secure + .co-secure { margin-top: 4px; }
+  .co-secure a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
   .co-test { margin: 14px 0 0; padding: 10px 12px; border-radius: 12px; background: rgb(231 165 76 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); text-align: center; }
   .co-sum { position: sticky; top: calc(var(--hd-h) + 20px); }
   .co-card { border-radius: 26px; overflow: hidden; background: var(--paper); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 30px 70px -40px rgb(0 0 0 / 0.45), 0 0 0 1px var(--line); }

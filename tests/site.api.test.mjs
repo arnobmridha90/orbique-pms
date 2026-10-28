@@ -298,7 +298,13 @@ test('refreshSite sends the token only to the hosts the operator allows, whateve
 /* ---------- the public read ---------- */
 test('publicContent serves the live copy checked again, or null before the first publish', async () => {
   const sb = fakeSb(world());
-  assert.deepEqual(await publicContent(sb, 'kozi', ENV), { content: null, publishedAt: null });
+  assert.deepEqual(await publicContent(sb, 'kozi', ENV), { content: null, publishedAt: null, contact: { whatsapp: null } });
+  // the number guests book on comes with it, published or not, cleaned for wa.me; a number without its country code is dropped
+  sb.tables.blobs[0].data.v.whatsapp = '+60 17-123 4567';
+  assert.deepEqual((await publicContent(sb, 'kozi', ENV)).contact, { whatsapp: '60171234567' });
+  sb.tables.blobs[0].data.v.whatsapp = '017-123 4567';
+  assert.deepEqual((await publicContent(sb, 'kozi', ENV)).contact, { whatsapp: null });
+  sb.tables.blobs[0].data.v.whatsapp = '0060171234567';
   const live = C.check(koziContent(), { strict: true }).content;
   live.suites[1].photos.push({ id: 'p1abc-0009', kind: 'upload', base: 'https://evil.example.com/x/p1abc-0009', widths: [640], w: 640, h: 480, alt: 'x' });
   live.suites[1].bookType = 'gone';
@@ -308,6 +314,7 @@ test('publicContent serves the live copy checked again, or null before the first
   assert.equal(r.content.suites[1].photos.length, 3);
   assert.equal(r.content.suites[1].bookType, null);
   assert.equal(r.content.publishedBy, undefined);
+  assert.deepEqual(r.contact, { whatsapp: '60171234567' });
   await assert.rejects(publicContent(sb, 'nobody', ENV), { status: 404 });
   await assert.rejects(publicContent(sb, '../x', ENV), { status: 400 });
   // online booking switched off: the content still shows

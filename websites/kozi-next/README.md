@@ -88,12 +88,15 @@ Set these in Vercel, never in the repo.
 
 ## Booking
 
-Prices and payment come from Orbique's public booking API (`api/public.js`), for the website slug `kozi`.
-Everyone sees the same price. If online payment is off, checkout says so kindly and asks guests to email
-hello@staykozi.com.
+Prices come from Orbique's public booking API (`api/public.js`), for the website slug `kozi`. Everyone sees the
+same price. On `/book/` the guest checks the stay, picks a rate and adds a name, and "Continue on WhatsApp" opens a
+chat with Kozi's WhatsApp number with the whole stay written out. The team confirms the suite and how to pay; nothing
+is held or charged on the site. The number is set in Orbique (Live Website, "Bookings go to WhatsApp") and comes with
+`GET site` as `contact.whatsapp`, so it is never in this repo. Without a number the button opens an email to
+hello@staykozi.com instead.
 
-After Stripe, the thank-you page (`/booking/confirmed/`) asks Orbique about the payment session
-(`GET booking?session_id`) until the stay shows as paid, then shows what was paid and the cancellation terms.
+Card payment through Stripe (`checkout()` in `src/shared/lib/api.ts` and the thank-you page `/booking/confirmed/`)
+is still in the code but no page uses it now.
 
 ## Rules
 

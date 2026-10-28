@@ -3,7 +3,7 @@
 export const BRAND = {
   name: 'Kozi',
   tagline: 'Exceptional spaces. Memorable stays.',
-  email: 'hello@staykozi.com', // the only contact shown until Arnob confirms a phone and WhatsApp number
+  email: 'hello@staykozi.com', // the contact shown everywhere; the WhatsApp number guests book on comes from Orbique and shows only on /book/
   instagram: 'https://www.instagram.com/kozimalaysia/',
   facebook: 'https://www.facebook.com/profile.php?id=61595749560838',
   company: 'Orbique Global Sdn. Bhd.',

@@ -123,19 +123,25 @@ export function validate(raw: unknown): SiteContent | null {
 export const DEFAULT_CONTENT = validate(DEFAULT_JSON)!;
 
 // ---------------------------------------------------------------- loading
-async function load(): Promise<{ content: SiteContent; live: boolean }> {
-  if (!API) return { content: DEFAULT_CONTENT, live: false };
+// the WhatsApp number guests book on, as wa.me wants it (Orbique's sitecontent.waNumber); none: they email us
+const WA = /^[1-9]\d{7,14}$/;
+type Loaded = { content: SiteContent; live: boolean; whatsapp: string | null };
+async function load(): Promise<Loaded> {
+  let whatsapp: string | null = null;
+  if (!API) return { content: DEFAULT_CONTENT, live: false, whatsapp };
   try {
     const res = await fetch(`${API}/api/public/site?ws=${WS}`, { signal: AbortSignal.timeout(TIMEOUT), headers: { accept: 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const out = (await res.json()) as { ok?: boolean; content?: unknown };
+    const out = (await res.json()) as { ok?: boolean; content?: unknown; contact?: { whatsapp?: unknown } };
+    const wa = out.ok ? out.contact?.whatsapp : null;
+    if (typeof wa === 'string' && WA.test(wa)) whatsapp = wa;
     const content = out.ok && out.content ? validate(out.content) : null;
-    if (content) return { content, live: true };
+    if (content) return { content, live: true, whatsapp };
     if (out.content) console.warn('[content] Orbique sent content that does not fit the contract; using the bundled content');
   } catch (e) {
     console.warn(`[content] could not reach Orbique (${(e as Error).message}); using the bundled content`);
   }
-  return { content: DEFAULT_CONTENT, live: false };
+  return { content: DEFAULT_CONTENT, live: false, whatsapp };
 }
 
 /** The content with the lookups the pages need. Hidden buildings, and suites that are hidden or in a hidden building,
@@ -144,7 +150,7 @@ export class Site {
   readonly buildings: Building[];
   readonly suites: Suite[];
   readonly cities: City[];
-  constructor(readonly content: SiteContent, readonly live = false) {
+  constructor(readonly content: SiteContent, readonly live = false, readonly whatsapp: string | null = null) {
     this.buildings = content.buildings.filter((b) => b.visible);
     const shown = new Set(this.buildings.map((b) => b.id));
     this.suites = content.suites.filter((s) => s.visible && shown.has(s.buildingId));
@@ -172,7 +178,7 @@ let atBuild: Promise<Site> | null = null;
 /** The content for this page. One fetch per request however many components ask, and one for the whole build for the
  *  pages made ahead of time. */
 export function getContent(astro: { request: Request; isPrerendered: boolean }): Promise<Site> {
-  const make = () => load().then(({ content, live }) => new Site(content, live));
+  const make = () => load().then(({ content, live, whatsapp }) => new Site(content, live, whatsapp));
   if (astro.isPrerendered) return (atBuild ??= make());
   let p = perRequest.get(astro.request);
   if (!p) perRequest.set(astro.request, (p = make()));

@@ -1,5 +1,5 @@
 // The booking card: every night's price on the calendar, sold nights closed, and the total for your
-// dates before you go on to pay.
+// dates before you check your stay and send it to our team.
 import { Calendar, type Range } from '@shared/lib/calendar';
 import { availability, calendar as fetchCalendar, rm, TEST_MODE, type CalendarDay, type Quote } from '@shared/lib/api';
 import { addDays, fmtDay, fmtShort, fromIso, iso, nights as countNights, todayKL } from '@shared/lib/dates';

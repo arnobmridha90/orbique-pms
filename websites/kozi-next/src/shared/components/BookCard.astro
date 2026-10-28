@@ -1,6 +1,6 @@
 ---
 // The booking card on a suite page: live nightly prices on the calendar and the total before
-// you go on to pay. On a phone a bar at the bottom keeps the price and the next step in reach.
+// you check your stay and send it to our team. On a phone a bar at the bottom keeps the price and the next step in reach.
 // Only for a suite that can be booked online (its bookType names a booking type in Orbique).
 import { POLICIES } from '@shared/data/kozi';
 import type { Building, Suite } from '@shared/lib/content';
@@ -39,7 +39,7 @@ const most = suite.sleeps + (suite.extraBed ? 1 : 0);
         <div data-bk-extra hidden><dt data-bk-extra-k>Extra bed</dt><dd data-bk-extra-v></dd></div>
         <div class="bk-total"><dt>Total</dt><dd data-bk-total></dd></div>
       </dl>
-      <p class="bk-fine">You'll check everything before you pay.</p>
+      <p class="bk-fine">Next, check your stay and send it to our team. You pay nothing yet.</p>
     </div>
     <p class="bk-msg" data-bk-msg role="status"></p>
 

@@ -149,8 +149,10 @@ server. A city's web address cannot be one of the site's own top-level names (`R
 ## GET /api/public/site?ws=<slug>
 
 No sign-in, any origin (`Access-Control-Allow-Origin: *`), cached for 60 seconds. The published content of the
-workspace whose `website.slug` is `ws`: `{ok: true, content: {version: 1, buildings, suites} | null, publishedAt}`
-(`null` before the first publish). Hidden buildings and units are included with `visible: false`; the website leaves
+workspace whose `website.slug` is `ws`: `{ok: true, content: {version: 1, buildings, suites} | null, publishedAt,
+contact: {whatsapp}}` (`null` before the first publish). `contact.whatsapp` is the number guests book on, as wa.me
+wants it (country code and number, digits only, from `website.whatsapp`), or `null`; it comes whether or not the
+content has been published. Hidden buildings and units are included with `visible: false`; the website leaves
 them out. The content is checked again on the way out, so anything invalid is dropped. 404 for an unknown `ws`.
 The website reads it when it builds or refreshes a page.
 
