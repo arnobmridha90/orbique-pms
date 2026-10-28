@@ -19,7 +19,7 @@
  */
 import { createSign } from 'node:crypto';
 import { must, records, blob } from './channex-db.js';
-import { waConfig, graph } from './whatsapp.js';
+import { waConfig, withToken, graph } from './whatsapp.js';
 
 export const MAX_ATTEMPTS = 6;
 export const MAX_AGE_MS = 2 * 86400000;           // an alert that could not go out for 2 days is dropped, not sent late
@@ -295,6 +295,12 @@ async function waNumber(sb, orgId) {
   return !r.error && r.data && r.data[0] ? r.data[0].phone_number_id : null;
 }
 
+/** The number's own token from Embedded Signup (whatsapp_tokens), else '' (WHATSAPP_TOKEN). */
+async function waToken(sb, phoneNumberId) {
+  const r = await sb.from('whatsapp_tokens').select('token').eq('phone_number_id', phoneNumberId).maybeSingle();
+  return !r.error && r.data && typeof r.data.token === 'string' ? r.data.token : '';
+}
+
 const finalState = (v) => typeof v === 'string' && (v === 'sent' || v.startsWith('sent to ') || v.startsWith('skipped') || v.startsWith('failed'));
 
 /**
@@ -310,7 +316,10 @@ export async function sendRow(sb, row, opts = {}) {
   const link = opts.appUrl !== undefined ? opts.appUrl : appUrl();
   const jobs = {
     email: () => sendEmail(opts.emailConfig || emailConfig(), settings.emails, msg, { fetch: opts.fetch, appUrl: link }),
-    whatsapp: async () => sendWhatsApp(opts.waConfig || waConfig(), waAlertConfig(), await waNumber(sb, row.org_id), settings.whatsapp, msg, { fetch: opts.fetch }),
+    whatsapp: async () => {
+      const number = await waNumber(sb, row.org_id);
+      return sendWhatsApp(withToken(opts.waConfig || waConfig(), number ? await waToken(sb, number) : ''), waAlertConfig(), number, settings.whatsapp, msg, { fetch: opts.fetch });
+    },
     push: () => (settings.push || test ? sendPush(sb, opts.pushConfig || pushConfig(), row.org_id, msg, { bookingId: row.booking_id, kind: row.kind }, { fetch: opts.fetch }) : 'skipped: phone alerts are off')
   };
   let lastError = null;

@@ -1,21 +1,28 @@
 /* GET/POST /api/whatsapp-webhook   Meta calls this for the WhatsApp business number (public; no sign-in).
  *
  * GET:  Meta's check when the webhook is set up: hub.verify_token must equal WHATSAPP_VERIFY_TOKEN; answers hub.challenge.
- * POST: one delivery (messages from guests, delivery ticks for replies).
- *   1. Reads the exact bytes received (at most 256 KB).
+ * POST: one delivery (messages from guests, delivery ticks for replies, and for a number that stays on the WhatsApp
+ * Business app: messages the team sent from the phone, the older chats shared once after connecting, the phone's
+ * contacts, and the phone disconnecting it).
+ *   1. Reads the exact bytes received (at most 1 MB: a delivery of older chats can be large).
  *   2. X-Hub-Signature-256 must be the HMAC-SHA256 of those bytes with WHATSAPP_APP_SECRET. Otherwise 401.
  *   3. Each message goes to the conversation of the guest's booking (matched by phone number), else to a new chat
  *      that waits to be linked; it is translated for the team when translation is set up.
  *   4. 200 once everything is stored. A database failure answers 500, so Meta sends it again (stored messages are
  *      skipped the second time).
- * Until WHATSAPP_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN are all set, it refuses everything.
+ * Until WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN are set (with WHATSAPP_TOKEN, or WHATSAPP_APP_ID and
+ * WHATSAPP_CONFIG_ID for Embedded Signup), it refuses everything. A delivery that takes too long to store answers 500
+ * part way, so Meta sends it again; what was stored is skipped then.
  */
 import { send, cors, rawBody } from './_lib/http.js';
 import { requireAdminClient } from './_lib/supabase.js';
 import { waConfig, verifyChallenge, verifyWaSignature, parseWebhook } from './_lib/whatsapp.js';
-import { receiveWhatsApp, receiveWhatsAppStatus } from './_lib/inbox.js';
+import { receiveWhatsApp, receiveWhatsAppStatus, receiveWhatsAppEcho, receiveWhatsAppHistory, receiveWhatsAppContact } from './_lib/inbox.js';
+import { accountUpdate } from './_lib/whatsapp-connect.js';
 
-export const MAX_BODY = 256 * 1024;
+export const MAX_BODY = 1024 * 1024;
+/** Past this, the rest of a delivery waits for Meta to send it again (the function stops at 20 s). */
+export const STORE_BUDGET_MS = 14000;
 export const TRANSLATE_BUDGET_MS = 9000;
 
 function queryOf(req) {
@@ -51,8 +58,8 @@ export default async function handler(req, res, deps = {}) {
   try { body = JSON.parse(raw.toString('utf8')); } catch (e) { body = null; }
   if (!body || typeof body !== 'object') return send(res, 400, { ok: false, error: 'bad-json', message: 'The request could not be read.' });
 
-  const { messages, statuses } = parseWebhook(body);
-  const out = { messages: 0, statuses: 0 };
+  const { messages, statuses, echoes, history, contacts, accounts } = parseWebhook(body);
+  const out = { messages: 0, statuses: 0, echoes: 0, history: 0, contacts: 0 };
   try {
     const sb = deps.sb || requireAdminClient();
     const started = Date.now();
@@ -63,6 +70,16 @@ export default async function handler(req, res, deps = {}) {
       if (r.status === 'stored') out.messages++;
     }
     for (const s of statuses) { const r = await receiveWhatsAppStatus(sb, s); if (r.status === 'updated') out.statuses++; }
+    for (const x of echoes) { const r = await receiveWhatsAppEcho(sb, x, deps.opts); if (r.status === 'stored') out.echoes++; }
+    for (const c of contacts) {
+      if (Date.now() - started > STORE_BUDGET_MS) return send(res, 500, Object.assign({ ok: false, error: 'busy', message: 'Stored part of it; send it again.' }, out));
+      const r = await receiveWhatsAppContact(sb, c); if (r.status === 'saved') out.contacts++;
+    }
+    for (const h of history) {
+      if (Date.now() - started > STORE_BUDGET_MS) return send(res, 500, Object.assign({ ok: false, error: 'busy', message: 'Stored part of it; send it again.' }, out));
+      const r = await receiveWhatsAppHistory(sb, h, deps.opts); out.history += r.added || 0;
+    }
+    for (const a of accounts) await accountUpdate(sb, a);
   } catch (e) {
     console.error('[whatsapp] webhook:', e && e.message ? e.message : String(e));
     return send(res, 500, { ok: false, error: 'server', message: 'Could not store it; send it again.' });

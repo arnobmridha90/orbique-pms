@@ -6,6 +6,9 @@
  *   pickBooking(bookings, phone, today)         the stay a number belongs to: in house, else the next, else the last
  *   receiveWhatsApp(sb, m, opts)                one incoming WhatsApp message (parseWebhook) -> stored
  *   receiveWhatsAppStatus(sb, s)                sent / delivered / read / failed ticks
+ *   receiveWhatsAppEcho(sb, e)                  a message the team sent from the WhatsApp Business app (coexistence)
+ *   receiveWhatsAppHistory(sb, h)               one older chat WhatsApp shared when the phone-app number was connected
+ *   receiveWhatsAppContact(sb, c)               a contact from the phone app: the name of chats with that number
  *   receiveChannex(sb, prop, event, payload, opts)  Channex message, inquiry, reservation_request, alteration_request,
  *                                               accepted / declined reservation, thread assigned
  *   postNotice(sb, orgId, n, opts)              a platform notification: in the booking's chat, else the platform's feed
@@ -18,7 +21,7 @@ import { createHash } from 'node:crypto';
 import { ApiError, bad } from './http.js';
 import { must, records, blob, tracked, todayMY, addDays } from './channex-db.js';
 import { ChannexError } from './channex.js';
-import { waConfig, sendText, WINDOW_MS, WhatsAppError } from './whatsapp.js';
+import { waConfig, withToken, sendText, WINDOW_MS, WhatsAppError } from './whatsapp.js';
 import { translateConfig, translate, langCode } from './translate.js';
 import { inboundConfig, sendEmail } from './email-in.js';
 
@@ -141,6 +144,87 @@ export async function receiveWhatsApp(sb, m, opts = {}) {
   if (tr.lang) patch.lang = tr.lang;
   const v = await appendMsg(sb, orgId, convId, msg, 1, patch);
   return { status: v ? 'stored' : 'duplicate', orgId, conversationId: convId, bookingId: b ? b.id : null };
+}
+
+/** The name the phone app's contacts give this number (whatsapp_contacts), or ''. */
+async function contactName(sb, orgId, phone) {
+  const r = await sb.from('whatsapp_contacts').select('name').eq('org_id', orgId).eq('phone', phone).maybeSingle();
+  return !r.error && r.data && r.data.name ? clip(r.data.name, 80) : '';
+}
+
+/**
+ * A message the team sent from the WhatsApp Business app on the phone (smb_message_echoes): stored in the guest's chat
+ * as the team's, marked as sent from the app. It does not open WhatsApp's 24 hours for replies from Orbique.
+ * -> {status: 'stored'|'duplicate'|'unknown_number', conversationId?}
+ */
+export async function receiveWhatsAppEcho(sb, e, opts = {}) {
+  const orgId = await orgForNumber(sb, e.phoneNumberId);
+  if (!orgId) return { status: 'unknown_number' };
+  const xid = 'wa:' + e.id;
+  if (await stored(sb, orgId, xid)) return { status: 'duplicate' };
+  const now = opts.now || Date.now();
+  const b = await bookingForPhone(sb, orgId, e.to, now);
+  const convId = await findConv(sb, orgId, 'wa', e.to, b && b.id, { contact: { name: (await contactName(sb, orgId, e.to)) || null, phone: '+' + e.to } }, now);
+  if (!convId) throw new ApiError(500, 'server', 'Could not store the message.');
+  const c = e.content || { type: 'text', text: '' };
+  const msg = { from: 'staff', type: c.type, text: clip(c.text, MAX_TEXT), time: myt(e.at || now), via: 'whatsapp', xid, app: true };
+  for (const k of ['caption', 'name']) if (c[k]) msg[k] = clip(c[k], 1024);
+  if (c.media && c.media.id) msg.media = c.media;
+  const v = await appendMsg(sb, orgId, convId, msg, 0, null);
+  return { status: v ? 'stored' : 'duplicate', conversationId: convId };
+}
+
+/** At most this many older messages per chat come in from the phone app (the latest ones). */
+export const HISTORY_MAX = 200;
+
+/**
+ * One older chat from the phone app (the history webhook, sent once after connecting): its messages go into the guest's
+ * chat in time order, read, untranslated (Translate in the inbox), skipping any already there.
+ * -> {status: 'stored'|'duplicate'|'unknown_number', added, conversationId?}
+ */
+export async function receiveWhatsAppHistory(sb, h, opts = {}) {
+  const orgId = await orgForNumber(sb, h.phoneNumberId);
+  if (!orgId) return { status: 'unknown_number', added: 0 };
+  const now = opts.now || Date.now();
+  const list = (h.messages || []).slice().sort((a, b) => a.at - b.at).slice(-HISTORY_MAX);
+  if (!list.length) return { status: 'duplicate', added: 0 };
+  const b = await bookingForPhone(sb, orgId, h.guest, now);
+  const lastGuest = list.filter((m) => m.fromGuest).pop();
+  const convId = await findConv(sb, orgId, 'wa', h.guest, b && b.id, { contact: { name: (await contactName(sb, orgId, h.guest)) || null, phone: '+' + h.guest } }, now);
+  if (!convId) throw new ApiError(500, 'server', 'Could not store the chat.');
+  const msgs = list.map((m) => {
+    const c = m.content || { type: 'text', text: '' };
+    const msg = { from: m.fromGuest ? 'guest' : 'staff', type: c.type, text: clip(c.text, MAX_TEXT), time: myt(m.at), via: 'whatsapp', xid: 'wa:' + m.id, earlier: true };
+    if (!m.fromGuest) msg.app = true;
+    for (const k of ['caption', 'name']) if (c[k]) msg[k] = clip(c[k], 1024);
+    if (c.media && c.media.id) msg.media = c.media;
+    return msg;
+  });
+  // replies stay possible for 24 hours after the guest's last message, even one sent before Orbique was connected
+  const patch = lastGuest && now - lastGuest.at < WINDOW_MS ? { waLastIn: new Date(lastGuest.at).toISOString() } : {};
+  const added = Number(await rpc(sb, 'inbox_merge', { p_org: orgId, p_cid: convId, p_msgs: msgs, p_unread: 0, p_patch: patch }, 'add earlier messages')) || 0;
+  return { status: added ? 'stored' : 'duplicate', added, conversationId: convId };
+}
+
+/**
+ * A contact in the phone app (smb_app_state_sync): its name is kept for chats with that number, and given to the ones
+ * already here that are not linked to a booking and have no name. -> {status: 'saved'|'removed'|'unknown_number'}
+ */
+export async function receiveWhatsAppContact(sb, c) {
+  const orgId = await orgForNumber(sb, c.phoneNumberId);
+  if (!orgId) return { status: 'unknown_number' };
+  if (c.removed || !c.name) {
+    must(await sb.from('whatsapp_contacts').delete().eq('org_id', orgId).eq('phone', c.phone), 'remove contact');
+    return { status: 'removed' };
+  }
+  must(await sb.from('whatsapp_contacts').upsert({ org_id: orgId, phone: c.phone, name: clip(c.name, 80), updated_at: new Date().toISOString() }, { onConflict: 'org_id,phone' }), 'save contact');
+  const convs = must(await sb.from('records').select('id, data').eq('org_id', orgId).eq('coll', 'conversations').eq('deleted', false).eq('data->>wa', c.phone).limit(5), 'load chats');
+  for (const r of convs || []) {
+    const d = isObj(r.data) ? r.data : {};
+    if (d.bookingId || (isObj(d.contact) && d.contact.name)) continue;
+    await rpc(sb, 'inbox_merge', { p_org: orgId, p_cid: r.id, p_msgs: [], p_unread: 0, p_patch: { contact: Object.assign({}, isObj(d.contact) ? d.contact : {}, { name: clip(c.name, 80) }) } }, 'name chat');
+  }
+  return { status: 'saved' };
 }
 
 const TICK = { sent: 'sent', delivered: 'delivered', read: 'read', failed: 'failed' };
@@ -339,9 +423,15 @@ export async function canInbox(sb, orgId, member, key) {
 
 /* ---------- replies ---------- */
 
-/** The workspace's WhatsApp number: {phone_number_id, display_phone, verified_name} or null. */
+/** The workspace's WhatsApp number: {phone_number_id, display_phone, verified_name, waba_id, coexist, sync} or null. */
 export async function numberOf(sb, orgId) {
-  return must(await sb.from('whatsapp_numbers').select('phone_number_id, display_phone, verified_name').eq('org_id', orgId).order('created_at').limit(1).maybeSingle(), 'load WhatsApp number');
+  return must(await sb.from('whatsapp_numbers').select('phone_number_id, display_phone, verified_name, waba_id, coexist, sync').eq('org_id', orgId).order('created_at').limit(1).maybeSingle(), 'load WhatsApp number');
+}
+
+/** The token for a number connected with Embedded Signup (whatsapp_tokens), or '' (WHATSAPP_TOKEN is used). */
+export async function tokenOf(sb, phoneNumberId) {
+  const r = await sb.from('whatsapp_tokens').select('token').eq('phone_number_id', String(phoneNumberId)).maybeSingle();
+  return !r.error && r.data && typeof r.data.token === 'string' ? r.data.token : '';
 }
 
 /** How this conversation can be answered: {whatsapp: {to, open (inside the 24 hours)} | null, channex: {thread, booking} | null}. */
@@ -385,10 +475,11 @@ export async function sendReply(sb, ctx) {
   if (langCode(ctx.lang)) msg.lang = langCode(ctx.lang);
   const patch = {};
   if (ctx.via === 'whatsapp') {
-    const cfg = ctx.waConfig || waConfig();
-    if (!cfg.configured) throw new ApiError(503, 'not-configured', 'WhatsApp is not set up on the server yet.');
+    const base = ctx.waConfig || waConfig();
+    if (!base.configured) throw new ApiError(503, 'not-configured', 'WhatsApp is not set up on the server yet.');
     const num = await numberOf(sb, ctx.orgId);
     if (!num) throw bad('no-number', 'Connect your WhatsApp business number first (Guest inbox, WhatsApp settings).');
+    const cfg = withToken(base, await tokenOf(sb, num.phone_number_id));
     if (!r.whatsapp) throw bad('no-phone', 'This guest has no phone number to message on WhatsApp.');
     if (!r.whatsapp.open) throw bad('window-closed', 'WhatsApp only allows a reply within 24 hours of the guest\'s last WhatsApp message. Ask the guest to message your WhatsApp number first, or reply through the booking site.');
     let id;
