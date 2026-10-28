@@ -1,0 +1,69 @@
+---
+// The view finder: pick a landmark and the camera turns from our windows in Vortex to look at it, with a real photo
+// taken from a suite and the suites whose windows face it. The photos come from the content (lib/shots.ts), so a
+// photo taken off a suite in Orbique's panel leaves this page too. Every landmark is in the HTML for search engines;
+// the tabs only show one at a time.
+import Shell from '@my/components/Shell.astro';
+import Photo from '@shared/components/Photo.astro';
+import { BRAND, PROPERTY } from '@shared/data/kozi';
+import { getContent, suitePath } from '@shared/lib/content';
+import { crumbsLd } from '@shared/lib/seo';
+import { landmarks } from '@my/lib/shots';
+
+export const prerender = false;
+const site = await getContent(Astro);
+const marks = landmarks(site);
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'The views', path: '/views/' }];
+const list = {
+  '@context': 'https://schema.org', '@type': 'ItemList', name: 'The views from Kozi',
+  itemListElement: marks.map((m, i) => ({ '@type': 'ListItem', position: i + 1, item: { '@type': 'TouristAttraction', name: m.name, description: m.line, address: { '@type': 'PostalAddress', addressLocality: 'Kuala Lumpur', addressCountry: 'MY' } } })),
+};
+const first = marks[0]?.id ?? 'petronas';
+---
+<Shell title="The views from Kozi: the Petronas Twin Towers, KL Tower and Merdeka 118" cam={`look-${first}`} pins="views" touch
+  description={`See what the windows of our suites in ${PROPERTY.name} look out on: the Petronas Twin Towers, KL Tower and Merdeka 118, in a 3D model of Kuala Lumpur and in real photos.`}
+  jsonld={[crumbsLd(BRAND.my, crumbs), list]}>
+  <section class="in views-ui" data-finder>
+    <p class="drag-hint" data-drag-hint hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l-7 7 7 7M19 12l-4-4M19 12l-4 4" /></svg>Drag to look around</p>
+    <div class="glass vf">
+      <h1 class="eyebrow">The view finder</h1>
+      <div class="tabs" role="tablist" aria-label="Landmark">
+        {marks.map((m, i) => (
+          <button type="button" class="tab" role="tab" id={`vf-tab-${m.id}`} aria-controls={`vf-${m.id}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} data-v={m.id}>{m.name}</button>
+        ))}
+      </div>
+      {marks.map((m, i) => (
+        <div class="vf-panel" role="tabpanel" id={`vf-${m.id}`} aria-labelledby={`vf-tab-${m.id}`} data-panel={m.id} hidden={i !== 0}>
+          <h2>{m.name}</h2>
+          {m.shots[0] && (
+            <figure class="real"><Photo p={m.shots[0].photo} eager={i === 0} sizes="(max-width: 640px) 92vw, 420px" /><figcaption>{m.shots[0].from}</figcaption></figure>
+          )}
+          <p class="vf-line">{m.line}</p>
+          <div class="quick">
+            {m.suites.map(({ s, b }) => <a class="btn small" href={suitePath(b, s)}>{s.name}</a>)}
+            <a class="btn small amber" href="/stays/">Book</a>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+</Shell>
+
+<style is:global>
+  .views-ui { min-height: 100svh; display: flex; flex-direction: column; justify-content: flex-end; padding: calc(var(--hd-h) + 24px) 0 40px; }
+  .views-ui .glass { max-width: 500px; display: flex; flex-direction: column; gap: 16px; }
+  .vf-panel { display: flex; flex-direction: column; gap: 16px; }
+  .vf-panel[hidden] { display: none; }
+  .vf-panel h2 { font-size: clamp(34px, 4vw, 52px); line-height: 0.92; }
+  .vf-line { margin: 0; color: var(--muted); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tab { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: 600 14px var(--sans); cursor: pointer; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
+  .tab:hover { border-color: rgb(238 240 245 / 0.4); }
+  .tab[aria-selected='true'] { background: var(--fg); color: #0B1020; border-color: var(--fg); }
+  .drag-hint { pointer-events: none; align-self: flex-end; margin: auto 0 16px; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; background: rgb(5 7 13 / 0.6); padding: 8px 14px; border-radius: 999px; }
+  .drag-hint[hidden] { display: none; }
+  @media (max-width: 640px) {
+    .views-ui { padding-top: 46vh; }
+    .views-ui .real { aspect-ratio: 16 / 9; }
+  }
+</style>

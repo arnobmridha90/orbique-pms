@@ -1,33 +1,252 @@
 ---
-// The home page. The suites come from the content, so it is made on request (and kept for 5 minutes).
-import Layout from '@shared/components/Layout.astro';
-import Hero from '@shared/components/Hero.astro';
-import Statement from '@shared/components/Statement.astro';
-import Views from '@shared/components/Views.astro';
-import Suites from '@shared/components/Suites.astro';
-import Day from '@shared/components/Day.astro';
-import Standard from '@shared/components/Standard.astro';
-import GuidesStrip from '@shared/components/GuidesStrip.astro';
-import { BRAND } from '@shared/data/kozi';
-import { getContent, inKL } from '@shared/lib/content';
+// The home page, as in the approved Skyline v3 design: the night city behind "Exceptional spaces. Memorable stays.",
+// then the camera flies to Vortex, looks out of our windows at the Twin Towers and Merdeka 118, rises over the city
+// for the suites, turns a ring of real photos, runs through a day at Kozi (the sky follows the clock), and lands on
+// what every suite has. The suites, their photos and the building come from the content, so it is made on request.
+import Shell from '@my/components/Shell.astro';
+import AnimLogo from '@my/components/AnimLogo.astro';
+import SuiteCard from '@my/components/SuiteCard.astro';
+import Photo from '@shared/components/Photo.astro';
+import Viewer from '@shared/components/Viewer.astro';
+import { AMENITIES, BRAND, BUILDING_EXTRAS, POLICIES } from '@shared/data/kozi';
+import { buildingPath, builtin, getContent, inKL, type Photo as P } from '@shared/lib/content';
 import { lodgingLd, orgLd } from '@shared/lib/seo';
+import { numberWord } from '@shared/lib/words';
+import { landmarks } from '@my/lib/shots';
 
 export const prerender = false;
 const site = await getContent(Astro);
 const list = site.suites.map((s) => ({ s, b: site.buildingOf(s) }));
-const kl = list.filter(({ b }) => inKL(b));
+const home = site.buildings.find(inKL) ?? site.buildings[0];
+const x = home ? BUILDING_EXTRAS[home.id] : undefined;
+const marks = landmarks(site);
+const petronas = marks.find((m) => m.id === 'petronas')?.shots[0];
+const merdeka = marks.find((m) => m.id === 'merdeka')?.shots[0];
+const usual = list.length > 0 && list.every(({ s }) => s.bedrooms === 2 && s.bathrooms === 2 && s.sleeps === 4);
+const suitesHref = home ? `${buildingPath(home)}#suites` : '/stays/';
+
+// the ring: up to 16 photos, taken in turn from each suite
+const ring: P[] = [];
+const pools = list.map(({ s }) => [...s.photos]);
+for (let i = 0; ring.length < 16 && pools.some((p) => i < p.length); i++) for (const p of pools) if (p[i] && ring.length < 16) ring.push(p[i]);
+
+// a day at Kozi: the clock runs, the photos change and the city's sky follows (day 0 night .. 1, dusk tint)
+type Clock = [number, number, string];
+const clock = (t: string, dflt: Clock): Clock => {
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(t.trim());
+  return m ? [Number(m[1]), Number(m[2] ?? 0), m[3].toLowerCase()] : dflt;
+};
+/** Half an hour earlier: the last look out of the window before check-out. */
+const earlier = ([h, m, ap]: Clock): Clock => (m >= 30 ? [h, m - 30, ap] : [h === 1 ? 12 : h - 1, m + 30, h === 12 ? (ap === 'pm' ? 'am' : 'pm') : ap]);
+const checkIn = home?.checkIn ?? '3:00 pm', checkOut = home?.checkOut ?? '11:00 am';
+const DAY: { t: Clock; h: string; p: string; k: string; day: number; dusk: number }[] = [
+  { t: clock(checkIn, [3, 0, 'pm']), h: 'Welcome in', p: `Check-in is from ${checkIn}. Two bedrooms, two bathrooms, room for four.`, k: 'boutique/01-living-room', day: 0.95, dusk: 0 },
+  { t: [7, 30, 'pm'], h: 'Dinner for four', p: 'A full kitchen, and a table big enough for everyone.', k: 'premium-a/01-dining-and-living', day: 0.4, dusk: 0.9 },
+  { t: [8, 30, 'pm'], h: 'The towers light up', p: 'The Petronas Twin Towers, from a Premium living room.', k: 'premium-b/03-tv-klcc-night', day: 0.08, dusk: 0.25 },
+  { t: [11, 0, 'pm'], h: 'Lights out. Merdeka 118 stays on.', p: "The world's second-tallest building, outside a Premium bedroom.", k: 'premium-a/08-master-bedroom-merdeka-118-night', day: 0, dusk: 0 },
+  { t: [8, 0, 'am'], h: 'Coffee first', p: 'Coffee and tea on the tray, with a kettle.', k: 'boutique/09-coffee-tea', day: 0.72, dusk: 0.35 },
+  { t: earlier(clock(checkOut, [11, 0, 'am'])), h: 'One last look', p: `Check out by ${checkOut}. The view will keep.`, k: 'premium-b/10-klcc-window-view', day: 1, dusk: 0 },
+];
+const dayPhotos = DAY.map((d) => builtin(d.k));
+
 const title = 'Kozi | Two-bedroom suites in central Kuala Lumpur';
 const description = 'Kozi suites at Vortex KLCC: two bedrooms, two bathrooms and a full kitchen in the Golden Triangle, between KLCC and Bukit Bintang. See live prices and book direct.';
 const web = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi Malaysia', url: `${BRAND.my}/`, publisher: { '@id': orgLd['@id'] } };
 const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
 ---
-<Layout site="my" title={title} description={description} over intro jsonld={[orgLd, web, ...lodgings]}
+<Shell title={title} description={description} intro cam="hero" pins="on" touch jsonld={[orgLd, web, ...lodgings]}
   alternates={[{ lang: 'x-default', href: `${BRAND.com}/` }, { lang: 'en', href: `${BRAND.com}/` }, { lang: 'en-MY', href: `${BRAND.my}/` }]}>
-  <Hero cities={site.cities} />
-  <Statement />
-  {kl.length > 0 && <Views list={kl} />}
-  <Suites list={list} building={site.buildings.length === 1 ? site.buildings[0] : undefined} />
-  <Day />
-  <Standard />
-  <GuidesStrip />
-</Layout>
+  <div class="home" data-home>
+    <section class="in hero" data-cam="hero" data-pin-avoid aria-labelledby="h-title">
+      <p class="eyebrow">{home ? `${home.name} · ${home.city}` : 'Kuala Lumpur'}</p>
+      <h1 id="h-title" class="hero-h" data-rise><span class="l"><span>Exceptional</span></span> <span class="l"><span>spaces.</span></span> <span class="l"><span><em>Memorable stays.</em></span></span></h1>
+      <div class="hero-row">
+        <p class="lede">Two-bedroom suites in the heart of Kuala Lumpur.<span class="city-hint" data-city-hint hidden> Drag the city, tap a landmark, and see what our windows really look out on.</span></p>
+        <div class="quick"><a class="btn amber" href="/stays/">Check availability</a><a class="btn" href={suitesHref}>See the suites</a></div>
+      </div>
+      <p class="scrollhint" aria-hidden="true"><i></i>Scroll to fly in</p>
+    </section>
+
+    {home && (
+      <section class="in chapter" data-cam="vortex" aria-labelledby="h-where">
+        <div class="glass" data-reveal>
+          <p class="eyebrow">Where you stay</p>
+          <h2 id="h-where">{home.name}</h2>
+          <p class="lede">{x?.chapter ?? home.intro}</p>
+          <div class="quick"><a class="btn" href={suitesHref}>See the suites</a><a class="btn" href="/views/">Explore the views</a></div>
+        </div>
+      </section>
+    )}
+
+    {petronas && (
+      <section class="in chapter right" data-cam="look-petronas" aria-labelledby="h-petronas">
+        <div class="glass" data-reveal>
+          <p class="eyebrow">The view, for real</p>
+          <h2 id="h-petronas">The Twin Towers, across the city.</h2>
+          <figure class="real"><Photo p={petronas.photo} sizes="(max-width: 640px) 92vw, 460px" /><figcaption>{petronas.from}</figcaption></figure>
+          <a class="btn" href="/views/#petronas">Try every view</a>
+        </div>
+      </section>
+    )}
+
+    {merdeka && (
+      <section class="in chapter" data-cam="look-merdeka" aria-labelledby="h-merdeka">
+        <div class="glass" data-reveal>
+          <p class="eyebrow">Day ends, city starts</p>
+          <h2 id="h-merdeka">Merdeka 118 outside the bedroom.</h2>
+          <figure class="real"><Photo p={merdeka.photo} sizes="(max-width: 640px) 92vw, 460px" class="top30" /><figcaption>{merdeka.from}</figcaption></figure>
+        </div>
+      </section>
+    )}
+
+    <section class="band tint" data-cam="aerial" aria-labelledby="h-suites">
+      <div class="in stack">
+        <div class="suites-head" data-reveal>
+          <div class="stack" style="gap:14px"><p class="eyebrow">The suites</p><h2 id="h-suites">{numberWord(list.length)} {list.length === 1 ? 'way' : 'ways'} to stay.</h2></div>
+          <p class="lede">{usual ? 'Every suite has two bedrooms, two bathrooms and sleeps four. ' : ''}Prices are for the whole suite, per night.</p>
+        </div>
+        <ul class="cards" role="list">
+          {list.map(({ s, b }) => <li data-reveal><SuiteCard s={s} b={b} /></li>)}
+        </ul>
+      </div>
+    </section>
+
+    {ring.length >= 6 && (
+      <section class="g-ring tint" data-cam="gallery" data-ring data-gallery aria-labelledby="h-ring">
+        <div class="head" data-reveal><p class="eyebrow">Inside</p><h2 id="h-ring">Every room, all around you.</h2><p class="lede">Scroll or drag to turn. Tap a photo to open it.</p></div>
+        <div class="ring-stage" data-ring-stage>
+          <div class="ring" data-ring-el>
+            {ring.map((p, i) => (
+              <button type="button" data-open-at={i} aria-label={`Open photo: ${p.alt}`}><Photo p={p} alt="" sizes="240px" /></button>
+            ))}
+          </div>
+          <div class="ring-floor"></div>
+        </div>
+        <Viewer photos={ring} name="suites" />
+      </section>
+    )}
+
+    <section class="day" data-cam="day" data-day aria-labelledby="h-day">
+      <div class="in">
+        <div class="glass day-card">
+          <h2 id="h-day" class="eyebrow">A day at Kozi</h2>
+          <ol class="day-steps" role="list">
+            {DAY.map((d, i) => (
+              <li class:list={{ on: i === 0 }} data-step={i} data-sky={`${d.day},${d.dusk}`}>
+                <p class="clock"><time>{d.t[0]}:{String(d.t[1]).padStart(2, '0')}</time><small>{d.t[2]}</small></p>
+                <div class="day-cap"><h3>{d.h}</h3><p>{d.p}</p></div>
+              </li>
+            ))}
+          </ol>
+          <div class="day-photos">
+            {DAY.map((d, i) => <Photo p={dayPhotos[i]} alt={d.h} class={i === 0 ? 'on' : ''} sizes="(max-width: 640px) 92vw, 440px" />)}
+          </div>
+          <div class="day-bar" role="group" aria-label="Times of day">
+            {DAY.map((d, i) => <button type="button" class:list={{ on: i === 0 }} data-go={i} aria-label={`${d.t[0]}:${String(d.t[1]).padStart(2, '0')} ${d.t[2]}: ${d.h}`}><i></i></button>)}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band tint" data-cam="aerial-low" aria-labelledby="h-five">
+      <div class="in stack">
+        <div class="stack" style="gap:14px" data-reveal><p class="eyebrow">In every suite</p><h2 id="h-five">{numberWord(AMENITIES.length)} things you can count on.</h2></div>
+        <ul class="five" role="list">
+          {AMENITIES.map((a, i) => <li data-reveal style={`--d:${i * 70}`}><span class="n">0{i + 1}</span><h3>{a.title}</h3><p>{a.text}</p></li>)}
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-cam="hero" aria-labelledby="h-book">
+      <div class="in">
+        <div class="glass end-card" data-reveal>
+          <span class="end-logo" aria-hidden="true"><AnimLogo id="end" /></span>
+          <p class="eyebrow">Book direct</p>
+          <h2 id="h-book">Your dates. Your suite.</h2>
+          <p class="lede">Pick your nights and see the price for the whole suite. {POLICIES.cancel}</p>
+          <div class="quick"><a class="btn amber" href="/stays/">Choose your dates</a><a class="btn" href={`mailto:${BRAND.email}`}>{BRAND.email}</a></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</Shell>
+
+<style is:global>
+  .hero { min-height: 100svh; display: flex; flex-direction: column; justify-content: flex-end; padding: calc(var(--hd-h) + 40px) 0 84px; }
+  .hero-h { font-size: clamp(58px, 10vw, 156px); line-height: 0.86; margin-top: 18px; }
+  .hero-h .l { display: block; overflow: clip; overflow-clip-margin: 0.08em; }
+  .hero-h .l > span { display: block; }
+  .hero-row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-end; justify-content: space-between; margin-top: 28px; }
+  .scrollhint { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 36px 0 0; }
+  .scrollhint i { width: 1px; height: 36px; background: linear-gradient(var(--amber), transparent); animation: drip 2.2s cubic-bezier(.77, 0, .175, 1) infinite; }
+  @keyframes drip { 0% { transform: scaleY(0); transform-origin: top; } 45% { transform: scaleY(1); transform-origin: top; } 55% { transform: scaleY(1); transform-origin: bottom; } 100% { transform: scaleY(0); transform-origin: bottom; } }
+  .chapter { min-height: 100vh; display: flex; align-items: center; padding-block: 96px; }
+  .chapter.right { justify-content: flex-end; }
+  .chapter .glass { max-width: 520px; display: flex; flex-direction: column; gap: 18px; }
+  .chapter h2 { font-size: clamp(38px, 4.4vw, 64px); line-height: 0.92; }
+  .chapter .real { aspect-ratio: 16 / 10; }
+  .chapter .lede { font-size: 17px; }
+  .real .top30 { object-position: center 30%; }
+  .suites-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 20px; }
+  .suites-head .lede { font-size: 16px; max-width: 30em; }
+  .home h2 { font-size: clamp(40px, 6vw, 84px); line-height: 0.9; }
+  .home h2.eyebrow { font: 700 12px/1.3 var(--sans); letter-spacing: 0.24em; }
+  /* the ring of photos */
+  .g-ring { position: relative; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3vh; overflow: hidden; }
+  .g-ring .head { text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; padding: 0 16px; }
+  .g-ring .lede { font-size: 16px; }
+  .ring-stage { position: relative; width: 100%; height: min(52vh, 460px); perspective: 1400px; touch-action: pan-y; cursor: grab; }
+  .ring-stage:active { cursor: grabbing; }
+  .ring { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; will-change: transform; --w: 240px; --h: 312px; }
+  .ring button { position: absolute; left: calc(var(--w) / -2); top: calc(var(--h) / -2); width: var(--w); height: var(--h); border: 1px solid rgb(238 240 245 / 0.14); padding: 0; border-radius: 14px; overflow: hidden; cursor: zoom-in; backface-visibility: hidden; background: var(--panel-solid); }
+  .ring button picture, .ring button img { width: 100%; height: 100%; display: block; pointer-events: none; }
+  .ring button img { object-fit: cover; }
+  .ring-floor { position: absolute; left: 50%; bottom: -8%; width: 70%; height: 30%; transform: translateX(-50%); background: radial-gradient(closest-side, rgb(231 165 76 / 0.3), transparent); filter: blur(12px); pointer-events: none; }
+  /* without the script the ring is a strip you can scroll */
+  html:not(.js) .ring, .js-late .ring { position: static; display: flex; gap: 12px; width: auto; height: auto; overflow-x: auto; padding: 0 16px; }
+  html:not(.js) .ring button, .js-late .ring button { position: static; flex: none; }
+  /* a day at Kozi */
+  .day { position: relative; min-height: 100vh; display: flex; align-items: center; }
+  .day > .in { width: min(var(--maxw), 100% - 2 * var(--gutter)); }
+  .day-card { max-width: 500px; display: flex; flex-direction: column; gap: 14px; }
+  .day-steps { list-style: none; margin: 0; padding: 0; display: grid; }
+  .day-steps li { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 14px; visibility: hidden; }
+  .day-steps li.on { visibility: visible; }
+  .clock { margin: 0; font: 800 clamp(76px, 10vw, 150px)/0.85 var(--display); font-variant-numeric: tabular-nums; }
+  .clock small { font-size: 0.3em; margin-left: 0.12em; color: var(--amber); }
+  .day-cap { display: flex; flex-direction: column; gap: 8px; min-height: 92px; }
+  .day-cap h3 { font-size: clamp(26px, 2.6vw, 36px); line-height: 1; }
+  .day-cap p { margin: 0; color: var(--soft-fg); }
+  .day-photos { position: relative; aspect-ratio: 16 / 10; border-radius: 18px; overflow: hidden; background: var(--sand); }
+  .day-photos img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transform: scale(1.06); transition: opacity 0.9s, transform 1.6s var(--ease-out); }
+  .day-photos img.on { opacity: 1; transform: none; }
+  .day-bar { display: flex; gap: 6px; }
+  .day-bar button { flex: 1; height: 24px; display: grid; align-items: center; cursor: pointer; }
+  .day-bar i { display: block; height: 3px; border-radius: 2px; background: var(--fg); opacity: 0.2; transition: opacity 0.4s, background-color 0.4s; }
+  .day-bar .on i { opacity: 1; background: var(--amber); }
+  /* five things */
+  .five { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 14px; }
+  .five li { padding: 24px; border-radius: 22px; border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: flex; flex-direction: column; gap: 10px; }
+  .five .n { font: 800 15px/1 var(--display); letter-spacing: 0.14em; color: var(--amber); }
+  .five h3 { font-size: 28px; line-height: 1; }
+  .five p { margin: 0; color: var(--muted); font-size: 15px; }
+  .end-card { max-width: 640px; margin-inline: auto; text-align: center; display: flex; flex-direction: column; gap: 18px; align-items: center; }
+  .end-card .lede { font-size: 17px; }
+  .end-card .quick { justify-content: center; }
+  .end-logo { width: 56px; color: var(--fg); }
+  .end-logo .kz-logo { width: 100%; }
+  @media (max-width: 640px) {
+    .chapter { min-height: auto; padding-block: 56vh 40px; }
+    .chapter.right { justify-content: flex-start; }
+    .day { align-items: flex-end; padding-bottom: 16px; }
+    .day-card { gap: 10px; padding: 20px; }
+    .clock { font-size: 64px; }
+    .day-cap { min-height: 0; }
+    .day-cap h3 { font-size: 24px; }
+    .day-cap p { font-size: 14px; }
+    .day-photos { aspect-ratio: 16 / 9; }
+    .g-ring { height: auto; min-height: 100vh; padding-block: 80px; }
+    .ring { --w: 150px; --h: 195px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .day-photos img { transition: none; } .scrollhint i { animation: none; } }
+</style>

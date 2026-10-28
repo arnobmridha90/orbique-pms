@@ -69,24 +69,24 @@ const most = suite.sleeps + (suite.extraBed ? 1 : 0);
 
 <style is:global>
   .bk { position: relative; }
-  .bk-card { position: sticky; top: calc(var(--hd-h) + 20px); padding: 26px; border-radius: 26px; background: var(--paper);
-    box-shadow: 0 30px 70px -40px rgb(43 38 34 / 0.45), 0 0 0 1px var(--line); }
+  .bk-card { position: sticky; top: calc(var(--hd-h) + 20px); padding: 26px; border-radius: 26px; background: var(--paper); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 30px 70px -40px rgb(0 0 0 / 0.45), 0 0 0 1px var(--line); }
   .bk-head { padding-bottom: 18px; }
   .bk-rate { margin: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .bk-k { font: 600 13px/1 var(--sans); color: var(--muted); }
-  .bk-rate b { font: 400 40px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; font-variant-numeric: lining-nums; min-width: 3ch; }
+  .bk-rate b { font: 800 40px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; font-variant-numeric: lining-nums; min-width: 3ch; }
   .bk-unit { font-size: 15px; color: var(--ink-2); }
-  .bk-fields { display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2); }
+  .bk-fields { display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; box-shadow: inset 0 0 0 1px rgb(238 240 245 / 0.2); }
   .bk-f { display: grid; gap: 5px; align-content: center; min-height: 66px; padding: 12px 16px; text-align: left; border-radius: 18px; transition: background-color 200ms ease, box-shadow 200ms ease; }
-  .bk-f + .bk-f { box-shadow: inset 1px 0 0 rgb(43 38 34 / 0.2); border-radius: 0 18px 18px 0; }
+  .bk-f + .bk-f { box-shadow: inset 1px 0 0 rgb(238 240 245 / 0.2); border-radius: 0 18px 18px 0; }
   .bk-f:first-child { border-radius: 18px 0 0 18px; }
-  .bk-who { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; box-shadow: inset 0 1px 0 rgb(43 38 34 / 0.2); border-radius: 0 0 18px 18px; }
+  .bk-who { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; box-shadow: inset 0 1px 0 rgb(238 240 245 / 0.2); border-radius: 0 0 18px 18px; }
   .bk-who > span { display: grid; gap: 5px; }
   .bk-v { font: 550 15.5px/1.2 var(--sans); white-space: nowrap; }
   .bk-v output { font: inherit; }
   .bk:not(.has-dates) [data-bk-in], .bk:not(.has-dates) [data-bk-out] { color: var(--muted); }
-  .bk-f[aria-expanded='true'] { background: #fff; box-shadow: inset 0 0 0 1.5px var(--ink); border-radius: 18px; }
-  @media (hover: hover) and (pointer: fine) { button.bk-f:hover:not([aria-expanded='true']) { background: rgb(43 38 34 / 0.04); } }
+  .bk-f[aria-expanded='true'] { background: rgb(238 240 245 / 0.08); box-shadow: inset 0 0 0 1.5px var(--ink); border-radius: 18px; }
+  @media (hover: hover) and (pointer: fine) { button.bk-f:hover:not([aria-expanded='true']) { background: rgb(238 240 245 / 0.04); } }
   .bk-go { width: 100%; height: 56px; margin-top: 14px; font-size: 16px; }
   .bk-go[aria-busy='true'] { opacity: 0.7; pointer-events: none; }
   .bk-sum { margin-top: 18px; transition: opacity 200ms ease; }
@@ -97,12 +97,12 @@ const most = suite.sleeps + (suite.extraBed ? 1 : 0);
   .bk-total { padding-top: 12px; margin-top: 2px; border-top: 1px solid var(--line); font-weight: 650; font-size: 16.5px !important; }
   .bk-total dt { color: var(--ink) !important; }
   .bk-fine { margin: 12px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
-  .bk-msg { margin: 12px 0 0; font-size: 14px; color: #b42318; }
+  .bk-msg { margin: 12px 0 0; font-size: 14px; color: #FF9A7A; }
   .bk-msg:empty { display: none; }
   .bk-notes { list-style: none; margin: 20px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: grid; gap: 10px; font-size: 14px; color: var(--ink-2); }
   .bk-notes li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; }
   .bk-notes svg { width: 18px; height: 18px; margin-top: 2px; fill: none; stroke: var(--amber-deep); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  .bk-test { margin: 14px 0 0; padding: 10px 12px; border-radius: 12px; background: rgb(200 134 46 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); text-align: center; }
+  .bk-test { margin: 14px 0 0; padding: 10px 12px; border-radius: 12px; background: rgb(231 165 76 / 0.1); color: var(--amber-deep); font: 600 13px/1.4 var(--sans); text-align: center; }
   /* wide screens: the calendar opens beside the card, two months; narrower: inside the card, one month */
   @media (min-width: 1200px) { .bk-pop { top: 0; right: calc(100% + 16px); left: auto; transform-origin: 100% 150px; } }
   @media (min-width: 761px) and (max-width: 1199px) {
@@ -115,11 +115,11 @@ const most = suite.sleeps + (suite.extraBed ? 1 : 0);
     .bk-card { position: static; padding: 22px 20px; }
     .bk[data-open] .s-shade { opacity: 1; visibility: visible; transition: opacity 300ms ease; }
     .bk-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 18; display: flex; align-items: center; justify-content: space-between; gap: 14px;
-      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); background: rgb(251 247 240 / 0.94); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); background: rgb(11 16 32 / 0.94); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
       box-shadow: 0 -1px 0 var(--line); transform: translateY(100%); transition: transform 320ms var(--ease-drawer); }
     .bk-bar.on { transform: none; }
     .bk-bar p { margin: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: baseline; }
-    .bk-bar b { font: 400 24px/1 var(--display); font-variation-settings: var(--soft); }
+    .bk-bar b { font: 800 24px/1 var(--display); font-variation-settings: var(--soft); }
     .bk-bar p > span { font-size: 13.5px; color: var(--ink-2); }
     .bk-bar small { grid-column: 1 / -1; margin-top: 4px; font-size: 13px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
     .bk-bar .btn { height: 48px; padding: 0 22px; }

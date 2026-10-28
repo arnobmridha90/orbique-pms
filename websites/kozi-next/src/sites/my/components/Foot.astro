@@ -1,0 +1,45 @@
+---
+// The footer: the logo (it builds itself as it comes into view), the ways around the site, contact by email, and the
+// credits the photos and the 3D city's map data ask for.
+import AnimLogo from './AnimLogo.astro';
+import { BRAND, CC_BY_SA, CREDITS, GUIDES, MAP_CREDIT, PROPERTY } from '@shared/data/kozi';
+const year = new Date().getFullYear();
+const photos = Object.values(CREDITS).map((c) => `${c.title} by ${c.by}`).join(', ');
+---
+<footer class="foot">
+  <div class="in">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <span data-foot-logo><AnimLogo id="ft" /></span>
+        <p>{BRAND.tagline}</p>
+        <p><a href={`mailto:${BRAND.email}`}>{BRAND.email}</a></p>
+        <p>We speak English.</p>
+      </div>
+      <div class="foot-cols">
+        <nav aria-label="Stay">
+          <p class="foot-k">Stay</p>
+          <a href="/kuala-lumpur/">Kuala Lumpur</a>
+          <a href={PROPERTY.path}>{PROPERTY.name}</a>
+          <a href="/views/">The views</a>
+          <a href="/stays/">Book a stay</a>
+        </nav>
+        <nav aria-label="Plan your trip">
+          <p class="foot-k">Plan your trip</p>
+          {GUIDES.map((g) => <a href={`/guides/${g.slug}/`}>{g.title}</a>)}
+        </nav>
+        <nav aria-label="Kozi">
+          <p class="foot-k">Kozi</p>
+          <a href="/contact/">Contact</a>
+          <a href={BRAND.instagram} rel="noopener">Instagram</a>
+          <a href={BRAND.facebook} rel="noopener">Facebook</a>
+          <a href={`${BRAND.com}/`}>Kozi worldwide</a>
+          <a href="/credits/">Credits</a>
+        </nav>
+      </div>
+    </div>
+    <div class="foot-base">
+      <p>© {year} Kozi, a brand of {BRAND.company}</p>
+      <p>Building photos: {photos}, <a href={CC_BY_SA.url} rel="noopener license">{CC_BY_SA.name}</a>. {MAP_CREDIT} <a href="/credits/">All credits</a></p>
+    </div>
+  </div>
+</footer>

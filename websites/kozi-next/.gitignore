@@ -4,3 +4,5 @@ dist/
 .vercel/
 # made by scripts/site-photos.mjs at build time
 public/photos/
+# screenshots from testing
+.shots/

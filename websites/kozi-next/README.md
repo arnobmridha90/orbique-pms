@@ -5,7 +5,7 @@ The Kozi rental sites, built with Astro:
 - `src/sites/com` is the global site for www.staykozi.com: the Earth lit as it is right now, and a country chooser.
   It is all static pages.
 - `src/sites/my` is the Malaysia site for www.staykozi.my: cities, buildings, suites, guides, live prices and booking.
-  Its buildings, suites and photos come from Orbique (see Content below).
+  Its buildings, suites and photos come from Orbique (see Content below). It has the Skyline design (see below).
 - `src/shared` holds what both use: components, data, scripts, styles and the photos.
 
 The first version (`websites/kozi`) stays as it is.
@@ -24,6 +24,28 @@ Each site is its own Vercel project with Root Directory `websites/kozi-next`:
 - my: build command `npm run build:my`. It uses the Vercel adapter, which writes `.vercel/output`, so leave the
   output directory empty. The content pages run as one function.
 - com: build command `npm run build:com`, output directory `dist/com`. It stays static.
+
+## The Skyline design (staykozi.my)
+
+A live 3D model of Kuala Lumpur at night fills the screen behind every page, and the pages float over it on dark
+glass panels, in Big Shoulders Display and DM Sans (both self-hosted) with amber accents.
+
+- `src/sites/my/components/Shell.astro` is the page frame. It uses Astro's ClientRouter, so the city
+  (`transition:persist="city"`) is built once per visit and stays while pages change. Each page says where the
+  camera goes (`cam`), whether the landmark labels show (`pins`), which of our floors glow (`hi`) and whether the
+  city is dimmed behind it (`dim`).
+- `src/sites/my/scripts/night.ts` sets up each page as it comes in; `city.ts` builds and drives the city (camera
+  presets, labels, our floors, the sky); `home.ts` runs the home page's chapters, ring of photos and "A day at
+  Kozi"; `finder.ts` is the view finder at /views/; `logo.ts` animates the logo.
+- The city's code and data are in `public/city/v3/` (three.js r128 and the city modules, `city.bin`, `city.json`).
+  They load after the page has painted and gone idle, so the first paint is the page's text or the still image.
+  A new city build goes in a new folder (`v4`), because the files are cached for a year.
+- `public/city/v3/still-wide.jpg` and `still-tall.jpg` are pictures of the same city. They show until the city is
+  ready, and in its place when it can't run: no WebGL, reduced motion, Save-Data, or a small or weak device.
+- The home page's view photos and the view finder's come from the content (`src/sites/my/lib/shots.ts`): a photo
+  taken off every suite in Orbique's panel leaves them too.
+- The city is built from map data whose licences ask for a credit: `MAP_CREDIT` in `src/shared/data/kozi.ts`,
+  shown in the footer and on /credits/.
 
 ## Content (staykozi.my)
 
@@ -73,6 +95,7 @@ After Stripe, the thank-you page (`/booking/confirmed/`) asks Orbique about the 
   viewer's caption and the /credits/ page).
 - Email is the only contact shown until a phone and WhatsApp number are confirmed.
 - No self check-in or door codes: we email guests how to check in.
+- Keep the map data credit (`MAP_CREDIT`) wherever the 3D city is shown.
 
 ## Scripts
 

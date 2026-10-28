@@ -3,12 +3,14 @@
 // live prices beside it all the way down (or "Email us to book" while it can't be booked online). Made on request
 // from the content; an address that is not one of our suites answers 404. A suite with no photos of its own yet
 // shows its building's photo and stays out of search.
-import Layout from '@shared/components/Layout.astro';
+import Shell from '@my/components/Shell.astro';
+import SuiteCard from '@my/components/SuiteCard.astro';
 import Gallery from '@shared/components/Gallery.astro';
 import BookCard from '@shared/components/BookCard.astro';
 import EmailCard from '@shared/components/EmailCard.astro';
 import Photo from '@shared/components/Photo.astro';
-import { AMENITIES, BRAND, BUILDING_EXTRAS, POLICIES, VIEWS, VIEW_PHOTOS } from '@shared/data/kozi';
+import { AMENITIES, BRAND, BUILDING_EXTRAS, POLICIES, VIEWS } from '@shared/data/kozi';
+import { landmarks, levelsOf } from '@my/lib/shots';
 import { ICONS } from '@shared/data/icons';
 import { buildingPath, cityPath, cover, getContent, inKL, photoAbs, suitePath } from '@shared/lib/content';
 import { crumbsLd, lodgingLd, suiteLd } from '@shared/lib/seo';
@@ -24,8 +26,13 @@ const others = site.suitesOf(b).filter((s) => s.id !== suite.id);
 const crumbs = [{ name: b.city, path: cityPath(b.cityId) }, { name: b.name, path: buildingPath(b) }, { name: suite.name, path: suitePath(b, suite) }];
 const og = cover(suite, b);
 const ogAbs = own && og ? photoAbs(og, BRAND.my) : undefined;
-const shots = (VIEW_PHOTOS as Record<string, { key: string; alt: string; from: string; suites: string[] }[]>);
-const views = suite.views.map((v) => ({ id: v, name: VIEWS[v].name, shot: inKL(b) && x ? shots[v]?.find((p) => p.suites.includes(suite.id)) : undefined }));
+// the real photos of each view from this suite's windows, while the suite still shows them (lib/shots.ts)
+const marks = landmarks(site);
+const views = suite.views.map((v) => ({ id: v, name: VIEWS[v].name, shot: marks.find((m) => m.id === v)?.shots.find((sh) => sh.suite.id === suite.id) }));
+// the city's camera goes to this suite's floor on the tower and lights it
+const kl = inKL(b);
+const levels = levelsOf(suite);
+const cam = !kl ? 'none' : levels.length ? `floor-${levels[0]}` : 'vortex';
 const beds = !!x?.beds && suite.bedrooms === 2;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const nth = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
@@ -44,9 +51,9 @@ const description = suite.seoDescription ?? (usual
   : `${suite.name} at ${b.name}, ${b.city}: ${plural(suite.bedrooms, 'bedroom')}, ${plural(suite.bathrooms, 'bathroom')}, sleeps ${suite.sleeps}. ${suite.line}`).trim();
 const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$/, ''), 'Suite'] : [suite.name, ''];
 ---
-<Layout site="my" title={title} description={description} image={ogAbs} noindex={!own}
+<Shell title={title} description={description} image={ogAbs} noindex={!own} cam={cam} hi={kl ? levels : undefined} dim={!kl}
   jsonld={[crumbsLd(BRAND.my, crumbs), lodgingLd(b, site.suitesOf(b)), suiteLd(b, suite, ogAbs)]}>
-  <div class="wrap sp-top">
+  <div class="in sp-top">
     <nav class="crumbs sp-crumbs" aria-label="Breadcrumb">
       <ol>{crumbs.map((c, i) => <li>{i < crumbs.length - 1 ? <a href={c.path}>{c.name}</a> : <span aria-current="page">{c.name}</span>}</li>)}</ol>
     </nav>
@@ -60,8 +67,8 @@ const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$
     {photos.length > 0 && <Gallery photos={photos} name={suite.name} note={own ? undefined : 'Suite photos are on the way'} />}
   </div>
 
-  <div class="wrap sp-body">
-    <div class="sp-main">
+  <div class="in sp-body">
+    <div class="sp-main glass">
       <ul class="sp-facts" role="list">
         {facts.map((f) => (
           <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><b>{f.k}</b>{f.v && <span>{f.v}</span>}</li>
@@ -94,7 +101,7 @@ const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$
           <div class="sp-views">
             {views.filter((v) => v.shot).map((v) => (
               <figure class="sp-view" data-reveal>
-                <Photo k={v.shot!.key} alt={v.shot!.alt} sizes="(max-width: 760px) 92vw, 30vw" />
+                <Photo p={v.shot!.photo} sizes="(max-width: 760px) 92vw, 30vw" />
                 <figcaption><b>{v.name}</b><span>{v.shot!.from}</span></figcaption>
               </figure>
             ))}
@@ -138,38 +145,33 @@ const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$
   </div>
 
   {others.length > 0 && (
-    <section class="sp-others" aria-labelledby="sp-others-h">
-      <div class="wrap">
-        <p class="eyebrow">Also at {short}</p>
-        <h2 id="sp-others-h" class="display h3" data-split>The other <em>suites.</em></h2>
-        <ul class="sp-ocards" role="list">
-          {others.map((o) => { const p = cover(o, b); return (
-            <li data-reveal>
-              <a class="sp-ocard" href={suitePath(b, o)}>
-                <div class="sp-omedia">{p && <Photo p={p} alt="" sizes="(max-width: 760px) 92vw, 44vw" />}{!o.photos.length && <span class="gl-note">Suite photos are on the way</span>}</div>
-                <div class="sp-obody">{o.levels && <p class="sp-olevel">{o.levels}</p>}<h3 class="display">{o.name}</h3><p>{o.line}</p><span class="sp-omore">See the suite <span aria-hidden="true">→</span></span></div>
-              </a>
-            </li>
-          ); })}
-        </ul>
-      </div>
+    <section class="in sp-others" aria-labelledby="sp-others-h">
+      <p class="eyebrow">Also at {short}</p>
+      <h2 id="sp-others-h" class="h3" data-split>The other <em>suites.</em></h2>
+      <ul class="cards" role="list">
+        {others.map((o) => <li data-reveal><SuiteCard s={o} b={b} /></li>)}
+      </ul>
     </section>
   )}
-</Layout>
+</Shell>
 
 <style>
-  .sp-top { padding-top: calc(var(--hd-h) + 26px); }
+  .sp-top { padding-top: calc(var(--hd-h) + 26px); text-shadow: 0 1px 14px rgb(5 7 13 / 0.85); }
+  :global(html:not(.no-city)) .sp-top { padding-top: calc(var(--hd-h) + 22vh); }
+  .sp-main { padding: clamp(22px, 3vw, 40px); }
+  .sp-main .sp-facts { padding-top: 0; }
   .sp-crumbs { color: var(--ink-2); }
   .sp-title { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); align-items: end; gap: 24px 60px; margin: 22px 0 30px; }
   .sp-h { font-size: clamp(48px, 6.6vw, 104px); margin-top: 18px; }
-  .sp-line { margin: 0; max-width: 24.15em; justify-self: end; font: 400 clamp(19px, 1.6vw, 24px)/1.4 var(--display); font-variation-settings: var(--soft); color: var(--ink-2); }
+  .sp-line { margin: 0; max-width: 26em; justify-self: end; font: 400 clamp(17px, 1.5vw, 20px)/1.5 var(--sans); color: var(--soft-fg); }
   .sp-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 400px); gap: clamp(40px, 6vw, 110px); padding: clamp(40px, 5vw, 64px) 0 clamp(80px, 9vw, 140px); }
   .sp-facts { list-style: none; margin: 0; padding: 0 0 34px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; border-bottom: 1px solid var(--line); }
   .sp-facts li { display: grid; gap: 6px; align-content: start; }
   .sp-facts svg, .sp-beds svg, .sp-amen svg, .sp-map svg { width: 26px; height: 26px; fill: none; stroke: var(--amber-deep); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .sp-facts b { margin-top: 6px; font-weight: 650; font-size: 16px; }
   .sp-facts span { font-size: 14px; line-height: 1.45; color: var(--muted); }
-  .sp-sec { padding: 44px 0; border-bottom: 1px solid var(--line); }
+  .sp-sec { padding: 40px 0; border-bottom: 1px solid var(--line); }
+  .sp-sec:last-child { padding-bottom: 0; }
   .sp-sec:last-child { border-bottom: 0; }
   .sp-h2 { font-size: clamp(30px, 2.8vw, 42px); line-height: 1.05; margin-bottom: 18px; }
   .sp-story { margin: 0; max-width: 35.65em; font-size: 18px; line-height: 1.65; color: var(--ink-2); }
@@ -186,7 +188,7 @@ const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$
   .sp-view:only-child { aspect-ratio: 16 / 10; }
   .sp-view :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .sp-view figcaption { position: absolute; inset: auto 0 0; display: grid; gap: 2px; padding: 40px 16px 14px; color: var(--cream); background: linear-gradient(to top, rgb(14 12 18 / 0.78), transparent); }
-  .sp-view b { font: 400 20px/1.1 var(--display); font-variation-settings: var(--soft); }
+  .sp-view b { font: 800 20px/1.1 var(--display); font-variation-settings: var(--soft); }
   .sp-view span { font-size: 13px; opacity: 0.8; }
   .sp-amen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
   .sp-amen li { display: grid; grid-template-columns: 26px 1fr; gap: 16px; }
@@ -201,30 +203,10 @@ const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$
   .sp-map { display: inline-flex; align-items: center; gap: 10px; margin-top: 24px; font-weight: 650; border-bottom: 1px solid var(--amber); padding-bottom: 3px; }
   .sp-map svg { width: 20px; height: 20px; }
 
-  .sp-others { padding: clamp(80px, 9vw, 130px) 0; background: var(--paper); border-top: 1px solid var(--line); }
-  .sp-others .h3 { margin: 18px 0 40px; }
-  .sp-ocards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-  .sp-ocard { display: grid; grid-template-columns: 1fr 1fr; border-radius: 26px; overflow: hidden; background: var(--cream); box-shadow: inset 0 0 0 1px var(--line); transition: transform 300ms var(--ease-out), box-shadow 300ms ease; }
-  .sp-ocard:active { transform: scale(0.99); }
-  .sp-omedia { position: relative; min-height: 260px; background: var(--sand); }
-  .sp-omedia :global(picture), .sp-omedia :global(img) { width: 100%; height: 100%; }
-  .sp-omedia :global(img) { object-fit: cover; position: absolute; inset: 0; transition: transform 700ms var(--ease-out); }
-  .sp-obody { padding: 26px; display: grid; align-content: start; gap: 8px; }
-  .sp-olevel { margin: 0; font: 650 11px/1 var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber-deep); }
-  .sp-obody h3 { font-size: 32px; margin: 6px 0 2px; }
-  .sp-obody p:not(.sp-olevel) { margin: 0; font-size: 15px; color: var(--ink-2); }
-  .sp-omore { margin-top: 10px; font-weight: 650; font-size: 14.5px; }
-  .sp-omore span { display: inline-block; transition: transform 200ms var(--ease-out); }
-  @media (hover: hover) and (pointer: fine) {
-    .sp-ocard:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 30px 60px -40px rgb(43 38 34 / 0.5); }
-    .sp-ocard:hover .sp-omedia :global(img) { transform: scale(1.04); }
-    .sp-ocard:hover .sp-omore span { transform: translateX(3px); }
-    .sp-map:hover { border-color: var(--ink); }
-  }
+  .sp-others { padding: 0 0 clamp(80px, 9vw, 130px); }
+  .sp-others .h3 { margin: 18px 0 32px; }
+  @media (hover: hover) and (pointer: fine) { .sp-map:hover { border-color: var(--ink); } }
 
-  @media (max-width: 1100px) {
-    .sp-ocards { grid-template-columns: 1fr; }
-  }
   @media (max-width: 900px) {
     .sp-title { grid-template-columns: 1fr; margin-bottom: 22px; }
     .sp-line { justify-self: start; }
@@ -237,7 +219,5 @@ const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$
     .sp-beds { grid-template-columns: 1fr; }
     .sp-amen, .sp-near { grid-template-columns: 1fr; }
     .sp-rules div { grid-template-columns: 1fr; gap: 4px; }
-    .sp-ocard { grid-template-columns: 1fr; }
-    .sp-omedia { min-height: 0; aspect-ratio: 16 / 10; }
   }
 </style>

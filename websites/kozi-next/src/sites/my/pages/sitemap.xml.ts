@@ -12,7 +12,7 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export const GET: APIRoute = async (ctx) => {
   const site = await getContent(ctx);
   const paths = [
-    '/', '/stays/',
+    '/', '/views/', '/stays/',
     ...site.cities.map((c) => cityPath(c.id)),
     ...site.buildings.map(buildingPath),
     ...site.suites.filter((s) => s.photos.length).map((s) => suitePath(site.buildingOf(s), s)),

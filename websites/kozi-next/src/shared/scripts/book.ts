@@ -4,7 +4,7 @@ import { Calendar, type Range } from '@shared/lib/calendar';
 import { availability, calendar as fetchCalendar, rm, TEST_MODE, type CalendarDay, type Quote } from '@shared/lib/api';
 import { addDays, fmtDay, fmtShort, fromIso, iso, nights as countNights, todayKL } from '@shared/lib/dates';
 import { loadSearch, saveSearch } from './search';
-import { lenis } from './app';
+import { scroller } from './scroll';
 
 const phone = matchMedia('(max-width: 760px)');
 const wide = matchMedia('(min-width: 1200px)');
@@ -53,7 +53,7 @@ export function init(root: HTMLElement) {
     root.dataset.open = '';
     pop.dataset.on = '';
     opener.setAttribute('aria-expanded', 'true');
-    if (phone.matches) { document.documentElement.classList.add('sheet-open'); lenis?.stop(); }
+    if (phone.matches) { document.documentElement.classList.add('sheet-open'); scroller.lenis?.stop(); }
     hint();
     requestAnimationFrame(() => cal.focus());
   }
@@ -64,7 +64,7 @@ export function init(root: HTMLElement) {
     delete pop.dataset.on;
     openers.forEach((o) => o.setAttribute('aria-expanded', 'false'));
     document.documentElement.classList.remove('sheet-open');
-    lenis?.start();
+    scroller.lenis?.start();
     if (refocus) opener?.focus({ preventScroll: true });
   }
   root.addEventListener('click', (e) => {

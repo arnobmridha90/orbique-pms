@@ -1,13 +1,14 @@
 ---
 // Search results: every suite with its live price for your dates (or its lowest price soon) and what's open.
 // The suites come from the content, so the page is made on request.
-import Layout from '@shared/components/Layout.astro';
-import PageHead from '@shared/components/PageHead.astro';
+import Shell from '@my/components/Shell.astro';
+import Head from '@my/components/Head.astro';
 import Search from '@shared/components/Search.astro';
 import Photo from '@shared/components/Photo.astro';
 import { BRAND, VIEWS } from '@shared/data/kozi';
 import { cover, getContent, suitePath } from '@shared/lib/content';
 import { crumbsLd } from '@shared/lib/seo';
+import { levelsOf } from '@my/lib/shots';
 
 export const prerender = false;
 const site = await getContent(Astro);
@@ -22,15 +23,15 @@ const itemList = {
   itemListElement: list.map(({ s, b }, i) => ({ '@type': 'ListItem', position: i + 1, url: `${BRAND.my}${suitePath(b, s)}`, name: `${s.name}, ${b.name}` })),
 };
 ---
-<Layout site="my" title={`Stays in ${where}: live prices | Kozi`} over
+<Shell cam="aerial-low" dim title={`Stays in ${where}: live prices | Kozi`}
   description={`Kozi two-bedroom suites in ${where}${one ? ` at ${one.building}` : ''}. Pick your dates to see live prices for every suite, and book direct.`}
   jsonld={[crumbsLd(BRAND.my, crumbs), itemList]}>
-  <PageHead crumbs={crumbs} eyebrow={one ? `${one.city} · ${one.name}` : where} size="short" seed={9}>
-    <Fragment slot="title">Find your <em>stay.</em></Fragment>
+  <Head crumbs={crumbs} eyebrow={one ? `${one.city} · ${one.name}` : where} size="short">
+    <Fragment slot="title">Choose your <em>nights.</em></Fragment>
     <div class="sy-search"><Search id="stays-search" cities={site.cities} /></div>
-  </PageHead>
+  </Head>
 
-  <section class="wrap sy" data-stays data-count={countLine} aria-labelledby="sy-h">
+  <section class="in glass sy" data-stays data-count={countLine} aria-labelledby="sy-h">
     <div class="sy-top">
       <h2 id="sy-h" class="sy-count" data-sy-count aria-live="polite">{countLine}</h2>
     </div>
@@ -38,7 +39,7 @@ const itemList = {
       {list.map(({ s, b }, i) => {
         const href = suitePath(b, s), p0 = cover(s, b), p1 = s.photos[1];
         return (
-          <li class="sr" data-type={s.bookType ?? undefined} data-unit={`${b.id}/${s.id}`} data-href={href} data-reveal style={`--d:${i * 80}`}>
+          <li class="sr" data-type={s.bookType ?? undefined} data-unit={`${b.id}/${s.id}`} data-href={href} data-levels={levelsOf(s).join(',') || undefined} data-reveal style={`--d:${i * 80}`}>
             <a class="sr-media" href={href} tabindex="-1" aria-hidden="true">
               {p0 && <Photo p={p0} alt="" sizes="(max-width: 760px) 92vw, 36vw" eager={i === 0} />}
               {p1 && <Photo p={p1} alt="" sizes="(max-width: 760px) 92vw, 36vw" class="sr-b" skip="not all and (hover: hover) and (pointer: fine)" />}
@@ -74,13 +75,14 @@ const itemList = {
     <p class="sy-test" data-sy-test hidden>Test mode: these are sample prices while online booking is being connected.</p>
     <p class="sy-note">Prices are per suite. A guest on an extra bed is RM60 a night. Malaysia's tourism tax for non-Malaysian guests (RM10 per room per night) is not included.</p>
   </section>
-</Layout>
+</Shell>
 
 <style is:global>
   .sy-search { margin-top: clamp(26px, 5cqh, 44px); max-width: 920px; }
-  .sy { padding: clamp(48px, 6vw, 80px) 0 clamp(90px, 10vw, 150px); }
+  .sy { margin-block: clamp(32px, 4vw, 56px) clamp(70px, 9vw, 120px); }
+  .sy .sr:last-child { border-bottom: 0; padding-bottom: 0; }
   .sy-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 30px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
-  .sy-count { margin: 0; font: 400 clamp(24px, 2.2vw, 32px)/1.1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.015em; }
+  .sy-count { margin: 0; font: 800 clamp(24px, 2.2vw, 32px)/1.1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.015em; }
   .sy-list { list-style: none; margin: 0; padding: 0; }
   .sr { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.2fr) minmax(220px, 0.55fr); gap: clamp(20px, 3vw, 44px); padding: 30px 0; border-bottom: 1px solid var(--line); align-items: stretch; transition: opacity 300ms ease; }
   .sr.sold { opacity: 0.62; }
@@ -104,14 +106,14 @@ const itemList = {
   .sr-k { margin: 0; font: 600 13px/1 var(--sans); color: var(--muted); }
   .sr-k:empty { display: none; }
   .sr-rate { margin: 0; display: flex; align-items: baseline; gap: 6px; }
-  .sr-rate b { font: 400 38px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; }
+  .sr-rate b { font: 800 38px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; }
   .sr-rate span { font-size: 14px; color: var(--ink-2); }
   .sr.sold .sr-rate span { display: none; }
   .sr-total { margin: 2px 0 0; font-size: 14.5px; color: var(--ink-2); }
   .sr-total:empty { display: none; }
   .sr-go { margin-top: 14px; }
   .sr.loading .sr-price { opacity: 0.45; }
-  .sy-test { margin: 26px 0 0; display: inline-block; padding: 10px 14px; border-radius: 12px; background: rgb(200 134 46 / 0.1); color: #87550f; font: 600 13px/1.4 var(--sans); }
+  .sy-test { margin: 26px 0 0; display: inline-block; padding: 10px 14px; border-radius: 12px; background: rgb(231 165 76 / 0.1); color: var(--amber); font: 600 13px/1.4 var(--sans); }
   .sy-note { margin: 18px 0 0; font-size: 14px; color: var(--muted); max-width: 46em; }
   @media (max-width: 1000px) {
     .sr { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }

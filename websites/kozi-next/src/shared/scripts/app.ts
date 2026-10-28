@@ -7,6 +7,7 @@ import Lenis from 'lenis';
 import { skyState, skyWords } from '@shared/lib/sun';
 import { applySky, cacheSky } from './sky';
 import { initSearches } from './search';
+import { scroller } from './scroll';
 
 gsap.registerPlugin(ScrollTrigger, SplitText);
 
@@ -21,6 +22,7 @@ export function boot() {
   // smooth scroll on real pointers; touch keeps the phone's own scrolling
   if (!reduced() && matchMedia('(pointer: fine)').matches) {
     lenis = new Lenis({ lerp: 0.11, anchors: { offset: -80 }, prevent: (n) => !!(n as HTMLElement).closest?.('[data-lenis-prevent], .s-pop, .menu') });
+    scroller.lenis = lenis;
     lenis.on('scroll', ScrollTrigger.update);
     gsap.ticker.add((t) => lenis!.raf(t * 1000));
     gsap.ticker.lagSmoothing(0);

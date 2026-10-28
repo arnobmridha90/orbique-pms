@@ -49,6 +49,7 @@ export const NEARBY = [
 // Orbique gets the plain version of these pages (its area, intro, address, check-in and check-out).
 export type BuildingExtra = {
   eyebrow: string; lede: string; description: string; pin: string; maps: string;
+  chapter: string; // the home page's words about the building, beside the tower in the 3D city
   about: [string, string]; facts: { icon: string; k: string; v: string }[];
   beds: boolean; // every two-bedroom suite here has a queen room and a room with a queen and a single
   near: { eyebrow: string; title: [string, string]; text: string; list: { name: string; what: string }[] };
@@ -59,6 +60,7 @@ export const BUILDING_EXTRAS: Record<string, BuildingExtra> = {
     lede: 'Two-bedroom suites with two bathrooms and a full kitchen at Vortex Suites KLCC, on Jalan Sultan Ismail between KLCC and Bukit Bintang.',
     description: 'Kozi @ Vortex KLCC: two-bedroom suites with two bathrooms and a full kitchen at Vortex Suites KLCC on Jalan Sultan Ismail, between KLCC and Bukit Bintang. See live prices and book direct.',
     pin: 'Our suites, levels 26 to 47',
+    chapter: 'Our suites are in Vortex KLCC, the curved glass tower on Jalan Sultan Ismail. The Petronas Twin Towers, KL Tower and Merdeka 118 all share its skyline.',
     maps: 'Vortex Suites KLCC, Jalan Sultan Ismail, Kuala Lumpur',
     about: ['The rounded glass tower on', 'Jalan Sultan Ismail.'],
     beds: true,
@@ -129,6 +131,14 @@ export const CREDITS: Record<string, { title: string; by: string; source: string
   'building/Vortex-KLCC-skyline-view-2017': { title: 'Vortex Suites KLCC, Kuala Lumpur', by: 'Renek78', source: 'https://commons.wikimedia.org/wiki/File:Vortex_Suites_KLCC,_Kuala_Lumpur.jpg', taken: '2 December 2017' },
 };
 export const CC_BY_SA = { name: 'CC BY-SA 4.0', url: 'https://creativecommons.org/licenses/by-sa/4.0/' };
+// The 3D city on staykozi.my is built from open map data; its licences ask for this credit (footer and /credits/).
+export const MAP_CREDIT = '3D city from map data: © OpenStreetMap contributors (ODbL), Overture Maps Foundation, Google Open Buildings (CC BY 4.0), Microsoft Building Footprints (ODbL).';
+export const MAP_SOURCES = [
+  { name: 'OpenStreetMap contributors', licence: 'ODbL', url: 'https://www.openstreetmap.org/copyright' },
+  { name: 'Overture Maps Foundation', licence: 'ODbL', url: 'https://docs.overturemaps.org/attribution/' },
+  { name: 'Google Open Buildings', licence: 'CC BY 4.0', url: 'https://sites.research.google/gr/open-buildings/' },
+  { name: 'Microsoft Building Footprints', licence: 'ODbL', url: 'https://github.com/microsoft/GlobalMLBuildingFootprints' },
+];
 
 export const GUIDES = [
   { slug: 'mdac-malaysia-digital-arrival-card', tag: 'Arrival', title: 'The MDAC arrival card, step by step', line: 'What to fill in before you land in Malaysia, and how to spot the fake sites.', photo: 'premium-b/10-klcc-window-view' },
