@@ -46,7 +46,6 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
-.no-deal [data-deal] { display: none !important; } /* see deal() in lib/api.ts */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: var(--cream); }
 html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }

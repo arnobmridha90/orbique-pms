@@ -7,7 +7,7 @@ import Lenis from 'lenis';
 import { skyState, skyWords } from '@shared/lib/sun';
 import { applySky, cacheSky } from './sky';
 import { initSearches } from './search';
-import { initMember } from './member';
+import { scroller } from './scroll';
 
 gsap.registerPlugin(ScrollTrigger, SplitText);
 
@@ -22,6 +22,7 @@ export function boot() {
   // smooth scroll on real pointers; touch keeps the phone's own scrolling
   if (!reduced() && matchMedia('(pointer: fine)').matches) {
     lenis = new Lenis({ lerp: 0.11, anchors: { offset: -80 }, prevent: (n) => !!(n as HTMLElement).closest?.('[data-lenis-prevent], .s-pop, .menu') });
+    scroller.lenis = lenis;
     lenis.on('scroll', ScrollTrigger.update);
     gsap.ticker.add((t) => lenis!.raf(t * 1000));
     gsap.ticker.lagSmoothing(0);
@@ -31,11 +32,9 @@ export function boot() {
   header();
   menu();
   initSearches();
-  initMember();
   footerClock();
   reveals();
   words();
-  tilt();
 
   const hero = document.querySelector<HTMLElement>('[data-hero]');
   const heroReady = hero ? import('./hero').then((m) => m.initHero(hero)) : Promise.resolve(null);
@@ -181,22 +180,6 @@ function words() {
     // each word ends in the colour it would have had unsplit: ink, or amber inside the <em>
     gsap.to(s.words, { color: (_: number, w: Element) => getComputedStyle(w.parentElement!).color, ease: 'none', stagger: 0.1,
       scrollTrigger: { trigger: el, start: 'top 78%', end: 'bottom 42%', scrub: true } });
-  });
-}
-
-/** The member card leans toward the pointer (decoration only; springs back when the pointer leaves). */
-function tilt() {
-  if (reduced() || !matchMedia('(hover: hover) and (pointer: fine)').matches) return;
-  document.querySelectorAll<HTMLElement>('[data-tilt]').forEach((card) => {
-    const stage = card.parentElement!;
-    const rx = gsap.quickTo(card, '--rx', { duration: 0.6, ease: 'power3.out' }), ry = gsap.quickTo(card, '--ry', { duration: 0.6, ease: 'power3.out' });
-    const sx = gsap.quickTo(card, '--sx', { duration: 0.5, ease: 'power3.out' }), sy = gsap.quickTo(card, '--sy', { duration: 0.5, ease: 'power3.out' });
-    gsap.set(card, { '--rx': '8deg', '--ry': '-14deg', '--sx': '30%', '--sy': '30%' });
-    stage.addEventListener('pointermove', (e) => {
-      const r = stage.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
-      rx(`${(-y * 16).toFixed(2)}deg`); ry(`${(x * 22).toFixed(2)}deg`); sx(`${(50 + x * 80).toFixed(1)}%`); sy(`${(50 + y * 80).toFixed(1)}%`);
-    });
-    stage.addEventListener('pointerleave', () => { rx('8deg'); ry('-14deg'); sx('30%'); sy('30%'); });
   });
 }
 

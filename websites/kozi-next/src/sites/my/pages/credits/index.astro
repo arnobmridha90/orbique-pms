@@ -1,23 +1,24 @@
 ---
-// Photo credits: what the licences of photos we did not take ask for (title, author, source, licence).
-import Layout from '@shared/components/Layout.astro';
-import PageHead from '@shared/components/PageHead.astro';
+// Credits: what the licences of photos we did not take ask for (title, author, source, licence), and the map data
+// the 3D city behind the site is built from.
+import Shell from '@my/components/Shell.astro';
+import Head from '@my/components/Head.astro';
 import Photo from '@shared/components/Photo.astro';
-import { BRAND, CREDITS, CC_BY_SA } from '@shared/data/kozi';
+import { BRAND, CREDITS, CC_BY_SA, MAP_CREDIT, MAP_SOURCES } from '@shared/data/kozi';
 import { crumbsLd } from '@shared/lib/seo';
-const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Photo credits', path: '/credits/' }];
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Credits', path: '/credits/' }];
 ---
-<Layout site="my" title="Photo credits | Kozi" description="Credits and licences for the photos on the Kozi website that we did not take ourselves."
-  over jsonld={[crumbsLd(BRAND.my, crumbs)]}>
-  <PageHead crumbs={crumbs} eyebrow="Kozi" size="short" seed={4}>
-    <Fragment slot="title">Photo <em>credits.</em></Fragment>
+<Shell cam="aerial" dim title="Credits | Kozi" description="Credits and licences for the photos on the Kozi website that we did not take ourselves, and for the map data behind its 3D city." jsonld={[crumbsLd(BRAND.my, crumbs)]}>
+  <Head crumbs={crumbs} eyebrow="Kozi" size="short">
+    <Fragment slot="title">Credits<em>.</em></Fragment>
     <Fragment slot="lede">The photos inside our suites are our own. These photos of the Vortex building were taken by others and shared under a Creative Commons licence.</Fragment>
-  </PageHead>
-  <section class="wrap cr" aria-label="Credits">
+  </Head>
+  <section class="in glass cr" aria-labelledby="cr-photos">
+    <h2 id="cr-photos" class="eyebrow cr-k">Photos of the building</h2>
     <ul class="cr-list" role="list">
       {Object.entries(CREDITS).map(([key, c]) => (
         <li class="cr-item">
-          <div class="cr-media"><Photo k={key} alt={c.title} sizes="220px" widths={[480]} /></div>
+          <div class="cr-media"><Photo k={key} alt={c.title} sizes="220px" /></div>
           <div>
             <h2 class="display cr-h">“{c.title}”</h2>
             <p>By {c.by}, taken {c.taken}. From <a href={c.source} rel="noopener">Wikimedia Commons</a>, under <a href={CC_BY_SA.url} rel="noopener license">{CC_BY_SA.name}</a>.</p>
@@ -27,13 +28,30 @@ const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Photo credits', path: 
       ))}
     </ul>
   </section>
-</Layout>
+  <section class="in glass cr cr-map" aria-labelledby="cr-map">
+    <h2 id="cr-map" class="eyebrow cr-k">The 3D city</h2>
+    <p class="cr-lead">{MAP_CREDIT}</p>
+    <p>The model of Kuala Lumpur behind these pages is built from open map data, shared under these licences:</p>
+    <ul class="cr-src" role="list">
+      {MAP_SOURCES.map((m) => <li><a href={m.url} rel="noopener">{m.name}</a><span>{m.licence}</span></li>)}
+    </ul>
+  </section>
+</Shell>
 
 <style is:global>
-  .cr { padding: clamp(48px, 6vw, 84px) 0 clamp(90px, 10vw, 140px); }
+  .cr { margin-block: clamp(32px, 4vw, 56px) 0; max-width: 960px; }
+  .cr-map { margin-bottom: clamp(70px, 9vw, 120px); display: grid; gap: 14px; }
+  .cr-map p { margin: 0; color: var(--ink-2); max-width: 46em; }
+  .cr-map a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--amber); text-underline-offset: 3px; }
+  .cr-k { margin-bottom: 18px; }
+  .cr-lead { font-weight: 600; color: var(--fg) !important; }
+  .cr-src { list-style: none; margin: 0; padding: 0; display: grid; }
+  .cr-src li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .cr-src span { color: var(--muted); font-size: 14px; }
   .cr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; max-width: 900px; }
   .cr-item { display: grid; grid-template-columns: 150px 1fr; gap: 28px; align-items: center; padding: 26px 0; border-top: 1px solid var(--line); }
-  .cr-item:last-child { border-bottom: 1px solid var(--line); }
+  .cr-item:first-child { border-top: 0; padding-top: 0; }
+  .cr-item:last-child { padding-bottom: 0; }
   .cr-media { aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden; background: var(--sand); }
   .cr-media picture, .cr-media img { width: 100%; height: 100%; }
   .cr-media img { object-fit: cover; }

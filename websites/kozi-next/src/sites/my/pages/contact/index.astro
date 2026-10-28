@@ -1,8 +1,8 @@
 ---
 // Contact: email first (no phone number until the WhatsApp line is confirmed), then the
 // questions guests ask most, answered from the same facts as the suite pages.
-import Layout from '@shared/components/Layout.astro';
-import PageHead from '@shared/components/PageHead.astro';
+import Shell from '@my/components/Shell.astro';
+import Head from '@my/components/Head.astro';
 import { BRAND, GUIDES, POLICIES, PROPERTY } from '@shared/data/kozi';
 import { ICONS } from '@shared/data/icons';
 import { crumbsLd, orgLd } from '@shared/lib/seo';
@@ -13,7 +13,7 @@ const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
 const handle = BRAND.instagram.replace(/\/$/, '').split('/').pop();
 // each answer is HTML so it can link to a guide; search engines get it without the tags
 const faq = [
-  { q: 'What time are check-in and check-out?', a: `Check-in is from ${PROPERTY.checkIn} and check-out is by ${PROPERTY.checkOut}. You let yourself in with your own door code, which reaches you 30 minutes before check-in on arrival day.` },
+  { q: 'What time are check-in and check-out?', a: `Check-in is from ${PROPERTY.checkIn} and check-out is by ${PROPERTY.checkOut}. Before you arrive, we email you how to check in.` },
   { q: 'How many people can stay in a suite?', a: 'Every suite sleeps 4: one bedroom has a queen bed, and the other has a queen and a single. A 5th guest can stay on an extra bed for RM60 a night.' },
   { q: "What's in the suite?", a: `Two bathrooms, a full kitchen, your own washing machine, Wi-Fi, a smart TV and air conditioning in every room, with towels, linen, toiletries, an iron and a hair dryer.` },
   { q: 'Can I cancel?', a: POLICIES.cancel + ' The cancellation terms for your dates are shown before you pay.' },
@@ -21,29 +21,29 @@ const faq = [
   { q: 'Are the pool and gym included?', a: "The building has a pool and a gym, available for a fee. They aren't included in the price of a stay." },
   { q: 'How do I get from the airport?', a: `The KLIA Ekspres train reaches KL Sentral in about 28 minutes, then it's a short Grab or taxi ride. <a href="/guides/${klia.slug}/">Our airport guide</a> compares the train, Grab and taxis.` },
   { q: 'Do I need an arrival card?', a: `Most foreign visitors fill in the free Malaysia Digital Arrival Card (MDAC) online in the 3 days before they land. <a href="/guides/${mdac.slug}/">Our MDAC guide</a> shows how, and how to spot the fake sites that charge a fee.` },
-  { q: 'Why book on this website?', a: 'Members pay our lowest price, because there is no booking-site commission. Joining is free with just your email, and card payments go through Stripe.' },
+  { q: 'Why book on this website?', a: 'You book with us directly, see the price for your dates before you pay, and card payments go through Stripe.' },
 ];
 const faqLd = {
   '@context': 'https://schema.org', '@type': 'FAQPage',
   mainEntity: faq.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })),
 };
 ---
-<Layout site="my" title="Contact Kozi: email us about a stay in Kuala Lumpur" over
-  description="Email Kozi at hello@staykozi.com about a stay at Kozi @ Vortex KLCC. We reply in English, Bahasa Malaysia and Bahasa Indonesia. Answers to the questions guests ask most."
+<Shell cam="aerial" dim title="Contact Kozi: email us about a stay in Kuala Lumpur"
+  description="Email Kozi at hello@staykozi.com about a stay at Kozi @ Vortex KLCC. Answers to the questions guests ask most."
   jsonld={[crumbsLd(BRAND.my, crumbs), orgLd, faqLd]}>
-  <PageHead crumbs={crumbs} eyebrow="Contact" size="short" seed={7}>
+  <Head crumbs={crumbs} eyebrow="Contact" size="short">
     <Fragment slot="title">Say <em>hello.</em></Fragment>
-    <Fragment slot="lede">Questions about a stay, a booking or the city? Email us in English, Bahasa Malaysia or Bahasa Indonesia.</Fragment>
-  </PageHead>
+    <Fragment slot="lede">Questions about a stay, a booking or the city? Email us and we'll reply.</Fragment>
+  </Head>
 
-  <section class="wrap cn" aria-label="Ways to reach us">
-    <div class="cn-mail" data-reveal>
+  <section class="in cn" aria-label="Ways to reach us">
+    <div class="cn-mail glass" data-reveal>
       <svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.mail} />
       <p class="cn-k">Email</p>
       <a class="display cn-addr" href={`mailto:${BRAND.email}`}>{BRAND.email}</a>
       <p class="cn-p">The best way to reach us about a booking, a question before you come, or anything during your stay.</p>
       <div class="cn-acts">
-        <a class="btn" href={`mailto:${BRAND.email}?subject=${encodeURIComponent('A question about a stay')}`}>Write to us <span class="arr" aria-hidden="true">→</span></a>
+        <a class="btn amber" href={`mailto:${BRAND.email}?subject=${encodeURIComponent('A question about a stay')}`}>Write to us <span class="arr" aria-hidden="true">→</span></a>
         <button type="button" class="btn ghost cn-copy" data-copy={BRAND.email}><span data-copy-label>Copy the address</span></button>
       </div>
     </div>
@@ -61,14 +61,14 @@ const faqLd = {
       <li data-reveal style="--d:240">
         <div class="cn-card cn-booked">
           <p class="cn-k">Already booked?</p><p class="cn-h">It's all in your email.</p>
-          <p class="cn-p">Your confirmation has your reference and the address. Reply to it with any question, and your door code reaches you 30 minutes before {PROPERTY.checkIn} on arrival day.</p>
+          <p class="cn-p">Your confirmation has your reference and the address. Reply to it with any question. Before you arrive, we email you how to check in.</p>
         </div>
       </li>
     </ul>
   </section>
 
   <section class="cn-faq" aria-labelledby="cn-faq-h">
-    <div class="wrap cn-faq-in">
+    <div class="in glass cn-faq-in">
       <div>
         <p class="eyebrow" data-reveal>Before you ask</p>
         <h2 id="cn-faq-h" class="display h3" data-split>Questions guests <em>ask us.</em></h2>
@@ -84,70 +84,56 @@ const faqLd = {
     </div>
   </section>
 
-  <section class="wrap cn-co" aria-label="The company">
+  <section class="in cn-co" aria-label="The company">
     <p>{PROPERTY.name}, {PROPERTY.building}, {PROPERTY.address}. Kozi is a brand of {BRAND.company}</p>
   </section>
-</Layout>
-
-<script>
-  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) => {
-    const label = b.querySelector<HTMLElement>('[data-copy-label]')!;
-    const was = label.textContent;
-    b.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(b.dataset.copy!); label.textContent = 'Copied'; }
-      catch { label.textContent = b.dataset.copy!; }
-      setTimeout(() => (label.textContent = was), 2000);
-    });
-  });
-</script>
+</Shell>
 
 <style is:global>
   .cn { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: clamp(18px, 2.4vw, 32px); padding: clamp(48px, 6vw, 84px) 0 clamp(70px, 8vw, 120px); }
-  .cn-mail { padding: clamp(28px, 4vw, 56px); border-radius: 30px; background: var(--night); color: var(--cream); display: grid; align-content: start; }
+  .cn-mail { padding: clamp(28px, 4vw, 56px); border-radius: 30px; border-color: rgb(231 165 76 / 0.45); display: grid; align-content: start; }
   .cn-mail > svg { width: 30px; height: 30px; fill: none; stroke: var(--amber-hi); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 26px; }
   .cn-k { margin: 0; font: 650 10.5px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
-  .cn-mail .cn-k { color: rgb(246 239 228 / 0.6); }
+  .cn-mail .cn-k { color: rgb(238 240 245 / 0.6); }
   .cn-addr { display: block; margin-top: 14px; font-size: clamp(30px, 4.2vw, 62px); line-height: 1.02; overflow-wrap: anywhere; color: var(--cream); }
   .cn-p { margin: 12px 0 0; color: var(--ink-2); font-size: 15.5px; }
-  .cn-mail .cn-p { margin-top: 20px; max-width: 26.45em; color: rgb(246 239 228 / 0.76); font-size: 16.5px; }
+  .cn-mail .cn-p { margin-top: 20px; max-width: 26.45em; color: rgb(238 240 245 / 0.76); font-size: 16.5px; }
   .cn-acts { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
-  .cn-mail .btn:not(.ghost) { background: var(--amber); color: #1d1406; }
-  .cn-copy { color: var(--cream); box-shadow: inset 0 0 0 1px rgb(246 239 228 / 0.35); min-width: 190px; }
+  .cn-copy { color: var(--cream); box-shadow: inset 0 0 0 1px rgb(238 240 245 / 0.35); min-width: 190px; }
   @media (hover: hover) and (pointer: fine) {
-    .cn-mail .btn:not(.ghost):hover { background: var(--amber-hi); }
-    .cn-copy:hover { background: rgb(246 239 228 / 0.08); }
+    .cn-copy:hover { background: rgb(238 240 245 / 0.08); }
   }
   .cn-side { list-style: none; margin: 0; padding: 0; display: grid; gap: clamp(14px, 1.6vw, 20px); }
-  .cn-card { position: relative; display: block; height: 100%; padding: 24px 26px; border-radius: 24px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
+  .cn-card { position: relative; display: block; height: 100%; padding: 24px 26px; border-radius: 24px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
   a.cn-card:active { transform: scale(0.99); }
-  .cn-h { margin: 10px 0 0; font: 400 26px/1.1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; }
+  .cn-h { margin: 10px 0 0; font: 800 26px/1.1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.01em; }
   .cn-go { position: absolute; right: 22px; top: 20px; font-size: 18px; transition: transform 200ms var(--ease-out); }
   @media (hover: hover) and (pointer: fine) {
-    a.cn-card:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 24px 50px -36px rgb(43 38 34 / 0.5); }
+    a.cn-card:hover { box-shadow: inset 0 0 0 1px rgb(238 240 245 / 0.2), 0 24px 50px -36px rgb(0 0 0 / 0.5); }
     a.cn-card:hover .cn-go { transform: translate(2px, -2px); }
   }
-  .cn-booked { background: transparent; }
+  .cn-booked { background: rgb(9 13 24 / 0.5); }
 
-  .cn-faq { background: var(--paper); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: clamp(80px, 10vw, 140px) 0; }
+  .cn-faq { padding: 0; }
   .cn-faq-in { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 30px clamp(40px, 7vw, 120px); align-items: start; }
   .cn-faq-in .h3 { margin-top: 20px; }
   /* the answers open smoothly where the browser can animate to auto height, and instantly elsewhere */
   .fq { interpolate-size: allow-keywords; border-top: 1px solid var(--line); }
   .fq-item { border-bottom: 1px solid var(--line); }
   .fq-item summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px 0;
-    font: 400 clamp(19px, 1.6vw, 23px)/1.3 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.008em; }
+    font: 800 clamp(19px, 1.6vw, 23px)/1.3 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.008em; }
   .fq-item summary::-webkit-details-marker { display: none; }
   .fq-item summary i { position: relative; flex: none; width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line); transition: transform 250ms var(--ease-out), background-color 200ms ease; }
   .fq-item summary i::before, .fq-item summary i::after { content: ''; position: absolute; left: 11px; right: 11px; top: 16.25px; height: 1.5px; border-radius: 2px; background: currentColor; }
   .fq-item summary i::after { transform: rotate(90deg); }
-  .fq-item[open] summary i { transform: rotate(45deg); background: var(--cream); }
+  .fq-item[open] summary i { transform: rotate(45deg); background: var(--panel-solid); }
   .fq-item::details-content { block-size: 0; overflow: hidden; transition: block-size 260ms var(--ease-out), content-visibility 260ms allow-discrete; }
   .fq-item[open]::details-content { block-size: auto; }
   .fq-a p { margin: 0; padding: 0 56px 24px 0; color: var(--ink-2); max-width: 35.65em; }
   .fq-a a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--amber); text-underline-offset: 3px; }
-  @media (hover: hover) and (pointer: fine) { .fq-item summary:hover i { background: var(--cream); } }
+  @media (hover: hover) and (pointer: fine) { .fq-item summary:hover i { background: var(--panel-solid); } }
 
-  .cn-co { padding: 34px 0 60px; font-size: 14px; color: var(--muted); }
+  .cn-co { padding: 28px 0 60px; font-size: 14px; color: var(--muted); }
   .cn-co p { margin: 0; }
 
   @media (max-width: 900px) {

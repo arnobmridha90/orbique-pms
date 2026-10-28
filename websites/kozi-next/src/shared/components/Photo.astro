@@ -1,21 +1,18 @@
 ---
-// A responsive photo from src/assets/photos: WebP in three widths with a JPEG fallback.
+// A responsive photo: a content photo (p), bundled or uploaded in Orbique, or a bundled one by its key (k).
+// The files are JPEGs at the widths the photo was stored at (see photoUrl in lib/content.ts), and the browser picks one.
+// alt: overrides the photo's own alt text ('' for a photo that only decorates, or that a label already describes).
 // skip: a media query where the photo is hidden (a phone's strip on a wide screen, say). There a blank stands in,
 // so the browser doesn't fetch a photo nobody sees, which would slow the one that's showing.
-import { getImage } from 'astro:assets';
-import { photo } from '@shared/data/kozi';
 // low: fetched at low priority, for a photo just out of sight that mustn't hold up the one in view
-interface Props { k: string; alt: string; sizes?: string; class?: string; eager?: boolean; low?: boolean; widths?: number[]; skip?: string }
-const { k, alt, sizes = '(max-width: 760px) 100vw, 50vw', class: cls, eager = false, low = false, widths = [480, 800, 1280, 1800], skip } = Astro.props;
-const src = photo(k);
-const ws = widths.filter((w) => w <= src.width);
-const opts = { src, widths: ws.length ? ws : [src.width], sizes, quality: 78 };
-const [webp, jpg] = await Promise.all([getImage({ ...opts, format: 'webp' }), getImage({ ...opts, format: 'jpg' })]);
+import { builtin, midWidth, photoUrl, srcset, type Photo } from '@shared/lib/content';
+interface Props { p?: Photo; k?: string; alt?: string; sizes?: string; class?: string; eager?: boolean; low?: boolean; skip?: string }
+const { k, alt, sizes = '(max-width: 760px) 100vw, 50vw', class: cls, eager = false, low = false, skip } = Astro.props;
+const p = Astro.props.p ?? builtin(k!);
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 ---
 <picture>
   {skip && <source media={skip} srcset={BLANK} />}
-  <source srcset={webp.srcSet.attribute} type="image/webp" sizes={sizes} />
-  <img src={jpg.src} srcset={jpg.srcSet.attribute} alt={alt} sizes={sizes} class={cls} loading={eager ? 'eager' : 'lazy'} decoding="async"
-    fetchpriority={eager ? 'high' : low ? 'low' : undefined} width={jpg.attributes.width} height={jpg.attributes.height} />
+  <img src={photoUrl(p, midWidth(p))} srcset={srcset(p)} alt={alt ?? p.alt} sizes={sizes} class={cls} loading={eager ? 'eager' : 'lazy'} decoding="async"
+    fetchpriority={eager ? 'high' : low ? 'low' : undefined} width={p.w} height={p.h} />
 </picture>

@@ -5,3 +5,7 @@ export function maskWords(html: string) {
   return html.split(/(<[^>]+>)/).map((part) => part.startsWith('<') ? part
     : part.split(/(\s+)/).map((w) => (!w || /^\s+$/.test(w) ? w : `<span class="wm"><span style="--i:${i++}">${w}</span></span>`)).join('')).join('');
 }
+
+const NUMBERS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+/** 3 as 'Three', for a heading; past ten, the figure. */
+export const numberWord = (n: number) => NUMBERS[n] ?? String(n);

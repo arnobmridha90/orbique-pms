@@ -1,0 +1,57 @@
+---
+// The photo viewer: every photo full screen, one at a time, with arrow keys, swipes and the Escape key
+// (scripts/gallery.ts). Put it inside the [data-gallery] element whose [data-open-at] buttons open it.
+import Photo from './Photo.astro';
+import { CREDITS, CC_BY_SA } from '@shared/data/kozi';
+import type { Photo as P } from '@shared/lib/content';
+interface Props { photos: P[]; name: string }
+const { photos, name } = Astro.props;
+---
+<dialog class="lb" data-lb aria-label={`Photos of the ${name}`}>
+  <div class="lb-top">
+    <p class="lb-count" aria-live="polite"><b data-lb-n>1</b> of {photos.length}</p>
+    <p class="lb-name">{name}</p>
+    <form method="dialog"><button class="lb-x" aria-label="Close photos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></form>
+  </div>
+  <div class="lb-track" data-lb-track tabindex="-1">
+    {photos.map((p, i) => (
+      <figure class="lb-slide" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${photos.length}`}>
+        <Photo p={p} sizes="100vw" />
+        <figcaption>{p.alt}{p.key && CREDITS[p.key] && <small> · Photo: {CREDITS[p.key].by}, {CC_BY_SA.name}</small>}</figcaption>
+      </figure>
+    ))}
+  </div>
+  <button type="button" class="lb-arrow lb-prev" data-lb-step="-1" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+  <button type="button" class="lb-arrow lb-next" data-lb-step="1" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg></button>
+</dialog>
+
+<style is:global>
+  /* the viewer */
+  .lb { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #0d0c10; color: var(--cream);
+    opacity: 0; transition: opacity 220ms var(--ease-out), display 220ms allow-discrete, overlay 220ms allow-discrete; overflow: hidden; }
+  .lb[open] { opacity: 1; display: grid; grid-template-rows: auto 1fr; }
+  @starting-style { .lb[open] { opacity: 0; } }
+  .lb::backdrop { background: #0d0c10; }
+  .lb-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 14px var(--gutter); padding-top: max(14px, env(safe-area-inset-top)); }
+  .lb-count { margin: 0; font: 500 14px/1 var(--sans); font-variant-numeric: tabular-nums; color: rgb(246 239 228 / 0.7); }
+  .lb-count b { color: var(--cream); font-weight: 650; }
+  .lb-name { margin: 0; font: 400 18px/1 var(--display); font-variation-settings: var(--soft); }
+  .lb-top form { justify-self: end; margin: 0; }
+  .lb-x { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; transition: background-color 200ms ease, transform 160ms var(--ease-out); }
+  .lb-x svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+  .lb-x:active { transform: scale(0.94); }
+  .lb-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; min-height: 0; outline: none; overscroll-behavior: contain; }
+  .lb-track::-webkit-scrollbar { display: none; }
+  .lb-slide { flex: 0 0 100%; min-width: 0; scroll-snap-align: center; scroll-snap-stop: always; margin: 0; display: grid; grid-template-rows: 1fr auto; gap: 14px; padding: 0 clamp(16px, 7vw, 120px) max(22px, env(safe-area-inset-bottom)); }
+  .lb-slide picture { min-height: 0; display: grid; place-items: center; }
+  .lb-slide img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 6px; }
+  .lb-slide figcaption { text-align: center; font-size: 14.5px; color: rgb(246 239 228 / 0.72); }
+  .lb-arrow { position: absolute; top: 50%; width: 52px; height: 52px; margin-top: -26px; border-radius: 50%; display: grid; place-items: center; background: rgb(255 255 255 / 0.08);
+    transition: background-color 200ms ease, transform 160ms var(--ease-out), opacity 200ms ease; }
+  .lb-arrow svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .lb-arrow:active { transform: scale(0.94); }
+  .lb-arrow:disabled { opacity: 0; pointer-events: none; }
+  .lb-prev { left: clamp(10px, 2vw, 32px); } .lb-next { right: clamp(10px, 2vw, 32px); }
+  @media (hover: hover) and (pointer: fine) { .lb-x:hover, .lb-arrow:hover { background: rgb(255 255 255 / 0.16); } }
+  @media (hover: none), (max-width: 760px) { .lb-arrow { display: none; } .lb-name { display: none; } .lb-top { grid-template-columns: 1fr auto; } }
+</style>

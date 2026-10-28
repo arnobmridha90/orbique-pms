@@ -2,9 +2,14 @@
 // The search bar: where, when and how many. Works without JavaScript as a plain form
 // (it submits to /stays/); with JavaScript the fields open a list, a calendar and a stepper.
 import { DESTINATIONS } from '@shared/data/kozi';
-interface Props { id: string; class?: string; compact?: boolean }
-const { id, class: cls = '', compact = false } = Astro.props;
-const first = DESTINATIONS[0];
+import type { City } from '@shared/lib/content';
+// cities: the content's cities, on the Malaysia site; without them, the fixed list in data/kozi.ts
+interface Props { id: string; class?: string; compact?: boolean; cities?: City[] }
+const { id, class: cls = '', compact = false, cities } = Astro.props;
+const list = cities?.length
+  ? cities.map((c) => ({ id: c.id, city: c.name, country: 'Malaysia', buildings: c.buildings.map((b) => ({ name: b.name })) }))
+  : DESTINATIONS;
+const first = list[0];
 ---
 <form class:list={['search', cls, { 'search-compact': compact }]} action="/stays/" method="get" role="search" aria-label="Find a stay" data-search={id}>
   <div class="s-bar">
@@ -42,7 +47,7 @@ const first = DESTINATIONS[0];
   <div class="s-shade" data-shade aria-hidden="true"></div>
   <div class="s-pop s-pop-where" id={`${id}-where`} data-pop="where" role="listbox" aria-label="Destinations" tabindex="-1">
     <p class="s-pop-k">Destinations</p>
-    {DESTINATIONS.map((d) => (
+    {list.map((d) => (
       <button type="button" class="s-dest" role="option" aria-selected={d.id === first.id ? 'true' : 'false'} data-city={d.id} data-name={d.city}>
         <span class="s-dest-pin" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" /><circle cx="12" cy="10" r="2.4" /></svg></span>
         <span><b>{d.city}, {d.country}</b><small>{d.buildings.map((b) => b.name).join(' · ')}</small></span>

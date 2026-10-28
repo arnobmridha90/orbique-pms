@@ -1,0 +1,162 @@
+{
+ "origin": [
+  101.707307,
+  3.154732
+ ],
+ "unit_m": 10,
+ "q": 40,
+ "axes": "x east, z south (north is -z)",
+ "sections": {
+  "b_count": {
+   "offset": 0,
+   "count": 19120,
+   "type": "Uint16"
+  },
+  "b_height_dm": {
+   "offset": 38240,
+   "count": 19120,
+   "type": "Uint16"
+  },
+  "b_min_dm": {
+   "offset": 76480,
+   "count": 19120,
+   "type": "Uint16"
+  },
+  "b_kind": {
+   "offset": 114720,
+   "count": 19120,
+   "type": "Uint8"
+  },
+  "b_roof": {
+   "offset": 133840,
+   "count": 19120,
+   "type": "Uint8"
+  },
+  "b_seed": {
+   "offset": 152960,
+   "count": 19120,
+   "type": "Uint8"
+  },
+  "b_pts": {
+   "offset": 172080,
+   "count": 234820,
+   "type": "Int16"
+  },
+  "l_count": {
+   "offset": 641720,
+   "count": 15902,
+   "type": "Uint16"
+  },
+  "l_class": {
+   "offset": 673524,
+   "count": 15902,
+   "type": "Uint8"
+  },
+  "l_level": {
+   "offset": 689428,
+   "count": 15902,
+   "type": "Uint8"
+  },
+  "l_pts": {
+   "offset": 705332,
+   "count": 120488,
+   "type": "Int16"
+  },
+  "w_count": {
+   "offset": 946308,
+   "count": 173,
+   "type": "Uint16"
+  },
+  "w_width_dm": {
+   "offset": 946656,
+   "count": 173,
+   "type": "Uint8"
+  },
+  "w_pts": {
+   "offset": 946832,
+   "count": 2128,
+   "type": "Int16"
+  },
+  "a_count": {
+   "offset": 951088,
+   "count": 1549,
+   "type": "Uint32"
+  },
+  "a_kind": {
+   "offset": 957284,
+   "count": 1549,
+   "type": "Uint8"
+  },
+  "a_holes": {
+   "offset": 958836,
+   "count": 1549,
+   "type": "Uint16"
+  },
+  "a_hole_counts": {
+   "offset": 961936,
+   "count": 42,
+   "type": "Uint32"
+  },
+  "a_pts": {
+   "offset": 962104,
+   "count": 32470,
+   "type": "Int16"
+  },
+  "t_pts": {
+   "offset": 1027044,
+   "count": 6366,
+   "type": "Int16"
+  }
+ },
+ "codes": {
+  "b_kind": {
+   "1": "apartments",
+   "2": "bungalow",
+   "3": "office",
+   "4": "retail",
+   "5": "hotel",
+   "6": "warehouse",
+   "7": "parking",
+   "8": "public",
+   "9": "religious",
+   "10": "transportation",
+   "11": "sports_hall",
+   "12": "roof"
+  },
+  "b_roof": {
+   "0": "flat",
+   "1": "gabled",
+   "2": "hipped",
+   "3": "pyramidal",
+   "4": "dome",
+   "5": "skillion"
+  },
+  "l_class": {
+   "1": "motorway",
+   "2": "trunk",
+   "3": "primary",
+   "4": "secondary",
+   "5": "tertiary",
+   "6": "living_street",
+   "7": "unknown",
+   "8": "pedestrian",
+   "9": "bridleway",
+   "20": "standard_gauge",
+   "21": "light_rail",
+   "22": "subway",
+   "23": "monorail"
+  },
+  "a_kind": {
+   "1": "water",
+   "2": "park/grass",
+   "3": "forest",
+   "4": "pitch",
+   "5": "golf",
+   "6": "plaza",
+   "7": "cemetery",
+   "8": "pool"
+  }
+ },
+ "bytes": 1039776,
+ "credit": "Map data: Overture Maps Foundation (release 2026-10-21.0), incl. OpenStreetMap contributors (ODbL), Google Open Buildings (CC BY 4.0) and Microsoft ML Buildings (ODbL)."
+}

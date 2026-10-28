@@ -1,9 +1,9 @@
 ---
 // All the guides: the first one large, the rest beside it.
-import Layout from '@shared/components/Layout.astro';
-import PageHead from '@shared/components/PageHead.astro';
+import Shell from '@my/components/Shell.astro';
+import Head from '@my/components/Head.astro';
 import Photo from '@shared/components/Photo.astro';
-import StayBand from '@shared/components/StayBand.astro';
+import BookBand from '@my/components/BookBand.astro';
 import { GUIDE_PAGES } from '@shared/data/guides';
 import { BRAND } from '@shared/data/kozi';
 import { crumbsLd } from '@shared/lib/seo';
@@ -15,21 +15,21 @@ const list = {
   itemListElement: GUIDE_PAGES.map((g, i) => ({ '@type': 'ListItem', position: i + 1, url: `${BRAND.my}/guides/${g.slug}/`, name: g.title })),
 };
 ---
-<Layout site="my" title="Kuala Lumpur travel guides: arrival card, airport and halal food | Kozi" over
+<Shell cam="guides" dim title="Kuala Lumpur travel guides: arrival card, airport and halal food | Kozi"
   description="Practical guides for visiting Kuala Lumpur: the free MDAC arrival card, KLIA to the city centre by train, Grab or taxi, and eating halal near KLCC. Checked against official sources."
   jsonld={[crumbsLd(BRAND.my, crumbs), list]}>
-  <PageHead crumbs={crumbs} eyebrow="Plan your trip" size="short" seed={3}>
+  <Head crumbs={crumbs} eyebrow="Plan your trip" size="short">
     <Fragment slot="title">Guides for <em>Kuala Lumpur.</em></Fragment>
     <Fragment slot="lede">Straight answers to what guests ask us before they fly. Every guide is checked against official and trusted sources, listed at the end of each one.</Fragment>
-  </PageHead>
+  </Head>
 
-  <section class="wrap gi" aria-label="Guides">
+  <section class="in gi" aria-label="Guides">
     <ul class="gi-list" role="list">
       {GUIDE_PAGES.map((g, i) => (
         <li class:list={['gi-item', { 'gi-first': i === 0 }]} data-reveal style={`--d:${i * 90}`}>
           <a class="gi-card" href={`/guides/${g.slug}/`}>
             <div class="gi-media">
-              <Photo k={g.photo.key} alt="" eager={i === 0} sizes={i === 0 ? '(max-width: 900px) 92vw, 56vw' : '(max-width: 900px) 92vw, 36vw'} widths={[480, 720, 960, 1280]} />
+              <Photo k={g.photo.key} alt="" eager={i === 0} sizes={i === 0 ? '(max-width: 900px) 92vw, 56vw' : '(max-width: 900px) 92vw, 36vw'} />
               <span class="gi-tag">{g.tag}</span>
             </div>
             <div class="gi-body">
@@ -42,14 +42,14 @@ const list = {
       ))}
     </ul>
   </section>
-  <StayBand />
-</Layout>
+  <BookBand />
+</Shell>
 
 <style is:global>
-  .gi { padding: clamp(48px, 6vw, 84px) 0 clamp(90px, 10vw, 150px); }
+  .gi { padding: clamp(32px, 4vw, 56px) 0 clamp(70px, 9vw, 120px); }
   .gi-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: clamp(18px, 2.4vw, 32px); }
   .gi-first { grid-row: span 2; }
-  .gi-card { display: grid; height: 100%; grid-template-rows: auto 1fr; border-radius: 28px; overflow: hidden; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line);
+  .gi-card { display: grid; height: 100%; grid-template-rows: auto 1fr; border-radius: 28px; overflow: hidden; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     transition: transform 160ms var(--ease-out), box-shadow 300ms ease; }
   .gi-card:active { transform: scale(0.99); }
   .gi-media { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: var(--sand); }
@@ -57,14 +57,14 @@ const list = {
   .gi-media picture, .gi-media img { width: 100%; height: 100%; }
   .gi-media img { object-fit: cover; transition: transform 1000ms var(--ease-out); }
   .gi-tag { position: absolute; left: 16px; top: 16px; padding: 8px 12px; border-radius: 999px; font: 650 11px/1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase;
-    background: rgb(251 247 240 / 0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--amber-deep); }
+    background: rgb(11 16 32 / 0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--amber-deep); }
   .gi-body { padding: clamp(22px, 2.4vw, 32px); display: grid; align-content: start; gap: 12px; }
   .gi-h { font-size: clamp(28px, 2.6vw, 38px); line-height: 1.02; }
   .gi-first .gi-h { font-size: clamp(34px, 3.8vw, 56px); }
   .gi-lede { margin: 0; color: var(--ink-2); max-width: 29.9em; }
   .gi-meta { margin: 6px 0 0; font: 600 13px/1 var(--sans); color: var(--muted); }
   @media (hover: hover) and (pointer: fine) {
-    .gi-card:hover { box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2), 0 34px 70px -46px rgb(43 38 34 / 0.55); }
+    .gi-card:hover { box-shadow: inset 0 0 0 1px rgb(238 240 245 / 0.2), 0 34px 70px -46px rgb(0 0 0 / 0.55); }
     .gi-card:hover .gi-media img { transform: scale(1.04); }
   }
   @media (max-width: 900px) {

@@ -1,31 +1,33 @@
-// Checkout: reads the stay from the address (suite, dates, guests), prices it, offers its rates (Flexible or
-// Non-refundable), checks the form, then hands over to payment. Members see and pay the member price.
-import { availability, checkout, getMember, rm, TEST_MODE, type Member, type Quote, type Rate, type SuiteType } from '@shared/lib/api';
+// Checkout: reads the stay from the address (booking type, suite, dates, guests), prices it, offers its rates
+// (Flexible or Non-refundable), checks the form, then hands over to payment.
+import { ApiError, availability, checkout, rm, TEST_MODE, type Quote, type Rate } from '@shared/lib/api';
 import { fmtDayYear, fromIso, nights as countNights, todayKL } from '@shared/lib/dates';
-
-const TYPES: SuiteType[] = ['standard', 'boutique', 'premium'];
 
 export function init(root: HTMLElement) {
   const $ = <T extends Element = HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const q = new URLSearchParams(location.search);
-  const type = q.get('type') as SuiteType;
+  const type = q.get('type') || '';
+  // the suite: the one the address names, or else the first that books as this type
+  const tpl = document.querySelector<HTMLTemplateElement>('template[data-co-photos]')!;
+  const units = [...tpl.content.querySelectorAll<HTMLElement>('[data-for]')].filter((el) => el.dataset.type === type);
+  const src = units.find((el) => el.dataset.for === q.get('unit')) ?? units[0];
   const a = fromIso(q.get('in')), b = fromIso(q.get('out'));
-  const guests = Math.min(5, Math.max(1, Number(q.get('guests')) || 2));
-  const ok = TYPES.includes(type) && a && b && b > a && a >= todayKL() && countNights(a, b) <= 60;
+  const guests = Math.min(Number(src?.dataset.most) || 5, Math.max(1, Number(q.get('guests')) || 2));
+  const ok = src && a && b && b > a && a >= todayKL() && countNights(a, b) <= 60;
   if (!ok) { root.classList.add('empty'); $('[data-co-gone]').hidden = false; return; }
   $('[data-co-backnote]').hidden = q.get('back') !== '1';
 
   const n = countNights(a!, b!);
   const form = $<HTMLFormElement>('[data-co-form]');
-  let member = !!getMember();
   let quote: Quote | null = null;
   let plan: string | null = null;
   $('[data-co-test]').hidden = !TEST_MODE;
   if (TEST_MODE) $('[data-co-go-label]').textContent = 'Make a test booking';
 
   // the suite
-  const tpl = document.querySelector<HTMLTemplateElement>('template[data-co-photos]')!;
-  const src = tpl.content.querySelector<HTMLElement>(`[data-for="${type}"]`)!;
+  $('[data-co-where]').textContent = src.dataset.building!;
+  $('[data-co-tin]').textContent = `from ${src.dataset.in}`;
+  $('[data-co-tout]').textContent = `by ${src.dataset.out}`;
   $('[data-co-media]').append(...src.cloneNode(true).childNodes);
   $('[data-co-name]').textContent = src.dataset.name!;
   $('[data-co-level]').textContent = src.dataset.level!;
@@ -33,11 +35,11 @@ export function init(root: HTMLElement) {
   $('[data-co-out]').textContent = fmtDayYear(b!);
   $('[data-co-who]').textContent = `${n} night${n > 1 ? 's' : ''} · ${guests} guest${guests > 1 ? 's' : ''}${guests > 4 ? ' (one on the extra bed)' : ''}`;
   const back = $<HTMLAnchorElement>('[data-co-back]');
-  back.href = `/kuala-lumpur/vortex-klcc/${type}/`;
+  back.href = src.dataset.href!;
   $('[data-co-back-label]').textContent = `Back to the ${src.dataset.name}`;
 
   const rate = (): Rate | null => quote?.rates.find((r) => r.plan === plan) ?? quote?.rates[0] ?? null;
-  const side = (r: Rate) => (member ? r.member : r.public);
+  const side = (r: Rate) => r.public;
 
   // the rates, as a choice when there is one; a single non-refundable rate is still shown, so nobody misses it
   const rateSec = $('[data-co-rate-sec]'), rateList = $('[data-co-rates]');
@@ -70,15 +72,12 @@ export function init(root: HTMLElement) {
     const r = rate();
     if (!quote || !r) { lines.innerHTML = '<div><dt>Getting your price…</dt><dd></dd></div>'; return; }
     const total = side(r).total, rooms = total - quote.extraBed;
-    const save = r.public.total - r.member.total;
     const row = (k: string, v: string, cls = '') => `<div${cls ? ` class="${cls}"` : ''}><dt>${k}</dt><dd>${v}</dd></div>`;
     lines.innerHTML = [
       row(`${rm(rooms / n)} × ${n} night${n > 1 ? 's' : ''}`, rm(rooms)),
       quote.extraBed ? row(`Extra bed × ${n} night${n > 1 ? 's' : ''}`, rm(quote.extraBed)) : '',
-      member && save >= 0.01 ? row('Your member saving', `−${rm(save)}`, 'save') : '',
       `<div class="total"><dt>Total<small>Malaysian ringgit</small></dt><dd>${rm(total)}</dd></div>`,
     ].join('');
-    $('[data-co-mem-line]').textContent = save >= 0.01 ? `Members pay ${rm(r.member.total)} for these dates, ${rm(save)} less.` : '';
     $('[data-co-cancel]').textContent = r.cancellation;
     $('[data-co-taxnote]').textContent = quote.taxNote;
     if (!TEST_MODE) $('[data-co-go-label]').textContent = `Pay ${rm(total)}`;
@@ -86,7 +85,7 @@ export function init(root: HTMLElement) {
   }
   paint();
 
-  availability(q.get('in')!, q.get('out')!, guests).then((av) => {
+  availability(q.get('in')!, q.get('out')!, guests, [type]).then((av) => {
     quote = av.quotes.find((x) => x.type === type) ?? null;
     if (!quote || !quote.available) {
       err(quote && quote.short !== 'Sold out' ? quote.reason : 'Sorry, those dates have just gone for this suite. Please pick others.');
@@ -95,8 +94,6 @@ export function init(root: HTMLElement) {
     plan = quote?.plan ?? null;
     rates(); paint();
   }).catch((x) => err((x as Error).message || 'We could not get your price. Please refresh the page.'));
-
-  document.addEventListener('kozi:member', (e) => { member = !!(e as CustomEvent<Member | null>).detail; rates(); paint(); prefill(); });
 
   // the tourism tax depends on nationality
   const country = form.elements.namedItem('country') as HTMLSelectElement;
@@ -107,13 +104,6 @@ export function init(root: HTMLElement) {
       : `Malaysia charges non-Malaysian guests a tourism tax of RM10 per room per night (${rm(10 * n)} for your stay). It is paid at check-in and is not included in this price.`;
   };
   country.addEventListener('change', tax);
-
-  const prefill = () => {
-    const m = getMember();
-    const email = form.elements.namedItem('email') as HTMLInputElement;
-    if (m && !email.value) email.value = m.email;
-  };
-  prefill();
 
   // keep what they typed if they go back and forth
   const KEY = 'kozi-guest';
@@ -132,6 +122,13 @@ export function init(root: HTMLElement) {
 
   const errEl = $('[data-err]');
   function err(t: string) { errEl.textContent = t; }
+  // online payment not switched on yet in Orbique: the guest can still book with us by email, with the stay filled in
+  function emailUs() {
+    const email = root.dataset.email!;
+    const subject = `Booking: ${src.dataset.name}, ${fmtDayYear(a!)} to ${fmtDayYear(b!)}, ${guests} guest${guests > 1 ? 's' : ''}`;
+    const link = Object.assign(document.createElement('a'), { href: `mailto:${email}?subject=${encodeURIComponent(subject)}`, textContent: email });
+    errEl.replaceChildren("We can't take payment online just yet, sorry. Email us at ", link, ' with your dates and we will book the suite for you.');
+  }
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = (k: string) => form.elements.namedItem(k) as HTMLInputElement;
@@ -150,10 +147,11 @@ export function init(root: HTMLElement) {
     const go = $<HTMLButtonElement>('[data-co-go]');
     go.setAttribute('aria-busy', 'true');
     try {
-      const r = await checkout({ type, checkIn: q.get('in')!, checkOut: q.get('out')!, guests, plan: rate()?.plan ?? null, name: f('name').value.trim(), email: f('email').value.trim(), phone: f('phone').value.trim(), country: f('country').value, arrival: f('arrival').value || undefined, notes: f('notes').value.trim() || undefined });
+      const r = await checkout({ type, unit: src.dataset.for, suite: src.dataset.name, checkIn: q.get('in')!, checkOut: q.get('out')!, guests, plan: rate()?.plan ?? null, name: f('name').value.trim(), email: f('email').value.trim(), phone: f('phone').value.trim(), country: f('country').value, arrival: f('arrival').value || undefined, notes: f('notes').value.trim() || undefined });
       location.href = r.url;
     } catch (x) {
-      err((x as Error).message || 'Something went wrong. Please try again.');
+      if (x instanceof ApiError && x.code === 'payments-off') emailUs();
+      else err((x as Error).message || 'Something went wrong. Please try again.');
       go.setAttribute('aria-busy', 'false');
     }
   });

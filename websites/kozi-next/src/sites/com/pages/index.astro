@@ -16,12 +16,12 @@ const way = [
     d: 'Two bedrooms, two bathrooms and a full kitchen, so a family or a group of friends has room to live, cook and spread out.' },
   { k: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk, seen from the Boutique Suite', t: 'The view is part of the stay',
     d: 'We choose apartments for what you see from the window. In Kuala Lumpur that is the Petronas Twin Towers, KL Tower or Merdeka 118, depending on the suite.' },
-  { k: 'boutique/09-coffee-tea', alt: 'A coffee and tea tray with a kettle, ready for arrival', t: 'Arrive when you like',
-    d: 'Self check-in with your own door code. It reaches you 30 minutes before check-in, so a late flight is no problem.' },
+  { k: 'boutique/09-coffee-tea', alt: 'A coffee and tea tray with a kettle, ready for arrival', t: 'Ready when you arrive',
+    d: 'Coffee, tea and a kettle in the kitchen, fresh linen on the beds and a washing machine in every suite.' },
   { k: 'premium-b/08-master-bed-front', alt: 'A made bed with white linen in a Premium Suite', t: 'A team that answers',
-    d: 'Message us before and during your stay, in English, Bahasa Malaysia or Bahasa Indonesia.' },
-  { k: 'boutique/05-bedroom-window-view', alt: 'The city through the bedroom window of a Boutique Suite', t: 'Members pay less',
-    d: 'Book on our own site and join free with your email for our lowest price. There is no booking-site commission, and card payments go through Stripe.' },
+    d: 'Email us before and during your stay, and a real person replies.' },
+  { k: 'boutique/05-bedroom-window-view', alt: 'The city through the bedroom window of a Boutique Suite', t: 'Book with us directly',
+    d: 'Book on our own site: you see the price for your dates before you pay, and card payments go through Stripe.' },
 ];
 const website = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi', url: `${BRAND.com}/`, publisher: { '@id': orgLd['@id'] } };
 ---
@@ -92,7 +92,7 @@ const website = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'K
     <div class="wrap wy-in">
       <div class="wy-media" aria-hidden="true">
         {way.map((w, i) => (
-          <figure data-way-shot class:list={{ on: i === 0 }}><Photo k={w.k} alt="" sizes="(max-width: 900px) 92vw, 44vw" widths={[640, 960, 1280]} /></figure>
+          <figure data-way-shot class:list={{ on: i === 0 }}><Photo k={w.k} alt="" sizes="(max-width: 900px) 92vw, 44vw" /></figure>
         ))}
       </div>
       <div class="wy-copy">
@@ -104,7 +104,7 @@ const website = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'K
               <span class="wy-n" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
               <h3 class="display wy-t">{w.t}</h3>
               <p class="wy-d">{w.d}</p>
-              <figure class="wy-phone"><Photo k={w.k} alt={w.alt} sizes="92vw" widths={[480, 800]} /></figure>
+              <figure class="wy-phone"><Photo k={w.k} alt={w.alt} sizes="92vw" /></figure>
             </li>
           ))}
         </ol>
