@@ -4,8 +4,10 @@
  *   signup           anyone                                        {company, contactName, email, phone, units, message}
  *   create-operator  platform admin                                {company, ownerName, ownerEmail, plan?}
  *   update-operator  platform admin                                {orgId, company?, staffId?, ownerName?, ownerEmail?}
- *   invite           owner of orgId                                {orgId, staffId, name, email, phone?, role}
+ *   invite           owner of orgId                                {orgId, staffId, name, email?, phone?, role, username?, phoneLogin?, password?}
+ *   set-login        owner of orgId                                {orgId, staffId, username?, phoneLogin?, phone?, password?, tempPassword?, mustChange?}
  *   reset-password   owner of orgId, or a platform admin for owners {orgId, staffId}
+ *   sign-in          anyone                                        {login (mobile number or username), password}
  *
  * Sign-in: "Authorization: Bearer <Supabase access token>". See docs/API.md for the results.
  * Uses the service-role key (server only). Errors are plain English; no keys or stack traces are ever returned.
@@ -14,6 +16,7 @@ import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, confl
 import { requireAdminClient, check, caller, isPlatformAdmin, platformAdminCount, getOrg, membership, requireOwner, findUserByEmail, createUser, deleteUserQuietly } from './_lib/supabase.js';
 import { tempPassword } from './_lib/passwords.js';
 import { isPlatformOwnerEmail } from './_lib/owners.js';
+import { phoneLogin, username as usernameField, setLoginNames, loginNamesOf, signInWithLogin, standInEmail, isStandIn, showPhone } from './_lib/logins.js';
 
 const ROLE_LABELS = { owner: 'Account owner', ops: 'Ops manager', housekeeping: 'Housekeeping', frontdesk: 'Front desk', maintenance: 'Maintenance', accountant: 'Accountant' };
 const INVITE_ROLES = ['ops', 'housekeeping', 'frontdesk', 'maintenance', 'accountant'];
@@ -170,58 +173,159 @@ export async function updateOperator(sb, body, me) {
   return { emailChanged: emailChanges, otherWorkspaces: (others || []).length };
 }
 
+/* ---------------- sign-in names: a mobile number and a username, set by the workspace owner ---------------- */
+
+/** The sign-in names asked for in body (stored forms; undefined = leave): username ('' removes), phoneLogin (with phone). */
+function wantedNames(body, phone) {
+  const out = {};
+  if (body.username !== undefined && body.username !== null) out.username = String(body.username).trim() ? usernameField(body.username) : null;
+  if (body.phoneLogin !== undefined && body.phoneLogin !== null) {
+    if (body.phoneLogin) {
+      if (!phone) throw bad('no-phone', 'Add their mobile number to let them sign in with it.');
+      out.phone = phoneLogin(phone);
+    } else out.phone = null;
+  }
+  return out;
+}
+
+/** An owner may set the sign-in of someone whose only Orbique workspace is theirs (never an account another company also uses). */
+async function onlyHere(sb, userId, orgId) {
+  if (await isPlatformAdmin(sb, userId)) return false;
+  const others = check(await sb.from('members').select('org_id').eq('user_id', userId).neq('org_id', orgId), 'count workspaces') || [];
+  return others.length === 0;
+}
+
+/** The person's sign-in as the app shows it: {email (null for a stand-in), username, phone ('+60...')}. */
+async function signInView(sb, user) {
+  const n = await loginNamesOf(sb, user.id);
+  return { email: isStandIn(user.email) ? null : user.email, username: n.username, phone: showPhone(n.phone) };
+}
+
+const loginLabel = (names) => names.username || showPhone(names.phone) || '';
+
+/** Keep the staff record's sign-in fields (shown on the Team page) in step. */
+async function stampStaff(sb, orgId, staffId, view, by) {
+  const rec = check(await sb.from('records').select('data, deleted').eq('org_id', orgId).eq('coll', 'staff').eq('id', staffId).maybeSingle(), 'load staff record');
+  if (!rec || rec.deleted) return;
+  const data = Object.assign({}, rec.data || {});
+  if (view.username) data.username = view.username; else delete data.username;
+  if (view.phone) data.loginPhone = view.phone; else delete data.loginPhone;
+  check(await sb.from('records').update({ data, updated_by: by }).eq('org_id', orgId).eq('coll', 'staff').eq('id', staffId), 'update staff record');
+}
+
 /* ---------------- invite: an owner adds a team member ---------------- */
-async function invite(sb, body, me) {
+export async function invite(sb, body, me) {
   const orgId = uuidField(body.orgId);
   const staffId = idField(body.staffId, 'Staff member');
   const name = text(body.name, 'Name', { max: 80, required: true });
-  const email = emailField(body.email);
+  const email = body.email ? emailField(body.email) : '';
   const phone = phoneField(body.phone);
   const role = text(body.role, 'Role', { max: 20, required: true });
   if (role === 'owner') throw bad('bad-role', 'People cannot be invited as account owner. Choose another role; Orbique can add a second owner if you need one.');
   if (!INVITE_ROLES.includes(role)) throw bad('bad-role', 'Please choose a role for this person.');
+  const names = wantedNames(body, phone);
+  const chosen = body.password ? passwordField(body.password) : null;
+  if (!email && !names.username && !names.phone) throw bad('no-login', 'Give them an email, a username or their mobile number to sign in with.');
 
   await requireOwner(sb, orgId, me.id); // before anything about the workspace is revealed
   const org = await getOrg(sb, orgId);
   if (org.status !== 'active') throw forbidden('This workspace is paused, so new people cannot be added. Please contact Orbique.');
 
-  let user = await findUserByEmail(sb, email);
+  let user = email ? await findUserByEmail(sb, email) : null;
   const byStaff = check(await sb.from('members').select('user_id, role').eq('org_id', orgId).eq('staff_id', staffId).maybeSingle(), 'check staff member');
   if (user) {
     const mine = await membership(sb, orgId, user.id);
     if (mine && mine.role === 'owner') throw conflict('is-owner', 'That email belongs to an account owner of this workspace.');
     if (mine && mine.staff_id !== staffId) throw conflict('email-in-use', 'That email is already used by another person in this workspace.');
   }
-  if (byStaff && (!user || byStaff.user_id !== user.id)) throw conflict('has-account', `${name} already signs in with a different email address.`);
+  if (byStaff && (!user || byStaff.user_id !== user.id)) throw conflict('has-account', email ? `${name} already signs in with a different email address.` : `${name} already has a sign-in. Use Sign-in details to change it.`);
+  // names someone else has: refused before an account is made
+  for (const kind of ['username', 'phone']) {
+    if (!names[kind]) continue;
+    const held = check(await sb.from('login_names').select('user_id').eq('kind', kind).eq('login', names[kind]).maybeSingle(), 'check sign-in name');
+    if (held && (!user || held.user_id !== user.id)) throw conflict(kind + '-taken', kind === 'phone' ? 'Someone else on Orbique already signs in with this mobile number.' : 'That username is taken on Orbique. Try another, for example with your company name in front.');
+  }
 
   let created = false;
   let temp = null;
   if (!user) {
-    temp = tempPassword();
-    user = await createUser(sb, { email, password: temp, metadata: { name, must_change_password: true } });
+    temp = chosen ? null : tempPassword();
+    const meta = { name, must_change_password: !chosen };
+    if (!email) Object.assign(meta, { login_only: true, login: loginLabel(names) });
+    user = await createUser(sb, { email: email || standInEmail(), password: chosen || temp, metadata: meta });
     created = !!user;
-    if (!user) { temp = null; user = await findUserByEmail(sb, email); }
+    if (!user && email) { temp = null; user = await findUserByEmail(sb, email); }
     if (!user) throw new ApiError(500, 'server', 'Could not create the account. Please try again.');
+  }
+  if (!created && (names.username || names.phone) && !(await onlyHere(sb, user.id, orgId))) {
+    throw forbidden(`${name} also uses Orbique with another company, so they keep the sign-in they have. Leave the username and mobile sign-in empty.`);
+  }
+
+  try {
+    await setLoginNames(sb, user.id, names);
+  } catch (e) {
+    if (created) await deleteUserQuietly(sb, user.id);
+    throw e;
   }
 
   const up = await sb.from('members').upsert({ org_id: orgId, user_id: user.id, staff_id: staffId, role, status: 'active', invited_by: me.id }, { onConflict: 'org_id,user_id' });
   if (up.error) {
     if (created) await deleteUserQuietly(sb, user.id);
-    if (up.error.code === '23505') throw conflict('has-account', `${name} already signs in with a different email address.`);
+    if (up.error.code === '23505') throw conflict('has-account', `${name} already has a sign-in.`);
     check(up, 'add member');
   }
 
+  const view = await signInView(sb, user);
   const rec = check(await sb.from('records').select('id, deleted').eq('org_id', orgId).eq('coll', 'staff').eq('id', staffId).maybeSingle(), 'check staff record');
   if (!rec || rec.deleted) {
-    const staff = { id: staffId, name, initials: initials(name), role, roleLabel: ROLE_LABELS[role], email };
+    const staff = { id: staffId, name, initials: initials(name), role, roleLabel: ROLE_LABELS[role], email: view.email || '' };
     if (phone) staff.phone = phone;
+    if (view.username) staff.username = view.username;
+    if (view.phone) staff.loginPhone = view.phone;
     check(await sb.from('records').upsert({ org_id: orgId, coll: 'staff', id: staffId, data: staff, deleted: false, updated_by: me.id }, { onConflict: 'org_id,coll,id' }), 'add staff record');
-  }
-  return { email, tempPassword: created ? temp : null, existing: !created };
+  } else await stampStaff(sb, orgId, staffId, view, me.id);
+  return Object.assign(view, { tempPassword: created ? temp : null, passwordSet: created && !!chosen, existing: !created });
+}
+
+/* ---------------- set-login: the owner sets a team member's username, mobile sign-in or password ---------------- */
+export async function setLogin(sb, body, me) {
+  const orgId = uuidField(body.orgId);
+  const staffId = idField(body.staffId, 'Staff member');
+  const phone = phoneField(body.phone);
+  const names = wantedNames(body, phone);
+  const chosen = body.password ? passwordField(body.password) : null;
+  const temp = !chosen && body.tempPassword ? tempPassword() : null;
+  await requireOwner(sb, orgId, me.id);
+  await getOrg(sb, orgId);
+
+  const target = check(await sb.from('members').select('user_id, role').eq('org_id', orgId).eq('staff_id', staffId).maybeSingle(), 'find member');
+  if (!target) throw bad('no-account', 'This person does not have a sign-in yet. Use Create sign-in first.');
+  if (target.user_id === me.id) throw bad('self', 'To change your own password, use Change password in your account menu.');
+  if (target.role === 'owner') throw forbidden('Account owners manage their own sign-in.');
+  if (!(await onlyHere(sb, target.user_id, orgId))) throw forbidden('This person also uses Orbique with another company, so only they can change their sign-in.');
+
+  const got = await sb.auth.admin.getUserById(target.user_id);
+  const user = check(got, 'load user') && got.data.user;
+  if (!user) throw bad('no-account', 'This person does not have a sign-in yet. Use Create sign-in first.');
+  const now = await loginNamesOf(sb, user.id);
+  const after = { username: names.username !== undefined ? names.username : now.username, phone: names.phone !== undefined ? names.phone : now.phone };
+  if (isStandIn(user.email) && !after.username && !after.phone) throw bad('no-login', 'Keep a username or the mobile sign-in: this person has no email to sign in with.');
+
+  await setLoginNames(sb, user.id, names);
+  const meta = Object.assign({}, user.user_metadata || {});
+  if (meta.login_only || isStandIn(user.email)) meta.login = loginLabel(after);
+  const patch = {};
+  if (chosen || temp) { patch.password = chosen || temp; meta.must_change_password = temp ? true : !!body.mustChange; }
+  patch.user_metadata = meta;
+  check(await sb.auth.admin.updateUserById(user.id, patch), 'update sign-in');
+
+  const view = await signInView(sb, user);
+  await stampStaff(sb, orgId, staffId, view, me.id);
+  return Object.assign(view, { tempPassword: temp, passwordSet: !!chosen });
 }
 
 /* ---------------- reset-password: a new temporary password ---------------- */
-async function resetPassword(sb, body, me) {
+export async function resetPassword(sb, body, me) {
   const orgId = uuidField(body.orgId);
   const staffId = idField(body.staffId, 'Staff member');
   const mine = await membership(sb, orgId, me.id);
@@ -241,7 +345,7 @@ async function resetPassword(sb, body, me) {
   const temp = tempPassword();
   const meta = Object.assign({}, user.user_metadata || {}, { must_change_password: true });
   check(await sb.auth.admin.updateUserById(user.id, { password: temp, user_metadata: meta }), 'reset password');
-  return { email: user.email, tempPassword: temp };
+  return Object.assign(await signInView(sb, user), { tempPassword: temp });
 }
 
 const ACTIONS = {
@@ -250,8 +354,16 @@ const ACTIONS = {
   'create-operator': { auth: true, run: (sb, body, me) => createOperator(sb, body, me) },
   'update-operator': { auth: true, run: (sb, body, me) => updateOperator(sb, body, me) },
   invite: { auth: true, run: (sb, body, me) => invite(sb, body, me) },
-  'reset-password': { auth: true, run: (sb, body, me) => resetPassword(sb, body, me) }
+  'set-login': { auth: true, run: (sb, body, me) => setLogin(sb, body, me) },
+  'reset-password': { auth: true, run: (sb, body, me) => resetPassword(sb, body, me) },
+  'sign-in': { auth: false, run: (sb, body, me, token, req) => signInWithLogin(sb, body, { ip: clientIp(req) }) }
 };
+
+function clientIp(req) {
+  const h = req && req.headers ? String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '') : '';
+  const ip = h.split(',')[0].trim();
+  return /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? ip : '';
+}
 
 export default async function handler(req, res) {
   if (cors(req, res)) return;
@@ -267,7 +379,7 @@ export default async function handler(req, res) {
     const sb = requireAdminClient();
     const token = bearer(req);
     const me = spec.auth ? await caller(sb, token) : null;
-    const result = await spec.run(sb, body, me, token);
+    const result = await spec.run(sb, body, me, token, req);
     return ok(res, result);
   } catch (err) {
     return fail(res, err);
