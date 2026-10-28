@@ -2,7 +2,10 @@
 // The footer: the logo (it builds itself as it comes into view), the ways around the site, contact by email, and the
 // credits the photos and the 3D city's map data ask for.
 import AnimLogo from './AnimLogo.astro';
-import { BRAND, CC_BY_SA, CREDITS, GUIDES, MAP_CREDIT, PROPERTY } from '@shared/data/kozi';
+import { BRAND, CC_BY_SA, CREDITS, GUIDES, MAP_CREDIT } from '@shared/data/kozi';
+import type { Links } from '@my/lib/nav';
+interface Props { links: Links }
+const { links } = Astro.props;
 const year = new Date().getFullYear();
 const photos = Object.values(CREDITS).map((c) => `${c.title} by ${c.by}`).join(', ');
 ---
@@ -18,8 +21,8 @@ const photos = Object.values(CREDITS).map((c) => `${c.title} by ${c.by}`).join('
       <div class="foot-cols">
         <nav aria-label="Stay">
           <p class="foot-k">Stay</p>
-          <a href="/kuala-lumpur/">Kuala Lumpur</a>
-          <a href={PROPERTY.path}>{PROPERTY.name}</a>
+          {links.cities.map((c) => <a href={c.href}>{c.name}</a>)}
+          {links.buildings.length ? links.buildings.map((b) => <a href={b.href}>{b.name}</a>) : <a href="/stays/">Our suites</a>}
           <a href="/views/">The views</a>
           <a href="/stays/">Book a stay</a>
         </nav>

@@ -2,10 +2,10 @@
 // The header: the logo (it builds itself on the first page of a visit, and the sun rises again when you point at it),
 // the main links and Book. On a phone the links fold into a menu.
 import AnimLogo from './AnimLogo.astro';
-import { PROPERTY } from '@shared/data/kozi';
+interface Props { suites: string }  // where 'Suites' goes (lib/nav.ts)
 const here = Astro.url.pathname;
 const nav = [
-  { href: PROPERTY.path, label: 'Suites' },
+  { href: Astro.props.suites, label: 'Suites' },
   { href: '/views/', label: 'The views' },
   { href: '/guides/', label: 'KL guides' },
   { href: '/contact/', label: 'Contact' },

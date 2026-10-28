@@ -20,7 +20,7 @@ const list = {
 };
 const first = marks[0]?.id ?? 'petronas';
 ---
-<Shell title="The views from Kozi: the Petronas Twin Towers, KL Tower and Merdeka 118" cam={`look-${first}`} pins="views" touch
+<Shell site={site} title="The views from Kozi: the Petronas Twin Towers, KL Tower and Merdeka 118" cam={`look-${first}`} pins="views" touch
   description={`See what the windows of our suites in ${PROPERTY.name} look out on: the Petronas Twin Towers, KL Tower and Merdeka 118, in a 3D model of Kuala Lumpur and in real photos.`}
   jsonld={[crumbsLd(BRAND.my, crumbs), list]}>
   <section class="in views-ui" data-finder>

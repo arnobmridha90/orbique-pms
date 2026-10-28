@@ -16,8 +16,13 @@ export function init(root: HTMLElement) {
   // the "drag the city" hint only once there is a city to drag
   void city.ready.then((ok) => { const h = root.querySelector<HTMLElement>('[data-city-hint]'); if (h) h.hidden = !ok; });
 
-  // the camera follows the chapters
-  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) city.fly((e.target as HTMLElement).dataset.cam!); }), { rootMargin: '-45% 0px -45% 0px' });
+  // the camera follows the chapters, and the landmark labels show only where the page leaves room for them
+  const io = new IntersectionObserver((es) => es.forEach((e) => {
+    if (!e.isIntersecting) return;
+    const d = (e.target as HTMLElement).dataset;
+    city.fly(d.cam!);
+    city.pinMode(d.pins === 'off' ? 'off' : 'on');
+  }), { rootMargin: '-45% 0px -45% 0px' });
   root.querySelectorAll<HTMLElement>('[data-cam]').forEach((el) => io.observe(el));
   stops.push(() => io.disconnect());
 

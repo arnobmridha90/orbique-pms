@@ -5,6 +5,7 @@ import Header from './Header.astro';
 import Footer from './Footer.astro';
 import Logo from './Logo.astro';
 import { BRAND } from '@shared/data/kozi';
+import { ldText } from '@shared/lib/seo';
 import fraunces from '@assets/fonts/fraunces-kozi-normal.woff2?url';
 import inter from '@fontsource-variable/inter-tight/files/inter-tight-latin-wght-normal.woff2?url';
 
@@ -61,7 +62,7 @@ const og = new URL(image, `${BRAND[site]}/`).href;
       setTimeout(function () { if (!window.__kozi) d.classList.add('js-late'); }, 4000);
     })();
   </script>
-  {jsonld.map((j) => <script type="application/ld+json" set:html={JSON.stringify(j)} />)}
+  {jsonld.map((j) => <script type="application/ld+json" set:html={ldText(j)} />)}
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>

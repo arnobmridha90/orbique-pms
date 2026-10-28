@@ -5,6 +5,10 @@ import { buildingPath, suitePath, type Building, type Suite } from './content';
 
 export type Crumb = { name: string; path?: string };
 
+/** Structured data as the text of a <script type="application/ld+json">. Text from Orbique's panel (a suite's story,
+ *  say) goes in here, so '<' is written as \u003c: '</script>' in it can't end the script early. Still valid JSON. */
+export const ldText = (j: unknown) => JSON.stringify(j).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+
 export function crumbsLd(site: string, items: Crumb[]) {
   return {
     '@context': 'https://schema.org', '@type': 'BreadcrumbList',

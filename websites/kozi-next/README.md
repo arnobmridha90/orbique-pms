@@ -42,8 +42,12 @@ glass panels, in Big Shoulders Display and DM Sans (both self-hosted) with amber
   A new city build goes in a new folder (`v4`), because the files are cached for a year.
 - `public/city/v3/still-wide.jpg` and `still-tall.jpg` are pictures of the same city. They show until the city is
   ready, and in its place when it can't run: no WebGL, reduced motion, Save-Data, or a small or weak device.
-- The home page's view photos and the view finder's come from the content (`src/sites/my/lib/shots.ts`): a photo
-  taken off every suite in Orbique's panel leaves them too.
+- The home page's view photos, the view finder's and the photos of "A day at Kozi" come from the content
+  (`src/sites/my/lib/shots.ts`, `pages/index.astro`): a photo taken off every suite in Orbique's panel leaves them
+  too. A moment of the day whose photo is gone is left out; check-in and check-out stay, with another photo.
+- The 3D city is fetched on the first page that shows it, so a visit that only sees another city never loads it.
+- The header's Suites link, the footer's building links and the city's label on our tower follow the content on
+  pages made on request (`src/sites/my/lib/nav.ts`); pages made at build link to /stays/, which is always there.
 - The city is built from map data whose licences ask for a credit: `MAP_CREDIT` in `src/shared/data/kozi.ts`,
   shown in the footer and on /credits/.
 
@@ -56,7 +60,10 @@ so it never goes down.
 
 - The pages that show content (home, cities, buildings, suites, stays, book, sitemap) are made on request and kept
   for 5 minutes (ISR). Orbique's Publish refreshes them at once with the bypass token.
-- Guides, contact, credits and the 404 page are made at build time.
+- Guides, contact and credits are made at build time. The 404 page is made on request, so the server can show it
+  in place for an address the content doesn't have (a page made at build can't be fetched by the function there).
+- Structured data (JSON-LD) is written with `ldText` in `src/shared/lib/seo.ts`, which escapes `<`: text from the
+  panel can't end the script early.
 - City, building and suite pages come from the content: a new suite gets its page with no code change, and an
   unknown address gives the 404 page. A building outside Kuala Lumpur gets plain pages, with no skyline.
 - A suite with `bookType` empty shows "Email us to book" in place of the booking card.

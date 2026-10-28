@@ -51,7 +51,7 @@ const description = suite.seoDescription ?? (usual
   : `${suite.name} at ${b.name}, ${b.city}: ${plural(suite.bedrooms, 'bedroom')}, ${plural(suite.bathrooms, 'bathroom')}, sleeps ${suite.sleeps}. ${suite.line}`).trim();
 const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$/, ''), 'Suite'] : [suite.name, ''];
 ---
-<Shell title={title} description={description} image={ogAbs} noindex={!own} cam={cam} hi={kl ? levels : undefined} dim={!kl}
+<Shell site={site} title={title} description={description} image={ogAbs} noindex={!own} cam={cam} hi={kl ? levels : undefined} dim={!kl}
   jsonld={[crumbsLd(BRAND.my, crumbs), lodgingLd(b, site.suitesOf(b)), suiteLd(b, suite, ogAbs)]}>
   <div class="in sp-top">
     <nav class="crumbs sp-crumbs" aria-label="Breadcrumb">

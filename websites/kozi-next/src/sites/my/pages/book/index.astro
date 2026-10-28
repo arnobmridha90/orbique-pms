@@ -20,7 +20,7 @@ const COUNTRIES = [['Malaysia', 'MY'], ['Singapore', 'SG'], ['Indonesia', 'ID'],
   ['Italy', 'IT'], ['Spain', 'ES'], ['Switzerland', 'CH'], ['Sweden', 'SE'], ['Russia', 'RU'], ['Turkey', 'TR'], ['United States', 'US'], ['Canada', 'CA']];
 const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm', '9:00 pm to midnight', 'After midnight'];
 ---
-<Shell cam="aerial-low" dim title="Confirm and pay | Kozi" description="Confirm your Kozi stay and pay securely by card." noindex>
+<Shell site={site} cam="aerial-low" dim title="Confirm and pay | Kozi" description="Confirm your Kozi stay and pay securely by card." noindex>
   <div class="in co" data-checkout data-email={BRAND.email}>
     <a class="co-back" href="/stays/" data-co-back><span aria-hidden="true">←</span> <span data-co-back-label>Back to the suites</span></a>
     <h1 class="display co-h" data-split>Confirm and <em>pay.</em></h1>

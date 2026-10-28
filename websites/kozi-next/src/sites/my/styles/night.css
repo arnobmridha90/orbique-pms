@@ -83,7 +83,10 @@ a { color: inherit; }
 .page { position: relative; z-index: 2; }
 
 /* ---------- header ---------- */
-.top { position: fixed; inset: 0 0 auto; z-index: 50; padding: 14px 0; padding-top: max(14px, env(safe-area-inset-top, 0px)); background: linear-gradient(rgb(5 7 13 / 0.85), rgb(5 7 13 / 0)); transition: background-color 0.3s; }
+.top { position: fixed; inset: 0 0 auto; z-index: 50; padding: 14px 0; padding-top: max(14px, env(safe-area-inset-top, 0px)); background: linear-gradient(rgb(5 7 13 / 0.85), rgb(5 7 13 / 0)); }
+/* once the page scrolls, a solid bar comes in behind the links so the words scrolling under them stay apart */
+.top::before { content: ''; position: absolute; inset: 0; z-index: -1; background: rgb(5 7 13 / 0.86); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid rgb(238 240 245 / 0.06); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.top[data-solid]::before { opacity: 1; }
 .top > .in { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--fg); }
 .brand .kz-logo { width: 48px; display: block; }
@@ -98,6 +101,7 @@ a { color: inherit; }
 .menu-btn { display: none; }
 @media (max-width: 860px) {
   .top { background: rgb(5 7 13 / 0.86); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .top::before { display: none; }
   .top nav.main { display: none; }
   .menu-btn { display: inline-flex; }
   .top nav.main.open { display: flex; position: fixed; inset: 72px 12px auto 12px; flex-direction: column; align-items: stretch; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 20px; padding: 10px; }

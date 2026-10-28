@@ -1,7 +1,12 @@
 ---
 // Not found: the live sky still shows, with three ways back.
+// Made on request: the city, building and suite pages answer 404 for an address the content doesn't have, and the
+// server then renders this page in place. (A page made at build would be fetched from the server's own address,
+// which it can't reach on Vercel, and the visitor would get an empty page.)
 import Shell from '@my/components/Shell.astro';
 import Head from '@my/components/Head.astro';
+
+export const prerender = false;
 ---
 <Shell cam="aerial" dim title="Page not found | Kozi" description="This page could not be found." noindex>
   <Head eyebrow="Page not found">

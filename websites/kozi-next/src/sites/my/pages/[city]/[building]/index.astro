@@ -33,7 +33,7 @@ const types = [...new Set(suites.map((s) => s.bookType).filter(Boolean))];
 const [nameA, nameB] = b.name.includes(' @ ') ? [b.name.split(' @ ')[0] + ' @', b.name.split(' @ ').slice(1).join(' @ ')] : ['', b.name];
 const description = x?.description ?? `${b.name}: ${b.building}, ${b.address}. ${b.area ? `${b.area}. ` : ''}See the suites and live prices, and book direct.`.slice(0, 300);
 ---
-<Shell title={`${b.name}: ${kl ? 'two-bedroom suites in Kuala Lumpur' : `suites in ${b.city}`}`} description={description} cam={kl ? 'vortex' : 'none'} dim={!kl}
+<Shell site={site} title={`${b.name}: ${kl ? 'two-bedroom suites in Kuala Lumpur' : `suites in ${b.city}`}`} description={description} cam={kl ? 'vortex' : 'none'} dim={!kl}
   image={photo ? photoAbs(photo, BRAND.my) : undefined}
   jsonld={[crumbsLd(BRAND.my, crumbs), orgLd, lodgingLd(b, suites), ...suites.filter((s) => s.photos.length).map((s) => suiteLd(b, s))]}>
   <Head crumbs={crumbs} eyebrow={x?.eyebrow ?? [b.city, b.area].filter(Boolean).join(' · ')} plain={!kl}>

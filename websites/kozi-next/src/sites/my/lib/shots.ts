@@ -15,8 +15,9 @@ export function landmarks(site: Site): Mark[] {
       for (const s of kl) {
         const p = s.photos.find((x) => x.kind === 'builtin' && x.key === v.key);
         if (!p) continue;
-        const from = v.suites.includes(s.id) ? v.from : `From the ${s.name}`;
-        shots.push({ photo: { ...p, alt: v.alt }, from, suite: s, building: site.buildingOf(s) });
+        // the alt is the content's own (the panel edits it, and it describes the photo wherever it was put); our
+        // caption names the suite it was taken in only while it is still on that suite
+        shots.push({ photo: p, from: v.suites.includes(s.id) ? v.from : `From the ${s.name}`, suite: s, building: site.buildingOf(s) });
         break;
       }
     }

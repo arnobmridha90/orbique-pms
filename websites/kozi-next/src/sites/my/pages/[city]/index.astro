@@ -44,7 +44,7 @@ const description = kl
   ? "Stay in Kuala Lumpur's Golden Triangle, between KLCC and Bukit Bintang: Kozi two-bedroom suites at Vortex KLCC, the landmarks from our windows, and what to know before you fly."
   : `Kozi in ${city.name}: ${city.buildings.map((b) => b.name).join(', ')}. See the suites, live prices and book direct.`;
 ---
-<Shell title={title} description={description} jsonld={[crumbsLd(BRAND.my, crumbs), destination, ...lodgings]} cam={kl ? 'aerial' : 'none'} pins={kl ? 'on' : 'off'} touch={kl} dim={!kl}>
+<Shell site={site} title={title} description={description} jsonld={[crumbsLd(BRAND.my, crumbs), destination, ...lodgings]} cam={kl ? 'aerial' : 'none'} pins={kl ? 'on' : 'off'} touch={kl} dim={!kl}>
   {kl ? (
     <Head crumbs={crumbs} eyebrow="Malaysia">
       <Fragment slot="title">Kuala <em>Lumpur.</em></Fragment>

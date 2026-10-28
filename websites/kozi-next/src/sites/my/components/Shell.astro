@@ -11,7 +11,10 @@ import { ClientRouter } from 'astro:transitions';
 import Top from './Top.astro';
 import Foot from './Foot.astro';
 import AnimLogo from './AnimLogo.astro';
-import { BRAND, PROPERTY } from '@shared/data/kozi';
+import { BRAND } from '@shared/data/kozi';
+import { ldText } from '@shared/lib/seo';
+import type { Site } from '@shared/lib/content';
+import { links } from '@my/lib/nav';
 import display from '@fontsource-variable/big-shoulders-display/files/big-shoulders-display-latin-wght-normal.woff2?url';
 import sans from '@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2?url';
 
@@ -28,8 +31,10 @@ interface Props {
   dim?: boolean;
   touch?: boolean;
   intro?: boolean;                   // the logo intro (home, once per visit)
+  site?: Site;                       // the content, on a page made on request: the links to the suites follow it
 }
-const { title, description, image = '/og-my.jpg', jsonld = [], alternates = [], cam = 'aerial', pins = 'off', hi, dim = false, touch = false, intro = false } = Astro.props;
+const { title, description, image = '/og-my.jpg', jsonld = [], alternates = [], cam = 'aerial', pins = 'off', hi, dim = false, touch = false, intro = false, site } = Astro.props;
+const go = links(site);
 // a preview build keeps every page out of search
 const noindex = Astro.props.noindex || import.meta.env.PUBLIC_NOINDEX === '1';
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
@@ -37,7 +42,7 @@ const og = new URL(image, `${BRAND.my}/`).href;
 const fonts = `@font-face{font-family:'Big Shoulders Display Variable';font-style:normal;font-display:swap;font-weight:100 900;src:url(${display}) format('woff2-variations');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}`
   + `@font-face{font-family:'DM Sans Variable';font-style:normal;font-display:swap;font-weight:100 1000;src:url(${sans}) format('woff2-variations');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}`;
 const pinList = [
-  { id: 'vortex', label: PROPERTY.name, href: PROPERTY.path, cls: 'home' },
+  { id: 'vortex', label: go.tower.name, href: go.tower.href, cls: 'home' },
   { id: 'petronas', label: 'Petronas Twin Towers', href: '/views/#petronas', cls: '' },
   { id: 'kl-tower', label: 'KL Tower', href: '/views/#kl-tower', cls: 'minor' },
   { id: 'merdeka', label: 'Merdeka 118', href: '/views/#merdeka', cls: 'minor' },
@@ -76,7 +81,7 @@ const pinList = [
     })();
   </script>
   <ClientRouter />
-  {jsonld.map((j) => <script type="application/ld+json" set:html={JSON.stringify(j)} />)}
+  {jsonld.map((j) => <script type="application/ld+json" set:html={ldText(j)} />)}
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -96,11 +101,11 @@ const pinList = [
       <div><AnimLogo id="intro" /><p class="tag" data-intro-tag>{BRAND.tagline}</p></div>
     </div>
   )}
-  <Top />
+  <Top suites={go.suites} />
   <main id="main" class="page" data-cam={cam} data-pins={pins} data-hi={hi?.join(',') || undefined} data-dim={dim ? '' : undefined} data-touch={touch ? '' : undefined} transition:animate="fade">
     <slot />
   </main>
-  <Foot />
+  <Foot links={go} />
   <script>
     import '@my/scripts/night';
   </script>

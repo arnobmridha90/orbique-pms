@@ -259,8 +259,14 @@ function pins(mode: Pins) {
     };
     pinList = [...box.querySelectorAll<HTMLElement>('[data-pin]')].filter((el) => at[el.dataset.pin!]).map((el) => ({ el, at: at[el.dataset.pin!] }));
   }
-  // labels never sit on the words they would cover (the home page's headline and buttons, say)
+  // labels never sit on the words they would cover (the home page's headline, buttons and glass cards, say)
   avoid = [...document.querySelectorAll<HTMLElement>('[data-pin-avoid] > *')];
+}
+/** Labels on or off for the part of the page in view: the home page turns them off over its busy sections. */
+export function pinMode(mode: Pins) {
+  if (page.pins === mode) return;
+  page = { ...page, pins: mode };
+  if (ok) pins(mode);
 }
 /** Mark one landmark's pin (the view finder's current view). */
 export function pinOn(id: string | null) { pinList.forEach((p) => p.el.classList.toggle('on', p.el.dataset.pin === id)); }
@@ -269,7 +275,7 @@ let tmp: Any = null;
 function placePins() {
   if (page.pins === 'off') return;
   tmp ??= new THREE.Vector3();
-  const rects = scrollY < innerHeight ? avoid.map((e) => e.getBoundingClientRect()) : [];
+  const rects = avoid.map((e) => e.getBoundingClientRect()).filter((r) => r.bottom > 0 && r.top < innerHeight);
   for (const p of pinList) {
     const [x0, y0, z0] = p.at();
     tmp.set(x0, y0, z0).project(camera);

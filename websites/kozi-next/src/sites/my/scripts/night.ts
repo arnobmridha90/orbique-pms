@@ -26,6 +26,7 @@ function marks() {
 marks();
 
 let first = true;
+let cityAsked = false;
 let introDone: Promise<void> = Promise.resolve();
 let pageCtx: gsap.Context | null = null;
 // listeners that belong to one page are dropped when the next page comes in
@@ -50,12 +51,16 @@ document.addEventListener('astro:page-load', () => {
   if (first) {
     first = false;
     introDone = intro();
-    const go = () => { void city.start(introDone); };
-    const idle = () => ('requestIdleCallback' in window ? requestIdleCallback(go, { timeout: 2500 }) : setTimeout(go, 600));
-    if (document.readyState === 'complete') idle(); else addEventListener('load', idle, { once: true });
   } else {
     document.querySelector('[data-intro]')?.remove();
     if (document.querySelector('[data-rise]')) rise(0.15);
+  }
+  // the city is fetched on the first page that shows it: a page in another city (cam 'none') never needs it
+  if (!cityAsked && d.cam !== 'none') {
+    cityAsked = true;
+    const go = () => { void city.start(introDone); };
+    const idle = () => ('requestIdleCallback' in window ? requestIdleCallback(go, { timeout: 2500 }) : setTimeout(go, 600));
+    if (document.readyState === 'complete') idle(); else addEventListener('load', idle, { once: true });
   }
   modules();
 });

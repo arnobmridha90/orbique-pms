@@ -9,7 +9,7 @@ import SuiteCard from '@my/components/SuiteCard.astro';
 import Photo from '@shared/components/Photo.astro';
 import Viewer from '@shared/components/Viewer.astro';
 import { AMENITIES, BRAND, BUILDING_EXTRAS, POLICIES } from '@shared/data/kozi';
-import { buildingPath, builtin, getContent, inKL, type Photo as P } from '@shared/lib/content';
+import { buildingPath, getContent, inKL, type Photo as P, type Suite } from '@shared/lib/content';
 import { lodgingLd, orgLd } from '@shared/lib/seo';
 import { numberWord } from '@shared/lib/words';
 import { landmarks } from '@my/lib/shots';
@@ -30,7 +30,10 @@ const ring: P[] = [];
 const pools = list.map(({ s }) => [...s.photos]);
 for (let i = 0; ring.length < 16 && pools.some((p) => i < p.length); i++) for (const p of pools) if (p[i] && ring.length < 16) ring.push(p[i]);
 
-// a day at Kozi: the clock runs, the photos change and the city's sky follows (day 0 night .. 1, dusk tint)
+// a day at Kozi: the clock runs, the photos change and the city's sky follows (day 0 night .. 1, dusk tint).
+// Each moment was written for one of the suites' photos. It shows only while a suite on the site still shows that
+// photo (the panel can take it off), and its words name that suite. The two moments that give the check-in and
+// check-out times stay, with another of the suites' photos in its place.
 type Clock = [number, number, string];
 const clock = (t: string, dflt: Clock): Clock => {
   const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(t.trim());
@@ -39,22 +42,34 @@ const clock = (t: string, dflt: Clock): Clock => {
 /** Half an hour earlier: the last look out of the window before check-out. */
 const earlier = ([h, m, ap]: Clock): Clock => (m >= 30 ? [h, m - 30, ap] : [h === 1 ? 12 : h - 1, m + 30, h === 12 ? (ap === 'pm' ? 'am' : 'pm') : ap]);
 const checkIn = home?.checkIn ?? '3:00 pm', checkOut = home?.checkOut ?? '11:00 am';
-const DAY: { t: Clock; h: string; p: string; k: string; day: number; dusk: number }[] = [
-  { t: clock(checkIn, [3, 0, 'pm']), h: 'Welcome in', p: `Check-in is from ${checkIn}. Two bedrooms, two bathrooms, room for four.`, k: 'boutique/01-living-room', day: 0.95, dusk: 0 },
-  { t: [7, 30, 'pm'], h: 'Dinner for four', p: 'A full kitchen, and a table big enough for everyone.', k: 'premium-a/01-dining-and-living', day: 0.4, dusk: 0.9 },
-  { t: [8, 30, 'pm'], h: 'The towers light up', p: 'The Petronas Twin Towers, from a Premium living room.', k: 'premium-b/03-tv-klcc-night', day: 0.08, dusk: 0.25 },
-  { t: [11, 0, 'pm'], h: 'Lights out. Merdeka 118 stays on.', p: "The world's second-tallest building, outside a Premium bedroom.", k: 'premium-a/08-master-bedroom-merdeka-118-night', day: 0, dusk: 0 },
-  { t: [8, 0, 'am'], h: 'Coffee first', p: 'Coffee and tea on the tray, with a kettle.', k: 'boutique/09-coffee-tea', day: 0.72, dusk: 0.35 },
-  { t: earlier(clock(checkOut, [11, 0, 'am'])), h: 'One last look', p: `Check out by ${checkOut}. The view will keep.`, k: 'premium-b/10-klcc-window-view', day: 1, dusk: 0 },
+type Moment = { t: Clock; k: string; h: (s: Suite) => string; p: (s: Suite) => string; day: number; dusk: number; keep?: boolean };
+const MOMENTS: Moment[] = [
+  { t: clock(checkIn, [3, 0, 'pm']), k: 'boutique/01-living-room', h: () => 'Welcome in', p: () => `Check-in is from ${checkIn}.${usual ? ' Two bedrooms, two bathrooms, room for four.' : ''}`, day: 0.95, dusk: 0, keep: true },
+  { t: [7, 30, 'pm'], k: 'premium-a/01-dining-and-living', h: (s) => (s.sleeps === 4 ? 'Dinner for four' : 'Dinner in'), p: () => 'A full kitchen, and a table big enough for everyone.', day: 0.4, dusk: 0.9 },
+  { t: [8, 30, 'pm'], k: 'premium-b/03-tv-klcc-night', h: () => 'The towers light up', p: (s) => `The Petronas Twin Towers, from the living room of the ${s.name}.`, day: 0.08, dusk: 0.25 },
+  { t: [11, 0, 'pm'], k: 'premium-a/08-master-bedroom-merdeka-118-night', h: () => 'Lights out. Merdeka 118 stays on.', p: (s) => `The world's second-tallest building, outside a bedroom of the ${s.name}.`, day: 0, dusk: 0 },
+  { t: [8, 0, 'am'], k: 'boutique/09-coffee-tea', h: () => 'Coffee first', p: () => 'Coffee and tea on the tray, with a kettle.', day: 0.72, dusk: 0.35 },
+  { t: earlier(clock(checkOut, [11, 0, 'am'])), k: 'premium-b/10-klcc-window-view', h: () => 'One last look', p: () => `Check out by ${checkOut}. The view will keep.`, day: 1, dusk: 0, keep: true },
 ];
-const dayPhotos = DAY.map((d) => builtin(d.k));
+const shownAs = (key: string) => {
+  for (const { s } of list) { const ph = s.photos.find((x) => x.kind === 'builtin' && x.key === key); if (ph) return { s, ph }; }
+};
+const found = MOMENTS.map((m) => shownAs(m.k));
+// a stand-in for a kept moment whose photo is gone: the suites' photos in display order, one not in the day already
+const spare = list.flatMap(({ s }) => s.photos.map((ph) => ({ s, ph })));
+const used = new Set(found.flatMap((f) => (f ? [f.ph.id] : [])));
+const DAY = MOMENTS.flatMap((m, i) => {
+  let f = found[i];
+  if (!f && m.keep) { f = spare.find((x) => !used.has(x.ph.id)) ?? spare[0]; if (f) used.add(f.ph.id); }
+  return f ? [{ t: m.t, h: m.h(f.s), p: m.p(f.s), photo: f.ph, day: m.day, dusk: m.dusk }] : [];
+});
 
 const title = 'Kozi | Two-bedroom suites in central Kuala Lumpur';
 const description = 'Kozi suites at Vortex KLCC: two bedrooms, two bathrooms and a full kitchen in the Golden Triangle, between KLCC and Bukit Bintang. See live prices and book direct.';
 const web = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi Malaysia', url: `${BRAND.my}/`, publisher: { '@id': orgLd['@id'] } };
 const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
 ---
-<Shell title={title} description={description} intro cam="hero" pins="on" touch jsonld={[orgLd, web, ...lodgings]}
+<Shell site={site} title={title} description={description} intro cam="hero" pins="on" touch jsonld={[orgLd, web, ...lodgings]}
   alternates={[{ lang: 'x-default', href: `${BRAND.com}/` }, { lang: 'en', href: `${BRAND.com}/` }, { lang: 'en-MY', href: `${BRAND.my}/` }]}>
   <div class="home" data-home>
     <section class="in hero" data-cam="hero" data-pin-avoid aria-labelledby="h-title">
@@ -68,7 +83,7 @@ const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
     </section>
 
     {home && (
-      <section class="in chapter" data-cam="vortex" aria-labelledby="h-where">
+      <section class="in chapter" data-cam="vortex" data-pin-avoid aria-labelledby="h-where">
         <div class="glass" data-reveal>
           <p class="eyebrow">Where you stay</p>
           <h2 id="h-where">{home.name}</h2>
@@ -79,7 +94,7 @@ const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
     )}
 
     {petronas && (
-      <section class="in chapter right" data-cam="look-petronas" aria-labelledby="h-petronas">
+      <section class="in chapter right" data-cam="look-petronas" data-pin-avoid aria-labelledby="h-petronas">
         <div class="glass" data-reveal>
           <p class="eyebrow">The view, for real</p>
           <h2 id="h-petronas">The Twin Towers, across the city.</h2>
@@ -90,7 +105,7 @@ const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
     )}
 
     {merdeka && (
-      <section class="in chapter" data-cam="look-merdeka" aria-labelledby="h-merdeka">
+      <section class="in chapter" data-cam="look-merdeka" data-pin-avoid aria-labelledby="h-merdeka">
         <div class="glass" data-reveal>
           <p class="eyebrow">Day ends, city starts</p>
           <h2 id="h-merdeka">Merdeka 118 outside the bedroom.</h2>
@@ -99,7 +114,7 @@ const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
       </section>
     )}
 
-    <section class="band tint" data-cam="aerial" aria-labelledby="h-suites">
+    <section class="band tint" data-cam="aerial" data-pins="off" aria-labelledby="h-suites">
       <div class="in stack">
         <div class="suites-head" data-reveal>
           <div class="stack" style="gap:14px"><p class="eyebrow">The suites</p><h2 id="h-suites">{numberWord(list.length)} {list.length === 1 ? 'way' : 'ways'} to stay.</h2></div>
@@ -112,7 +127,7 @@ const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
     </section>
 
     {ring.length >= 6 && (
-      <section class="g-ring tint" data-cam="gallery" data-ring data-gallery aria-labelledby="h-ring">
+      <section class="g-ring tint" data-cam="gallery" data-pins="off" data-ring data-gallery aria-labelledby="h-ring">
         <div class="head" data-reveal><p class="eyebrow">Inside</p><h2 id="h-ring">Every room, all around you.</h2><p class="lede">Scroll or drag to turn. Tap a photo to open it.</p></div>
         <div class="ring-stage" data-ring-stage>
           <div class="ring" data-ring-el>
@@ -126,29 +141,31 @@ const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
       </section>
     )}
 
-    <section class="day" data-cam="day" data-day aria-labelledby="h-day">
-      <div class="in">
-        <div class="glass day-card">
-          <h2 id="h-day" class="eyebrow">A day at Kozi</h2>
-          <ol class="day-steps" role="list">
-            {DAY.map((d, i) => (
-              <li class:list={{ on: i === 0 }} data-step={i} data-sky={`${d.day},${d.dusk}`}>
-                <p class="clock"><time>{d.t[0]}:{String(d.t[1]).padStart(2, '0')}</time><small>{d.t[2]}</small></p>
-                <div class="day-cap"><h3>{d.h}</h3><p>{d.p}</p></div>
-              </li>
-            ))}
-          </ol>
-          <div class="day-photos">
-            {DAY.map((d, i) => <Photo p={dayPhotos[i]} alt={d.h} class={i === 0 ? 'on' : ''} sizes="(max-width: 640px) 92vw, 440px" />)}
-          </div>
-          <div class="day-bar" role="group" aria-label="Times of day">
-            {DAY.map((d, i) => <button type="button" class:list={{ on: i === 0 }} data-go={i} aria-label={`${d.t[0]}:${String(d.t[1]).padStart(2, '0')} ${d.t[2]}: ${d.h}`}><i></i></button>)}
+    {DAY.length >= 2 && (
+      <section class="day" data-cam="day" data-pins="off" data-day aria-labelledby="h-day">
+        <div class="in">
+          <div class="glass day-card">
+            <h2 id="h-day" class="eyebrow">A day at Kozi</h2>
+            <ol class="day-steps" role="list">
+              {DAY.map((d, i) => (
+                <li class:list={{ on: i === 0 }} data-step={i} data-sky={`${d.day},${d.dusk}`}>
+                  <p class="clock"><time>{d.t[0]}:{String(d.t[1]).padStart(2, '0')}</time><small>{d.t[2]}</small></p>
+                  <div class="day-cap"><h3>{d.h}</h3><p>{d.p}</p></div>
+                </li>
+              ))}
+            </ol>
+            <div class="day-photos">
+              {DAY.map((d, i) => <Photo p={d.photo} class={i === 0 ? 'on' : ''} sizes="(max-width: 640px) 92vw, 440px" />)}
+            </div>
+            <div class="day-bar" role="group" aria-label="Times of day">
+              {DAY.map((d, i) => <button type="button" class:list={{ on: i === 0 }} data-go={i} aria-label={`${d.t[0]}:${String(d.t[1]).padStart(2, '0')} ${d.t[2]}: ${d.h}`}><i></i></button>)}
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+    )}
 
-    <section class="band tint" data-cam="aerial-low" aria-labelledby="h-five">
+    <section class="band tint" data-cam="aerial-low" data-pins="off" aria-labelledby="h-five">
       <div class="in stack">
         <div class="stack" style="gap:14px" data-reveal><p class="eyebrow">In every suite</p><h2 id="h-five">{numberWord(AMENITIES.length)} things you can count on.</h2></div>
         <ul class="five" role="list">
@@ -158,7 +175,7 @@ const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
     </section>
 
     <section class="band" data-cam="hero" aria-labelledby="h-book">
-      <div class="in">
+      <div class="in" data-pin-avoid>
         <div class="glass end-card" data-reveal>
           <span class="end-logo" aria-hidden="true"><AnimLogo id="end" /></span>
           <p class="eyebrow">Book direct</p>

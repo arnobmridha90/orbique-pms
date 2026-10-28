@@ -23,7 +23,7 @@ const itemList = {
   itemListElement: list.map(({ s, b }, i) => ({ '@type': 'ListItem', position: i + 1, url: `${BRAND.my}${suitePath(b, s)}`, name: `${s.name}, ${b.name}` })),
 };
 ---
-<Shell cam="aerial-low" dim title={`Stays in ${where}: live prices | Kozi`}
+<Shell site={site} cam="aerial-low" dim title={`Stays in ${where}: live prices | Kozi`}
   description={`Kozi two-bedroom suites in ${where}${one ? ` at ${one.building}` : ''}. Pick your dates to see live prices for every suite, and book direct.`}
   jsonld={[crumbsLd(BRAND.my, crumbs), itemList]}>
   <Head crumbs={crumbs} eyebrow={one ? `${one.city} · ${one.name}` : where} size="short">
