@@ -231,11 +231,13 @@ export async function siteBySlug(sb, ws) {
   return { orgId: org.id, settings: siteSettings(rows[0].data && rows[0].data.v) };
 }
 
-/** -> {content: SiteContent | null, publishedAt: ISO | null}, checked again on the way out (anything invalid is dropped) */
+/** -> {content: SiteContent | null, publishedAt: ISO | null, contact: {whatsapp}}, checked again on the way out (anything
+ *  invalid is dropped). contact.whatsapp is the number guests book on (digits for wa.me), or null: they email instead. */
 export async function publicContent(sb, ws, env = process.env) {
   const site = await siteBySlug(sb, ws);
   const live = await blob(sb, site.orgId, 'siteContentLive');
-  if (!live || typeof live !== 'object' || !live.content) return { content: null, publishedAt: null };
+  const contact = { whatsapp: site.settings.whatsapp || null };
+  if (!live || typeof live !== 'object' || !live.content) return { content: null, publishedAt: null, contact };
   const res = C.check(live.content, { uploadPrefixes: [uploadPrefix(site.orgId, env)], bookTypes: Object.keys(site.settings.types || {}) });
-  return { content: res.content, publishedAt: typeof live.publishedAt === 'string' ? live.publishedAt : null };
+  return { content: res.content, publishedAt: typeof live.publishedAt === 'string' ? live.publishedAt : null, contact };
 }

@@ -395,10 +395,18 @@ function hash(text) {
   return ('0000000' + (h >>> 0).toString(16)).slice(-8);
 }
 function empty() { return { version: VERSION, buildings: [], suites: [] }; }
+/* the WhatsApp number guests book on, as wa.me wants it: the country code and number, digits only (8 to 15 of them).
+   "+60 17-123 4567", "+60 (0)17-123 4567" and "0060171234567" all give "60171234567"; a number without its country
+   code gives '' */
+function waNumber(v) {
+  var d = String(v == null ? '' : v).trim().replace(/\(0\)/g, '').replace(/[\s().-]/g, '');
+  if (d.slice(0, 2) === '00') d = d.slice(2); else if (d.charAt(0) === '+') d = d.slice(1);
+  return /^[1-9]\d{7,14}$/.test(d) ? d : '';
+}
 
 var API = {
   VERSION: VERSION, WIDTHS: WIDTHS, VIEWS: VIEWS, VIEW_NAMES: VIEW_NAMES, MAX: MAX, MAX_PATHS: MAX_PATHS, SLUG: SLUG, RESERVED: RESERVED, PHOTO_ID: PHOTO_ID,
   check: check, diff: diff, pagePaths: pagePaths, planWidths: planWidths, photoSrc: photoSrc,
-  slugify: slugify, uniqueSlug: uniqueSlug, readableAlt: readableAlt, canon: canon, hash: hash, empty: empty, hasOwn: hasOwn
+  slugify: slugify, uniqueSlug: uniqueSlug, readableAlt: readableAlt, canon: canon, hash: hash, empty: empty, hasOwn: hasOwn, waNumber: waNumber
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;

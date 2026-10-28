@@ -36,6 +36,7 @@
 .pg-live .lv-site a:hover{text-decoration:underline;}
 .pg-live .lv-site svg{width:16px; height:16px; color:var(--muted); flex:none;}
 .pg-live .lv-stat{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; color:var(--text-2); margin-top:4px;}
+.pg-live .lv-wa svg{width:14px; height:14px; color:var(--muted); flex:none;}
 .pg-live .lv-pub{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
 .pg-live .lv-probs{display:flex; flex-direction:column; gap:4px;}
 .pg-live .lv-probs b{font-size:12.5px;}
@@ -166,6 +167,8 @@
   function web() { var w = D.website; return w && typeof w === 'object' && !Array.isArray(w) ? w : {}; }
   function siteUrl() { var u = String(web().siteUrl || '').trim().replace(/\/+$/, ''); return /^https:\/\/[a-z0-9.-]+$/i.test(u) ? u : ''; }
   function host(u) { return String(u || '').replace(/^https:\/\//, ''); }
+  /* the WhatsApp number guests book on from the site, digits only ('' when they email instead) */
+  function waNumber() { return SC.waNumber(web().whatsapp); }
   function types() { var t = web().types; return t && typeof t === 'object' && !Array.isArray(t) ? t : {}; }
   function typeKeys() { return Object.keys(types()); }
   function canEdit() { return O.can('website.edit'); }
@@ -239,14 +242,16 @@
 
   /* ------------------------------------------------------------------ page */
   function topHTML(c) {
-    var u = siteUrl(), live = liveBlob(), dirty = changed();
+    var u = siteUrl(), live = liveBlob(), dirty = changed(), wa = waNumber();
     var status = live && live.publishedAt ? 'Published ' + esc(myTime(live.publishedAt)) + (live.publishedBy ? ' by ' + esc(live.publishedBy) : '') : 'Not published yet';
     var pubWhy = !canPublish() ? 'Your access does not include publishing the website' : !c ? 'Add a building and a unit first' : '';
     return '<div class="card lv-top"><div class="grow">' +
       '<div class="lv-site">' + O.icon('website') + (u ? '<a href="' + esc(u) + '/" target="_blank" rel="noopener">' + esc(host(u)) + '</a>' : '<span class="muted">No website address yet</span>') +
       (canEdit() ? '<button type="button" class="btn btn-quiet btn-xs" data-act="address">' + (u ? 'Change' : 'Add the address') + '</button>' : '') + '</div>' +
+      '<div class="lv-stat lv-wa">' + O.icon('whatsapp') + (wa ? '<span>Bookings go to WhatsApp <b>+' + esc(wa) + '</b></span>' : '<span>Guests book by email. Add a WhatsApp number to take bookings there.</span>') +
+      (canEdit() ? '<button type="button" class="btn btn-quiet btn-xs" data-act="whatsapp">' + (wa ? 'Change' : 'Add') + '</button>' : '') + '</div>' +
       '<div class="lv-stat"><span data-status>' + status + '</span>' + (c && dirty ? U.pill('Changes not published', 'warn') : c && live ? U.pill('Up to date', 'ok') : '') + '</div>' +
-      (server() ? '' : '<div class="lv-stat"><span class="xs muted">Test copy: photos stay in this browser, and Publish changes nothing online.</span></div>') +
+      (server() ? '' : '<div class="lv-stat"><span class="xs muted">Test copy: photos and the WhatsApp number stay in this browser, and Publish changes nothing online.</span></div>') +
       '</div><div class="lv-pub"><button type="button" class="btn btn-primary" data-act="publish"' + (pubWhy || st.busy ? ' disabled' : '') + (pubWhy ? ' title="' + esc(pubWhy) + '"' : '') + '>' + O.icon('upload') + (st.busy ? 'Publishing…' : 'Publish') + '</button></div></div>';
   }
   function problemsHTML(c) {
@@ -313,6 +318,7 @@
       var c2 = draft(), a = t.dataset.act;
       if (a === 'publish') return publishFlow();
       if (a === 'address') return addressModal();
+      if (a === 'whatsapp') return whatsappModal();
       if (a === 'import') return importNow(wrap);
       if (a === 'start') { if (!canEdit()) return; D.siteContent = SC.empty(); save(); setTimeout(function () { openBuilding(-1); }, 0); return; }
       if (a === 'addbuilding') return openBuilding(-1);
@@ -370,6 +376,22 @@
         var u = normUrl(O.$('#lv-site', el).value);
         if (!u) { O.$('[data-err]', el).textContent = 'Use the full address, for example https://www.example.com'; O.$('[data-err]', el).style.color = 'var(--bad)'; return false; }
         setSiteUrl(u); save(); U.toast('Website address saved.');
+      } }]
+    });
+  }
+  /* read live by the site (no Publish): a guest who picks a suite and dates is sent to a WhatsApp chat with this number */
+  function whatsappModal() {
+    if (!canEdit()) { U.toast(NO_EDIT() + '.', 'bad'); return; }
+    var wa = waNumber();
+    U.modal({
+      title: 'WhatsApp for bookings', size: 'sm',
+      body: '<div class="field"><label for="lv-wa">WhatsApp number</label><input class="input" id="lv-wa" type="tel" inputmode="tel" autocomplete="off" maxlength="24" placeholder="+60 12 345 6789" value="' + esc(wa ? '+' + wa : '') + '"><div class="hint">With the country code. When a guest picks a suite and dates, the website opens a WhatsApp chat to this number with the stay written out. Leave it empty and guests email you to book.</div><div class="lv-err" data-err></div></div>',
+      actions: [{ label: 'Cancel' }, { label: 'Save', kind: 'primary', onClick: function (close, el) {
+        var raw = O.$('#lv-wa', el).value.trim(), d = raw ? SC.waNumber(raw) : '';
+        if (raw && !d) { O.$('[data-err]', el).textContent = 'Start with the country code, for example +60 12 345 6789'; O.$('[data-err]', el).style.color = 'var(--bad)'; return false; }
+        var w = D.website && typeof D.website === 'object' && !Array.isArray(D.website) ? D.website : (D.website = {});
+        if (d) w.whatsapp = d; else delete w.whatsapp;
+        save(); U.toast(!server() ? 'Saved in this test copy only. The live website keeps its own number.' : d ? 'Saved. The website sends bookings to +' + d + ' within a few minutes.' : 'Removed. Guests will email you to book.');
       } }]
     });
   }

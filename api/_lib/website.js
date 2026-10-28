@@ -3,8 +3,10 @@
  *
  * Settings: the workspace's `website` blob (edited by Orbique; see DEFAULTS):
  *   {slug, enabled, origins: [extra https origins], types: {key: {typeId, name, plans: {flexible, nonref, weekly}}},
- *    publicMarkupPct, baseGuests, maxGuests, extraBedFee, holdMinutes, freeCancelDays, emailFrom, replyTo, address, brand}
+ *    publicMarkupPct, baseGuests, maxGuests, extraBedFee, holdMinutes, freeCancelDays, emailFrom, replyTo, address, brand,
+ *    whatsapp}
  *   address: the street address in the guest's confirmation (else the building's); replyTo: else emailFrom's address
+ *   whatsapp: the number guests book on from the website (digits with the country code, see sitecontent.waNumber)
  * Prices: a night's rate is the plan's own Orbique rate (channelRates days, else its parent plan with the rule, else
  * defaultRate) with the workspace's last-minute deal, the same number the booking sites get before their markup.
  * Members pay that; everyone else pays it plus publicMarkupPct. A fifth guest adds the extra bed fee per night.
@@ -30,6 +32,7 @@ import {
   bookingAlerts, detectConflicts, audit, moveText
 } from './channex-bookings.js';
 import { emailConfig } from './alerts.js';
+import C from './shared/sitecontent.cjs';
 
 export const DEFAULTS = {
   enabled: true,
@@ -78,6 +81,7 @@ export function siteSettings(v) {
   s.siteUrl = typeof s.siteUrl === 'string' && /^https:\/\/[a-z0-9.-]+$/i.test(s.siteUrl) ? s.siteUrl : null;
   s.address = typeof s.address === 'string' ? s.address.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
   s.replyTo = typeof s.replyTo === 'string' ? s.replyTo.trim().slice(0, 200) : '';
+  s.whatsapp = C.waNumber(s.whatsapp);
   s.origins = Array.isArray(s.origins) ? s.origins.filter((o) => typeof o === 'string' && /^https:\/\/[a-z0-9.-]+$/i.test(o)) : [];
   return s;
 }
