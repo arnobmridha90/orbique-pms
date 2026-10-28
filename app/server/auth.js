@@ -43,7 +43,11 @@
   }
   function isPerm(e) { return !!e && (e.code === '42501' || /row-level security|permission denied/i.test(e.message || '')); }
   function rpc(name, args) { return sb().rpc(name, args || {}).then(function (r) { if (r.error) throw r.error; return r.data; }); }
-  function userName() { var m = (S.user && S.user.user_metadata) || {}; return m.name || (S.user && S.user.email ? S.user.email.split('@')[0] : 'You'); }
+  /* people without an email sign in with a mobile number or username; their account has a stand-in address (server, LOGIN_DOMAIN) */
+  function standIn(email) { return /@login\.orbiquepms\.com$/i.test(String(email || '')); }
+  function userEmail() { return S.user && S.user.email && !standIn(S.user.email) ? S.user.email : ''; }
+  function userLogin() { var m = (S.user && S.user.user_metadata) || {}; return userEmail() || m.login || ''; }
+  function userName() { var m = (S.user && S.user.user_metadata) || {}; return m.name || (userEmail() ? userEmail().split('@')[0] : m.login || 'You'); }
   function deviceKey() { return 'srv:ws:' + (S.user ? S.user.id : ''); }
   function canon(v) { return O.sync.canon ? O.sync.canon(v) : JSON.stringify(v); }
   function clone(v) { return v == null ? v : JSON.parse(JSON.stringify(v)); }
@@ -152,7 +156,7 @@
     o = o || {};
     var mark = o.ws ? O.theme.logoHTML(o.ws).replace('class="ws-logo', 'class="ws-logo auth-mark') + '<span class="auth-word">' + esc(o.ws.name) + '</span>'
       : '<span class="ws-logo auth-mark"><img src="' + O.svgUrl(O.logos.orbique) + '" alt=""></span><span class="auth-word">Orbique</span>';
-    var who = S.user ? '<div class="auth-who">Signed in as ' + esc(S.user.email) + (o.hasSignOut ? '' : ' · <button type="button" class="auth-link" data-auth="signout">Sign out</button>') + '</div>' : '';
+    var who = S.user ? '<div class="auth-who">Signed in as ' + esc(userLogin()) + (o.hasSignOut ? '' : ' · <button type="button" class="auth-link" data-auth="signout">Sign out</button>') + '</div>' : '';
     return '<div class="auth-wrap' + (o.wide ? ' wide' : '') + '"><header class="auth-top">' + mark + '</header><main class="auth-card">' + inner + '</main>' +
       '<footer class="auth-foot">' + who + '<div>Orbique · property management for short-term rentals</div></footer></div>';
   }
@@ -196,17 +200,26 @@
     orbiqueTheme();
     var r = show('<h1 class="auth-h">Sign in</h1><p class="auth-p">Welcome back. Sign in to run your units.</p>' +
       (note ? '<div class="note brand auth-note-top">' + esc(note) + '</div>' : '') +
-      '<form class="auth-form" novalidate>' + field('email', 'Email', 'email', { auto: 'username', mode: 'email', max: 254 }) + field('password', 'Password', 'password', { auto: 'current-password', max: 72 }) +
+      '<form class="auth-form" novalidate>' + field('email', 'Email, mobile number or username', 'text', { auto: 'username', max: 254 }) + field('password', 'Password', 'password', { auto: 'current-password', max: 72 }) +
       '<div class="auth-err" role="alert" hidden></div><button class="btn btn-primary auth-btn" type="submit" data-busy="Signing in…">Sign in</button></form>' +
       '<p class="auth-small">Forgot your password? Ask your workspace owner to reset it.</p>' +
       '<div class="auth-alt"><span>New operator?</span><button type="button" class="btn btn-quiet" data-go="request">Request access</button></div>');
     O.$('[data-go="request"]', r).onclick = function () { requestScreen(); };
     wireForm(r, function (v, fail) {
       var email = v.email.trim().toLowerCase();
-      if (!validEmail(email)) return fail('Enter the email address you were invited with.');
+      if (!email) return fail('Enter your email, mobile number or username.');
       if (!v.password) return fail('Enter your password.');
+      if (email.indexOf('@') < 0) { /* a mobile number or username: the server finds the account and signs in */
+        return A.api('sign-in', { login: v.email.trim(), password: v.password }).then(function (j) {
+          return sb().auth.setSession({ access_token: j.access_token, refresh_token: j.refresh_token });
+        }).then(function (res) {
+          if (res.error || !res.data || !res.data.session) return fail(errMsg(res.error || new Error('Could not sign you in. Please try again.')));
+          S.session = res.data.session; S.user = res.data.user || res.data.session.user; afterSignIn();
+        }, function (e) { fail(errMsg(e)); });
+      }
+      if (!validEmail(email)) return fail('That email address does not look right.');
       return sb().auth.signInWithPassword({ email: email, password: v.password }).then(function (res) {
-        if (res.error) return fail(/invalid login|invalid credentials/i.test(res.error.message) ? 'That email and password do not match. Check them and try again.' : /confirm/i.test(res.error.message) ? 'This account is not active yet. Ask your workspace owner to invite you again.' : errMsg(res.error));
+        if (res.error) return fail(/invalid login|invalid credentials/i.test(res.error.message) ? 'That login and password do not match. Check them and try again.' : /confirm/i.test(res.error.message) ? 'This account is not active yet. Ask your workspace owner to invite you again.' : errMsg(res.error));
         S.session = res.data.session; S.user = res.data.user; afterSignIn();
       });
     });
@@ -261,7 +274,7 @@
   function passwordScreen() {
     orbiqueTheme();
     var r = show('<h1 class="auth-h">Choose your password</h1><p class="auth-p">You signed in with a temporary password. Choose your own to continue. Only you will know it.</p>' +
-      '<form class="auth-form" novalidate><input type="email" name="u" autocomplete="username" value="' + esc(S.user.email) + '" hidden>' +
+      '<form class="auth-form" novalidate><input type="text" name="u" autocomplete="username" value="' + esc(userLogin()) + '" hidden>' +
       field('password', 'New password', 'password', { auto: 'new-password', max: 72, hint: 'At least 8 characters.' }) + field('confirm', 'Type it again', 'password', { auto: 'new-password', max: 72 }) +
       '<div class="auth-err" role="alert" hidden></div><button class="btn btn-primary auth-btn" type="submit" data-busy="Saving…">Save and continue</button></form>');
     wireForm(r, function (v, fail) {
@@ -462,7 +475,7 @@
         var blobs = res[1].map(function (b) { seen(b.updated_at); return { key: b.key, data: unwrap(b.data) }; });
         /* the signed-in person always has a staff record, and its role is the one the server enforces */
         var me = null; rows.forEach(function (r) { if (r.coll === 'staff' && r.id === org.staffId) me = r; });
-        if (!me) rows.push({ coll: 'staff', id: org.staffId, data: { id: org.staffId, name: userName(), role: org.role, roleLabel: ROLE_LABEL[org.role] || org.role, email: S.user.email }, deleted: false });
+        if (!me) rows.push({ coll: 'staff', id: org.staffId, data: { id: org.staffId, name: userName(), role: org.role, roleLabel: ROLE_LABEL[org.role] || org.role, email: userEmail() }, deleted: false });
         else if (me.data && me.data.role !== org.role) { me.data = Object.assign({}, me.data, { role: org.role, roleLabel: ROLE_LABEL[org.role] || org.role }); }
         return { rows: rows, blobs: blobs, readOnly: S.readOnly || org.memberStatus !== 'active' };
       });
@@ -701,7 +714,7 @@
     var v = O.viewer(); return (v && (v.roleLabel || ROLE_LABEL[v.role])) || ROLE_LABEL[myRole()] || '';
   };
   O.viewerMenu = function () {
-    var h = '<div class="menu-label">Signed in</div><div class="srv-who">' + U.avatar(userName(), 'sm') + '<span class="grow"><b>' + esc(userName()) + '</b><span class="xs muted ellipsis" style="display:block">' + esc(S.user ? S.user.email : '') + '</span></span></div>';
+    var h = '<div class="menu-label">Signed in</div><div class="srv-who">' + U.avatar(userName(), 'sm') + '<span class="grow"><b>' + esc(userName()) + '</b><span class="xs muted ellipsis" style="display:block">' + esc(S.user ? userLogin() : '') + '</span></span></div>';
     if (S.previewing) h += '<button class="pop-opt srv-opt" data-auth-act="stop-preview"><span class="row-flex">' + O.icon('x') + 'Stop preview</span></button>';
     else if (isOwner() && !S.platform) h += '<button class="pop-opt srv-opt" data-auth-act="preview"><span class="row-flex">' + O.icon('eye') + 'Preview as…</span></button>';
     h += '<button class="pop-opt srv-opt" data-auth-act="password"><span class="row-flex">' + O.icon('key') + 'Change password</span></button>';
@@ -725,7 +738,7 @@
     U.modal({ title: 'Preview as…', sub: 'See exactly what a team member sees. Your own access does not change.', body: body, size: 'sm', onOpen: function (el, close) { O.$$('[data-p]', el).forEach(function (x) { x.onclick = function () { close(); A.previewAs(x.dataset.p); }; }); } });
   }
   function changePasswordModal() {
-    var body = O.html('<form class="stack" novalidate><input type="email" autocomplete="username" value="' + esc(S.user.email) + '" hidden>' + field('np', 'New password', 'password', { auto: 'new-password', max: 72, hint: 'At least 8 characters.' }) + field('nc', 'Type it again', 'password', { auto: 'new-password', max: 72 }) + '<div class="auth-err" role="alert" hidden></div></form>');
+    var body = O.html('<form class="stack" novalidate><input type="text" autocomplete="username" value="' + esc(userLogin()) + '" hidden>' + field('np', 'New password', 'password', { auto: 'new-password', max: 72, hint: 'At least 8 characters.' }) + field('nc', 'Type it again', 'password', { auto: 'new-password', max: 72 }) + '<div class="auth-err" role="alert" hidden></div></form>');
     O.$$('[data-eye]', body).forEach(function (b) { b.onclick = function () { var i = O.$('#' + b.dataset.eye, body), on = i.type === 'password'; i.type = on ? 'text' : 'password'; b.textContent = on ? 'Hide' : 'Show'; }; });
     U.modal({ title: 'Change password', body: body, size: 'sm', actions: [{ label: 'Cancel' }, { label: 'Save password', kind: 'primary', onClick: function (close, el) {
       var p = O.$('#np', body).value, c = O.$('#nc', body).value, er = O.$('.auth-err', body), pp = pwProblem(p, c);
@@ -746,7 +759,7 @@
     flushThen(reload);
   };
   A.isPlatformAdmin = function () { return !!(S.ctx && S.ctx.platformAdmin); };
-  A.user = function () { if (!S.user) return null; var m = S.user.user_metadata || {}; return { id: S.user.id, email: S.user.email, name: userName(), mustChangePassword: !!m.must_change_password }; };
+  A.user = function () { if (!S.user) return null; var m = S.user.user_metadata || {}; return { id: S.user.id, email: userEmail(), login: userLogin(), name: userName(), mustChangePassword: !!m.must_change_password }; };
   A.orgId = function () { return S.org ? S.org.id : null; };
   A.role = function () { return myRole(); };
   A.staffId = function () { return S.org ? S.org.staffId : null; };
@@ -805,8 +818,23 @@
   A.invite = function (p) {
     var no = needOwner(); if (no) return no;
     p = p || {};
-    return A.api('invite', { orgId: S.org.id, staffId: p.staffId, name: p.name, email: p.email, phone: p.phone || '', role: p.role }).then(function (j) { return { email: j.email, tempPassword: j.tempPassword || null, existing: !!j.existing }; });
+    var body = { orgId: S.org.id, staffId: p.staffId, name: p.name, email: p.email || '', phone: p.phone || '', role: p.role };
+    if (p.username) body.username = p.username;
+    if (p.phoneLogin) body.phoneLogin = true;
+    if (p.password) { body.password = p.password; if (p.mustChange) body.mustChange = true; }
+    var cc = phoneCc(); if (cc) body.phoneCc = cc;
+    return A.api('invite', body).then(signInOf);
   };
+  function signInOf(j) { return { email: j.email || null, username: j.username || null, phone: j.phone || null, tempPassword: j.tempPassword || null, passwordSet: !!j.passwordSet, existing: !!j.existing }; }
+  /* the owner sets a team member's username, mobile sign-in and password: p {username ('' removes), phoneLogin, phone, password | tempPassword, mustChange} */
+  A.setLogin = function (staffId, p) {
+    var no = needOwner(); if (no) return no;
+    var cc = phoneCc();
+    return A.api('set-login', Object.assign({ orgId: S.org.id, staffId: staffId }, cc ? { phoneCc: cc } : {}, p || {})).then(signInOf);
+  };
+  /* the calling code of the workspace's main country, for a mobile number written with a leading 0 */
+  var CALLING = { MY: '60', SG: '65', TH: '66', ID: '62', PH: '63', VN: '84', BN: '673', KH: '855', LA: '856', MM: '95', AU: '61', NZ: '64', GB: '44', US: '1', AE: '971', IN: '91', JP: '81', KR: '82', CN: '86', HK: '852', TW: '886' };
+  function phoneCc() { try { return CALLING[String((window.O && O.mainCountry && O.mainCountry()) || '').toUpperCase()] || ''; } catch (e) { return ''; } }
   function updateMember(staffId, patch) {
     return sb().from('members').update(patch).eq('org_id', S.org.id).eq('staff_id', staffId).select('staff_id').then(function (r) {
       if (r.error) throw new Error(isPerm(r.error) ? 'Your access does not allow this change.' : errMsg(r.error));
@@ -833,7 +861,7 @@
   };
   A.resetPassword = function (staffId) {
     var no = needOwner(); if (no) return no;
-    return A.api('reset-password', { orgId: S.org.id, staffId: staffId }).then(function (j) { return { email: j.email, tempPassword: j.tempPassword }; });
+    return A.api('reset-password', { orgId: S.org.id, staffId: staffId }).then(signInOf);
   };
   /* see the app as a team member: O.state.viewer drives what the UI shows; writes still use the owner's session */
   A.previewAs = function (staffId) {

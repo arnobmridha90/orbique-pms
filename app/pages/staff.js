@@ -407,15 +407,18 @@
   function inviteMessage(o) {
     var v = O.viewer(), ws = O.ws().name, link = appLink();
     var lines = ['Hi ' + first(o.name) + ', ' + (v ? v.name : 'the team') + ' has added you to the ' + ws + ' team' + (/orbique/i.test(ws) ? '' : ' on Orbique') + ' as ' + (ROLE_AS[o.role] || 'a team member') + '.'];
-    if (o.tempPassword) lines.push('Sign in' + (link ? ' at ' + link : '') + ' with:', 'Email: ' + o.email, 'Temporary password: ' + o.tempPassword, 'You will choose your own password the first time you sign in.');
-    else if (o.existing) lines.push('Sign in' + (link ? ' at ' + link : '') + ' with your usual Orbique email (' + o.email + ') and password, then pick ' + ws + '.');
+    var ids = loginLines(o);
+    if (o.tempPassword || o.password) lines.push.apply(lines, ['Sign in' + (link ? ' at ' + link : '') + ' with ' + (ids.length > 1 ? 'any of these' : 'this') + ':'].concat(ids, [(o.tempPassword ? 'Temporary password: ' + o.tempPassword : 'Password: ' + o.password)], o.tempPassword ? ['You will choose your own password the first time you sign in.'] : []));
+    else if (o.existing) lines.push('Sign in' + (link ? ' at ' + link : '') + ' with your usual Orbique ' + (o.email ? 'email (' + o.email + ')' : 'login') + ' and password, then pick ' + ws + '.');
+    else if (o.loginChanged && ids.length) lines.push.apply(lines, ['You can now sign in' + (link ? ' at ' + link : '') + ' with ' + (ids.length > 1 ? 'any of these' : 'this') + ' and your password:'].concat(ids));
     else lines.push((link ? 'Open ' + link + ' and sign in' : 'Sign in to the team app') + ' with ' + (o.email || o.phone || 'the details we gave you') + '.');
     return lines.join('\n');
   }
+  function loginLines(o) { return [o.email ? 'Email: ' + o.email : '', o.username ? 'Username: ' + o.username : '', o.phone ? 'Mobile number: ' + o.phone : ''].filter(Boolean); }
   function shareModal(o) {
     var msg = inviteMessage(o);
     var body = '<div class="stack">' + (o.intro ? '<p style="margin:0;line-height:1.5">' + esc(o.intro) + '</p>' : '') +
-      (o.tempPassword ? '<div><div class="label" style="margin-bottom:6px">Temporary password for ' + esc(o.email) + '</div><div class="stf-pw"><code>' + esc(o.tempPassword) + '</code><button type="button" class="btn btn-ghost btn-sm" data-copy="pw">' + O.icon('copy') + 'Copy password</button></div></div>' : '') +
+      (o.tempPassword ? '<div><div class="label" style="margin-bottom:6px">Temporary password for ' + esc(o.email || o.username || o.phone || first(o.name)) + '</div><div class="stf-pw"><code>' + esc(o.tempPassword) + '</code><button type="button" class="btn btn-ghost btn-sm" data-copy="pw">' + O.icon('copy') + 'Copy password</button></div></div>' : '') +
       '<div><label class="label" for="stf-msg" style="display:block;margin-bottom:6px">Message to send on WhatsApp or by email</label><textarea class="stf-msg" id="stf-msg" readonly>' + esc(msg) + '</textarea></div>' +
       '<div class="small muted">' + (o.tempPassword ? 'The password is shown only now. If it gets lost, use New password on the Invites tab.' : 'Copy the message and paste it into WhatsApp or an email to ' + esc(first(o.name)) + '.') + '</div></div>';
     U.modal({
@@ -427,18 +430,88 @@
       }
     });
   }
-  function serverInvite(s, inv) {
+  /* login {username, phoneLogin, password, mustChange}: what the owner chose in the sign-in fields (all optional with an
+     email). The choices but the password stay on the invite, so Retry asks for the same sign-in. */
+  function serverInvite(s, inv, login) {
     var f = authFn('invite'); if (!f) return;
+    if (login) inv.login = { username: login.username || '', phoneLogin: !!login.phoneLogin };
+    login = login || inv.login || {};
+    if (!s.email && !login.username && !login.phoneLogin) { loginModal(s, true); return; }
     U.toast('Creating ' + first(s.name) + '\'s account…');
-    Promise.resolve().then(function () { return f.call(O.auth, { staffId: s.id, name: s.name, email: s.email, phone: s.phone || '', role: s.role }); }).then(function (res) {
+    Promise.resolve().then(function () { return f.call(O.auth, { staffId: s.id, name: s.name, email: s.email, phone: s.phone || '', role: s.role, username: login.username || '', phoneLogin: !!login.phoneLogin, password: login.password || '', mustChange: !!login.mustChange }); }).then(function (res) {
       res = res || {}; dropToast(/^Creating /);
+      if (res.username) s.username = res.username; if (res.phone) s.loginPhone = res.phone;
       inv.status = res.existing ? 'accepted' : 'pending'; delete inv.error; inv.sentAt = D.NOW; O.emit('data', { type: 'staff' });
-      shareModal({ title: res.existing ? first(s.name) + ' can sign in now' : 'Account ready for ' + first(s.name), name: s.name, role: s.role, email: res.email || s.email, tempPassword: res.tempPassword || null, existing: !!res.existing,
-        intro: res.existing ? s.name + ' already has an Orbique account, so they sign in with their own password and now also see ' + O.ws().name + '.' : 'Send ' + first(s.name) + ' the sign-in details below. They change the password the first time they sign in.' });
+      shareModal({ title: res.existing ? first(s.name) + ' can sign in now' : 'Account ready for ' + first(s.name), name: s.name, role: s.role, email: res.email || null, username: res.username, phone: res.phone, tempPassword: res.tempPassword || null, password: res.passwordSet ? login.password : null, existing: !!res.existing,
+        intro: res.existing ? s.name + ' already has an Orbique account, so they sign in with their own password and now also see ' + O.ws().name + '.' : 'Send ' + first(s.name) + ' the sign-in details below.' + (res.tempPassword ? ' They change the password the first time they sign in.' : '') });
     }, function (e) {
       dropToast(/^Creating /);
       inv.status = 'failed'; inv.error = authErr(e); O.emit('data', { type: 'staff' });
       U.toast('The account was not created: ' + authErr(e), 'bad');
+    });
+  }
+
+  /* ---------- sign-in fields: username, mobile number, password (server mode, set by the account owner) ---------- */
+  function loginFields(o) { /* o {username, phoneLogin, phone, edit, pfx} */
+    var px = o.pfx || 'lg';
+    return '<div class="field"><label for="' + px + '-user">Username (optional)</label><input class="input" id="' + px + '-user" name="lgUser" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32" placeholder="For example aina.k" value="' + esc(o.username || '') + '"><span class="hint">Unique on Orbique. Letters, digits, dots, dashes</span></div>' +
+      '<div class="field"><span class="label">Mobile number</span><label class="row-flex" style="gap:8px;min-height:38px"><input type="checkbox" name="lgPhone"' + (o.phoneLogin ? ' checked' : '') + '> <span>They can sign in with their mobile number</span></label><span class="hint" data-lgphone>' + esc(o.phone ? o.phone : 'Add their mobile number first, with the country code') + '</span></div>' +
+      '<div class="field"><label for="' + px + '-pwmode">Password</label><select class="select" id="' + px + '-pwmode" name="lgPwMode">' + (o.edit ? '<option value="keep">Keep their current password</option>' : '') + '<option value="temp">Make a temporary password</option><option value="set">Set the password myself</option></select><span class="hint" data-lgpwhint>' + (o.edit ? 'Nothing changes for the password' : 'They choose their own the first time they sign in') + '</span></div>' +
+      '<div class="field" data-lgset hidden><label for="' + px + '-pw">Their password</label><input class="input" id="' + px + '-pw" name="lgPw" type="text" autocomplete="new-password" maxlength="72" placeholder="At least 8 characters"><label class="row-flex small" style="gap:6px;margin-top:6px"><input type="checkbox" name="lgMust"> <span>Ask them to change it the first time</span></label></div>';
+  }
+  function wireLogin(el) {
+    function paint() {
+      var m = O.$('[name=lgPwMode]', el); if (!m) return;
+      O.$('[data-lgset]', el).hidden = m.value !== 'set';
+      O.$('[data-lgpwhint]', el).textContent = m.value === 'keep' ? 'Nothing changes for the password' : m.value === 'temp' ? 'They choose their own the first time they sign in' : 'You send it to them; they can change it later';
+      var ph = O.$('[name=phone]', el), hint = O.$('[data-lgphone]', el);
+      if (ph && hint) hint.textContent = ph.value.trim() || 'Add their mobile number first, with the country code';
+    }
+    el.addEventListener('change', paint); el.addEventListener('input', function (e) { if (e.target.name === 'phone') paint(); }); paint();
+  }
+  /* -> {username, phoneLogin, pwMode, password, mustChange} or a string (the problem) */
+  function readLogin(el, phone) {
+    var g = function (n) { var x = O.$('[name=' + n + ']', el); return x ? (x.type === 'checkbox' ? x.checked : x.value.trim()) : null; };
+    var v = { username: (g('lgUser') || '').toLowerCase(), phoneLogin: !!g('lgPhone'), pwMode: g('lgPwMode') || 'temp', password: g('lgPw') || '', mustChange: !!g('lgMust') };
+    if (v.username && !/^[a-z][a-z0-9._-]{2,31}$/.test(v.username)) return 'Usernames are 3 to 32 letters, digits, dots, dashes or underscores, starting with a letter';
+    if (v.phoneLogin && !phone) v.phoneLogin = false; /* no number yet: nothing to sign in with */
+    if (v.phoneLogin && !/^\+/.test(phone) && !/^0/.test(phone.replace(/[\s()-]/g, ''))) return 'Write the mobile number with its country code, for example +60 12-345 6789';
+    if (v.pwMode === 'set' && (v.password.length < 8 || v.password.length > 72)) return 'Use at least 8 characters for the password';
+    return v;
+  }
+  /* the owner sets the username, mobile sign-in and password of someone who has a sign-in (edit) or creates one without an email */
+  function loginModal(s, create) {
+    var f = authFn(create ? 'invite' : 'setLogin'); if (!f) return;
+    var body = '<div class="stack">' + (create ? '<p style="margin:0;line-height:1.5">' + esc(first(s.name)) + ' has no email here, so they sign in with a username or their mobile number.</p>' : '') +
+      '<div class="form-grid">' + loginFields({ username: s.username, phoneLogin: !!s.loginPhone || (create && !!s.phone), phone: s.phone, edit: !create, pfx: 'lm' }) + '</div>' +
+      '<div class="small muted">' + (s.email ? esc(first(s.name)) + ' can also sign in with ' + esc(s.email) + '.' : 'Usernames and mobile numbers work only for people who use Orbique with ' + esc(O.ws().name) + ' alone.') + '</div></div>';
+    U.modal({
+      title: create ? 'Create a sign-in for ' + first(s.name) : 'Sign-in details for ' + first(s.name), body: body, size: 'wide',
+      onOpen: function (el) { wireLogin(el); },
+      actions: [{ label: 'Cancel', kind: 'ghost' }, { label: create ? 'Create sign-in' : 'Save', kind: 'primary', onClick: function (close, el) {
+        var v = readLogin(el, s.phone || '');
+        if (typeof v === 'string') { U.toast(v, 'bad'); return false; }
+        if (create) {
+          if (!v.username && !v.phoneLogin) { U.toast('Give them a username or let them sign in with their mobile number', 'bad'); return false; }
+          var inv = (D.staffInvites || []).filter(function (x) { return x.staffId === s.id && x.status !== 'withdrawn'; })[0];
+          if (!inv) { inv = { id: O.uid('INV'), staffId: s.id, name: s.name, contact: v.username || s.phone, phone: s.phone || '', email: '', role: s.role, scope: meta(s.id).scope || 'all', sentAt: D.NOW, via: 'Account', by: O.state.viewer, status: 'pending' }; D.staffInvites.push(inv); }
+          audit('Created a sign-in for ' + s.name, { staffId: s.id }); O.emit('data', { type: 'staff' });
+          close(); serverInvite(s, inv, { username: v.username, phoneLogin: v.phoneLogin, password: v.pwMode === 'set' ? v.password : '', mustChange: v.mustChange });
+          return false;
+        }
+        var btn = O.$('.modal-foot .btn-primary', el); btn.disabled = true; btn.textContent = 'Saving…';
+        var p = { username: v.username, phoneLogin: v.phoneLogin, phone: s.phone || '' };
+        if (v.pwMode === 'set') { p.password = v.password; p.mustChange = v.mustChange; } else if (v.pwMode === 'temp') p.tempPassword = true;
+        Promise.resolve().then(function () { return f.call(O.auth, s.id, p); }).then(function (res) {
+          res = res || {}; close();
+          if (res.username) s.username = res.username; else delete s.username;
+          if (res.phone) s.loginPhone = res.phone; else delete s.loginPhone;
+          audit('Changed the sign-in details of ' + s.name + (v.pwMode === 'keep' ? '' : ' and set a new password'), { staffId: s.id }); O.emit('data', { type: 'staff' });
+          shareModal({ title: 'Sign-in details for ' + first(s.name), name: s.name, role: s.role, email: res.email, username: res.username, phone: res.phone, tempPassword: res.tempPassword || null, password: res.passwordSet ? v.password : null, loginChanged: true,
+            intro: 'Saved. Send ' + first(s.name) + ' the details below so they know how to sign in.' });
+        }, function (e) { btn.disabled = false; btn.textContent = 'Save'; U.toast(authErr(e), 'bad'); });
+        return false;
+      } }]
     });
   }
 
@@ -451,13 +524,20 @@
       '<div class="field"><label for="ap-role">Role</label><select class="select" id="ap-role" name="role">' + roleOptions('housekeeping') + '</select><span class="hint" data-rdesc></span></div>' +
       '<div class="field"><label for="ap-title">Job title (optional)</label><input class="input" id="ap-title" name="title" placeholder="Shown next to their name"></div>' +
       '<div class="field"><label for="ap-phone">Mobile number</label><input class="input" id="ap-phone" name="phone" type="tel" placeholder="+60 12-345 6789"></div>' +
-      '<div class="field"><label for="ap-email">Email' + (srv ? '' : ' (optional)') + '</label><input class="input" id="ap-email" name="email" type="email" placeholder="name@example.com"><span class="hint">' + (srv ? 'They sign in with this email' : 'A mobile number or an email is enough') + '</span></div>' +
+      '<div class="field"><label for="ap-email">Email (optional)</label><input class="input" id="ap-email" name="email" type="email" placeholder="name@example.com"><span class="hint">' + (srv ? 'They can sign in with it' : 'A mobile number or an email is enough') + '</span></div>' +
+      (srv ? '<div class="field full"><span class="label" style="font-weight:600">Sign-in</span><span class="hint">An email, a username or their mobile number: any of them works with the password</span></div>' + loginFields({ phoneLogin: false, pfx: 'ap' }) : '') +
       '<div class="field full"><span class="label">Properties they work on</span>' + scopeField('all', 'apScope') + '</div>' +
       '</div><div class="note">The role decides what they can open and do. You can fine-tune it for this person afterwards. Financials, approving claims and owner payouts stay with account owners whatever role you pick.</div></div>';
     U.modal({
       title: 'Add person', sub: 'They get their own sign-in for ' + O.ws().name, body: body, size: 'wide',
       onOpen: function (el) {
-        wireScope(el, 'apScope');
+        wireScope(el, 'apScope'); if (srv) wireLogin(el);
+        /* mobile sign-in is ticked for someone with a number and no email, until the owner sets it themselves */
+        var lp = srv && O.$('[name=lgPhone]', el), lpSet = false;
+        if (lp) {
+          lp.addEventListener('change', function () { lpSet = true; });
+          el.addEventListener('input', function (e) { if (!lpSet && (e.target.name === 'phone' || e.target.name === 'email')) lp.checked = !O.$('[name=email]', el).value.trim() && !!O.$('[name=phone]', el).value.trim(); });
+        }
         function paint() { O.$('[data-rdesc]', el).textContent = ROLE_DESC[O.$('[name=role]', el).value] || ''; }
         el.addEventListener('change', paint); paint();
       },
@@ -466,8 +546,10 @@
           var g = function (n) { return O.$('[name=' + n + ']', el).value.trim(); };
           var name = g('name'), role = g('role'), phone = g('phone'), email = g('email'), title = g('title'), sc = readScope(el, 'apScope');
           if (!name) { U.toast('Add their name', 'bad'); O.$('[name=name]', el).focus(); return false; }
-          if (srv && !email) { U.toast('Add their email. They sign in with it.', 'bad'); O.$('[name=email]', el).focus(); return false; }
           if (!phone && !email) { U.toast('Add a mobile number or an email', 'bad'); O.$('[name=phone]', el).focus(); return false; }
+          var login = srv ? readLogin(el, phone) : null;
+          if (typeof login === 'string') { U.toast(login, 'bad'); return false; }
+          if (srv && !email && !login.username && !login.phoneLogin) { U.toast('Give them a way to sign in: an email, a username or their mobile number', 'bad'); return false; }
           if (email && !validEmail(email)) { U.toast('The email address does not look right', 'bad'); O.$('[name=email]', el).focus(); return false; }
           if (email && D.staff.some(function (s) { return !gone(s) && s.email && s.email.toLowerCase() === email.toLowerCase(); })) { U.toast('Someone on the team already uses that email', 'bad'); return false; }
           if (sc !== 'all' && !sc.length) { U.toast('Pick at least one property', 'bad'); return false; }
@@ -479,7 +561,7 @@
           audit('Added ' + name + ' as ' + roleLabel(role) + ' (' + scopeText(sc) + ')', { staffId: s.id });
           O.emit('data', { type: 'staff' });
           close();
-          if (srv) serverInvite(s, inv);
+          if (srv) serverInvite(s, inv, { username: login.username, phoneLogin: login.phoneLogin, password: login.pwMode === 'set' ? login.password : '', mustChange: login.mustChange });
           else shareModal({ title: name + ' is on the team', name: name, role: role, email: email, phone: phone, intro: 'Send ' + first(name) + ' a message so they know how to sign in. Their access follows the ' + roleLabel(role) + ' role.', onCopy: function () { inv.sharedAt = D.NOW; O.emit('data', { type: 'staff' }); } });
           return false;
         }
@@ -524,7 +606,7 @@
       Promise.resolve().then(function () { return f.call(O.auth, s.id); }).then(function (res) {
         res = res || {};
         audit('Made a new temporary password for ' + s.name, { staffId: s.id }); O.emit('data', { type: 'staff' });
-        shareModal({ title: 'New password for ' + first(s.name), name: s.name, role: s.role, email: res.email || s.email, tempPassword: res.tempPassword, intro: 'Send ' + first(s.name) + ' the new sign-in details. They choose their own password after signing in.' });
+        shareModal({ title: 'New password for ' + first(s.name), name: s.name, role: s.role, email: res.email || null, username: res.username, phone: res.phone, tempPassword: res.tempPassword, intro: 'Send ' + first(s.name) + ' the new sign-in details. They choose their own password after signing in.' });
       }, function (e) { U.toast(authErr(e), 'bad'); });
     });
   }
@@ -552,7 +634,7 @@
           '</div><div class="stf-btns" style="margin-top:12px"><button type="button" class="btn btn-ghost btn-sm" data-pd="save">' + O.icon('check') + 'Save details</button></div>';
       } else {
         out += '<dl class="stf-kv"><dt>Role</dt><dd>' + esc(roleLabel(s.role)) + '</dd>' + (s.roleLabel && s.roleLabel !== roleLabel(s.role) ? '<dt>Job title</dt><dd>' + esc(s.roleLabel) + '</dd>' : '') +
-          '<dt>Mobile</dt><dd>' + esc(s.phone || '–') + '</dd><dt>Email</dt><dd>' + esc(s.email || '–') + '</dd>' + (isOwner ? '' : '<dt>Properties</dt><dd>' + esc(scopeTitle(m.scope)) + '</dd>') + '</dl>';
+          '<dt>Mobile</dt><dd>' + esc(s.phone || '–') + '</dd><dt>Email</dt><dd>' + esc(s.email || '–') + '</dd>' + (s.username || s.loginPhone ? '<dt>Signs in with</dt><dd>' + esc([s.username ? 'username ' + s.username : '', s.loginPhone ? 'mobile ' + s.loginPhone : '', s.email ? 'email' : ''].filter(Boolean).join(', ')) + '</dd>' : '') + (isOwner ? '' : '<dt>Properties</dt><dd>' + esc(scopeTitle(m.scope)) + '</dd>') + '</dl>';
       }
       var facts = [gone(s) ? 'Removed' : suspended(s) ? 'Suspended' : invited(s) ? 'Invited, not signed in yet' : 'Active', gone(s) || suspended(s) ? '' : lastSeen(s), m.since ? 'On the team since ' + since(m.since) : ''].filter(Boolean).join(' · ');
       out += '<div class="stf-card" style="margin-top:16px"><div class="stf-ch"><b>Account</b></div><div class="stf-cb"><div class="small">' + esc(facts) + '</div>';
@@ -562,7 +644,8 @@
         else {
           btns.push(suspended(s) ? '<button type="button" class="btn btn-ghost btn-sm" data-pd="reactivate">' + O.icon('play') + 'Reactivate</button>' : '<button type="button" class="btn btn-ghost btn-sm" data-pd="suspend">' + O.icon('pause') + 'Suspend</button>');
           if (authFn('invite') && !suspended(s)) btns.push('<button type="button" class="btn btn-ghost btn-sm" data-pd="signin" title="Create their sign-in, or add this workspace to the account they already have">' + O.icon('user') + 'Create sign-in</button>');
-          if (authFn('resetPassword')) btns.push('<button type="button" class="btn btn-ghost btn-sm" data-pd="password">' + O.icon('key') + 'New password</button>');
+          if (authFn('setLogin')) btns.push('<button type="button" class="btn btn-ghost btn-sm" data-pd="login" title="Username, mobile number and password">' + O.icon('key') + 'Sign-in details</button>');
+          else if (authFn('resetPassword')) btns.push('<button type="button" class="btn btn-ghost btn-sm" data-pd="password">' + O.icon('key') + 'New password</button>');
           btns.push('<button type="button" class="btn btn-quiet btn-sm" data-pd="remove" style="color:var(--bad)">' + O.icon('trash') + 'Remove from team</button>');
         }
         out += '<div class="stf-acts">' + btns.join('') + '</div>';
@@ -601,7 +684,8 @@
       var title = g('title'), phone = g('phone'), email = g('email'), changes = [];
       if (email && !validEmail(email)) { U.toast('The email address does not look right', 'bad'); return; }
       if (title !== null && title !== (s.roleLabel || '')) { s.roleLabel = title || roleLabel(s.role); changes.push('job title'); }
-      if (phone !== null && phone !== (s.phone || '')) { s.phone = phone; changes.push('mobile number'); }
+      var movePhone = false;
+      if (phone !== null && phone !== (s.phone || '')) { s.phone = phone; changes.push('mobile number'); movePhone = !!s.loginPhone && !!authFn('setLogin'); }
       if (email !== null && !O.$('[name=email]', bodyEl).disabled && email !== (s.email || '')) { s.email = email; changes.push('email'); }
       if (s.role !== 'owner' && O.$('[name=pdScopeMode]', bodyEl)) {
         var sc = readScope(bodyEl, 'pdScope'), me = meta(s.id);
@@ -612,6 +696,12 @@
       audit('Updated ' + s.name + '\'s ' + changes.join(', '), { staffId: s.id });
       U.toast(first(s.name) + '\'s details are saved');
       O.emit('data', { type: 'staff' });
+      if (movePhone) { /* they sign in with their mobile number: the new one from now on (or none) */
+        Promise.resolve().then(function () { return O.auth.setLogin(s.id, { phoneLogin: !!phone, phone: phone }); }).then(function (res) {
+          if (res && res.phone) s.loginPhone = res.phone; else delete s.loginPhone;
+          U.toast(phone ? first(s.name) + ' now signs in with ' + res.phone : first(s.name) + ' no longer signs in with a mobile number'); O.emit('data', { type: 'staff' });
+        }, function (e) { U.toast('The mobile sign-in was not changed: ' + authErr(e), 'bad'); });
+      }
     }
     function changeRole(sel) {
       var to = sel.value, from = s.role; if (to === from) return;
@@ -643,8 +733,9 @@
       if (a === 'suspend') { U.confirm('Suspend ' + s.name + '? They cannot sign in or open anything until you reactivate them. Their tasks stay assigned.', 'Suspend', 'danger', 'Suspend ' + first(s.name) + '?').then(function (ok) { if (ok) setStatus(s, 'suspended'); }); return; }
       if (a === 'reactivate' || a === 'restore') { setStatus(s, 'active'); return; }
       if (a === 'password') { newPassword(s); return; }
+      if (a === 'login') { loginModal(s, false); return; }
       if (a === 'signin') {
-        if (!s.email) { U.toast('Add ' + first(s.name) + '\'s email and save first. They sign in with it.', 'bad'); var em = O.$('[name=email]', bodyEl); if (em) em.focus(); return; }
+        if (!s.email) { loginModal(s, true); return; }
         var inv = (D.staffInvites || []).filter(function (v) { return v.staffId === s.id && v.status !== 'withdrawn'; })[0];
         if (!inv) { inv = { id: O.uid('INV'), staffId: s.id, name: s.name, contact: s.email, phone: s.phone || '', email: s.email, role: s.role, scope: meta(s.id).scope || 'all', sentAt: D.NOW, via: 'Account', by: O.state.viewer, status: 'pending' }; D.staffInvites.push(inv); }
         audit('Created a sign-in for ' + s.name, { staffId: s.id }); O.emit('data', { type: 'staff' });

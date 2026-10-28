@@ -66,3 +66,6 @@ psqlq "$URL1" -f tests/sql/site_content.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NO
 
 echo "== WhatsApp coexistence (0018)"
 psqlq "$URL1" -f tests/sql/coexist.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
+
+echo "== staff sign-in names (0019)"
+psqlq "$URL1" -f tests/sql/staff_logins.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
