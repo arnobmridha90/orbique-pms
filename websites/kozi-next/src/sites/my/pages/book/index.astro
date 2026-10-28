@@ -1,10 +1,16 @@
 ---
 // Checkout: who's coming, then pay by card on Stripe's own page. The summary beside the form
-// shows the suite, the dates and the price, with the member price for members.
+// shows the suite, the dates and the price. The suites come from the content, so it is made on request.
 import Layout from '@shared/components/Layout.astro';
 import Photo from '@shared/components/Photo.astro';
-import { SUITES } from '@shared/data/kozi';
+import { BRAND } from '@shared/data/kozi';
 import { ICONS } from '@shared/data/icons';
+import { cover, getContent, suitePath } from '@shared/lib/content';
+
+export const prerender = false;
+const site = await getContent(Astro);
+// every suite that can be booked online, for the summary card
+const units = site.suites.filter((s) => s.bookType).map((s) => ({ s, b: site.buildingOf(s) }));
 
 // nationality, sent to Orbique as the two-letter country code
 const COUNTRIES = [['Malaysia', 'MY'], ['Singapore', 'SG'], ['Indonesia', 'ID'], ['Brunei', 'BN'], ['Thailand', 'TH'], ['Philippines', 'PH'], ['Vietnam', 'VN'],
@@ -15,7 +21,7 @@ const COUNTRIES = [['Malaysia', 'MY'], ['Singapore', 'SG'], ['Indonesia', 'ID'],
 const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm', '9:00 pm to midnight', 'After midnight'];
 ---
 <Layout site="my" title="Confirm and pay | Kozi" description="Confirm your Kozi stay and pay securely by card." noindex>
-  <div class="wrap co" data-checkout>
+  <div class="wrap co" data-checkout data-email={BRAND.email}>
     <a class="co-back" href="/stays/" data-co-back><span aria-hidden="true">←</span> <span data-co-back-label>Back to the suites</span></a>
     <h1 class="display co-h" data-split>Confirm and <em>pay.</em></h1>
     <p class="co-note" data-co-backnote hidden>You left the payment page, so you have not been charged.</p>
@@ -62,7 +68,7 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
         <section class="co-sec" aria-labelledby="co-pay">
           <h2 id="co-pay" class="co-h2"><span aria-hidden="true"></span> Pay</h2>
           <label class="co-agree"><input type="checkbox" name="agree" required /><span>I agree to the house rules (no smoking, no parties, quiet hours 10 pm to 8 am, ID for every guest) and the cancellation policy.</span></label>
-          <p class="mb-err co-err" role="alert" data-err></p>
+          <p class="form-err co-err" role="alert" data-err></p>
           <button class="btn amber co-go" type="submit" data-co-go><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.shield} /><span data-co-go-label>Continue to payment</span></button>
           <p class="co-secure"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.card} />You pay on Stripe's secure page. We never see your card number.</p>
           <p class="co-test" data-co-test hidden>Test mode: no payment is taken and no room is held. This shows how booking will work.</p>
@@ -73,18 +79,14 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
         <div class="co-card">
           <div class="co-media" data-co-media></div>
           <div class="co-body">
-            <p class="co-where">Kozi @ Vortex KLCC · <span data-co-level></span></p>
+            <p class="co-where"><span data-co-where></span> · <span data-co-level></span></p>
             <h2 class="display co-name" data-co-name>Your suite</h2>
             <dl class="co-dates">
-              <div><dt>Check-in</dt><dd data-co-in>…</dd><dd class="co-t">from 3:00 pm</dd></div>
-              <div><dt>Check-out</dt><dd data-co-out>…</dd><dd class="co-t">by 11:00 am</dd></div>
+              <div><dt>Check-in</dt><dd data-co-in>…</dd><dd class="co-t" data-co-tin>from 3:00 pm</dd></div>
+              <div><dt>Check-out</dt><dd data-co-out>…</dd><dd class="co-t" data-co-tout>by 11:00 am</dd></div>
             </dl>
             <p class="co-who" data-co-who></p>
             <dl class="co-lines" data-co-lines aria-live="polite"></dl>
-            <div class="co-mem" data-member-note data-deal>
-              <p data-co-mem-line>Members pay less.</p>
-              <button type="button" class="bk-join" data-member-open>Sign in or join free <span aria-hidden="true">→</span></button>
-            </div>
             <ul class="co-notes" role="list">
               <li data-co-cancel>Free cancellation until 7 days before arrival.</li>
               <li data-co-taxnote></li>
@@ -101,7 +103,11 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
     <noscript><p class="co-gone-h">Booking needs JavaScript. Please turn it on, or email us at hello@staykozi.com.</p></noscript>
   </div>
   <template data-co-photos>
-    {SUITES.map((s) => <div data-for={s.id} data-level={s.levels} data-name={s.name}><Photo k={s.photos[0].key} alt="" sizes="(max-width: 960px) 92vw, 430px" widths={[480, 860]} /></div>)}
+    {units.map(({ s, b }) => { const p = cover(s, b); return (
+      <div data-for={`${b.id}/${s.id}`} data-type={s.bookType} data-most={s.sleeps + (s.extraBed ? 1 : 0)} data-level={s.levels} data-name={s.name} data-building={b.name} data-in={b.checkIn} data-out={b.checkOut} data-href={suitePath(b, s)}>
+        {p && <Photo p={p} alt="" sizes="(max-width: 960px) 92vw, 430px" />}
+      </div>
+    ); })}
   </template>
 </Layout>
 
@@ -166,12 +172,9 @@ const TIMES = ['3:00 pm to 5:00 pm', '5:00 pm to 7:00 pm', '7:00 pm to 9:00 pm',
   .co-lines { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
   .co-lines div { display: flex; justify-content: space-between; gap: 16px; font-size: 15px; }
   .co-lines dt { color: var(--ink-2); } .co-lines dd { margin: 0; font-variant-numeric: tabular-nums; }
-  .co-lines .save dt, .co-lines .save dd { color: var(--amber-deep); font-weight: 600; }
   .co-lines .total { padding-top: 12px; border-top: 1px solid var(--line); font-weight: 650; font-size: 17px; }
   .co-lines .total dt { color: var(--ink); }
   .co-lines .total small { display: block; font-weight: 500; font-size: 12.5px; color: var(--muted); }
-  .co-mem { margin-top: 16px; padding: 14px 16px; border-radius: 16px; background: rgb(200 134 46 / 0.1); }
-  .co-mem p { margin: 0 0 6px; font-size: 14.5px; font-weight: 600; color: var(--amber-deep); }
   .co-notes { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; font-size: 13.5px; color: var(--muted); }
   .co-notes li:empty { display: none; }
   .co-gone { padding: 40px 0; display: grid; justify-items: start; gap: 12px; }

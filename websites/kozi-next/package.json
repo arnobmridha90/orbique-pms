@@ -6,14 +6,16 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev:my": "astro dev --config astro.config.my.mjs",
-    "dev:com": "astro dev --config astro.config.com.mjs",
-    "build:my": "astro build --config astro.config.my.mjs",
-    "build:com": "astro build --config astro.config.com.mjs",
+    "photos": "node scripts/site-photos.mjs",
+    "dev:my": "npm run photos && astro dev --config astro.config.my.mjs",
+    "dev:com": "npm run photos && astro dev --config astro.config.com.mjs",
+    "build:my": "npm run photos && astro build --config astro.config.my.mjs",
+    "build:com": "npm run photos && astro build --config astro.config.com.mjs",
     "build": "npm run build:my && npm run build:com"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
+    "@astrojs/vercel": "^11.0.16",
     "@fontsource-variable/inter-tight": "^5.3.0",
     "astro": "^7.4.2",
     "gsap": "^3.15.0",
@@ -23,6 +25,7 @@
   "devDependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",
     "d3-geo": "^3.1.1",
+    "sharp": "^0.35.5",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2"
   }

@@ -1,0 +1,29 @@
+---
+// Where the booking card goes on a suite that can't be booked online yet (its bookType is empty in the content):
+// guests email us their dates instead, with the suite already in the subject line.
+import { BRAND, POLICIES } from '@shared/data/kozi';
+import { ICONS } from '@shared/data/icons';
+import type { Building, Suite } from '@shared/lib/content';
+interface Props { suite: Suite; building: Building }
+const { suite, building } = Astro.props;
+const href = `mailto:${BRAND.email}?subject=${encodeURIComponent(`Booking: ${suite.name}, ${building.name}`)}`;
+---
+<aside class="bk bk-email" aria-labelledby={`bk-email-${suite.id}`}>
+  <div class="bk-card">
+    <svg class="bk-email-ic" viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.mail} />
+    <h2 id={`bk-email-${suite.id}`} class="display bk-email-h">Email us to book</h2>
+    <p class="bk-email-p">Online booking for this suite opens soon. Send us your dates and the number of guests, and we'll reply with the price.</p>
+    <a class="btn amber bk-go" href={href}><span>Email {BRAND.email}</span></a>
+    <ul class="bk-notes" role="list">
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{POLICIES.cancel}</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5l3 2" /><circle cx="12" cy="12" r="8.5" /></svg>Check in from {building.checkIn}, check out by {building.checkOut}.</li>
+    </ul>
+  </div>
+</aside>
+
+<style is:global>
+  .bk-email-ic { width: 30px; height: 30px; fill: none; stroke: var(--amber-deep); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .bk-email-h { margin: 14px 0 0; font-size: clamp(28px, 2.4vw, 34px); line-height: 1.1; }
+  .bk-email-p { margin: 10px 0 0; color: var(--ink-2); font-size: 15.5px; }
+  .bk-email .bk-go { display: flex; align-items: center; justify-content: center; text-align: center; height: auto; min-height: 56px; padding: 12px 18px; overflow-wrap: anywhere; }
+</style>

@@ -29,7 +29,7 @@ const list = {
         <li class:list={['gi-item', { 'gi-first': i === 0 }]} data-reveal style={`--d:${i * 90}`}>
           <a class="gi-card" href={`/guides/${g.slug}/`}>
             <div class="gi-media">
-              <Photo k={g.photo.key} alt="" eager={i === 0} sizes={i === 0 ? '(max-width: 900px) 92vw, 56vw' : '(max-width: 900px) 92vw, 36vw'} widths={[480, 720, 960, 1280]} />
+              <Photo k={g.photo.key} alt="" eager={i === 0} sizes={i === 0 ? '(max-width: 900px) 92vw, 56vw' : '(max-width: 900px) 92vw, 36vw'} />
               <span class="gi-tag">{g.tag}</span>
             </div>
             <div class="gi-body">

@@ -1,19 +1,18 @@
 ---
-// The booking card on a suite page: live nightly prices on the calendar, the member price
-// beside the public one, and the total before you go on to pay. On a phone a bar at the
-// bottom keeps the price and the next step in reach.
-import type { Suite } from '@shared/data/kozi';
+// The booking card on a suite page: live nightly prices on the calendar and the total before
+// you go on to pay. On a phone a bar at the bottom keeps the price and the next step in reach.
+// Only for a suite that can be booked online (its bookType names a booking type in Orbique).
 import { POLICIES } from '@shared/data/kozi';
-interface Props { suite: Suite }
-const { suite } = Astro.props;
+import type { Building, Suite } from '@shared/lib/content';
+interface Props { suite: Suite; building: Building }
+const { suite, building } = Astro.props;
 const pop = `bk-when-${suite.id}`;
+const most = suite.sleeps + (suite.extraBed ? 1 : 0);
 ---
-<aside class="bk" data-book={suite.id} aria-label={`Book the ${suite.name}`}>
+<aside class="bk" data-book={suite.bookType} data-unit={`${building.id}/${suite.id}`} data-most={most} aria-label={`Book the ${suite.name}`}>
   <div class="bk-card" data-bk-card>
     <div class="bk-head">
       <p class="bk-rate"><span class="bk-k" data-bk-k>From</span> <b data-bk-rate>&nbsp;</b> <span class="bk-unit">a night</span></p>
-      <p class="bk-mem" data-member-note data-deal>Members pay <b data-bk-mrate>less</b>. <button type="button" class="bk-join" data-member-open>Join free <span aria-hidden="true">→</span></button></p>
-      <p class="bk-mem bk-mem-on" data-member-in data-deal hidden><span class="bk-badge">Member price</span> Thanks for booking direct.</p>
     </div>
 
     <div class="bk-fields" data-bk-fields>
@@ -38,7 +37,6 @@ const pop = `bk-when-${suite.id}`;
       <dl>
         <div><dt data-bk-nights></dt><dd data-bk-sub></dd></div>
         <div data-bk-extra hidden><dt data-bk-extra-k>Extra bed</dt><dd data-bk-extra-v></dd></div>
-        <div class="bk-save" data-bk-save hidden><dt>Member price saves you</dt><dd data-bk-save-v></dd></div>
         <div class="bk-total"><dt>Total</dt><dd data-bk-total></dd></div>
       </dl>
       <p class="bk-fine">You'll check everything before you pay.</p>
@@ -47,8 +45,8 @@ const pop = `bk-when-${suite.id}`;
 
     <ul class="bk-notes" role="list">
       <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{POLICIES.cancel}</li>
-      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5l3 2" /><circle cx="12" cy="12" r="8.5" /></svg>Check in from 3:00 pm, check out by 11:00 am.</li>
-      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" /></svg>{POLICIES.extraBed}</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5l3 2" /><circle cx="12" cy="12" r="8.5" /></svg>Check in from {building.checkIn}, check out by {building.checkOut}.</li>
+      {suite.extraBed && <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" /></svg>{POLICIES.extraBed}</li>}
     </ul>
     <p class="bk-test" data-bk-test hidden>Test mode: these are sample prices, and no real booking is made yet.</p>
     <div class="s-pop s-pop-when bk-pop" id={pop} data-bk-pop role="dialog" aria-label="Choose your dates" tabindex="-1">
@@ -78,8 +76,6 @@ const pop = `bk-when-${suite.id}`;
   .bk-k { font: 600 13px/1 var(--sans); color: var(--muted); }
   .bk-rate b { font: 400 40px/1 var(--display); font-variation-settings: var(--soft); letter-spacing: -0.02em; font-variant-numeric: lining-nums; min-width: 3ch; }
   .bk-unit { font-size: 15px; color: var(--ink-2); }
-  .bk-mem { margin: 10px 0 0; font-size: 14.5px; color: var(--ink-2); }
-  .bk-mem b { color: var(--amber-deep); }
   .bk-fields { display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; box-shadow: inset 0 0 0 1px rgb(43 38 34 / 0.2); }
   .bk-f { display: grid; gap: 5px; align-content: center; min-height: 66px; padding: 12px 16px; text-align: left; border-radius: 18px; transition: background-color 200ms ease, box-shadow 200ms ease; }
   .bk-f + .bk-f { box-shadow: inset 1px 0 0 rgb(43 38 34 / 0.2); border-radius: 0 18px 18px 0; }
@@ -98,7 +94,6 @@ const pop = `bk-when-${suite.id}`;
   .bk-sum dl { margin: 0; display: grid; gap: 10px; }
   .bk-sum dl > div { display: flex; justify-content: space-between; gap: 16px; font-size: 15px; }
   .bk-sum dt { color: var(--ink-2); } .bk-sum dd { margin: 0; font-variant-numeric: tabular-nums; }
-  .bk-save dd, .bk-save dt { color: var(--amber-deep) !important; font-weight: 600; }
   .bk-total { padding-top: 12px; margin-top: 2px; border-top: 1px solid var(--line); font-weight: 650; font-size: 16.5px !important; }
   .bk-total dt { color: var(--ink) !important; }
   .bk-fine { margin: 12px 0 0; font-size: 13px; color: var(--muted); text-align: center; }

@@ -4,14 +4,17 @@
 import { buildSkyline, VB } from '@shared/lib/skyline';
 import { skyState, atClock } from '@shared/lib/sun';
 import { skyVars } from '@shared/scripts/sky';
-import { LANDMARKS, SUITES, VIEW_PHOTOS } from '@shared/data/kozi';
+import { LANDMARKS, VIEW_PHOTOS } from '@shared/data/kozi';
+import { suitePath, type Building, type Suite } from '@shared/lib/content';
 import Photo from './Photo.astro';
+// list: the Kuala Lumpur suites, from the content
+interface Props { list: { s: Suite; b: Building }[] }
+const { list } = Astro.props;
 
 const sky = buildSkyline(7, { id: 'views' });
 const night = skyVars(skyState(atClock(21.5)));
 const style = Object.entries(night).map(([k, v]) => `${k}:${v}`).join(';');
 const at = Object.fromEntries(sky.landmarks.map((l) => [l.id, l]));
-const suiteName = (id: string) => SUITES.find((s) => s.id === id)!.name;
 ---
 <section class="vw" data-views data-sel="petronas" aria-labelledby="vw-h" style={style}>
   <div class="wrap vw-top">
@@ -31,16 +34,16 @@ const suiteName = (id: string) => SUITES.find((s) => s.id === id)!.name;
     <div class="vw-panels" data-reveal>
       {LANDMARKS.map((l, i) => {
         const shots = VIEW_PHOTOS[l.id];
-        const suites = [...new Set(SUITES.filter((s) => s.views.includes(l.id)).map((s) => s.id))];
+        const suites = list.filter(({ s }) => s.views.includes(l.id));
         return (
           <div class="vw-panel" role="tabpanel" id={`vw-panel-${l.id}`} aria-labelledby={`vw-tab-${l.id}`} data-panel={l.id} hidden={i !== 0}>
             <figure class="vw-window">
-              <Photo k={shots[0].key} alt={shots[0].alt} sizes="(max-width: 860px) 92vw, 46vw" widths={[640, 960, 1280]} />
+              <Photo k={shots[0].key} alt={shots[0].alt} sizes="(max-width: 860px) 92vw, 46vw" />
               <figcaption><span class="vw-live" aria-hidden="true"></span>{shots[0].from}</figcaption>
             </figure>
-            <p class="vw-suites"><span>Suites with this view</span>
-              {suites.map((id) => <a href={`/kuala-lumpur/vortex-klcc/${id}/`}>{suiteName(id)} <span aria-hidden="true">→</span></a>)}
-            </p>
+            {suites.length > 0 && <p class="vw-suites"><span>Suites with this view</span>
+              {suites.map(({ s, b }) => <a href={suitePath(b, s)}>{s.name} <span aria-hidden="true">→</span></a>)}
+            </p>}
           </div>
         );
       })}

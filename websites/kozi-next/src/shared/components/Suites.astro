@@ -1,45 +1,59 @@
 ---
-// The three suite types. Each card shows two photos (the second fades in on hover),
+// The suites, in the content's order. Each card shows two photos (the second fades in on hover),
 // the floor, what you can see and what makes it different.
-import { SUITES, VIEWS, PROPERTY } from '@shared/data/kozi';
+import { VIEWS } from '@shared/data/kozi';
+import { cover, suitePath, type Building, type Suite } from '@shared/lib/content';
+import { numberWord } from '@shared/lib/words';
 import Photo from './Photo.astro';
-const order = ['boutique', 'premium', 'standard'];
-const list = order.map((id) => SUITES.find((s) => s.id === id)!);
+// building: the building whose page this is (on the home page, the only building, if there is just one)
+interface Props { list: { s: Suite; b: Building }[]; building?: Building }
+const { list, building } = Astro.props;
+const n = list.length;
+const at = building ? ` at ${building.name.replace(/^Kozi @ /, '').replace(/ KLCC$/, '')}.` : '.';
+const same = list.every(({ s }) => s.bedrooms === 2 && s.bathrooms === 2 && s.sleeps === 4);
+const sizes = '(max-width: 760px) 86vw, (max-width: 1100px) 46vw, 31vw';
 ---
+{n > 0 && (
 <section class="st" id="suites" aria-labelledby="st-h">
   <div class="wrap">
     <div class="st-head">
       <div>
         <p class="eyebrow" data-reveal>The suites</p>
-        <h2 id="st-h" class="display h2" data-split>Three ways to stay <em>at Vortex.</em></h2>
+        <h2 id="st-h" class="display h2" data-split>{n === 1 ? 'One way' : `${numberWord(n)} ways`} to stay <em>{at.slice(1) || 'with us.'}</em></h2>
       </div>
-      <p class="lede" data-reveal>Every suite has two bedrooms, two bathrooms, a full kitchen and room for four. The difference is the finish, the floor and the view.</p>
+      <p class="lede" data-reveal>{same
+        ? 'Every suite has two bedrooms, two bathrooms, a full kitchen and room for four. The difference is the finish, the floor and the view.'
+        : 'Each suite has its own page, with its rooms, its photos and its live price.'}</p>
     </div>
     <ul class="st-list" role="list">
-      {list.map((s, i) => (
-        <li class="st-card" data-reveal style={`--d:${i * 90}`}>
-          <a href={`${PROPERTY.path}${s.id}/`} class="st-link" aria-label={`${s.name}, ${s.levels}`}>
-            <div class="st-media">
-              <Photo k={s.photos[0].key} alt={s.photos[0].alt} sizes="(max-width: 760px) 86vw, (max-width: 1100px) 46vw, 31vw" widths={[480, 720, 960]} class="st-a" />
-              {s.photos[1] && <Photo k={s.photos[1].key} alt="" sizes="(max-width: 760px) 86vw, (max-width: 1100px) 46vw, 31vw" widths={[480, 720, 960]} class="st-b" skip="not all and (hover: hover) and (pointer: fine)" />}
-              <span class="st-level">{s.levels}</span>
-              {!s.hasPhotos && <span class="st-note">Suite photos are on the way</span>}
-            </div>
-            <div class="st-body">
-              <h3 class="display st-name">{s.name}</h3>
-              <p class="st-line">{s.line}</p>
-              <p class="st-tags">
-                {s.views.map((v) => <span class="st-tag">{VIEWS[v].short} view</span>)}
-                {s.highlights.filter((h) => !/view/i.test(h)).slice(0, 2).map((h) => <span class="st-tag">{h}</span>)}
-              </p>
-              <span class="st-cta">See the suite <span aria-hidden="true">→</span></span>
-            </div>
-          </a>
-        </li>
-      ))}
+      {list.map(({ s, b }, i) => {
+        const p0 = cover(s, b), p1 = s.photos[1];
+        return (
+          <li class="st-card" data-reveal style={`--d:${i * 90}`}>
+            <a href={suitePath(b, s)} class="st-link" aria-label={[s.name, s.levels].filter(Boolean).join(', ')}>
+              <div class="st-media">
+                {p0 && <Photo p={p0} sizes={sizes} class="st-a" />}
+                {p1 && <Photo p={p1} alt="" sizes={sizes} class="st-b" skip="not all and (hover: hover) and (pointer: fine)" />}
+                {s.levels && <span class="st-level">{s.levels}</span>}
+                {!s.photos.length && <span class="st-note">Suite photos are on the way</span>}
+              </div>
+              <div class="st-body">
+                <h3 class="display st-name">{s.name}</h3>
+                <p class="st-line">{s.line}</p>
+                <p class="st-tags">
+                  {s.views.map((v) => <span class="st-tag">{VIEWS[v].short} view</span>)}
+                  {s.highlights.filter((h) => !/view/i.test(h)).slice(0, 2).map((h) => <span class="st-tag">{h}</span>)}
+                </p>
+                <span class="st-cta">See the suite <span aria-hidden="true">→</span></span>
+              </div>
+            </a>
+          </li>
+        );
+      })}
     </ul>
   </div>
 </section>
+)}
 
 <style is:global>
   .st { background: var(--paper); padding: clamp(96px, 12vw, 180px) 0; }

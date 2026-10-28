@@ -4,7 +4,6 @@ import '@shared/styles/ui.css';
 import Header from './Header.astro';
 import Footer from './Footer.astro';
 import Logo from './Logo.astro';
-import Member from './Member.astro';
 import { BRAND } from '@shared/data/kozi';
 import fraunces from '@assets/fonts/fraunces-kozi-normal.woff2?url';
 import inter from '@fontsource-variable/inter-tight/files/inter-tight-latin-wght-normal.woff2?url';
@@ -75,7 +74,6 @@ const og = new URL(image, `${BRAND[site]}/`).href;
   <Header site={site} over={over} />
   <main id="main"><slot /></main>
   <Footer site={site} />
-  {site === 'my' && <Member />}
   <slot name="end" />
   <script>
     import { boot } from '@shared/scripts/app';

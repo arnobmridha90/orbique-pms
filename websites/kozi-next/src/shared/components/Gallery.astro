@@ -3,7 +3,8 @@
 // photo full screen in a viewer that works with arrow keys, swipes and the Escape key.
 import Photo from './Photo.astro';
 import { CREDITS, CC_BY_SA } from '@shared/data/kozi';
-interface Props { photos: { key: string; alt: string }[]; name: string; note?: string }
+import type { Photo as P } from '@shared/lib/content';
+interface Props { photos: P[]; name: string; note?: string }
 const { photos, name, note } = Astro.props;
 const few = photos.length < 5;
 ---
@@ -11,7 +12,7 @@ const few = photos.length < 5;
   <div class="gl-grid">
     {photos.slice(0, few ? 1 : 5).map((p, i) => (
       <button type="button" class:list={['gl-tile', { 'gl-main': i === 0 }]} data-open-at={i} aria-label={`Open photo ${i + 1} of ${photos.length}: ${p.alt}`}>
-        <Photo k={p.key} alt="" eager={i === 0} skip="(max-width: 900px)" sizes={i === 0 ? '(max-width: 900px) 100vw, 50vw' : '25vw'} widths={i === 0 ? [640, 960, 1280, 1800] : [480, 720]} />
+        <Photo p={p} alt="" eager={i === 0} skip="(max-width: 900px)" sizes={i === 0 ? '(max-width: 900px) 100vw, 50vw' : '25vw'} />
       </button>
     ))}
     {note && <p class="gl-note">{note}</p>}
@@ -19,7 +20,7 @@ const few = photos.length < 5;
   <div class="gl-strip" data-strip>
     {photos.map((p, i) => (
       <button type="button" class="gl-slide" data-open-at={i} aria-label={`Open photo ${i + 1} of ${photos.length}: ${p.alt}`}>
-        <Photo k={p.key} alt="" eager={i === 0} low={i > 0} skip="(min-width: 901px)" sizes="100vw" widths={[480, 800, 1200]} />
+        <Photo p={p} alt="" eager={i === 0} low={i > 0} skip="(min-width: 901px)" sizes="100vw" />
       </button>
     ))}
   </div>
@@ -40,8 +41,8 @@ const few = photos.length < 5;
     <div class="lb-track" data-lb-track tabindex="-1">
       {photos.map((p, i) => (
         <figure class="lb-slide" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${photos.length}`}>
-          <Photo k={p.key} alt={p.alt} sizes="100vw" widths={[960, 1600, 2200]} />
-          <figcaption>{p.alt}{CREDITS[p.key] && <small> · Photo: {CREDITS[p.key].by}, {CC_BY_SA.name}</small>}</figcaption>
+          <Photo p={p} sizes="100vw" />
+          <figcaption>{p.alt}{p.key && CREDITS[p.key] && <small> · Photo: {CREDITS[p.key].by}, {CC_BY_SA.name}</small>}</figcaption>
         </figure>
       ))}
     </div>

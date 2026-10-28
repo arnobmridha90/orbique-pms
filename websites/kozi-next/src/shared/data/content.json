@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "buildings": [
+    {
+      "id": "vortex-klcc",
+      "cityId": "kuala-lumpur",
+      "city": "Kuala Lumpur",
+      "name": "Kozi @ Vortex KLCC",
+      "building": "Vortex Suites KLCC",
+      "address": "56 Jalan Sultan Ismail, 50250 Kuala Lumpur",
+      "area": "Golden Triangle, between KLCC and Bukit Bintang",
+      "intro": "Our suites are on levels 26 to 47 of Vortex Suites KLCC, in the Golden Triangle. Every one has two bedrooms, two bathrooms, a full kitchen and its own washing machine, so a family or a group of friends can settle in for a weekend or a month.",
+      "checkIn": "3:00 pm",
+      "checkOut": "11:00 am",
+      "photos": [
+        {
+          "id": "building-vortex-klcc-skyline-view-2017",
+          "kind": "builtin",
+          "key": "building/Vortex-KLCC-skyline-view-2017",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1280,
+          "h": 2276,
+          "alt": "Vortex Suites KLCC, a rounded glass tower, among the towers of the Golden Triangle"
+        },
+        {
+          "id": "building-vortex-klcc-street-view-2025",
+          "kind": "builtin",
+          "key": "building/Vortex-KLCC-street-view-2025",
+          "widths": [
+            640,
+            1280,
+            2400
+          ],
+          "w": 1534,
+          "h": 2400,
+          "alt": "Vortex Suites KLCC from the street"
+        }
+      ],
+      "visible": true
+    }
+  ],
+  "suites": [
+    {
+      "id": "standard",
+      "buildingId": "vortex-klcc",
+      "name": "Standard Suite",
+      "levels": "Level 41",
+      "line": "Two bedrooms, two bathrooms and a full kitchen on the 41st floor, at our simplest price.",
+      "story": "Everything a family needs for a city stay: two bedrooms, two bathrooms, a full kitchen and your own washing machine, on the 41st floor of Vortex.",
+      "highlights": [
+        "Two bathrooms",
+        "Full kitchen",
+        "Washing machine"
+      ],
+      "views": [],
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "sleeps": 4,
+      "extraBed": true,
+      "bookType": "standard",
+      "photos": [],
+      "visible": true
+    },
+    {
+      "id": "boutique",
+      "buildingId": "vortex-klcc",
+      "name": "Boutique Suite",
+      "levels": "Level 43",
+      "line": "Wake up to the Petronas Twin Towers, with a study and a marble table for four.",
+      "story": "Warm gold and neutral tones, floor-length drapes and a living room that looks straight across the city to the Twin Towers. The second bedroom has a queen and a single, and the study is a quiet corner for a call home.",
+      "highlights": [
+        "Twin Towers view",
+        "Study",
+        "Marble dining table"
+      ],
+      "views": [
+        "petronas",
+        "kl-tower"
+      ],
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "sleeps": 4,
+      "extraBed": true,
+      "bookType": "boutique",
+      "photos": [
+        {
+          "id": "boutique-02-dining-and-living",
+          "kind": "builtin",
+          "key": "boutique/02-dining-and-living",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1080,
+          "h": 810,
+          "alt": "Dining table and living room in the Boutique Suite"
+        },
+        {
+          "id": "boutique-10-klcc-night-view",
+          "kind": "builtin",
+          "key": "boutique/10-klcc-night-view",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 810,
+          "h": 1080,
+          "alt": "A Petronas tower lit up at dusk, seen from the Boutique Suite"
+        },
+        {
+          "id": "boutique-01-living-room",
+          "kind": "builtin",
+          "key": "boutique/01-living-room",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1080,
+          "h": 830,
+          "alt": "Living room with floor-to-ceiling windows"
+        },
+        {
+          "id": "boutique-03-bedroom-1-view",
+          "kind": "builtin",
+          "key": "boutique/03-bedroom-1-view",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1080,
+          "h": 810,
+          "alt": "Main bedroom with a city view"
+        },
+        {
+          "id": "boutique-04-bedroom-2",
+          "kind": "builtin",
+          "key": "boutique/04-bedroom-2",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 810,
+          "h": 1080,
+          "alt": "Second bedroom"
+        },
+        {
+          "id": "boutique-06-tv-klcc-view",
+          "kind": "builtin",
+          "key": "boutique/06-tv-klcc-view",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1080,
+          "h": 810,
+          "alt": "Living room with the Twin Towers outside"
+        },
+        {
+          "id": "boutique-08-kitchen",
+          "kind": "builtin",
+          "key": "boutique/08-kitchen",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 810,
+          "h": 1080,
+          "alt": "The kitchen"
+        },
+        {
+          "id": "boutique-07-bathroom",
+          "kind": "builtin",
+          "key": "boutique/07-bathroom",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1080,
+          "h": 810,
+          "alt": "Bathroom with a walk-in shower"
+        },
+        {
+          "id": "boutique-09-coffee-tea",
+          "kind": "builtin",
+          "key": "boutique/09-coffee-tea",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1080,
+          "h": 810,
+          "alt": "Coffee and tea tray with a kettle"
+        },
+        {
+          "id": "boutique-05-bedroom-window-view",
+          "kind": "builtin",
+          "key": "boutique/05-bedroom-window-view",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1080,
+          "h": 810,
+          "alt": "The city by day from a bedroom window"
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "premium",
+      "buildingId": "vortex-klcc",
+      "name": "Premium Suite",
+      "levels": "Levels 26 and 47",
+      "line": "Our best-finished suites, with the city's landmarks outside the window.",
+      "story": "Panelled feature walls, soft lighting, hotel-quality white linen and floor-to-ceiling windows that frame the Twin Towers, KL Tower or Merdeka 118, depending on the suite.",
+      "highlights": [
+        "Landmark views",
+        "Dressing desk",
+        "Dining for four"
+      ],
+      "views": [
+        "petronas",
+        "kl-tower",
+        "merdeka"
+      ],
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "sleeps": 4,
+      "extraBed": true,
+      "bookType": "premium",
+      "photos": [
+        {
+          "id": "premium-a-01-dining-and-living",
+          "kind": "builtin",
+          "key": "premium-a/01-dining-and-living",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1280,
+          "h": 960,
+          "alt": "Dining table under rattan lamps in a Premium Suite"
+        },
+        {
+          "id": "premium-b-06-bed-klcc-view",
+          "kind": "builtin",
+          "key": "premium-b/06-bed-klcc-view",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1008,
+          "h": 1280,
+          "alt": "Bed facing the Petronas Twin Towers by day"
+        },
+        {
+          "id": "premium-a-10-kl-tower-view-night",
+          "kind": "builtin",
+          "key": "premium-a/10-kl-tower-view-night",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1280,
+          "h": 960,
+          "alt": "KL Tower lit blue at dusk, seen from a Premium bedroom"
+        },
+        {
+          "id": "premium-a-08-master-bedroom-merdeka-118-night",
+          "kind": "builtin",
+          "key": "premium-a/08-master-bedroom-merdeka-118-night",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 960,
+          "h": 1280,
+          "alt": "Main bedroom at dusk with Merdeka 118 outside"
+        },
+        {
+          "id": "premium-b-03-tv-klcc-night",
+          "kind": "builtin",
+          "key": "premium-b/03-tv-klcc-night",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1280,
+          "h": 960,
+          "alt": "Living room at dusk with a Petronas tower outside"
+        },
+        {
+          "id": "premium-a-03-dining-living-daylight",
+          "kind": "builtin",
+          "key": "premium-a/03-dining-living-daylight",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1280,
+          "h": 960,
+          "alt": "Dining and living room in daylight"
+        },
+        {
+          "id": "premium-b-07-master-bedroom-wide",
+          "kind": "builtin",
+          "key": "premium-b/07-master-bedroom-wide",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 1280,
+          "h": 960,
+          "alt": "Main bedroom"
+        },
+        {
+          "id": "premium-b-09-dressing-desk",
+          "kind": "builtin",
+          "key": "premium-b/09-dressing-desk",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 960,
+          "h": 1280,
+          "alt": "Dressing desk"
+        },
+        {
+          "id": "premium-a-05-twin-bedroom-day",
+          "kind": "builtin",
+          "key": "premium-a/05-twin-bedroom-day",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 960,
+          "h": 1280,
+          "alt": "Second bedroom in daylight"
+        },
+        {
+          "id": "premium-b-10-klcc-window-view",
+          "kind": "builtin",
+          "key": "premium-b/10-klcc-window-view",
+          "widths": [
+            640,
+            1280
+          ],
+          "w": 960,
+          "h": 1280,
+          "alt": "The Petronas Twin Towers by day from a Premium window"
+        }
+      ],
+      "visible": true
+    }
+  ]
+}

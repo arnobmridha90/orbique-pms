@@ -4,6 +4,9 @@
 import { buildSkyline, VB } from '@shared/lib/skyline';
 import { atClock, skyState, skyWords } from '@shared/lib/sun';
 import Search from './Search.astro';
+import type { City } from '@shared/lib/content';
+interface Props { cities?: City[] }
+const { cities } = Astro.props;
 
 const sky = buildSkyline(7, { id: 'hero' });
 const first = skyWords(skyState(atClock(10.5))); // the first paint before the live sky arrives
@@ -49,7 +52,7 @@ const pin = { left: ((sky.kozi.x + 3.5) / VB.w) * 100, top: ((sky.kozi.y + 4.5) 
     <div><dt>Moon</dt><dd data-moon>&nbsp;</dd></div>
   </dl>
 
-  <div class="hero-dock" data-enter><Search id="hero-search" /></div>
+  <div class="hero-dock" data-enter><Search id="hero-search" cities={cities} /></div>
 </section>
 
 <style is:global>

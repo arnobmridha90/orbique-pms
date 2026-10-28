@@ -1,18 +1,25 @@
 ---
-// A city: where we have buildings, the landmarks from our windows, the city in numbers that
-// travellers need, and the guides. New buildings in the city appear from DESTINATIONS.
+// A city: where we have buildings (from the content), and for Kuala Lumpur also the landmarks from our windows, the
+// city in numbers that travellers need, and the guides. A city added in Orbique gets the plain page: its buildings.
+// Made on request, so a building added in Orbique shows up; an address that is not a city of ours answers 404.
 import Layout from '@shared/components/Layout.astro';
 import PageHead from '@shared/components/PageHead.astro';
 import Search from '@shared/components/Search.astro';
 import Photo from '@shared/components/Photo.astro';
 import GuidesStrip from '@shared/components/GuidesStrip.astro';
-import { BRAND, DESTINATIONS, GUIDES, LANDMARKS, PROPERTY, SUITES, VIEW_PHOTOS } from '@shared/data/kozi';
+import { BRAND, GUIDES, LANDMARKS, VIEW_PHOTOS } from '@shared/data/kozi';
 import { ICONS } from '@shared/data/icons';
+import { buildingPath, cityPath, cover, getContent, type Building } from '@shared/lib/content';
 import { crumbsLd, lodgingLd } from '@shared/lib/seo';
 
-const city = DESTINATIONS.find((d) => d.id === 'kuala-lumpur')!;
-const crumbs = [{ name: 'Malaysia', path: '/' }, { name: city.city, path: city.path }];
-const covers: Record<string, { key: string; alt: string }> = { 'vortex-klcc': { key: 'boutique/03-bedroom-1-view', alt: 'The main bedroom of the Boutique Suite, with the city outside' } };
+export const prerender = false;
+const site = await getContent(Astro);
+const city = site.city(Astro.params.city);
+if (!city) return new Response(null, { status: 404, statusText: 'Not found' });
+const kl = city.id === 'kuala-lumpur';
+const crumbs = [{ name: 'Malaysia', path: '/' }, { name: city.name, path: cityPath(city.id) }];
+// a building's card photo: its first suite's cover, or the building's own
+const coverOf = (b: Building) => { const s = site.suitesOf(b).find((x) => x.photos.length); return s ? cover(s, b) : b.photos[0]; };
 const marks = LANDMARKS.map((l) => ({ ...l, shot: VIEW_PHOTOS[l.id][0] }));
 const mdac = GUIDES.find((g) => g.slug.startsWith('mdac'))!;
 const klia = GUIDES.find((g) => g.slug.startsWith('klia'))!;
@@ -25,74 +32,93 @@ const facts = [
   { icon: 'train', k: 'Getting around', v: 'Trains and the monorail for the centre, and Grab, the ride-hailing app, at any hour.' },
 ];
 const destination = {
-  '@context': 'https://schema.org', '@type': 'TouristDestination', name: 'Kuala Lumpur', url: `${BRAND.my}${city.path}`,
+  '@context': 'https://schema.org', '@type': 'TouristDestination', name: city.name, url: `${BRAND.my}${cityPath(city.id)}`,
   containedInPlace: { '@type': 'Country', name: 'Malaysia' },
-  includesAttraction: LANDMARKS.map((l) => ({ '@type': 'TouristAttraction', name: l.name })),
+  ...(kl ? { includesAttraction: LANDMARKS.map((l) => ({ '@type': 'TouristAttraction', name: l.name })) } : {}),
 };
+const lodgings = city.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
+const title = kl ? 'Where to stay in Kuala Lumpur: two-bedroom suites near KLCC | Kozi' : `Where to stay in ${city.name} | Kozi`;
+const description = kl
+  ? "Stay in Kuala Lumpur's Golden Triangle, between KLCC and Bukit Bintang: Kozi two-bedroom suites at Vortex KLCC, the landmarks from our windows, and what to know before you fly."
+  : `Kozi in ${city.name}: ${city.buildings.map((b) => b.name).join(', ')}. See the suites, live prices and book direct.`;
 ---
-<Layout site="my" title="Where to stay in Kuala Lumpur: two-bedroom suites near KLCC | Kozi" over
-  description="Stay in Kuala Lumpur's Golden Triangle, between KLCC and Bukit Bintang: Kozi two-bedroom suites at Vortex KLCC, the landmarks from our windows, and what to know before you fly."
-  jsonld={[crumbsLd(BRAND.my, crumbs), destination, lodgingLd]}>
-  <PageHead crumbs={crumbs} eyebrow="Malaysia" seed={2}>
-    <Fragment slot="title">Kuala <em>Lumpur.</em></Fragment>
-    <Fragment slot="lede">Malaysia's capital, where the Petronas Twin Towers, the street food of Jalan Alor and the malls of Bukit Bintang are a short ride apart. Kozi is in the Golden Triangle, between KLCC and Bukit Bintang.</Fragment>
-    <div class="ct-search"><Search id="city-search" /></div>
-  </PageHead>
+<Layout site="my" title={title} over description={description} jsonld={[crumbsLd(BRAND.my, crumbs), destination, ...lodgings]}>
+  {kl ? (
+    <PageHead crumbs={crumbs} eyebrow="Malaysia" seed={2}>
+      <Fragment slot="title">Kuala <em>Lumpur.</em></Fragment>
+      <Fragment slot="lede">Malaysia's capital, where the Petronas Twin Towers, the street food of Jalan Alor and the malls of Bukit Bintang are a short ride apart. Kozi is in the Golden Triangle, between KLCC and Bukit Bintang.</Fragment>
+      <div class="ct-search"><Search id="city-search" cities={site.cities} /></div>
+    </PageHead>
+  ) : (
+    <PageHead crumbs={crumbs} eyebrow="Malaysia" plain>
+      <Fragment slot="title">{city.name}<em>.</em></Fragment>
+      <Fragment slot="lede">{city.buildings.length === 1 ? `Kozi in ${city.name}: ${city.buildings[0].name}.` : `Kozi has ${city.buildings.length} buildings in ${city.name}.`}</Fragment>
+      <div class="ct-search"><Search id="city-search" cities={site.cities} /></div>
+    </PageHead>
+  )}
 
   <section class="wrap ct-stay" aria-labelledby="ct-stay-h">
     <div class="ct-head">
       <p class="eyebrow" data-reveal>Where we are</p>
-      <h2 id="ct-stay-h" class="display h2" data-split>Stay in the <em>Golden Triangle.</em></h2>
+      {kl ? <h2 id="ct-stay-h" class="display h2" data-split>Stay in the <em>Golden Triangle.</em></h2>
+        : <h2 id="ct-stay-h" class="display h2" data-split>Stay in <em>{city.name}.</em></h2>}
     </div>
     <ul class="ct-bs" role="list">
-      {city.buildings.map((b) => (
-        <li data-reveal>
-          <a class="ct-b" href={`${city.path}${b.id}/`}>
-            <div class="ct-b-media"><Photo k={covers[b.id].key} alt={covers[b.id].alt} sizes="(max-width: 900px) 92vw, 58vw" widths={[640, 960, 1280]} /></div>
-            <div class="ct-b-body">
-              <p class="ct-b-area">{b.area}</p>
-              <h3 class="display ct-b-name">{b.name}</h3>
-              <p class="ct-b-line">Two-bedroom suites with two bathrooms and a full kitchen, at {PROPERTY.building} on Jalan Sultan Ismail.</p>
-              <ul class="ct-b-suites" role="list">
-                {['boutique', 'premium', 'standard'].map((id) => { const s = SUITES.find((x) => x.id === id)!; return <li><b>{s.name}</b><span>{s.levels}</span></li>; })}
-              </ul>
-              <p class="ct-b-from" data-from data-types="boutique,premium,standard"><span>From</span> <b data-from-rate>&nbsp;</b> <span>a night</span><small data-from-mem></small></p>
-              <span class="btn ct-b-go">See the building <span class="arr" aria-hidden="true">→</span></span>
-            </div>
-          </a>
-        </li>
-      ))}
+      {city.buildings.map((b) => {
+        const suites = site.suitesOf(b), p = coverOf(b), types = [...new Set(suites.map((s) => s.bookType).filter(Boolean))];
+        return (
+          <li data-reveal>
+            <a class="ct-b" href={buildingPath(b)}>
+              <div class="ct-b-media">{p && <Photo p={p} sizes="(max-width: 900px) 92vw, 58vw" />}</div>
+              <div class="ct-b-body">
+                {b.area && <p class="ct-b-area">{b.area}</p>}
+                <h3 class="display ct-b-name">{b.name}</h3>
+                <p class="ct-b-line">{b.building}, {b.address}.</p>
+                {suites.length > 0 && (
+                  <ul class="ct-b-suites" role="list">
+                    {suites.map((s) => <li><b>{s.name}</b><span>{s.levels}</span></li>)}
+                  </ul>
+                )}
+                {types.length > 0 && <p class="ct-b-from" data-from data-types={types.join(',')}><span>From</span> <b data-from-rate>&nbsp;</b> <span>a night</span></p>}
+                <span class="btn ct-b-go">See the building <span class="arr" aria-hidden="true">→</span></span>
+              </div>
+            </a>
+          </li>
+        );
+      })}
     </ul>
   </section>
 
-  <section class="ct-marks" aria-labelledby="ct-marks-h">
-    <div class="wrap">
-      <div class="ct-head">
-        <p class="eyebrow eyebrow-light" data-reveal>From our windows</p>
-        <h2 id="ct-marks-h" class="display h2" data-split>The city's icons, <em>outside.</em></h2>
-        <p class="ct-marks-lede" data-reveal>Real photos from our suites. Which landmark you see depends on the suite, and every suite page says what its windows face.</p>
+  {kl && (
+    <section class="ct-marks" aria-labelledby="ct-marks-h">
+      <div class="wrap">
+        <div class="ct-head">
+          <p class="eyebrow eyebrow-light" data-reveal>From our windows</p>
+          <h2 id="ct-marks-h" class="display h2" data-split>The city's icons, <em>outside.</em></h2>
+          <p class="ct-marks-lede" data-reveal>Real photos from our suites. Which landmark you see depends on the suite, and every suite page says what its windows face.</p>
+        </div>
+        <ul class="ct-ms" role="list">
+          {marks.map((m, i) => (
+            <li class="ct-m" data-reveal style={`--d:${i * 90}`}>
+              <div class="ct-m-media"><Photo k={m.shot.key} alt={m.shot.alt} sizes="(max-width: 760px) 84vw, 31vw" /></div>
+              <h3 class="display">{m.name}</h3>
+              <p>{m.line}</p>
+              <p class="ct-m-from">{m.shot.from}</p>
+            </li>
+          ))}
+        </ul>
       </div>
-      <ul class="ct-ms" role="list">
-        {marks.map((m, i) => (
-          <li class="ct-m" data-reveal style={`--d:${i * 90}`}>
-            <div class="ct-m-media"><Photo k={m.shot.key} alt={m.shot.alt} sizes="(max-width: 760px) 84vw, 31vw" widths={[480, 720, 960]} /></div>
-            <h3 class="display">{m.name}</h3>
-            <p>{m.line}</p>
-            <p class="ct-m-from">{m.shot.from}</p>
-          </li>
-        ))}
-      </ul>
-    </div>
-  </section>
+    </section>
+  )}
 
   <section class="wrap ct-know" aria-labelledby="ct-know-h">
     <div class="ct-know-head">
       <div>
-        <p class="eyebrow" data-reveal>Kuala Lumpur at a glance</p>
+        <p class="eyebrow" data-reveal>{kl ? 'Kuala Lumpur' : 'Malaysia'} at a glance</p>
         <h2 id="ct-know-h" class="display h3" data-split>Good to know <em>before you land.</em></h2>
       </div>
       <div class="ct-now" data-reveal>
-        <p class="ct-now-k">Right now in Kuala Lumpur</p>
+        <p class="ct-now-k">Right now in {kl ? 'Kuala Lumpur' : 'Malaysia'}</p>
         <p class="ct-now-t" data-kl-clock>&nbsp;</p>
         <p class="ct-now-l" data-kl-line>&nbsp;</p>
       </div>
@@ -102,11 +128,11 @@ const destination = {
         <li data-reveal style={`--d:${i * 60}`}><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><b>{f.k}</b><span>{f.v}</span></li>
       ))}
       <li data-reveal style="--d:360"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.doc} /><b>Arrival card</b><span>Most visitors fill in the free MDAC online in the 3 days before they land. <a href={`/guides/${mdac.slug}/`}>Our guide</a></span></li>
-      <li data-reveal style="--d:420"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.plane} /><b>From the airport</b><span>The KLIA Ekspres reaches KL Sentral in about 28 minutes. <a href={`/guides/${klia.slug}/`}>Train, Grab or taxi</a></span></li>
+      {kl && <li data-reveal style="--d:420"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.plane} /><b>From the airport</b><span>The KLIA Ekspres reaches KL Sentral in about 28 minutes. <a href={`/guides/${klia.slug}/`}>Train, Grab or taxi</a></span></li>}
     </ul>
   </section>
 
-  <GuidesStrip />
+  {kl && <GuidesStrip />}
 </Layout>
 
 <style is:global>

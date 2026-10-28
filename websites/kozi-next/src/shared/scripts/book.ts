@@ -1,7 +1,7 @@
-// The booking card: every night's price on the calendar (the member price for members, the public
-// price for everyone else), sold nights closed, and the total for your dates before you go on to pay.
+// The booking card: every night's price on the calendar, sold nights closed, and the total for your
+// dates before you go on to pay.
 import { Calendar, type Range } from '@shared/lib/calendar';
-import { availability, calendar as fetchCalendar, getMember, rm, TEST_MODE, type CalendarDay, type Member, type Quote, type SuiteType } from '@shared/lib/api';
+import { availability, calendar as fetchCalendar, rm, TEST_MODE, type CalendarDay, type Quote } from '@shared/lib/api';
 import { addDays, fmtDay, fmtShort, fromIso, iso, nights as countNights, todayKL } from '@shared/lib/dates';
 import { loadSearch, saveSearch } from './search';
 import { lenis } from './app';
@@ -10,13 +10,14 @@ const phone = matchMedia('(max-width: 760px)');
 const wide = matchMedia('(min-width: 1200px)');
 
 export function init(root: HTMLElement) {
-  const type = root.dataset.book as SuiteType;
+  const type = root.dataset.book!;
+  const unit = root.dataset.unit!;
+  const most = Math.max(1, Number(root.dataset.most) || 5); // guests, counting the extra bed
   const $ = <T extends Element = HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const start = loadSearch();
-  const state = { in: start.in, out: start.out, guests: start.guests };
+  const state = { in: start.in, out: start.out, guests: Math.min(most, start.guests) };
   let days = new Map<string, CalendarDay>();
   let loaded = false;
-  let member = !!getMember();
   let quote: Quote | null = null;
   let busy = false;
   let seq = 0;
@@ -28,7 +29,7 @@ export function init(root: HTMLElement) {
   const msg = (t: string) => { $('[data-bk-msg]').textContent = t; };
   $('[data-bk-test]').hidden = !TEST_MODE;
 
-  const price = (c: CalendarDay) => (member ? c.member : c.public);
+  const price = (c: CalendarDay) => c.public;
   let cal: Calendar;
   const makeCal = () => {
     cal = new Calendar(calEl, {
@@ -73,7 +74,7 @@ export function init(root: HTMLElement) {
     if (t.closest('[data-bk-close], [data-bk-done], [data-bk-shade]')) { close(); return; }
     if (t.closest('[data-bk-clear]')) { state.in = state.out = null; cal.set({ start: null, end: null }); quote = null; keep(); paint(); hint(); cal.focus(); return; }
     if (t.closest('[data-dec]')) { state.guests = Math.max(1, state.guests - 1); keep(); requote(); return; }
-    if (t.closest('[data-inc]')) { state.guests = Math.min(5, state.guests + 1); keep(); requote(); return; }
+    if (t.closest('[data-inc]')) { state.guests = Math.min(most, state.guests + 1); keep(); requote(); return; }
   });
   root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) { e.stopPropagation(); close(); } });
   document.addEventListener('pointerdown', (e) => { if (open && !phone.matches && !pop.contains(e.target as Node) && !fields.contains(e.target as Node)) close(false); });
@@ -81,7 +82,7 @@ export function init(root: HTMLElement) {
   function hint() {
     const a = fromIso(state.in), b = fromIso(state.out);
     $('[data-bk-hint]').textContent = a && b ? 'Your dates' : a ? 'Now the day you leave' : 'Pick the day you arrive';
-    $('[data-bk-line]').textContent = a && b ? `${countNights(a, b)} night${countNights(a, b) > 1 ? 's' : ''} · ${fmtDay(a)} to ${fmtDay(b)}` : member ? 'Member prices, per night' : 'Prices per night';
+    $('[data-bk-line]').textContent = a && b ? `${countNights(a, b)} night${countNights(a, b) > 1 ? 's' : ''} · ${fmtDay(a)} to ${fmtDay(b)}` : 'Prices per night';
   }
   function onDates(r: Range) {
     state.in = r.start ? iso(r.start) : null;
@@ -99,7 +100,7 @@ export function init(root: HTMLElement) {
     const my = ++seq;
     busy = true; sum.classList.add('loading'); paint();
     try {
-      const av = await availability(state.in!, state.out!, state.guests);
+      const av = await availability(state.in!, state.out!, state.guests, [type]);
       if (my !== seq) return;
       const q = av.quotes.find((x) => x.type === type) ?? null;
       if (q && !q.available) { msg(q.short === 'Sold out' ? 'Those dates are no longer open for this suite. Please pick others.' : q.reason); quote = null; }
@@ -126,30 +127,23 @@ export function init(root: HTMLElement) {
     $<HTMLOutputElement>('[data-count]').value = String(state.guests);
     $('[data-bk-gword]').textContent = state.guests > 1 ? 'guests' : 'guest';
     $<HTMLButtonElement>('[data-dec]').disabled = state.guests <= 1;
-    $<HTMLButtonElement>('[data-inc]').disabled = state.guests >= 5;
+    $<HTMLButtonElement>('[data-inc]').disabled = state.guests >= most;
 
     const f = fromPrice();
-    const nightly = quote ? (member ? quote.member.nightly : quote.public.nightly) : f ? price(f) : null;
-    const mNightly = quote ? quote.member.nightly : f?.member ?? null;
+    const nightly = quote ? quote.public.nightly : f ? price(f) : null;
     $('[data-bk-k]').textContent = quote ? '' : 'From';
     $('[data-bk-rate]').textContent = nightly ? rm(nightly) : loaded ? 'Sold out' : ' ';
-    $('[data-bk-mrate]').textContent = mNightly ? rm(mNightly) : 'less';
 
     sum.hidden = !quote;
     if (quote) {
       const n = quote.nights.length;
-      const side = member ? quote.member : quote.public;
+      const side = quote.public;
       const rooms = side.total - quote.extraBed;
       $('[data-bk-nights]').textContent = `${rm(rooms / n)} × ${n} night${n > 1 ? 's' : ''}`;
       $('[data-bk-sub]').textContent = rm(rooms);
       $('[data-bk-extra]').hidden = !quote.extraBed;
       $('[data-bk-extra-k]').textContent = `Extra bed × ${n} night${n > 1 ? 's' : ''}`;
       $('[data-bk-extra-v]').textContent = rm(quote.extraBed);
-      const save = quote.public.total - quote.member.total;
-      const saveRow = $('[data-bk-save]');
-      saveRow.hidden = save <= 0;
-      saveRow.querySelector('dt')!.textContent = member ? 'Your member saving' : 'Members pay';
-      $('[data-bk-save-v]').textContent = member ? `−${rm(save)}` : rm(quote.member.total);
       $('[data-bk-total]').textContent = rm(side.total);
     }
     const label = !a || !b ? 'Check dates' : busy ? 'Checking…' : quote ? 'Reserve' : 'Pick other dates';
@@ -163,7 +157,7 @@ export function init(root: HTMLElement) {
 
   const go = () => {
     if (!quote) { show(); return; }
-    const q = new URLSearchParams({ type, in: state.in!, out: state.out!, guests: String(state.guests) });
+    const q = new URLSearchParams({ type, unit, in: state.in!, out: state.out!, guests: String(state.guests) });
     location.href = `/book/?${q}`;
   };
   goBtn.addEventListener('click', go);
@@ -172,8 +166,6 @@ export function init(root: HTMLElement) {
 
   // the bar shows on a phone once the card itself has scrolled away
   new IntersectionObserver(([e]) => bar.classList.toggle('on', !e.isIntersecting), { threshold: 0 }).observe(card);
-
-  document.addEventListener('kozi:member', (e) => { member = !!(e as CustomEvent<Member | null>).detail; cal.refresh(); hint(); paint(); });
 
   paint();
   fetchCalendar(type, todayKL(), addDays(todayKL(), 365)).then((list) => {

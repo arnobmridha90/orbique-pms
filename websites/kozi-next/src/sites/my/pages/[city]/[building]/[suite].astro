@@ -1,84 +1,100 @@
 ---
-// A suite page: the photos, what the suite is like, the view, what's included, the rules,
-// and the booking card with live prices beside it all the way down.
-import { getImage } from 'astro:assets';
+// A suite page: the photos, what the suite is like, the view, what's included, the rules, and the booking card with
+// live prices beside it all the way down (or "Email us to book" while it can't be booked online). Made on request
+// from the content; an address that is not one of our suites answers 404. A suite with no photos of its own yet
+// shows its building's photo and stays out of search.
 import Layout from '@shared/components/Layout.astro';
 import Gallery from '@shared/components/Gallery.astro';
 import BookCard from '@shared/components/BookCard.astro';
+import EmailCard from '@shared/components/EmailCard.astro';
 import Photo from '@shared/components/Photo.astro';
-import { AMENITIES, BRAND, NEARBY, PROPERTY, POLICIES, SUITES, VIEWS, VIEW_PHOTOS, photo, type Suite } from '@shared/data/kozi';
+import { AMENITIES, BRAND, BUILDING_EXTRAS, POLICIES, VIEWS, VIEW_PHOTOS } from '@shared/data/kozi';
 import { ICONS } from '@shared/data/icons';
+import { buildingPath, cityPath, cover, getContent, inKL, photoAbs, suitePath } from '@shared/lib/content';
 import { crumbsLd, lodgingLd, suiteLd } from '@shared/lib/seo';
 
-export function getStaticPaths() {
-  return SUITES.map((s) => ({ params: { suite: s.id }, props: { suite: s } }));
-}
-const { suite } = Astro.props as { suite: Suite };
-const order = ['boutique', 'premium', 'standard'];
-const others = order.filter((id) => id !== suite.id).map((id) => SUITES.find((s) => s.id === id)!);
-const crumbs = [{ name: 'Kuala Lumpur', path: '/kuala-lumpur/' }, { name: PROPERTY.name, path: PROPERTY.path }, { name: suite.name, path: `${PROPERTY.path}${suite.id}/` }];
-const og = suite.hasPhotos ? await getImage({ src: photo(suite.photos[0].key), width: 1200, height: 630, fit: 'cover', format: 'jpg', quality: 78 }) : null;
-const ogAbs = og ? new URL(og.src, BRAND.my).href : undefined;
-const views = suite.views.map((v) => ({ id: v, name: VIEWS[v].name, shot: (VIEW_PHOTOS as Record<string, { key: string; alt: string; from: string; suites: string[] }[]>)[v]?.find((p) => p.suites.includes(suite.id)) }));
+export const prerender = false;
+const site = await getContent(Astro);
+const { building: b, suite } = site.find(Astro.params.city, Astro.params.building, Astro.params.suite);
+if (!b || !suite) return new Response(null, { status: 404, statusText: 'Not found' });
+const x = BUILDING_EXTRAS[b.id];
+const own = suite.photos.length > 0;
+const photos = own ? suite.photos : b.photos.slice(0, 1);
+const others = site.suitesOf(b).filter((s) => s.id !== suite.id);
+const crumbs = [{ name: b.city, path: cityPath(b.cityId) }, { name: b.name, path: buildingPath(b) }, { name: suite.name, path: suitePath(b, suite) }];
+const og = cover(suite, b);
+const ogAbs = own && og ? photoAbs(og, BRAND.my) : undefined;
+const shots = (VIEW_PHOTOS as Record<string, { key: string; alt: string; from: string; suites: string[] }[]>);
+const views = suite.views.map((v) => ({ id: v, name: VIEWS[v].name, shot: inKL(b) && x ? shots[v]?.find((p) => p.suites.includes(suite.id)) : undefined }));
+const beds = !!x?.beds && suite.bedrooms === 2;
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const nth = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
 const facts = [
-  { icon: 'bed', k: '2 bedrooms', v: 'A queen room, and a room with a queen and a single' },
-  { icon: 'bath', k: '2 bathrooms', v: 'Hair dryer and iron in the suite' },
-  { icon: 'guests', k: 'Sleeps 4', v: 'A 5th guest on an extra bed' },
-  { icon: 'level', k: suite.levels, v: PROPERTY.building },
+  { icon: 'bed', k: plural(suite.bedrooms, 'bedroom'), v: beds ? 'A queen room, and a room with a queen and a single' : '' },
+  { icon: 'bath', k: plural(suite.bathrooms, 'bathroom'), v: x ? 'Hair dryer and iron in the suite' : '' },
+  { icon: 'guests', k: `Sleeps ${suite.sleeps}`, v: suite.extraBed ? `A ${nth(suite.sleeps + 1)} guest on an extra bed` : '' },
+  { icon: 'level', k: suite.levels || b.building, v: b.building },
 ];
-const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('Vortex Suites KLCC, Jalan Sultan Ismail, Kuala Lumpur');
-const title = `${suite.name} at Vortex KLCC, Kuala Lumpur | Kozi`;
-const description = `${suite.name} at Kozi @ Vortex KLCC: two bedrooms, two bathrooms and a full kitchen for four in central Kuala Lumpur. ${suite.line} See live prices and book direct.`;
+const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(x?.maps ?? `${b.building}, ${b.address}`);
+const short = b.name.replace(/^Kozi @ /, '');
+const usual = suite.bedrooms === 2 && suite.bathrooms === 2 && suite.sleeps === 4;
+const title = suite.seoTitle ?? `${suite.name} at ${short}, ${b.city} | Kozi`;
+const description = suite.seoDescription ?? (usual
+  ? `${suite.name} at ${b.name}: two bedrooms, two bathrooms and a full kitchen for four in central ${b.city}. ${suite.line} See live prices and book direct.`
+  : `${suite.name} at ${b.name}, ${b.city}: ${plural(suite.bedrooms, 'bedroom')}, ${plural(suite.bathrooms, 'bathroom')}, sleeps ${suite.sleeps}. ${suite.line}`).trim();
+const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$/, ''), 'Suite'] : [suite.name, ''];
 ---
-<Layout site="my" title={title} description={description} image={og?.src} noindex={!suite.hasPhotos}
-  jsonld={[crumbsLd(BRAND.my, crumbs), lodgingLd, suiteLd(suite, ogAbs)]}>
+<Layout site="my" title={title} description={description} image={ogAbs} noindex={!own}
+  jsonld={[crumbsLd(BRAND.my, crumbs), lodgingLd(b, site.suitesOf(b)), suiteLd(b, suite, ogAbs)]}>
   <div class="wrap sp-top">
     <nav class="crumbs sp-crumbs" aria-label="Breadcrumb">
       <ol>{crumbs.map((c, i) => <li>{i < crumbs.length - 1 ? <a href={c.path}>{c.name}</a> : <span aria-current="page">{c.name}</span>}</li>)}</ol>
     </nav>
     <div class="sp-title">
       <div>
-        <p class="eyebrow">{PROPERTY.name} · {suite.levels}</p>
-        <h1 class="display sp-h" data-split>{suite.name.replace(' Suite', '')} <em>Suite</em></h1>
+        <p class="eyebrow">{[b.name, suite.levels].filter(Boolean).join(' · ')}</p>
+        <h1 class="display sp-h" data-split>{nameA} {nameB && <em>{nameB}</em>}</h1>
       </div>
-      <p class="sp-line">{suite.line}</p>
+      {suite.line && <p class="sp-line">{suite.line}</p>}
     </div>
-    <Gallery photos={suite.photos} name={suite.name} note={suite.hasPhotos ? undefined : 'Suite photos are on the way'} />
+    {photos.length > 0 && <Gallery photos={photos} name={suite.name} note={own ? undefined : 'Suite photos are on the way'} />}
   </div>
 
   <div class="wrap sp-body">
     <div class="sp-main">
       <ul class="sp-facts" role="list">
         {facts.map((f) => (
-          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><b>{f.k}</b><span>{f.v}</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS[f.icon]} /><b>{f.k}</b>{f.v && <span>{f.v}</span>}</li>
         ))}
       </ul>
 
       <section class="sp-sec" aria-labelledby="sp-about">
         <h2 id="sp-about" class="display sp-h2">About the suite</h2>
-        <p class="sp-story">{suite.story}</p>
-        <ul class="sp-chips" role="list">{suite.highlights.map((h) => <li>{h}</li>)}</ul>
+        {suite.story && <p class="sp-story">{suite.story}</p>}
+        {suite.highlights.length > 0 && <ul class="sp-chips" role="list">{suite.highlights.map((h) => <li>{h}</li>)}</ul>}
       </section>
 
-      <section class="sp-sec" aria-labelledby="sp-sleep">
-        <h2 id="sp-sleep" class="display sp-h2">Where you'll sleep</h2>
-        <ul class="sp-beds" role="list">
-          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.queen} /><b>Bedroom 1</b><span>Queen bed</span></li>
-          <li><span class="sp-bed2"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.queen} /><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.single} /></span><b>Bedroom 2</b><span>Queen bed and a single bed</span></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.single} /><b>A fifth guest</b><span>Extra bed, RM60 a night</span></li>
-        </ul>
-      </section>
+      {beds && (
+        <section class="sp-sec" aria-labelledby="sp-sleep">
+          <h2 id="sp-sleep" class="display sp-h2">Where you'll sleep</h2>
+          <ul class="sp-beds" role="list">
+            <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.queen} /><b>Bedroom 1</b><span>Queen bed</span></li>
+            <li><span class="sp-bed2"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.queen} /><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.single} /></span><b>Bedroom 2</b><span>Queen bed and a single bed</span></li>
+            {suite.extraBed && <li><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.single} /><b>A fifth guest</b><span>Extra bed, RM60 a night</span></li>}
+          </ul>
+        </section>
+      )}
 
       {views.length > 0 && (
         <section class="sp-sec" aria-labelledby="sp-view">
           <h2 id="sp-view" class="display sp-h2">The view</h2>
-          <p class="sp-p">{suite.id === 'premium'
+          <p class="sp-p">{x && suite.id === 'premium'
             ? 'There are two Premium Suites, on levels 26 and 47. Between them they look out on the Twin Towers, KL Tower and Merdeka 118, and which you see depends on the suite.'
             : `From the windows: ${views.map((v) => v.name).join(' and ')}.`}</p>
           <div class="sp-views">
             {views.filter((v) => v.shot).map((v) => (
               <figure class="sp-view" data-reveal>
-                <Photo k={v.shot!.key} alt={v.shot!.alt} sizes="(max-width: 760px) 92vw, 30vw" widths={[480, 720, 960]} />
+                <Photo k={v.shot!.key} alt={v.shot!.alt} sizes="(max-width: 760px) 92vw, 30vw" />
                 <figcaption><b>{v.name}</b><span>{v.shot!.from}</span></figcaption>
               </figure>
             ))}
@@ -98,43 +114,47 @@ const description = `${suite.name} at Kozi @ Vortex KLCC: two bedrooms, two bath
       <section class="sp-sec" aria-labelledby="sp-know">
         <h2 id="sp-know" class="display sp-h2">Good to know</h2>
         <dl class="sp-rules">
-          <div><dt>Check-in</dt><dd>From {PROPERTY.checkIn}, with your own door code.</dd></div>
-          <div><dt>Check-out</dt><dd>By {PROPERTY.checkOut}.</dd></div>
+          <div><dt>Check-in</dt><dd>From {b.checkIn}.</dd></div>
+          <div><dt>Check-out</dt><dd>By {b.checkOut}.</dd></div>
           <div><dt>Cancellation</dt><dd>{POLICIES.cancel}</dd></div>
           <div><dt>House rules</dt><dd>{POLICIES.rules}</dd></div>
           <div><dt>Tourism tax</dt><dd>{POLICIES.tax}</dd></div>
-          <div><dt>Pool and gym</dt><dd>{POLICIES.paid}</dd></div>
+          {x && <div><dt>Pool and gym</dt><dd>{POLICIES.paid}</dd></div>}
         </dl>
       </section>
 
       <section class="sp-sec" aria-labelledby="sp-near">
-        <h2 id="sp-near" class="display sp-h2">Around Vortex</h2>
-        <p class="sp-p">{PROPERTY.building}, {PROPERTY.address}. In the Golden Triangle, between KLCC and Bukit Bintang.</p>
-        <ul class="sp-near" role="list">
-          {NEARBY.map((n) => <li><b>{n.name}</b><span>{n.what}</span></li>)}
-        </ul>
+        <h2 id="sp-near" class="display sp-h2">{x?.near.eyebrow ?? 'Where it is'}</h2>
+        <p class="sp-p">{b.building}, {b.address}.{b.area && ` ${b.area}.`}</p>
+        {x && (
+          <ul class="sp-near" role="list">
+            {x.near.list.map((n) => <li><b>{n.name}</b><span>{n.what}</span></li>)}
+          </ul>
+        )}
         <a class="sp-map" href={maps} rel="noopener" target="_blank"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.pin} />Open in Google Maps <span aria-hidden="true">↗</span></a>
       </section>
     </div>
-    <BookCard suite={suite} />
+    {suite.bookType ? <BookCard suite={suite} building={b} /> : <EmailCard suite={suite} building={b} />}
   </div>
 
-  <section class="sp-others" aria-labelledby="sp-others-h">
-    <div class="wrap">
-      <p class="eyebrow">Also at Vortex KLCC</p>
-      <h2 id="sp-others-h" class="display h3" data-split>The other <em>suites.</em></h2>
-      <ul class="sp-ocards" role="list">
-        {others.map((o) => (
-          <li data-reveal>
-            <a class="sp-ocard" href={`${PROPERTY.path}${o.id}/`}>
-              <div class="sp-omedia"><Photo k={o.photos[0].key} alt="" sizes="(max-width: 760px) 92vw, 44vw" widths={[480, 720, 960]} />{!o.hasPhotos && <span class="gl-note">Suite photos are on the way</span>}</div>
-              <div class="sp-obody"><p class="sp-olevel">{o.levels}</p><h3 class="display">{o.name}</h3><p>{o.line}</p><span class="sp-omore">See the suite <span aria-hidden="true">→</span></span></div>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </div>
-  </section>
+  {others.length > 0 && (
+    <section class="sp-others" aria-labelledby="sp-others-h">
+      <div class="wrap">
+        <p class="eyebrow">Also at {short}</p>
+        <h2 id="sp-others-h" class="display h3" data-split>The other <em>suites.</em></h2>
+        <ul class="sp-ocards" role="list">
+          {others.map((o) => { const p = cover(o, b); return (
+            <li data-reveal>
+              <a class="sp-ocard" href={suitePath(b, o)}>
+                <div class="sp-omedia">{p && <Photo p={p} alt="" sizes="(max-width: 760px) 92vw, 44vw" />}{!o.photos.length && <span class="gl-note">Suite photos are on the way</span>}</div>
+                <div class="sp-obody">{o.levels && <p class="sp-olevel">{o.levels}</p>}<h3 class="display">{o.name}</h3><p>{o.line}</p><span class="sp-omore">See the suite <span aria-hidden="true">→</span></span></div>
+              </a>
+            </li>
+          ); })}
+        </ul>
+      </div>
+    </section>
+  )}
 </Layout>
 
 <style>

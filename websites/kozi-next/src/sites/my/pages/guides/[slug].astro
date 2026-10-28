@@ -1,13 +1,13 @@
 ---
 // A guide: the live sky over the title, then the guide itself with its contents beside it,
 // every source at the end, and the other guides after that.
-import { getImage } from 'astro:assets';
 import Layout from '@shared/components/Layout.astro';
 import PageHead from '@shared/components/PageHead.astro';
 import Photo from '@shared/components/Photo.astro';
 import StayBand from '@shared/components/StayBand.astro';
 import { GUIDE_PAGES, type Guide } from '@shared/data/guides';
-import { BRAND, PROPERTY, photo } from '@shared/data/kozi';
+import { BRAND, PROPERTY } from '@shared/data/kozi';
+import { builtin, photoAbs } from '@shared/lib/content';
 import { crumbsLd, orgLd } from '@shared/lib/seo';
 
 export function getStaticPaths() {
@@ -25,15 +25,15 @@ const html = g.html.replace(/<h2>(.*?)<\/h2>/g, (_, t: string) => {
 });
 const path = `/guides/${g.slug}/`;
 const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Guides', path: '/guides/' }, { name: g.tag, path }];
-const og = await getImage({ src: photo(g.photo.key), width: 1200, height: 630, fit: 'cover', format: 'jpg', quality: 78 });
+const og = photoAbs(builtin(g.photo.key), BRAND.my);
 const article = {
   '@context': 'https://schema.org', '@type': 'Article', headline: g.title, description: g.desc, inLanguage: 'en',
-  image: new URL(og.src, BRAND.my).href, url: `${BRAND.my}${path}`, mainEntityOfPage: `${BRAND.my}${path}`,
+  image: og, url: `${BRAND.my}${path}`, mainEntityOfPage: `${BRAND.my}${path}`,
   author: { '@id': orgLd['@id'] }, publisher: { '@id': orgLd['@id'] }, citation: g.sources.map((s) => s.url),
 };
 const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
 ---
-<Layout site="my" title={`${g.title} | Kozi guides`} description={g.desc} image={og.src} over
+<Layout site="my" title={`${g.title} | Kozi guides`} description={g.desc} image={og} over
   jsonld={[crumbsLd(BRAND.my, crumbs), orgLd, article]}>
   <div class="g-progress" data-g-progress aria-hidden="true"></div>
   <PageHead crumbs={crumbs} eyebrow={`${g.tag} · Checked ${g.checked}`} size="short" seed={g.slug.length}>
@@ -45,7 +45,7 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
     <div class="g-body">
       <article class="g-prose" data-g-prose>
         <figure class="g-photo" style={g.photo.pos ? `--pos:${g.photo.pos}` : undefined}>
-          <Photo k={g.photo.key} alt={g.photo.alt} eager sizes="(max-width: 760px) 92vw, 760px" widths={[640, 960, 1280]} />
+          <Photo k={g.photo.key} alt={g.photo.alt} eager sizes="(max-width: 760px) 92vw, 760px" />
           <figcaption>{g.photo.alt}</figcaption>
         </figure>
         <Fragment set:html={html} />
@@ -68,7 +68,7 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
             <ol>{toc.map((t) => <li><a href={`#${t.id}`} data-g-toc={t.id}>{t.t}</a></li>)}</ol>
           </nav>
           <a class="g-stay" href={PROPERTY.path}>
-            <div class="g-stay-media"><Photo k="boutique/02-dining-and-living" alt="" sizes="300px" widths={[480, 720]} /></div>
+            <div class="g-stay-media"><Photo k="boutique/02-dining-and-living" alt="" sizes="300px" /></div>
             <div class="g-stay-body">
               <p class="g-k">Stay with us</p>
               <p class="g-stay-h">{PROPERTY.name}</p>
@@ -89,7 +89,7 @@ const others = GUIDE_PAGES.filter((o) => o.slug !== g.slug);
         {others.map((o, i) => (
           <li data-reveal style={`--d:${i * 80}`}>
             <a class="g-card" href={`/guides/${o.slug}/`}>
-              <div class="g-card-media"><Photo k={o.photo.key} alt="" sizes="(max-width: 760px) 92vw, 44vw" widths={[480, 720, 960]} /></div>
+              <div class="g-card-media"><Photo k={o.photo.key} alt="" sizes="(max-width: 760px) 92vw, 44vw" /></div>
               <div class="g-card-body">
                 <p class="g-tag">{o.tag}</p>
                 <h3 class="display" set:html={o.h1} />

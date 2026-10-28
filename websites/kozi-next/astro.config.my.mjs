@@ -1,10 +1,10 @@
-import { defineConfig } from 'astro/config';
-import sitemap from '@astrojs/sitemap';
+import { defineConfig, passthroughImageService } from 'astro/config';
+import vercel from '@astrojs/vercel';
 
-// Pages that carry a noindex tag stay out of the sitemap too (the Standard suite until it has photos).
-const NOINDEX = ['/book/', '/booking/', '/kuala-lumpur/vortex-klcc/standard/'];
-
-// staykozi.my: the Malaysia site (cities, buildings, suites, guides)
+// staykozi.my: the Malaysia site (cities, buildings, suites, guides).
+// The pages that show content (lib/content.ts) are made on request on Vercel and kept for 5 minutes (ISR); Orbique's
+// Publish refreshes them at once with the bypass token. The rest (guides, contact, credits, 404) are made at build.
+// The sitemap is a page of its own (pages/sitemap.xml.ts), made from the content.
 export default defineConfig({
   site: 'https://www.staykozi.my',
   srcDir: './src/sites/my',
@@ -12,6 +12,8 @@ export default defineConfig({
   publicDir: './public',
   trailingSlash: 'always',
   build: { format: 'directory' },
-  integrations: [sitemap({ filter: (page) => !NOINDEX.some((p) => new URL(page).pathname.startsWith(p)) })],
+  // photos are made ahead of time (scripts/site-photos.mjs), so the server needs no image tools of its own
+  image: { service: passthroughImageService() },
+  adapter: vercel({ isr: { expiration: 300, bypassToken: process.env.ISR_BYPASS_TOKEN } }),
   vite: { resolve: { alias: { '@shared': new URL('./src/shared', import.meta.url).pathname, '@assets': new URL('./src/assets', import.meta.url).pathname } } },
 });

@@ -5,16 +5,17 @@ import { buildSkyline, VB } from '@shared/lib/skyline';
 import type { Crumb } from '@shared/lib/seo';
 import { maskWords } from '@shared/lib/words';
 // pin: a label on our window in the skyline (building pages), linking where it says
-interface Props { crumbs?: Crumb[]; eyebrow?: string; seed?: number; size?: 'tall' | 'short'; id?: string; pin?: { href: string; title: string; sub: string } }
-const { crumbs = [], eyebrow, seed = 5, size = 'tall', id = 'pg-h', pin } = Astro.props;
+// plain: no Kuala Lumpur skyline, for a city or building elsewhere
+interface Props { crumbs?: Crumb[]; eyebrow?: string; seed?: number; size?: 'tall' | 'short'; id?: string; pin?: { href: string; title: string; sub: string }; plain?: boolean }
+const { crumbs = [], eyebrow, seed = 5, size = 'tall', id = 'pg-h', pin, plain = false } = Astro.props;
 const sky = buildSkyline(seed, { id: `pg${seed}` });
 const at = { left: ((sky.kozi.x + 3.5) / VB.w) * 100, top: ((sky.kozi.y + 4.5) / VB.h) * 100 };
 const title = maskWords(await Astro.slots.render('title'));
 ---
-<section class:list={['pg', `pg-${size}`]} data-page-hero aria-labelledby={id}>
-  <div class="pg-city" aria-hidden="true"><div class="city-box pg-box"><Fragment set:html={sky.svg} /></div></div>
-  <div class="pg-ground" aria-hidden="true"></div>
-  {pin && (
+<section class:list={['pg', `pg-${size}`, { 'pg-plain': plain }]} data-page-hero aria-labelledby={id}>
+  {!plain && <div class="pg-city" aria-hidden="true"><div class="city-box pg-box"><Fragment set:html={sky.svg} /></div></div>}
+  {!plain && <div class="pg-ground" aria-hidden="true"></div>}
+  {pin && !plain && (
     <div class="pg-pins">
       <div class="city-box pg-box">
         <a class="kozi-pin" href={pin.href} style={`left:${at.left.toFixed(3)}%;top:${at.top.toFixed(3)}%`}>
@@ -46,6 +47,7 @@ const title = maskWords(await Astro.slots.render('title'));
     position: relative; isolation: isolate; overflow: hidden; container-type: size; color: var(--ink-now);
     height: clamp(560px, 78svh, 860px); background: linear-gradient(to top, var(--hor) 26%, var(--zen)); transition: color 600ms ease; }
   .pg-short { height: clamp(460px, 60svh, 660px); }
+  .pg-plain { height: auto; min-height: clamp(420px, 56svh, 600px); padding-bottom: clamp(48px, 8vw, 96px); }
   :root[data-ink='light'] .pg { --ink-now: var(--cream); --accent-now: var(--amber-hi); }
   .pg-city { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
   .pg-pins { position: absolute; inset: 0; pointer-events: none; }
@@ -79,6 +81,7 @@ const title = maskWords(await Astro.slots.render('title'));
   }
   @media (max-width: 760px) {
     .pg, .pg-short { container-type: inline-size; height: auto; padding-bottom: 58vw; }
+    .pg.pg-plain { padding-bottom: 48px; }
     .pg-box, .pg-short .pg-box { --W: 250cqw; bottom: calc(var(--W) * -0.075); }
     .pg-h { font-size: clamp(42px, 12vw, 60px); }
   }

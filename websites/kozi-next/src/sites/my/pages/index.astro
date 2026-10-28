@@ -1,4 +1,5 @@
 ---
+// The home page. The suites come from the content, so it is made on request (and kept for 5 minutes).
 import Layout from '@shared/components/Layout.astro';
 import Hero from '@shared/components/Hero.astro';
 import Statement from '@shared/components/Statement.astro';
@@ -6,23 +7,27 @@ import Views from '@shared/components/Views.astro';
 import Suites from '@shared/components/Suites.astro';
 import Day from '@shared/components/Day.astro';
 import Standard from '@shared/components/Standard.astro';
-import Direct from '@shared/components/Direct.astro';
 import GuidesStrip from '@shared/components/GuidesStrip.astro';
 import { BRAND } from '@shared/data/kozi';
+import { getContent, inKL } from '@shared/lib/content';
 import { lodgingLd, orgLd } from '@shared/lib/seo';
 
+export const prerender = false;
+const site = await getContent(Astro);
+const list = site.suites.map((s) => ({ s, b: site.buildingOf(s) }));
+const kl = list.filter(({ b }) => inKL(b));
 const title = 'Kozi | Two-bedroom suites in central Kuala Lumpur';
-const description = 'Kozi suites at Vortex KLCC: two bedrooms, two bathrooms and a full kitchen in the Golden Triangle, between KLCC and Bukit Bintang. Book direct for member prices.';
-const site = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi Malaysia', url: `${BRAND.my}/`, publisher: { '@id': orgLd['@id'] } };
+const description = 'Kozi suites at Vortex KLCC: two bedrooms, two bathrooms and a full kitchen in the Golden Triangle, between KLCC and Bukit Bintang. See live prices and book direct.';
+const web = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi Malaysia', url: `${BRAND.my}/`, publisher: { '@id': orgLd['@id'] } };
+const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
 ---
-<Layout site="my" title={title} description={description} over intro jsonld={[orgLd, site, lodgingLd]}
+<Layout site="my" title={title} description={description} over intro jsonld={[orgLd, web, ...lodgings]}
   alternates={[{ lang: 'x-default', href: `${BRAND.com}/` }, { lang: 'en', href: `${BRAND.com}/` }, { lang: 'en-MY', href: `${BRAND.my}/` }]}>
-  <Hero />
+  <Hero cities={site.cities} />
   <Statement />
-  <Views />
-  <Suites />
+  {kl.length > 0 && <Views list={kl} />}
+  <Suites list={list} building={site.buildings.length === 1 ? site.buildings[0] : undefined} />
   <Day />
   <Standard />
-  <Direct />
   <GuidesStrip />
 </Layout>

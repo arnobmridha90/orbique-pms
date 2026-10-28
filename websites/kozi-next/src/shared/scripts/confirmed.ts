@@ -4,7 +4,7 @@
 import { BOOKED_KEY, bookingStatus, rm, TEST_MODE, type Booked, type BookingStatus } from '@shared/lib/api';
 import { fmtDayYear, fmtLong, fromIso, iso } from '@shared/lib/dates';
 
-const NAMES: Record<string, string> = { standard: 'Standard Suite', boutique: 'Boutique Suite', premium: 'Premium Suite' };
+const NAMES: Record<string, string> = { standard: 'Standard Suite', boutique: 'Boutique Suite', premium: 'Premium Suite' }; // when this tab lost the name
 const PLANS: Record<string, string> = { flexible: 'Flexible', weekly: 'Weekly stay', nonref: 'Non-refundable' };
 // seconds before each new question while the payment is still being confirmed: quick at first, about four minutes in all
 const AGAIN = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 30, 30, 30, 30];
@@ -23,6 +23,7 @@ export function init(root: HTMLElement) {
   const session = q.get('session_id') || '';
   const email = root.dataset.email!;
   let stay: Stay = { ref: k.ref || '', type: k.type || '', in: k.in || '', out: k.out || '', guests: Number(k.guests) || 0, total: 0, plan: null, refundable: true, freeCancelUntil: null };
+  const suiteName = () => (k.suite && k.type === stay.type ? String(k.suite).slice(0, 80) : NAMES[stay.type] ?? 'Your suite');
   const ref = () => String(stay.ref).replace(/[^A-Z0-9-]/gi, '').slice(0, 32);
 
   function say(eyebrow: string, heading: string, ...status: (string | Node)[]) {
@@ -36,7 +37,7 @@ export function init(root: HTMLElement) {
   function fill(paid: boolean | null) {
     const a = fromIso(stay.in), b = fromIso(stay.out), g = Math.min(5, Math.max(1, stay.guests));
     $('[data-bc-ref]').textContent = ref() || '—';
-    $('[data-bc-suite]').textContent = `${NAMES[stay.type] ?? 'Your suite'}, Kozi @ Vortex KLCC`;
+    $('[data-bc-suite]').textContent = `${suiteName()}, Kozi @ Vortex KLCC`;
     $('[data-bc-in]').textContent = a ? fmtLong(a) : '—';
     $('[data-bc-out]').textContent = b ? fmtLong(b) : '—';
     $('[data-bc-guests]').textContent = stay.guests ? `${g} guest${g > 1 ? 's' : ''}${g > 4 ? ' (one on the extra bed)' : ''}` : '—';
@@ -104,7 +105,7 @@ export function init(root: HTMLElement) {
     if (!a || !b) return;
     const d = (x: Date) => iso(x).replace(/-/g, '');
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
-    const suite = NAMES[stay.type] ?? 'Your suite';
+    const suite = suiteName();
     const ics = [
       'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kozi//Booking//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
       `UID:${ref() || stamp}@staykozi.com`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${d(a)}`, `DTEND;VALUE=DATE:${d(b)}`,

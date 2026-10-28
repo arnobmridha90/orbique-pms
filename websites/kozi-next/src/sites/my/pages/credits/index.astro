@@ -17,7 +17,7 @@ const crumbs = [{ name: 'Malaysia', path: '/' }, { name: 'Photo credits', path: 
     <ul class="cr-list" role="list">
       {Object.entries(CREDITS).map(([key, c]) => (
         <li class="cr-item">
-          <div class="cr-media"><Photo k={key} alt={c.title} sizes="220px" widths={[480]} /></div>
+          <div class="cr-media"><Photo k={key} alt={c.title} sizes="220px" /></div>
           <div>
             <h2 class="display cr-h">“{c.title}”</h2>
             <p>By {c.by}, taken {c.taken}. From <a href={c.source} rel="noopener">Wikimedia Commons</a>, under <a href={CC_BY_SA.url} rel="noopener license">{CC_BY_SA.name}</a>.</p>
