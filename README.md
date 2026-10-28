@@ -117,6 +117,7 @@ Set in Vercel (Project → Settings → Environment Variables). The Supabase int
 | `PLATFORM_OWNER_EMAILS` | API (optional) | Comma-separated emails (or their SHA-256) allowed to run "Set up Orbique", in addition to `config/platform-owners.json`. |
 | `APP_URL` | build (optional) | Base address for guest links. Defaults to the production domain Vercel reports. |
 | `ORBIQUE_MIGRATE_PREVIEW` | build (optional) | `1` runs migrations on preview deployments too. |
+| `SITE_REVALIDATE_TOKEN` | API (optional) | Secret. The website's page-refresh token (the same value the website has as its own `SITE_REVALIDATE_TOKEN`). With it, Publish on the Live website page refreshes the site's pages at once; without it the site updates within 5 minutes. |
 
 ## First sign-in
 

@@ -325,6 +325,23 @@ earlier unpaid hold is released and its Stripe page closed. If the guest does no
 released and the nights open again. Refunds are made in Stripe. The thank-you page can ask
 `GET /api/public/booking?ws=<slug>&session_id=<Stripe session>` whether the stay is paid.
 
+## The Live website page: photos and units on the website
+
+The Live website page (Grow → Live Website) changes the buildings, units and photos on the workspace's own website and
+publishes them (`POST /api/site`, docs/API.md). The website reads what was published from
+`GET /api/public/site?ws=<slug>`. To set it up:
+
+1. Put the website's address in the page (Change, next to the address), for example `https://www.staykozi.my`. It is
+   saved as `siteUrl` in the `website` value.
+2. Make up a long random value and add it in Vercel to both projects, Orbique and the website, as
+   `SITE_REVALIDATE_TOKEN` (Production). Redeploy both. Without it, publishing still works and the website shows the
+   change within 5 minutes instead of at once.
+3. On the page, "Bring in what's on the website now" copies the website's current units and photos in as the draft.
+   Publish once to make it the published copy.
+
+Photos are stored in the public Supabase Storage bucket `site-photos` (created on the first upload, one folder per
+workspace). Removing a photo from a unit leaves its files in storage.
+
 ## Updating Orbique later
 
 Every change merged into the main branch on GitHub deploys automatically. Database changes are applied during that
