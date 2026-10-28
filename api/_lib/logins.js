@@ -24,6 +24,8 @@ export const isStandIn = (email) => String(email || '').toLowerCase().endsWith('
 const LOCAL_CODES = ['60', '65', '66', '62', '63', '84'];
 export const FAIL_LIMIT = 8;
 export const FAIL_WINDOW_MS = 15 * 60 * 1000;
+export const IP_LIMIT = 40; // tries from one address in the window, over all names
+const NOBODY = 'nobody@' + LOGIN_DOMAIN; // an account that never exists, for the password check of an unknown name
 
 const USERNAME = /^[a-z][a-z0-9._-]{2,31}$/;
 
@@ -71,30 +73,40 @@ export async function loginNamesOf(sb, userId) {
   return out;
 }
 
-/** names: {phone, username}: a stored form (phoneLogin / username), null to remove, undefined to leave as it is. */
+const takenMsg = (kind) => (kind === 'phone' ? 'Someone else on Orbique already signs in with this mobile number.' : 'That username is taken on Orbique. Try another, for example with your company name in front.');
+
+/** names: {phone, username}: a stored form (phoneLogin / username), null to remove, undefined to leave as it is.
+ *  All or nothing (set_login_names, 0019): when a name is taken nothing changes, so nobody is left without a sign-in. */
 export async function setLoginNames(sb, userId, names) {
-  for (const kind of ['phone', 'username']) {
-    const want = names[kind];
-    if (want === undefined) continue;
-    if (want) {
-      const owner = check(await sb.from('login_names').select('user_id').eq('kind', kind).eq('login', want).maybeSingle(), 'check sign-in name');
-      if (owner && owner.user_id !== userId) {
-        throw conflict(kind + '-taken', kind === 'phone' ? 'Someone else on Orbique already signs in with this mobile number.' : 'That username is taken on Orbique. Try another, for example with your company name in front.');
-      }
-      if (owner) continue;
-      check(await sb.from('login_names').delete().eq('user_id', userId).eq('kind', kind), 'replace sign-in name');
-      const ins = await sb.from('login_names').insert({ kind, login: want, user_id: userId, updated_at: new Date().toISOString() });
-      if (ins.error && ins.error.code === '23505') throw conflict(kind + '-taken', kind === 'phone' ? 'Someone else on Orbique already signs in with this mobile number.' : 'That username is taken. Try another.');
-      check(ins, 'save sign-in name');
-    } else {
-      check(await sb.from('login_names').delete().eq('user_id', userId).eq('kind', kind), 'remove sign-in name');
-    }
+  const kinds = ['phone', 'username'].filter((k) => names[k] !== undefined);
+  if (!kinds.length) return;
+  for (const kind of kinds) {
+    if (!names[kind]) continue;
+    const owner = check(await sb.from('login_names').select('user_id').eq('kind', kind).eq('login', names[kind]).maybeSingle(), 'check sign-in name');
+    if (owner && owner.user_id !== userId) throw conflict(kind + '-taken', takenMsg(kind));
   }
+  const r = await sb.rpc('set_login_names', { p_user: userId, p_kinds: kinds, p_logins: kinds.map((k) => names[k] || null) });
+  if (r.error && r.error.code === '23505') { const kind = /^phone/.test(r.error.message || '') ? 'phone' : 'username'; throw conflict(kind + '-taken', takenMsg(kind)); }
+  check(r, 'save sign-in names');
+}
+
+/** Forget the wrong tries of an account (after the owner sets a new password). */
+export async function clearFailures(sb, userId) {
+  await sb.from('login_failures').delete().eq('key', 'user:' + userId);
 }
 
 const WRONG = 'That login and password do not match. Check them and try again.';
 
-/** The session for a mobile number or username and password. Wrong details, unknown or not, give the same answer. */
+/** One try against each key (login_try, 0019: counted atomically, so parallel tries cannot slip past the limit). */
+async function tryOrRefuse(sb, keys, limits) {
+  const r = await sb.rpc('login_try', { p_keys: keys, p_limits: limits, p_window_secs: FAIL_WINDOW_MS / 1000 });
+  check(r, 'check sign-in tries');
+  if (r.data !== true) throw tooMany('Too many wrong tries. Wait 15 minutes, or ask your workspace owner for a new password.');
+}
+
+/** The session for a mobile number or username and password. Wrong details, unknown or not, give the same answer.
+ *  Tries are counted before the password is checked: per account (FAIL_LIMIT), per typed name for names nobody has, and
+ *  per address (IP_LIMIT). An unknown name still runs a password check, so the answer takes as long either way. */
 export async function signInWithLogin(sb, body, opts = {}) {
   const typed = String((body && body.login) || '').trim().slice(0, 64);
   const password = typeof (body && body.password) === 'string' ? body.password : '';
@@ -102,29 +114,25 @@ export async function signInWithLogin(sb, body, opts = {}) {
   if (kind === 'email') throw bad('use-email', 'Sign in with an email in the app.');
   if (!kind) throw bad('bad-login', 'Enter your email, mobile number or username.');
   if (!password) throw bad('bad-password', 'Enter your password.');
-  const now = opts.now || Date.now();
   const keys = kind === 'phone' ? phoneCandidates(typed) : [typed.toLowerCase()];
-  const key = kind + ':' + keys[0];
+  const typedKey = kind + ':' + keys.slice().sort()[0];
+  const client = (opts.client || authClient)(opts.ip);
 
-  const since = new Date(now - FAIL_WINDOW_MS).toISOString();
-  const fails = await sb.from('login_failures').select('key', { count: 'exact', head: true }).eq('key', key).gte('at', since);
-  check(fails, 'check sign-in tries');
-  if ((fails.count || 0) >= FAIL_LIMIT) throw tooMany('Too many wrong tries. Wait 15 minutes, or ask your workspace owner for a new password.');
-  const failed = async () => {
-    await sb.from('login_failures').insert({ key, at: new Date(now).toISOString() });
-    await sb.from('login_failures').delete().lt('at', new Date(now - 24 * 3600e3).toISOString()); // keep the table small
-    return new ApiError(400, 'wrong-login', WRONG);
-  };
-
+  await tryOrRefuse(sb, opts.ip ? [typedKey, 'ip:' + opts.ip] : [typedKey], opts.ip ? [FAIL_LIMIT, IP_LIMIT] : [FAIL_LIMIT]);
   const rows = check(await sb.from('login_names').select('user_id, login').eq('kind', kind).in('login', keys), 'find sign-in name') || [];
   const ids = [...new Set(rows.map((r) => r.user_id))];
   if (ids.length > 1) throw bad('add-country-code', 'Add your country code to the number, for example +60 12-345 6789.');
-  if (!ids.length) throw await failed();
-  const got = await sb.auth.admin.getUserById(ids[0]);
-  const user = check(got, 'load user') && got.data.user;
-  if (!user || !user.email) throw await failed();
+  const got = ids.length ? await sb.auth.admin.getUserById(ids[0]) : null;
+  const user = got && check(got, 'load user') && got.data.user;
+  if (!user || !user.email) {
+    await client.auth.signInWithPassword({ email: NOBODY, password }).catch(() => null); // same time as a real check
+    throw new ApiError(400, 'wrong-login', WRONG);
+  }
+  // a name someone has: the account's own count decides (however the number was typed)
+  await sb.from('login_failures').delete().eq('key', typedKey);
+  const userKey = 'user:' + user.id;
+  await tryOrRefuse(sb, [userKey], [FAIL_LIMIT]);
 
-  const client = (opts.client || authClient)(opts.ip);
   const res = await client.auth.signInWithPassword({ email: user.email, password });
   if (res.error || !res.data || !res.data.session) {
     if (res.error && (res.error.status >= 500 || res.error.name === 'AuthRetryableFetchError')) {
@@ -132,9 +140,9 @@ export async function signInWithLogin(sb, body, opts = {}) {
       throw new ApiError(500, 'server', 'Could not sign you in right now. Please try again in a minute.');
     }
     if (res.error && /rate limit|too many/i.test(res.error.message || '')) throw tooMany('Too many sign-ins right now. Please wait a few minutes.');
-    throw await failed();
+    throw new ApiError(400, 'wrong-login', WRONG);
   }
-  await sb.from('login_failures').delete().eq('key', key);
+  await sb.from('login_failures').delete().eq('key', userKey);
   const s = res.data.session;
   return { access_token: s.access_token, refresh_token: s.refresh_token, expires_in: s.expires_in, token_type: s.token_type };
 }

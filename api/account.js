@@ -4,8 +4,8 @@
  *   signup           anyone                                        {company, contactName, email, phone, units, message}
  *   create-operator  platform admin                                {company, ownerName, ownerEmail, plan?}
  *   update-operator  platform admin                                {orgId, company?, staffId?, ownerName?, ownerEmail?}
- *   invite           owner of orgId                                {orgId, staffId, name, email?, phone?, role, username?, phoneLogin?, password?}
- *   set-login        owner of orgId                                {orgId, staffId, username?, phoneLogin?, phone?, password?, tempPassword?, mustChange?}
+ *   invite           owner of orgId                                {orgId, staffId, name, email?, phone?, role, username?, phoneLogin?, phoneCc?, password?, mustChange?}
+ *   set-login        owner of orgId                                {orgId, staffId, username?, phoneLogin?, phone?, phoneCc?, password?, tempPassword?, mustChange?}
  *   reset-password   owner of orgId, or a platform admin for owners {orgId, staffId}
  *   sign-in          anyone                                        {login (mobile number or username), password}
  *
@@ -16,7 +16,7 @@ import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, confl
 import { requireAdminClient, check, caller, isPlatformAdmin, platformAdminCount, getOrg, membership, requireOwner, findUserByEmail, createUser, deleteUserQuietly } from './_lib/supabase.js';
 import { tempPassword } from './_lib/passwords.js';
 import { isPlatformOwnerEmail } from './_lib/owners.js';
-import { phoneLogin, username as usernameField, setLoginNames, loginNamesOf, signInWithLogin, standInEmail, isStandIn, showPhone } from './_lib/logins.js';
+import { phoneLogin, username as usernameField, setLoginNames, loginNamesOf, signInWithLogin, standInEmail, isStandIn, showPhone, clearFailures } from './_lib/logins.js';
 
 const ROLE_LABELS = { owner: 'Account owner', ops: 'Ops manager', housekeeping: 'Housekeeping', frontdesk: 'Front desk', maintenance: 'Maintenance', accountant: 'Accountant' };
 const INVITE_ROLES = ['ops', 'housekeeping', 'frontdesk', 'maintenance', 'accountant'];
@@ -175,14 +175,15 @@ export async function updateOperator(sb, body, me) {
 
 /* ---------------- sign-in names: a mobile number and a username, set by the workspace owner ---------------- */
 
-/** The sign-in names asked for in body (stored forms; undefined = leave): username ('' removes), phoneLogin (with phone). */
+/** The sign-in names asked for in body (stored forms; undefined = leave): username ('' removes), phoneLogin (with phone).
+ *  phoneCc: the workspace's country code, for a number written with a leading 0 (Malaysia's 60 when not given). */
 function wantedNames(body, phone) {
   const out = {};
   if (body.username !== undefined && body.username !== null) out.username = String(body.username).trim() ? usernameField(body.username) : null;
   if (body.phoneLogin !== undefined && body.phoneLogin !== null) {
     if (body.phoneLogin) {
       if (!phone) throw bad('no-phone', 'Add their mobile number to let them sign in with it.');
-      out.phone = phoneLogin(phone);
+      out.phone = phoneLogin(phone, /^[1-9][0-9]{0,2}$/.test(String(body.phoneCc || '')) ? String(body.phoneCc) : '60');
     } else out.phone = null;
   }
   return out;
@@ -250,12 +251,15 @@ export async function invite(sb, body, me) {
   let temp = null;
   if (!user) {
     temp = chosen ? null : tempPassword();
-    const meta = { name, must_change_password: !chosen };
+    const meta = { name, must_change_password: chosen ? !!body.mustChange : true };
     if (!email) Object.assign(meta, { login_only: true, login: loginLabel(names) });
     user = await createUser(sb, { email: email || standInEmail(), password: chosen || temp, metadata: meta });
     created = !!user;
     if (!user && email) { temp = null; user = await findUserByEmail(sb, email); }
     if (!user) throw new ApiError(500, 'server', 'Could not create the account. Please try again.');
+  }
+  if (!created) { // an invite only adds names to an account someone already has; removing them is for set-login
+    for (const kind of ['username', 'phone']) if (!names[kind]) delete names[kind];
   }
   if (!created && (names.username || names.phone) && !(await onlyHere(sb, user.id, orgId))) {
     throw forbidden(`${name} also uses Orbique with another company, so they keep the sign-in they have. Leave the username and mobile sign-in empty.`);
@@ -318,6 +322,7 @@ export async function setLogin(sb, body, me) {
   if (chosen || temp) { patch.password = chosen || temp; meta.must_change_password = temp ? true : !!body.mustChange; }
   patch.user_metadata = meta;
   check(await sb.auth.admin.updateUserById(user.id, patch), 'update sign-in');
+  if (patch.password) await clearFailures(sb, user.id);
 
   const view = await signInView(sb, user);
   await stampStaff(sb, orgId, staffId, view, me.id);
@@ -338,6 +343,10 @@ export async function resetPassword(sb, body, me) {
   if (!target) throw bad('no-account', 'This person does not have a sign-in yet. Invite them first.');
   if (target.user_id === me.id) throw bad('self', 'To change your own password, use Change password in your account menu.');
   if (!isOwner && target.role !== 'owner') throw forbidden('Orbique platform admins can reset the password of workspace owners only.');
+  // an owner never resets an account another company also uses (its new password would open that company too)
+  if (!(isAdmin && target.role === 'owner') && !(await onlyHere(sb, target.user_id, orgId))) {
+    throw forbidden('This person also uses Orbique with another company, so only they can change their password. They can use Forgot password on the sign-in screen.');
+  }
 
   const got = await sb.auth.admin.getUserById(target.user_id);
   const user = check(got, 'load user') && got.data.user;
@@ -345,6 +354,7 @@ export async function resetPassword(sb, body, me) {
   const temp = tempPassword();
   const meta = Object.assign({}, user.user_metadata || {}, { must_change_password: true });
   check(await sb.auth.admin.updateUserById(user.id, { password: temp, user_metadata: meta }), 'reset password');
+  await clearFailures(sb, user.id);
   return Object.assign(await signInView(sb, user), { tempPassword: temp });
 }
 

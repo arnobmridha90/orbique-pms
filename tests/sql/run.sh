@@ -57,3 +57,6 @@ psqlq "$URL1" -f tests/sql/listing_types.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: N
 
 echo "== website bookings (0015)"
 psqlq "$URL1" -f tests/sql/website.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
+
+echo "== staff sign-in names (0019)"
+psqlq "$URL1" -f tests/sql/staff_logins.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'

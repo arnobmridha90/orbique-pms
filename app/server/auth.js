@@ -821,15 +821,20 @@
     var body = { orgId: S.org.id, staffId: p.staffId, name: p.name, email: p.email || '', phone: p.phone || '', role: p.role };
     if (p.username) body.username = p.username;
     if (p.phoneLogin) body.phoneLogin = true;
-    if (p.password) body.password = p.password;
+    if (p.password) { body.password = p.password; if (p.mustChange) body.mustChange = true; }
+    var cc = phoneCc(); if (cc) body.phoneCc = cc;
     return A.api('invite', body).then(signInOf);
   };
   function signInOf(j) { return { email: j.email || null, username: j.username || null, phone: j.phone || null, tempPassword: j.tempPassword || null, passwordSet: !!j.passwordSet, existing: !!j.existing }; }
   /* the owner sets a team member's username, mobile sign-in and password: p {username ('' removes), phoneLogin, phone, password | tempPassword, mustChange} */
   A.setLogin = function (staffId, p) {
     var no = needOwner(); if (no) return no;
-    return A.api('set-login', Object.assign({ orgId: S.org.id, staffId: staffId }, p || {})).then(signInOf);
+    var cc = phoneCc();
+    return A.api('set-login', Object.assign({ orgId: S.org.id, staffId: staffId }, cc ? { phoneCc: cc } : {}, p || {})).then(signInOf);
   };
+  /* the calling code of the workspace's main country, for a mobile number written with a leading 0 */
+  var CALLING = { MY: '60', SG: '65', TH: '66', ID: '62', PH: '63', VN: '84', BN: '673', KH: '855', LA: '856', MM: '95', AU: '61', NZ: '64', GB: '44', US: '1', AE: '971', IN: '91', JP: '81', KR: '82', CN: '86', HK: '852', TW: '886' };
+  function phoneCc() { try { return CALLING[String((window.O && O.mainCountry && O.mainCountry()) || '').toUpperCase()] || ''; } catch (e) { return ''; } }
   function updateMember(staffId, patch) {
     return sb().from('members').update(patch).eq('org_id', S.org.id).eq('staff_id', staffId).select('staff_id').then(function (r) {
       if (r.error) throw new Error(isPerm(r.error) ? 'Your access does not allow this change.' : errMsg(r.error));

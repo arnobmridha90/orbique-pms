@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { invite, setLogin, resetPassword } from '../api/account.js';
-import { loginKind, phoneLogin, username, signInWithLogin, isStandIn, FAIL_LIMIT } from '../api/_lib/logins.js';
+import { loginKind, phoneLogin, username, signInWithLogin, isStandIn, FAIL_LIMIT, IP_LIMIT } from '../api/_lib/logins.js';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -61,7 +61,24 @@ function fake() {
   }
   const sb = {
     from: q,
-    rpc(name, args) { const u = Object.values(users).find((x) => x.email === args.p_email); return Promise.resolve({ data: u ? u.id : null, error: null }); },
+    rpc(name, args) {
+      if (name === 'login_try') { // as 0019: refused when any key is at its limit, else one try on each
+        const since = new Date(Date.now() - args.p_window_secs * 1000).toISOString();
+        if (args.p_keys.some((k, i) => db.login_failures.filter((r) => r.key === k && r.at > since).length >= args.p_limits[i])) return Promise.resolve({ data: false, error: null });
+        args.p_keys.forEach((k) => db.login_failures.push({ key: k, at: new Date().toISOString() }));
+        return Promise.resolve({ data: true, error: null });
+      }
+      if (name === 'set_login_names') { // as 0019: all or nothing
+        const next = db.login_names.filter((r) => !(r.user_id === args.p_user && args.p_kinds.includes(r.kind)));
+        for (let i = 0; i < args.p_kinds.length; i++) {
+          if (!args.p_logins[i]) continue;
+          if (next.some((r) => r.kind === args.p_kinds[i] && r.login === args.p_logins[i])) return Promise.resolve({ data: null, error: { code: '23505', message: args.p_kinds[i] + '-taken' } });
+          next.push({ kind: args.p_kinds[i], login: args.p_logins[i], user_id: args.p_user });
+        }
+        db.login_names = next; return Promise.resolve({ data: null, error: null });
+      }
+      const u = Object.values(users).find((x) => x.email === args.p_email); return Promise.resolve({ data: u ? u.id : null, error: null });
+    },
     auth: { admin: {
       createUser({ email, password, user_metadata }) {
         if (Object.values(users).some((u) => u.email === email)) return Promise.resolve({ data: null, error: { code: 'email_exists', message: 'exists' } });
@@ -163,4 +180,51 @@ test('wrong passwords are limited per login name, and a success clears the count
   for (let i = 0; i < FAIL_LIMIT; i++) await assert.rejects(signInWithLogin(sb, { login: 'aina', password: 'nope' }, { client }), /do not match/);
   await assert.rejects(signInWithLogin(sb, { login: 'aina', password: 'right-pass-1' }, { client }), /Too many wrong tries/);
   await assert.rejects(signInWithLogin(sb, { login: 'aina@x.my', password: 'p' }, { client }), /email in the app/);
+});
+
+test('a locked account: tries count per account however it is typed, and a new password from the owner unlocks it', async () => {
+  const { sb, db, client } = fake();
+  await invite(sb, { orgId: ORG, staffId: 'S-1', name: 'Aina', phone: '+65 8123 4567', role: 'housekeeping', username: 'aina', phoneLogin: true, password: 'right-pass-1' }, OWNER);
+  for (let i = 0; i < FAIL_LIMIT / 2; i++) await assert.rejects(signInWithLogin(sb, { login: 'aina', password: 'nope' }, { client }), /do not match/);
+  for (let i = 0; i < FAIL_LIMIT / 2; i++) await assert.rejects(signInWithLogin(sb, { login: '+65 8123 4567', password: 'nope' }, { client }), /do not match/);
+  await assert.rejects(signInWithLogin(sb, { login: '8123 4567'.replace(/^/, '0'), password: 'right-pass-1' }, { client }), /Too many wrong tries/);
+  const r = await setLogin(sb, { orgId: ORG, staffId: 'S-1', password: 'fresh-pass-2' }, OWNER);
+  assert.equal(r.passwordSet, true);
+  assert.ok(await signInWithLogin(sb, { login: 'aina', password: 'fresh-pass-2' }, { client }));
+  assert.equal(db.login_failures.filter((x) => x.key.startsWith('user:')).length, 0);
+});
+
+test('tries from one address are limited over all names, and unknown names are counted too', async () => {
+  const { sb, client } = fake();
+  for (let i = 0; i < FAIL_LIMIT; i++) await assert.rejects(signInWithLogin(sb, { login: 'nobody.here', password: 'x' }, { client }), /do not match/);
+  await assert.rejects(signInWithLogin(sb, { login: 'nobody.here', password: 'x' }, { client }), /Too many/);
+  let refused = 0;
+  for (let i = 0; i < IP_LIMIT + 1; i++) await signInWithLogin(sb, { login: 'guess' + String.fromCharCode(97 + (i % 26)) + i, password: 'x' }, { client, ip: '203.0.113.9' }).catch((e) => { if (/Too many/.test(e.message)) refused++; });
+  assert.equal(refused, 1);
+});
+
+test('a refused change leaves the sign-in as it was; an invite never removes names from an account someone has', async () => {
+  const { sb, db, users } = fake();
+  await invite(sb, { orgId: ORG, staffId: 'S-1', name: 'Aina', phone: '+60 12-345 6789', role: 'housekeeping', phoneLogin: true }, OWNER);
+  await invite(sb, { orgId: ORG, staffId: 'S-2', name: 'Ben', role: 'housekeeping', username: 'ben' }, OWNER);
+  await assert.rejects(setLogin(sb, { orgId: ORG, staffId: 'S-1', phoneLogin: false, username: 'ben' }, OWNER), /taken/);
+  const aina = Object.values(users).find((x) => x.user_metadata.name === 'Aina').id;
+  assert.deepEqual(db.login_names.filter((x) => x.user_id === aina).map((x) => x.kind + ':' + x.login), ['phone:60123456789']);
+
+  users['u-mail'] = { id: 'u-mail', email: 'cara@x.my', user_metadata: { name: 'Cara' } };
+  db.login_names.push({ kind: 'username', login: 'cara', user_id: 'u-mail' });
+  db.members.push({ org_id: OTHER, user_id: 'u-mail', staff_id: 'S-7', role: 'ops', status: 'active' });
+  await invite(sb, { orgId: ORG, staffId: 'S-3', name: 'Cara', email: 'cara@x.my', role: 'ops', username: '', phoneLogin: false }, OWNER);
+  assert.ok(db.login_names.some((x) => x.user_id === 'u-mail' && x.login === 'cara'));
+});
+
+test('an owner cannot reset the password of someone another company also uses; a new sign-in can ask for a password change', async () => {
+  const { sb, db, users } = fake();
+  users['u-shared'] = { id: 'u-shared', email: 'shared@x.my', user_metadata: { name: 'Shared' } };
+  db.members.push({ org_id: ORG, user_id: 'u-shared', staff_id: 'S-9', role: 'ops', status: 'active' }, { org_id: OTHER, user_id: 'u-shared', staff_id: 'S-8', role: 'owner', status: 'active' });
+  await assert.rejects(resetPassword(sb, { orgId: ORG, staffId: 'S-9' }, OWNER), /another company/);
+  await invite(sb, { orgId: ORG, staffId: 'S-1', name: 'Dee', role: 'ops', username: 'dee', password: 'chosen-pass', mustChange: true, phone: '081 234 5678', phoneLogin: true, phoneCc: '66' }, OWNER);
+  const dee = Object.values(users).find((x) => x.user_metadata.name === 'Dee');
+  assert.equal(dee.user_metadata.must_change_password, true);
+  assert.ok(db.login_names.some((x) => x.user_id === dee.id && x.login === '66812345678'));
 });

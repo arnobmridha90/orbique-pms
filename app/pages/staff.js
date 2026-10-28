@@ -429,12 +429,15 @@
       }
     });
   }
-  /* login {username, phoneLogin, password}: what the owner chose in the sign-in fields (all optional with an email) */
+  /* login {username, phoneLogin, password, mustChange}: what the owner chose in the sign-in fields (all optional with an
+     email). The choices but the password stay on the invite, so Retry asks for the same sign-in. */
   function serverInvite(s, inv, login) {
     var f = authFn('invite'); if (!f) return;
-    login = login || {};
+    if (login) inv.login = { username: login.username || '', phoneLogin: !!login.phoneLogin };
+    login = login || inv.login || {};
+    if (!s.email && !login.username && !login.phoneLogin) { loginModal(s, true); return; }
     U.toast('Creating ' + first(s.name) + '\'s account…');
-    Promise.resolve().then(function () { return f.call(O.auth, { staffId: s.id, name: s.name, email: s.email, phone: s.phone || '', role: s.role, username: login.username || '', phoneLogin: !!login.phoneLogin, password: login.password || '' }); }).then(function (res) {
+    Promise.resolve().then(function () { return f.call(O.auth, { staffId: s.id, name: s.name, email: s.email, phone: s.phone || '', role: s.role, username: login.username || '', phoneLogin: !!login.phoneLogin, password: login.password || '', mustChange: !!login.mustChange }); }).then(function (res) {
       res = res || {}; dropToast(/^Creating /);
       if (res.username) s.username = res.username; if (res.phone) s.loginPhone = res.phone;
       inv.status = res.existing ? 'accepted' : 'pending'; delete inv.error; inv.sentAt = D.NOW; O.emit('data', { type: 'staff' });
@@ -492,7 +495,7 @@
           var inv = (D.staffInvites || []).filter(function (x) { return x.staffId === s.id && x.status !== 'withdrawn'; })[0];
           if (!inv) { inv = { id: O.uid('INV'), staffId: s.id, name: s.name, contact: v.username || s.phone, phone: s.phone || '', email: '', role: s.role, scope: meta(s.id).scope || 'all', sentAt: D.NOW, via: 'Account', by: O.state.viewer, status: 'pending' }; D.staffInvites.push(inv); }
           audit('Created a sign-in for ' + s.name, { staffId: s.id }); O.emit('data', { type: 'staff' });
-          close(); serverInvite(s, inv, { username: v.username, phoneLogin: v.phoneLogin, password: v.pwMode === 'set' ? v.password : '' });
+          close(); serverInvite(s, inv, { username: v.username, phoneLogin: v.phoneLogin, password: v.pwMode === 'set' ? v.password : '', mustChange: v.mustChange });
           return false;
         }
         var btn = O.$('.modal-foot .btn-primary', el); btn.disabled = true; btn.textContent = 'Saving…';
@@ -521,13 +524,19 @@
       '<div class="field"><label for="ap-title">Job title (optional)</label><input class="input" id="ap-title" name="title" placeholder="Shown next to their name"></div>' +
       '<div class="field"><label for="ap-phone">Mobile number</label><input class="input" id="ap-phone" name="phone" type="tel" placeholder="+60 12-345 6789"></div>' +
       '<div class="field"><label for="ap-email">Email (optional)</label><input class="input" id="ap-email" name="email" type="email" placeholder="name@example.com"><span class="hint">' + (srv ? 'They can sign in with it' : 'A mobile number or an email is enough') + '</span></div>' +
-      (srv ? '<div class="field full"><span class="label" style="font-weight:600">Sign-in</span><span class="hint">An email, a username or their mobile number: any of them works with the password</span></div>' + loginFields({ phoneLogin: true, pfx: 'ap' }) : '') +
+      (srv ? '<div class="field full"><span class="label" style="font-weight:600">Sign-in</span><span class="hint">An email, a username or their mobile number: any of them works with the password</span></div>' + loginFields({ phoneLogin: false, pfx: 'ap' }) : '') +
       '<div class="field full"><span class="label">Properties they work on</span>' + scopeField('all', 'apScope') + '</div>' +
       '</div><div class="note">The role decides what they can open and do. You can fine-tune it for this person afterwards. Financials, approving claims and owner payouts stay with account owners whatever role you pick.</div></div>';
     U.modal({
       title: 'Add person', sub: 'They get their own sign-in for ' + O.ws().name, body: body, size: 'wide',
       onOpen: function (el) {
         wireScope(el, 'apScope'); if (srv) wireLogin(el);
+        /* mobile sign-in is ticked for someone with a number and no email, until the owner sets it themselves */
+        var lp = srv && O.$('[name=lgPhone]', el), lpSet = false;
+        if (lp) {
+          lp.addEventListener('change', function () { lpSet = true; });
+          el.addEventListener('input', function (e) { if (!lpSet && (e.target.name === 'phone' || e.target.name === 'email')) lp.checked = !O.$('[name=email]', el).value.trim() && !!O.$('[name=phone]', el).value.trim(); });
+        }
         function paint() { O.$('[data-rdesc]', el).textContent = ROLE_DESC[O.$('[name=role]', el).value] || ''; }
         el.addEventListener('change', paint); paint();
       },
@@ -551,7 +560,7 @@
           audit('Added ' + name + ' as ' + roleLabel(role) + ' (' + scopeText(sc) + ')', { staffId: s.id });
           O.emit('data', { type: 'staff' });
           close();
-          if (srv) serverInvite(s, inv, { username: login.username, phoneLogin: login.phoneLogin, password: login.pwMode === 'set' ? login.password : '' });
+          if (srv) serverInvite(s, inv, { username: login.username, phoneLogin: login.phoneLogin, password: login.pwMode === 'set' ? login.password : '', mustChange: login.mustChange });
           else shareModal({ title: name + ' is on the team', name: name, role: role, email: email, phone: phone, intro: 'Send ' + first(name) + ' a message so they know how to sign in. Their access follows the ' + roleLabel(role) + ' role.', onCopy: function () { inv.sharedAt = D.NOW; O.emit('data', { type: 'staff' }); } });
           return false;
         }
