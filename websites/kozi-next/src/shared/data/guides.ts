@@ -112,4 +112,84 @@ export const GUIDE_PAGES: Guide[] = [
       { name: 'KL Foodie: best halal and Muslim-owned spots, 2025', url: 'https://klfoodie.com/10-best-halal-muslim-owned-food-spots-in-kl-pj-2025-guide/' },
     ],
   },
+  {
+    slug: 'things-to-do-near-klcc-with-kids', tag: 'Family',
+    title: 'Things to do near KLCC with kids',
+    h1: 'KLCC with <em>kids.</em>',
+    desc: 'Family days around the Petronas Twin Towers: KLCC Park and its free playground and wading pool, Aquaria KLCC, Petrosains science centre, the Skybridge and the evening fountain show.',
+    lede: 'The streets around the Petronas Twin Towers pack a lot for children into a small area, and some of the best parts are free. Here is where to start, and what to check before you go.',
+    photo: { key: 'premium-b/01-living-room-day', alt: 'A Kozi Premium Suite living room in daylight' },
+    checked: 'October 2026',
+    html: `<h2>At a glance</h2>
+<div class="g-table"><table>
+<thead><tr><th>Place</th><th>Good for</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>KLCC Park playground and wading pool</td><td>Burning off energy, all ages</td><td>Free</td></tr>
+<tr><td>Lake Symphony fountain show</td><td>An easy evening treat</td><td>Free</td></tr>
+<tr><td>Aquaria KLCC</td><td>A rainy day, little ones who love fish</td><td>Paid</td></tr>
+<tr><td>Petrosains, The Discovery Centre</td><td>Curious school-age children</td><td>Paid</td></tr>
+<tr><td>Petronas Twin Towers Skybridge</td><td>Older children who like heights</td><td>Paid, book ahead</td></tr>
+</tbody></table></div>
+<p>Hours and prices change, often with school holidays, so check each place's own website before you set out.</p>
+<h2>KLCC Park</h2>
+<p>The park at the foot of the towers is free and open every day. It has a large children's playground and a shallow wading pool for small children, plus a jogging track and plenty of shade. Travel guides list the wading pool as open from mid-morning to early evening, and some say it closes for cleaning on certain days, so bring swimwear but have a plan B.</p>
+<div class="g-note"><b>Go early or late.</b> Mornings and late afternoons are cooler and the playground is quieter. In the middle of the day, the malls next door are the place to be.</div>
+<h2>Lake Symphony fountain show</h2>
+<p>In the evening the lake in front of Suria KLCC puts on a free fountain show with music and lights, with the lit towers behind it. Guides list shows at several times between about 7:30pm and 10pm. Times can vary, so check on the day. The esplanade by the lake is the best place to watch.</p>
+<h2>Aquaria KLCC</h2>
+<p>An indoor aquarium under the Kuala Lumpur Convention Centre, on the other side of KLCC Park from Suria KLCC. The highlight for most children is the long underwater tunnel with sharks and rays overhead. It is a good answer to an afternoon rainstorm. Buy tickets on the official website, aquariaklcc.com. Malaysians and visitors pay different prices, and the price can depend on the day.</p>
+<h2>Petrosains, The Discovery Centre</h2>
+<p>A hands-on science centre on Level 4 of Suria KLCC, the mall under the towers. Children can try a helicopter simulator, see an F1 car and explore the oil and gas story through interactive exhibits, and there is an area for younger children. Petrosains closes on some days in 2026, including some Mondays, and timed tickets can sell out in school holidays. Check the dates and book on petrosains.com.my.</p>
+<h2>The Skybridge and the top of the towers</h2>
+<p>The Petronas Twin Towers tour takes visitors to the Skybridge between the towers and to the observation deck near the top. It is unforgettable for older children, but slots are timed and sell out, and the towers are usually closed on Mondays. Book on the official ticket site, and read its rules on children's ages before you buy.</p>
+<h2>A slower day in the suite</h2>
+<p>Every Kozi suite has two bedrooms, a full kitchen and its own washing machine, so a family can take it slowly: breakfast in, a nap after the park, and dinner in front of the city lights. If you need a cot or a high chair, email us before you arrive and we'll tell you what we can arrange.</p>`,
+    sources: [
+      { name: 'Petrosains: admission and ticketing (2026 opening days)', url: 'https://petrosains.com.my/visit/admission-and-ticketing/' },
+      { name: 'Little Day Out: Petrosains, The Discovery Centre at Suria KLCC', url: 'https://littledayout.com/petrosains-the-discovery-centre-at-suria-klcc-hands-on-fun-with-science' },
+      { name: 'Wikipedia: Aquaria KLCC', url: 'https://en.wikipedia.org/wiki/Aquaria_KLCC' },
+      { name: 'Trip.com: Aquaria KLCC location and how to get there', url: 'https://my.trip.com/guide/info/aquaria-klcc-location.html' },
+      { name: 'Backpack and Snorkel: KLCC Park', url: 'https://backpackandsnorkel.com/Malaysia/KLCC-Park/' },
+      { name: 'Backpack and Snorkel: Lake Symphony', url: 'https://backpackandsnorkel.com/Malaysia/Symphony-Lake-Water-Show/' },
+      { name: 'Petronas Twin Towers: official tickets', url: 'https://eticket.petronastwintowers.com.my/' },
+    ],
+  },
+  {
+    slug: 'see-the-petronas-twin-towers-lit-up', tag: 'Night',
+    title: 'Where to see the Petronas Twin Towers lit up at night',
+    h1: 'The towers <em>after dark.</em>',
+    desc: 'The best free and paid places to see and photograph the Petronas Twin Towers lit up at night: KLCC Park and Lake Symphony, Saloma Link bridge, KL Tower and rooftop bars, plus photo tips.',
+    lede: 'The Petronas Twin Towers are at their best after dark, when the steel lights up silver over the city. These are the places to see them, from free spots on the ground to high ones.',
+    photo: { key: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk, seen from a Kozi Boutique Suite' },
+    checked: 'October 2026',
+    html: `<h2>When to go</h2>
+<p>Blue hour, the half hour or so just after sunset, is the best time for photos: the sky still has colour and the towers are already lit. Being close to the equator, Kuala Lumpur sees the sun set between about 7pm and 7:30pm all year. Several travel sites say the tower lights go off around midnight, so don't leave it too late.</p>
+<h2>KLCC Park and the Lake Symphony</h2>
+<p>The free, classic view. Stand on the esplanade by the lake behind Suria KLCC, where the towers rise straight above the water. In the evening the lake runs a free fountain show with music and lights. Guides list shows at several times between about 7:30pm and 10pm, and the towers reflect in the water between them. It gets busy near the main viewing point, so walk a little way along the lake for a cleaner frame.</p>
+<div class="g-note"><b>Getting both towers in.</b> From the park you are very close, so you need a wide lens or your phone's 0.5x setting to fit both towers and the Skybridge in one shot.</div>
+<h2>Saloma Link bridge</h2>
+<p>The pedestrian bridge that joins Kampung Baru to the KLCC side of the river lights up at night with programmable LEDs, in colours that change for festivals such as Hari Raya and Deepavali. It is free, and it gives a view of the towers over the city with the bridge's own lights in the foreground. Pair it with dinner in Kampung Baru.</p>
+<h2>From higher up</h2>
+<ul>
+<li><b>KL Tower.</b> The observation levels of the telecom tower on Bukit Nanas look across to the Twin Towers. Tickets cost more for foreign visitors than for Malaysians, so check the official prices before you go.</li>
+<li><b>Rooftop bars.</b> Several hotels and towers around KLCC have rooftop bars that face the Twin Towers. Many have a dress code or a minimum spend, and the best tables are booked ahead. Check each venue's own page for opening hours and rules.</li>
+<li><b>The Skybridge tour.</b> The tour inside the towers runs in the evening too, but you won't see the towers lit from inside them. For the view of them, stay outside.</li>
+</ul>
+<h2>From your window</h2>
+<p>From the Boutique Suite and some Premium suites at Kozi @ Vortex KLCC, you can see a Petronas tower lit up without leaving the suite. Each suite page on this site shows what its windows look out on, with real photos. If the view matters to you, choose your suite by its photos, or ask us before you book.</p>
+<h2>Photo tips</h2>
+<ul>
+<li>Use night mode on your phone and rest it on a wall or railing to keep it still.</li>
+<li>Turn the flash off. It lights the people in front of you, not the towers.</li>
+<li>Shoot a few frames during the fountain show: the jets add movement in front of the towers.</li>
+</ul>`,
+    sources: [
+      { name: 'Malaysia Travel (Tourism Malaysia): Saloma Bridge', url: 'https://www.malaysia.travel/explore/saloma-bridge' },
+      { name: 'CIDB: Saloma Link, weaving together KLCC and Kampung Bahru', url: 'https://www.cidb.gov.my/saloma-link-weaving-together-klcc-and-kampung-bahru/' },
+      { name: 'Backpack and Snorkel: Lake Symphony', url: 'https://backpackandsnorkel.com/Malaysia/Symphony-Lake-Water-Show/' },
+      { name: 'Photography Life: Petronas Twin Towers photo spot', url: 'https://photographylife.com/photo-spots/petronas-twin-towers' },
+      { name: 'EdgeProp: KL Tower reopens after restoration works (2025)', url: 'https://www.edgeprop.my/content/1912373/kl-tower-reopen-tomorrow-after-restoration-works' },
+      { name: 'Travel and Destinations: photo spots in Kuala Lumpur', url: 'https://www.travelanddestinations.com/top-instagram-photography-spots-in-kuala-lumpur/' },
+    ],
+  },
 ];

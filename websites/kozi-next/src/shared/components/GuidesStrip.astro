@@ -11,8 +11,9 @@ import Photo from './Photo.astro';
       </div>
       <a class="gd-all" href="/guides/" data-reveal>All guides <span aria-hidden="true">→</span></a>
     </div>
+    {/* the three arrival guides; the rest are on /guides/ */}
     <ul class="gd-list" role="list">
-      {GUIDES.map((g, i) => (
+      {GUIDES.slice(0, 3).map((g, i) => (
         <li data-reveal style={`--d:${i * 90}`}>
           <a class="gd-card" href={`/guides/${g.slug}/`}>
             <div class="gd-media"><Photo k={g.photo} alt="" sizes="(max-width: 760px) 84vw, 31vw" /></div>

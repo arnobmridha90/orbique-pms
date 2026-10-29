@@ -150,4 +150,6 @@ export const GUIDES = [
   { slug: 'mdac-malaysia-digital-arrival-card', tag: 'Arrival', title: 'The MDAC arrival card, step by step', line: 'What to fill in before you land in Malaysia, and how to spot the fake sites.', photo: 'premium-b/10-klcc-window-view' },
   { slug: 'klia-to-kuala-lumpur-city-centre', tag: 'Getting here', title: 'KLIA to the city centre', line: 'Train, Grab or taxi: what each costs and when to pick it.', photo: 'boutique/05-bedroom-window-view' },
   { slug: 'halal-food-near-klcc', tag: 'Food', title: 'Eating halal near KLCC', line: 'How to read the signs, and where to start near Vortex KLCC.', photo: 'premium-a/01-dining-and-living' },
+  { slug: 'things-to-do-near-klcc-with-kids', tag: 'Family', title: 'KLCC with kids', line: 'The free park, playground and fountains, and the best paid days out nearby.', photo: 'premium-b/01-living-room-day' },
+  { slug: 'see-the-petronas-twin-towers-lit-up', tag: 'Night', title: 'The towers after dark', line: 'Where to see and photograph the Petronas Twin Towers lit up.', photo: 'boutique/10-klcc-night-view' },
 ];
