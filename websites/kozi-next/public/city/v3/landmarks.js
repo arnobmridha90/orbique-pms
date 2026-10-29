@@ -12,7 +12,11 @@
   ];
   // [y0, y1, outer radius] from the OSM parts (240/295/325/355/370 m)
   const PET_TIERS = [[0, 24.0, 2.93], [24.0, 29.5, 2.72], [29.5, 32.5, 2.42], [32.5, 35.5, 1.94], [35.5, 37.0, 1.3]];
-  const MER = { N: [-72.49, 142.03], NE: [-71.46, 142.72], SE: [-71.53, 146.34], SW: [-75.78, 148.5], W: [-75.66, 143.59], S: [-71.95, 142.37] };
+  const MER = { N: [-72.49, 142.03], NE: [-71.46, 142.72], SE: [-71.53, 146.34], SW: [-75.78, 148.5], W: [-75.66, 143.59] };
+  const MER_C = [MER.N, MER.NE, MER.SE, MER.SW, MER.W].reduce((a, p) => [a[0] + p[0] / 5, a[1] + p[1] / 5], [0, 0]);
+  const merBig = (p) => [MER_C[0] + (p[0] - MER_C[0]) * 1.3, MER_C[1] + (p[1] - MER_C[1]) * 1.3]; // glass wall around the OSM core
+  // the spire stands on the north prow, just off the N corner: seen from KL Tower it rises from the middle of the face
+  const MER_SP = merBig([MER.N[0] + (MER.NE[0] - MER.N[0]) * 0.15, MER.N[1] + (MER.NE[1] - MER.N[1]) * 0.15]);
   const MER_POD = [[-76.47, 153.23], [-73.05, 153.63], [-67.53, 139.64], [-70.18, 137.65], [-70.74, 137.43], [-71.31, 137.22], [-73.99, 136.72], [-74.46, 137.34], [-73.71, 139.04], [-77.17, 142.97], [-78.01, 148.17], [-80.65, 150.16], [-80.24, 151.1], [-77.88, 152.7]];
   const EXC = [[128.6, 140.2], [127.71, 138.44], [126.45, 139.07], [123.72, 140.43], [122.26, 141.16], [122.81, 142.25], [123.02, 142.65], [123.09, 142.8], [124.84, 146.3], [125.39, 147.35], [126.36, 146.87], [129.55, 145.27], [130.2, 144.95], [130.49, 143.94], [130.2, 143.36]];
   const VOR = [[0.79, 1.44], [1.51, 0.66], [1.64, 0.13], [1.58, -0.39], [1.38, -0.88], [1.02, -1.27], [0.55, -1.52], [0.03, -1.62], [-0.5, -1.53], [-0.97, -1.29], [-1.35, -0.9], [-1.57, -0.41], [-1.62, 0.13], [-1.49, 0.65], [-1.2, 1.1], [-0.77, 1.44], [-0.26, 1.61], [0.28, 1.61]];
@@ -225,11 +229,12 @@ void main(){
     col=mix(glass(n,v,vec3(0.35,0.6,0.78),vec3(0.03,0.07,0.12),0.45), vec3(0.75)*light(n), max(mu,fb)*0.6);
     em=vec3(0.9,0.94,1.0)*0.7*(1.0-max(mu,fb)*0.7) + flood*0.12;
   } else if(k<2.5){ // pod white concrete, ribbed underside cone, cap
-    float rb=ln(vU/0.3,0.18)*step(y,27.6);
-    col=vec3(0.95,0.94,0.91)*light(n)*(1.0-0.15*rb);
-    em=flood*(0.35+0.4*smoothstep(25.0,27.6,y))*(0.8+0.4*rb)*0.8 + vec3(0.7,0.8,1.0)*0.05;
+    float rb=ln(vU/0.3,0.18)*step(y,26.5);
+    vec3 cone=mix(vec3(0.95,0.94,0.91), vec3(0.8,0.6,0.55), step(24.8,y)*step(y,26.5)); // the flared cone is terracotta
+    col=cone*light(n)*(1.0-0.15*rb);
+    em=flood*(0.35+0.4*smoothstep(24.8,26.5,y))*(0.8+0.4*rb)*0.8 + vec3(0.7,0.8,1.0)*0.05;
   } else if(k<3.5){ // antenna: red/white bands
-    float b=step(0.5,fract(y/0.9))*step(37.5,y);
+    float b=step(0.5,fract(y/0.9))*step(33.0,y);
     col=mix(vec3(0.8,0.8,0.8), vec3(0.7,0.18,0.12), b)*light(n);
     em=mix(vec3(0.9,0.95,1.0), vec3(1.0,0.2,0.15), b)*0.2;
   } else if(k<4.5){ // base podium
@@ -252,14 +257,14 @@ void main(){
     col=mix(col, vec3(0.78,0.82,0.88)*light(n)+sky(reflect(-v,n))*0.25, dg*0.15+fl*0.12);
     vec3 w=win(vec2(vU/0.3, y/0.45), 0.32, 0.12, 4.0);
     em=vec3(0.55,0.75,1.0)*dn*0.85 + w*0.55*(1.0-dn) + vec3(0.25,0.4,0.7)*0.05;
-    if(k>0.5) em=vec3(0.7,0.84,1.0)*(0.35+0.5*smoothstep(55.0,60.0,y))+vec3(0.9,0.95,1.0)*dn*0.6;
+    if(k>0.5) em=vec3(0.7,0.84,1.0)*(0.35+0.5*smoothstep(49.0,53.0,y))+vec3(0.9,0.95,1.0)*dn*0.6;
   } else if(k<2.5){ // podium
     float b=ln(y/0.7,0.45);
     col=mix(glass(n,v,vec3(0.55,0.65,0.72),vec3(0.2,0.21,0.22),0.35), vec3(0.86,0.84,0.8)*light(n), b);
     em=vec3(1.0,0.8,0.55)*0.35*(1.0-b)*step(0.1,n.y<0.5?1.0:0.0) + vec3(0.6,0.75,1.0)*b*0.25*step(n.y,0.5);
   } else { // spire: steel
     col=vec3(0.78,0.82,0.88)*light(n)+sky(reflect(-v,n))*0.45;
-    em=vec3(0.7,0.84,1.0)*(0.5+0.5*smoothstep(58.0,68.0,y));
+    em=vec3(0.7,0.84,1.0)*(0.25+0.75*smoothstep(50.0,68.0,y));
   }
   em=min(em,vec3(1.2))*on;
 #endif
@@ -380,49 +385,61 @@ void main(){
   function buildKLTower(ctx, mat, y0) {
     const { THREE, small } = ctx, g = new G(), x = ctx.L.kltower.x, z = ctx.L.kltower.z, s = small ? 36 : 56;
     g.lathe(x, z, [[2.6, -0.4, 4], [2.6, 0.62, 2], [2.35, 0.78, 4], [2.3, 1.0, 2], [1.85, 1.2, 2], [1.25, 1.4, 2], [0.95, 1.45, 0]], s, y0);
-    // shaft, then the 'gasing' (spinning top) head: long straight ribbed underside cone, raked observation deck (276 m),
-    // revolving restaurant band, Sky Deck parapet (300 m), shallow cap, turret to the pod roof (336.5 m), antenna to 421 m
-    g.lathe(x, z, [[1.02, 1.45, 0], [0.92, 8.0, 0], [0.86, 16.0, 0], [0.8, 24.6, 2], [1.45, 26.0, 2], [2.05, 27.3, 2], [2.25, 27.6, 1], [2.38, 28.6, 2], [2.4, 28.7, 1],
-      [2.32, 29.9, 2], [2.3, 30.05, 1], [2.24, 30.4, 2], [2.2, 30.42, 2], [1.5, 30.8, 2], [0.9, 31.0, 5], [0.85, 31.6, 5], [0.75, 33.65, 5], [0.45, 33.7, 3],
-      [0.42, 36.0, 3], [0.28, 36.1, 3], [0.2, 39.0, 3], [0.09, 39.1, 3], [0.05, 42.1, 3], [0, 42.12, 3]], s, y0);
+    // matched to photos (heights from the 421 m tip and the 300 m Sky Deck): shaft, collar, short flared 'gasing' cone
+    // (250-265 m), the head of four glass bands between white rings, widening upward to 54 m across (266-290 m), a dark
+    // ledge, the Sky Deck drum (to 300 m), a slim turret with three dish rings, then the lattice mast and red tip
+    const P = [[1.02, 1.45, 0], [0.92, 8.0, 0], [0.86, 16.0, 0], [0.81, 24.55, 2], [0.87, 24.6, 2], [0.87, 24.76, 2], [0.82, 24.8, 2],
+      [0.9, 25.1, 2], [1.05, 25.4, 2], [1.27, 25.75, 2], [1.52, 26.1, 2], [1.78, 26.45, 2], [1.86, 26.5, 2], [1.95, 26.55, 1]];
+    const bands = 4, b0 = 26.55, b1 = 28.9, rA = 1.95, rB = 2.71, step_ = (b1 - b0) / bands, rAt = (y) => rA + (rB - rA) * Math.pow((y - b0) / (b1 - b0), 0.8);
+    for (let i = 0; i < bands; i++) {
+      const ya = b0 + i * step_, yw = ya + step_ * 0.62; // dark glass, then a white ring that juts out a little
+      P.push([rAt(yw), yw, 2], [rAt(yw) + 0.06, yw + 0.04, 2], [rAt(ya + step_) + 0.06, ya + step_ - 0.04, 2], [rAt(ya + step_), ya + step_, i + 1 < bands ? 1 : 2]);
+    }
+    P.push([rB, 29.0, 2], [2.43, 29.05, 1], [2.43, 29.28, 2], [2.1, 29.32, 2], [2.1, 30.0, 2], [1.4, 30.04, 2], [0.46, 30.08, 5],
+      [0.46, 31.0, 5], [0.87, 31.04, 5], [0.87, 31.16, 5], [0.46, 31.2, 5], [0.46, 31.55, 5], [0.95, 31.6, 5], [0.95, 31.72, 5], [0.46, 31.76, 5],
+      [0.46, 32.15, 5], [0.93, 32.2, 5], [0.93, 32.32, 5], [0.38, 32.36, 5], [0.38, 32.9, 3], [0.3, 32.95, 3], [0.27, 39.55, 3], [0.11, 39.6, 3],
+      [0.07, 41.9, 3], [0.04, 42.1, 3], [0, 42.12, 3]);
+    g.lathe(x, z, P, s, y0);
     const mesh = g.mesh(THREE, mat); mesh.userData.pick = 'kltower'; return mesh;
   }
 
   function buildMerdeka(ctx, mat) {
-    const { THREE } = ctx, g = new G(), M_ = MER;
-    const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ss = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
-    // corners taper towards the north-east edge where the spire rises (as in the OSM tiers)
-    const C = [[M_.N, M_.N, () => 0], [M_.NE, M_.NE, () => 0], [M_.SE, [-72.55, 145.35], (y) => ss(36, 55, y)], [M_.SW, [-74.31, 144.49], (y) => Math.pow(ss(0, 55, y), 0.8)], [M_.W, [-73.81, 142.98], (y) => ss(30, 55, y)]];
-    const corners = (y) => C.map(([a, b, f]) => lerp(a, b, f(y)));
-    const flip = area2(corners(0)) < 0;
-    // diamond lattice: on even levels the corners stand out, on odd levels the face midpoints are folded out;
+    const { THREE } = ctx, g = new G();
+    // matched to photos: the OSM outline is the core, the glass wall stands about 30% wider (64 m seen from KL Tower);
+    // the width holds all the way up, the faces fold in big diamonds (folds at about 183, 320 and 432 m), the shoulders
+    // stop at 490 m and the crown rises to the spire on the north edge (531 m), whose spine runs down the whole face
+    const base = [MER.N, MER.NE, MER.SE, MER.SW, MER.W].map(merBig), S = MER_SP;
+    const flip = area2(base) < 0;
+    // diamond facets: on even folds the corners stand out, on odd folds the face midpoints are folded out;
     // each quad is split along the ridge joining its two 'out' vertices, so every facet is a flat tilted triangle
-    const ringAt = (y, odd) => {
-      let c = corners(y); if (flip) c = c.slice().reverse();
+    const ringAt = (odd) => {
+      const c = flip ? base.slice().reverse() : base;
       const cx = c.reduce((s, p) => s + p[0], 0) / c.length, cz = c.reduce((s, p) => s + p[1], 0) / c.length, P = [];
       c.forEach((p, i) => {
         const q = c[(i + 1) % c.length], ex = q[0] - p[0], ez = q[1] - p[1], el = Math.hypot(ex, ez), ox = ez / el, oz = -ex / el, f = odd ? 1 : 0;
-        P.push([p[0] + (cx - p[0]) * f * 0.03, p[1] + (cz - p[1]) * f * 0.03]);
-        P.push([(p[0] + q[0]) / 2 + ox * f * el * 0.05, (p[1] + q[1]) / 2 + oz * f * el * 0.05]);
+        P.push([p[0] + (cx - p[0]) * f * 0.035, p[1] + (cz - p[1]) * f * 0.035]);
+        P.push([(p[0] + q[0]) / 2 + ox * f * el * 0.06, (p[1] + q[1]) / 2 + oz * f * el * 0.06]);
       });
       return { P, cx, cz };
     };
-    const NL = 30, lvY = (i) => (i ? (i * 55.0) / NL : -0.2);
-    let prev = ringAt(lvY(0), 0);
-    for (let i = 1; i <= NL; i++) {
-      const cur = ringAt(lvY(i), i & 1), A = ring(prev.P, lvY(i - 1)), B = ring(cur.P, lvY(i)), ax = [cur.cx, cur.cz];
+    const FOLDS = [-0.2, 9.0, 18.3, 25.2, 32.0, 37.6, 43.2, 49.0], TOP = 49.0, APEX = 53.1;
+    let prev = ringAt(0);
+    for (let i = 1; i < FOLDS.length; i++) {
+      const cur = ringAt(i & 1), A = ring(prev.P, FOLDS[i - 1]), B = ring(cur.P, FOLDS[i]), ax = [cur.cx, cur.cz];
       for (let j = 0; j < A.length - 1; j++) g.quad(A[j], A[j + 1], B[j + 1], B[j], 0, ax, (j & 1) === (i & 1 ? 0 : 1)); // vertex j even = corner
       prev = cur;
     }
-    // sloped crown rising to the spire on the north-east edge
-    const S = M_.S, P = prev.P, dmax = Math.max(...P.map((p) => Math.hypot(p[0] - S[0], p[1] - S[1])));
-    const yTop = (p) => 55.0 + 4.6 * Math.pow(1 - Math.hypot(p[0] - S[0], p[1] - S[1]) / dmax, 1.4);
-    g.band(ring(P, 55.0), ring(P, (p) => yTop(p)), 1, null, true, [prev.cx, prev.cz]);
-    g.fan(ring(P, (p) => yTop(p)), S[0], 60.4, S[1], 1);
-    // spire: slim faceted needle from the crown
+    // crown: faceted planes rising from the shoulders to the spire on the north edge
+    // (straight slopes that meet the shoulders at the outer corners either side of the prow, as in the photos)
+    const P = prev.P, dref = Math.hypot(base[4][0] - S[0], base[4][1] - S[1]);
+    const yTop = (p) => TOP + (APEX - TOP) * Math.max(0, 1 - Math.hypot(p[0] - S[0], p[1] - S[1]) / dref);
+    g.band(ring(P, TOP), ring(P, (p) => yTop(p)), 1, null, true, [prev.cx, prev.cz]);
+    g.fan(ring(P, (p) => yTop(p)), S[0], APEX, S[1], 1);
+    // spine: a slim dark rib up the north face, running into the spire
     const sp = (y, r) => [0, 1, 2, 3, 4, 5].map((i) => [S[0] + Math.cos((i / 6) * TAU + 0.3) * r, S[1] + Math.sin((i / 6) * TAU + 0.3) * r]);
-    const SL = [[55.5, 0.42], [60.0, 0.36], [61.5, 0.22], [64.5, 0.13], [66.6, 0.06]];
-    for (let i = 0; i < SL.length - 1; i++) { const a = hardAll(ccw(sp(...SL[i]))), b = hardAll(ccw(sp(...SL[i + 1]))); g.band(ring(a, SL[i][0]), ring(b, SL[i + 1][0]), 3, null, true, S); }
+    // spire: about 150 m, thick at the crown and drawn out to a needle
+    const SL = [[0.0, 0.3], [TOP, 0.3], [APEX - 0.6, 0.48], [56.5, 0.42], [59.5, 0.35], [62.0, 0.27], [64.2, 0.18], [66.2, 0.09], [67.5, 0.035]];
+    for (let i = 0; i < SL.length - 1; i++) { const a = hardAll(ccw(sp(...SL[i]))), b = hardAll(ccw(sp(...SL[i + 1]))); g.band(ring(a, SL[i][0]), ring(b, SL[i + 1][0]), i ? 3 : 0, null, true, S); }
     g.fan(ring(hardAll(ccw(sp(...SL[SL.length - 1]))), SL[SL.length - 1][0]), S[0], 67.9, S[1], 3, 1, true);
     // podium (mall)
     const pod = ccw(MER_POD), PP = hardAll(pod);
@@ -519,14 +536,14 @@ void main(){ float r=length(vQ); if(r>1.0) discard; float a;
       const LT = [], pm = [(PET[0].x + PET[1].x) / 2, (PET[0].z + PET[1].z) / 2];
       for (const T of PET) LT.push([T.x, 45.25, T.z, 1, 0.25, 0.2, 0.5, 0.0, 0, 1], [T.x, 41.75, T.z, 1, 0.95, 0.9, 0.35, -1, 0, 1]);
       LT.push([L.kltower.x, ky + 42.15, L.kltower.z, 1, 0.2, 0.15, 0.55, 0.3, 0, 1], [L.kltower.x, ky + 39.1, L.kltower.z, 1, 0.2, 0.15, 0.4, 0.55, 0, 1], [L.kltower.x, ky + 36.0, L.kltower.z, 1, 0.2, 0.15, 0.4, 0.8, 0, 1]);
-      LT.push([MER.S[0], 67.95, MER.S[1], 1, 0.25, 0.2, 0.6, 0.15, 0, 1], [MER.S[0], 62.0, MER.S[1], 0.85, 0.9, 1, 0.35, -1, 0, 1]);
+      LT.push([MER_SP[0], 67.95, MER_SP[1], 1, 0.25, 0.2, 0.6, 0.15, 0, 1], [MER_SP[0], 62.0, MER_SP[1], 0.85, 0.9, 1, 0.35, -1, 0, 1]);
       LT.push([126.4, 45.5, 142.9, 1, 0.25, 0.2, 0.45, 0.65, 0, 1]);
       vor.outline.filter((_, i) => i % 24 === 0).forEach((p, i) => LT.push([p[0] * 0.9, h + 0.05, p[1] * 0.9, 1, 0.25, 0.2, 0.22, 0.2 + i * 0.1, 0, 1]));
       const c = (s) => s.split(',').map((v) => v / 255);
       for (const T of PET) LT.push([T.x, 39.6, T.z, ...c('225,235,255'), 3.6, -1, 1, 0.42]);
       LT.push([pm[0], 24, pm[1], ...c('200,215,255'), 30, -1, 1, 0.1]);
       LT.push([L.kltower.x, ky + 29.0, L.kltower.z, ...c('170,160,255'), 11, -1, 1, 0.4]);
-      LT.push([MER.S[0] - 0.9, 58, MER.S[1] + 1.2, ...c('175,205,255'), 12, -1, 1, 0.38]);
+      LT.push([MER_SP[0] - 0.9, 51, MER_SP[1] + 1.2, ...c('175,205,255'), 12, -1, 1, 0.38]);
       LT.push([126.4, 43.2, 142.9, ...c('255,205,130'), 10, -1, 1, 0.45]);
       LT.push([0, h + 0.6, 0, ...c('255,175,85'), 6.5, -1, 2, 1]);
       const lg = new THREE.InstancedBufferGeometry();
