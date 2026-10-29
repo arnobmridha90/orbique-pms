@@ -11,6 +11,7 @@
   "rewrites": [
     { "source": "/api/public/:path*", "destination": "/api/public?path=:path*" },
     { "source": "/guest/:token", "destination": "/index.html" },
+    { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/((?!api/|vendor/|icons/).*)", "destination": "/index.html" }
   ],
   "headers": [
