@@ -192,7 +192,7 @@ export async function replyReview(sb, cfg, orgId, reviewId, text, by, opts = {})
     });
   } catch (e) {
     if (e instanceof ChannexError) {
-      if (e.status === 403) throw bad('reviews-off', 'Reviews are not switched on for this building in Channex yet (the Messaging & Reviews app). Turn it on in Guest inbox, Settings.');
+      if (e.status === 403) throw bad('reviews-off', 'Reviews are not switched on for this building in Channex yet (the Messaging & Reviews app). Turn it on in Inbox, Settings.');
       if (e.status === 422) throw bad('reply-refused', 'The booking site did not take the reply: ' + e.message + '. Some sites allow a reply only once, or only for a few days after the review.');
       if (e.retryable) throw new ApiError(502, 'channex-unavailable', 'The booking site did not answer. Please try again in a minute.');
       throw new ApiError(502, 'channex-refused', 'The booking site refused the reply: ' + e.message);

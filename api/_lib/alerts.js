@@ -15,6 +15,8 @@
  * WhatsApp alerts use an approved message template (WHATSAPP_ALERT_TEMPLATE, default "booking_alert", language
  * WHATSAPP_ALERT_LANG, default "en") with two body values: the title and the details. WhatsApp only lets a business
  * write first with a template. Sent from the workspace's WhatsApp number (whatsapp_numbers).
+ * Phone alerts use Orbique's own loud chime (scripts/alert-sound.py): Android channel PUSH_CHANNEL with sound
+ * PUSH_SOUND, iOS sound PUSH_SOUND + '.wav'. The phone's notification volume still applies.
  * Nothing here logs or returns a key, and error messages never include one.
  */
 import { createSign } from 'node:crypto';
@@ -25,6 +27,8 @@ export const MAX_ATTEMPTS = 6;
 export const MAX_AGE_MS = 2 * 86400000;           // an alert that could not go out for 2 days is dropped, not sent late
 const BACKOFF_MS = [60e3, 2 * 60e3, 5 * 60e3, 15 * 60e3, 60 * 60e3];
 export const CHANNELS = ['email', 'whatsapp', 'push'];
+export const PUSH_CHANNEL = 'alerts_loud';        // Android notification channel; channels cannot change once made, so a new sound needs a new id
+export const PUSH_SOUND = 'orbique_alert';        // scripts/alert-sound.py; Android res/raw name, iOS adds .wav
 const CHANNEL_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', expedia: 'Expedia', trip: 'Trip.com', vrbo: 'Vrbo', direct: 'Direct', other: 'Another site' };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -272,7 +276,10 @@ export async function sendPush(sb, cfg, orgId, msg, data, opts = {}) {
         token: d.token,
         notification: { title: msg.title, body: msg.lines.join('\n') },
         data: Object.fromEntries(Object.entries(data || {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, String(v)])),
-        android: { priority: 'high', notification: { channel_id: 'bookings', sound: 'default' } }
+        // Android: the loud channel the app makes (app/native/bridge.js) and its sound, res/raw/orbique_alert.wav
+        android: { priority: 'high', notification: { channel_id: PUSH_CHANNEL, sound: PUSH_SOUND, notification_priority: 'PRIORITY_MAX', default_vibrate_timings: false, vibrate_timings: ['0s', '0.4s', '0.2s', '0.4s'] } },
+        // iPhone: the same sound from the app bundle (ios/App/App/orbique_alert.wav), delivered straight away
+        apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: PUSH_SOUND + '.wav' } } }
       } })
     });
     if (r.ok) { sent++; continue; }

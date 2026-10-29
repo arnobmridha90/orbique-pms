@@ -95,7 +95,7 @@
   }
   function miniPreview(tokens, ws, label) {
     var style = Object.keys(tokens).map(function (k) { return k + ':' + tokens[k]; }).join(';');
-    return '<div class="mini" style="' + style + '"><div class="mside"><div class="mlogo">' + O.theme.logoHTML(ws, tokens['--side-bg']) + '<span>' + esc(label || ws.name) + '</span></div><div class="mi on">Dashboard</div><div class="mi">Bookings</div><div class="mi">Calendar</div><div class="mi">Guest Inbox <span class="mbadge">3</span></div><div class="mi">Invoices</div></div>' +
+    return '<div class="mini" style="' + style + '"><div class="mside"><div class="mlogo">' + O.theme.logoHTML(ws, tokens['--side-bg']) + '<span>' + esc(label || ws.name) + '</span></div><div class="mi on">Dashboard</div><div class="mi">Bookings</div><div class="mi">Calendar</div><div class="mi">Inbox <span class="mbadge">3</span></div><div class="mi">Invoices</div></div>' +
       '<div class="mmain"><div class="mbar"><b>Dashboard</b><span class="mbtn">+ New booking</span></div><div class="row-flex"><span class="mchip on">Airbnb</span><span class="mchip">Needs reply</span><span class="mbadge">5</span></div>' +
       '<div class="mcard"><div class="row-flex" style="justify-content:space-between"><b>Revenue, 1–6 Oct</b><span style="color:var(--brand-text);font-weight:700">View report</span></div><svg viewBox="0 0 200 70" preserveAspectRatio="none"><path d="M0 60 L40 50 L80 44 L120 32 L160 26 L200 12" fill="none" stroke="#C3C9D2" stroke-width="2"/><path d="M0 62 L40 54 L80 40 L120 30 L160 20 L200 8" fill="none" style="stroke:' + tokens['--brand-strong'] + '" stroke-width="2.5"/></svg></div></div></div>';
   }

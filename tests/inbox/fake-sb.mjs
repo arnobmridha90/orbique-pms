@@ -1,6 +1,7 @@
 /* A stand-in for the Supabase client in unit tests: every query is answered by handler(table, ops), every rpc by
- * rpc(name, args). ops lists the calls made on the builder: [['select', 'id'], ['eq', 'org_id', 'x'], ...]. */
-export function fakeSb({ handler = () => ({ data: null, error: null }), rpc = () => ({ data: null, error: null }) } = {}) {
+ * rpc(name, args), every Storage call by storage(bucket, method, args) (sb.storage.from(bucket).method(...args)).
+ * ops lists the calls made on the builder: [['select', 'id'], ['eq', 'org_id', 'x'], ...]. */
+export function fakeSb({ handler = () => ({ data: null, error: null }), rpc = () => ({ data: null, error: null }), storage = () => ({ data: null, error: null }) } = {}) {
   const calls = [];
   const sb = {
     calls,
@@ -16,7 +17,12 @@ export function fakeSb({ handler = () => ({ data: null, error: null }), rpc = ()
       });
       return b;
     },
-    rpc(name, args) { calls.push({ rpc: name, args }); return Promise.resolve(rpc(name, args)); }
+    rpc(name, args) { calls.push({ rpc: name, args }); return Promise.resolve(rpc(name, args)); },
+    storage: {
+      from(bucket) {
+        return new Proxy({}, { get: (_, method) => (...args) => { calls.push({ storage: method, bucket, args }); return Promise.resolve(storage(bucket, method, args)); } });
+      }
+    }
   };
   return sb;
 }

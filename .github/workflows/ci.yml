@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png vendor/supabase.js vendor/jspdf.umd.min.js vendor/maplibre-gl.js vendor/maplibre-gl.css vendor/maplibre-gl.LICENSE.txt; do
+          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png sounds/orbique_alert.wav vendor/supabase.js vendor/jspdf.umd.min.js vendor/maplibre-gl.js vendor/maplibre-gl.css vendor/maplibre-gl.LICENSE.txt; do
             test -s "dist/$f" || { echo "::error::dist/$f is missing"; exit 1; }
           done
           grep -q 'O.geo' dist/index.html || { echo "::error::api/_lib/shared/geo.cjs missing from the production page"; exit 1; }

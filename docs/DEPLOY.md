@@ -201,9 +201,9 @@ Start Orbique with `CHANNEX_BASE_URL=http://127.0.0.1:8899/api/v1` and any `CHAN
 `scripts/channex-mock.mjs` lists what it can do (including simulated rate limits and errors). `node scripts/dev.mjs --worker` also
 runs the sending job every 20 seconds (needs `CHANNEX_WORKER_SECRET`), standing in for the database timer.
 
-## Guest inbox: WhatsApp and translation
+## Inbox: WhatsApp and translation
 
-The Guest inbox collects every guest conversation in one place: WhatsApp messages to your business number, and messages
+The Inbox collects every guest conversation in one place: WhatsApp messages to your business number, and messages
 from Booking.com, Airbnb and Expedia through Channex. Guest messages can be shown in your language, and a reply can be
 checked in the guest's language before it goes. Without these settings nothing changes: the inbox works as before and
 nothing is sent to guests.
@@ -230,7 +230,7 @@ nothing is sent to guests.
 | `WHATSAPP_VERIFY_TOKEN` | A long random password Meta sends once when you set up the webhook | Make one up (for example 40 random letters and digits) |
 | `WHATSAPP_GRAPH_VERSION` | Optional. The Graph API version, `v23.0` when left out | Only change it when Meta retires that version |
 
-Redeploy, then in Orbique open the **Guest inbox**, **Settings** (bottom of the chat list) as the account owner, enter the
+Redeploy, then in Orbique open the **Inbox**, **Settings** (bottom of the chat list) as the account owner, enter the
 **Phone number ID** (WhatsApp, API Setup, under your number) and press **Connect WhatsApp**. Orbique checks the number with
 Meta before saving it. From then on guests' WhatsApp messages land in the chat of their booking (matched by the phone
 number on the booking); messages from numbers that match no booking wait at the top of the chat list to be linked.
@@ -253,7 +253,7 @@ configuration for WhatsApp Embedded Signup):
 No webhook needs setting in the Meta app: Orbique points the WhatsApp account's webhooks at
 `https://<your-site>/api/whatsapp-webhook` itself when it connects (so one Meta app can serve other sites too).
 
-Then the owner opens the **Guest inbox**, **Settings**, **Connect with Facebook** on a computer, signs in to Facebook,
+Then the owner opens the **Inbox**, **Settings**, **Connect with Facebook** on a computer, signs in to Facebook,
 chooses the business, picks **Connect your existing WhatsApp Business app**, enters the number, confirms on the phone
 (a QR code to scan with the WhatsApp Business app, version 2.24.17 or newer), and agrees to share the chat history.
 Orbique then:
@@ -302,7 +302,14 @@ alerts the team. Bookings you or your team enter in Orbique send no alert. Choos
 `com.orbique.app`; the file is not secret, every copy of the app contains it). Install the new build, sign in as the owner
 or an ops manager and allow notifications when asked (or press **Turn on alerts on this phone** on Automations).
 
-**WhatsApp** needs the guest inbox's WhatsApp setup above (a connected number), plus a message template, because WhatsApp
+**Alert sound:** phone alerts ring Orbique's own loud chime, not the phone's default sound, and Orbique plays the same
+chime for a new booking or guest message while it is open (on a computer too). To hear it on Android, install the new
+test app: uninstall the old Orbique test app first, then install the new build (the old app's quiet "Booking alerts"
+setting is replaced by **Booking and message alerts**). The phone's notification volume, Do Not Disturb and silent mode
+still apply, so turn the notification volume up. Each device can switch the in-app sound off or play it on
+**Automations**, **Booking alerts**, **Sound in the app**. The sound is made by `scripts/alert-sound.py`.
+
+**WhatsApp** needs the Inbox's WhatsApp setup above (a connected number), plus a message template, because WhatsApp
 only lets a business write first with an approved template. In WhatsApp Manager, **Message templates**, **Create
 template**: category **Utility**, name `booking_alert`, language English, body
 
@@ -317,14 +324,14 @@ out by WhatsApp once Meta approves it.
 
 **Booking-site messages and reviews (Channex Messaging & Reviews).** Two-way chat with Booking.com, Airbnb and Expedia guests, their inquiries and requests, and their reviews (read and reply). Channex bills the app to the Channex account (about USD 0.50 per unit a month).
 1. After a deploy that changes the webhook events, open Platform admin, Channel manager and press the setup button once, so Channex's webhook also sends messages, reviews and warnings.
-2. The workspace owner opens Guest inbox, Settings, Booking sites and presses **Switch on messages and reviews**. That installs the app on every connected building and fetches the reviews and recent conversations already there.
+2. The workspace owner opens Inbox, Settings, Booking sites and presses **Switch on messages and reviews**. That installs the app on every connected building and fetches the reviews and recent conversations already there.
 Agoda and Trip.com do not offer messages through Channex; their emails come in through the booking email below.
 
-**Booking email (Resend Inbound).** Every workspace gets its own Orbique address (shown in Guest inbox, Settings, Booking email). The operator forwards their booking mailbox (for example bookings@theircompany.com) to it. Guests' emails become chats that can be answered by email; the booking sites' emails (bookings, changes, payouts, reviews, account notices) become updates on the stay, or under Email & updates. An Agoda guest email shows only what the guest wrote (with Agoda's translation when it is in another language); a special request also shows Agoda's Accepted / Subject to availability / Not accepted buttons, which open Agoda's own page to answer.
+**Booking email (Resend Inbound).** Every workspace gets its own Orbique address (shown in Inbox, Settings, Booking email). The operator forwards their booking mailbox (for example bookings@theircompany.com) to it. Guests' emails become chats that can be answered by email; the booking sites' emails (bookings, changes, payouts, reviews, account notices) become updates on the stay, or under Email & updates. An Agoda guest email shows only what the guest wrote (with Agoda's translation when it is in another language); a special request also shows Agoda's Accepted / Subject to availability / Not accepted buttons, which open Agoda's own page to answer.
 1. Resend, Domains, the sending domain (the one in ALERT_EMAIL_FROM): switch on **Receiving** and add the MX record Resend shows to the domain's DNS (on Vercel: Domains, the domain, DNS records). It must be the domain's only MX record, or the one with the lowest priority.
 2. Resend, Webhooks, **Add webhook**: endpoint `https://<your site>/api/email-inbound`, event `email.received`. Copy its signing secret.
 3. Vercel, Settings, Environment Variables (Production): `RESEND_WEBHOOK_SECRET` = that secret (starts with `whsec_`). The `RESEND_API_KEY` already used for alerts must have **Full access** (a sending-only key cannot read received emails). Optional: `INBOUND_EMAIL_DOMAIN` when receiving uses another domain than ALERT_EMAIL_FROM.
-4. Redeploy. Send a test email to the workspace's address; it shows under Guest inbox, Email & updates.
+4. Redeploy. Send a test email to the workspace's address; it shows under Inbox, Email & updates.
 
 **A workspace's own address (for example hello@staykozi.com).** Instead of forwarding, a workspace can receive its own
 address straight into the inbox; email replies to guests then go out from that address.

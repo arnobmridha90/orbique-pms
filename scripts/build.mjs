@@ -136,7 +136,8 @@ async function buildMobile() {
   fs.rmSync(www, { recursive: true, force: true });
   fs.mkdirSync(www, { recursive: true });
   fs.writeFileSync(path.join(www, 'index.html'), page());
-  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg']) {
+  /* the alert chime (scripts/alert-sound.py) is played by O.alertSound from sounds/ next to index.html */
+  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'sounds/orbique_alert.wav']) {
     const src = path.join(ROOT, 'public', f);
     if (fs.existsSync(src)) copy(src, path.join(www, f));
   }

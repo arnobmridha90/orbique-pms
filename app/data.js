@@ -375,12 +375,12 @@
   reviews.push({ id: 'RV-904', bookingId: null, guest: 'Yuki Tanaka', country: 'JP', propertyId: 'kls', platform: 'airbnb', stars: 4, date: '2026-10-03', text: 'Amazing view of the towers. The building lift was slow at peak times.', tags: ['Location'], sub: { cleanliness: 5, communication: 5, checkin: 4, accuracy: 4 }, reply: null });
   reviews.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
 
-  /* ---------------- guest inbox ---------------- */
+  /* ---------------- inbox ---------------- */
   /* the story booking for a guest name: the stay nearest today (several generated guests share names) */
   function stayGap(b) { return b.checkIn <= TODAY && TODAY < b.checkOut ? 0 : Math.min(Math.abs(O.d.diff(b.checkIn, TODAY)), Math.abs(O.d.diff(b.checkOut, TODAY))); }
   function bk(name, pid) { return bookings.filter(function (b) { return b.guest.name === name && b.status !== 'cancelled' && (!pid || b.propertyId === pid); }).sort(function (a, c) { return stayGap(a) - stayGap(c); })[0]; }
   var conversations = [
-    { id: 'C-1', bookingId: bk('Hafiz Aziz').id, unread: 2, pinned: true, messages: [
+    { id: 'C-1', bookingId: bk('Hafiz Aziz').id, unread: 2, pinned: true, lists: ['L-vip'], messages: [
       { from: 'system', text: 'New Airbnb booking confirmed at 9:02 AM: today 12:00 to tomorrow 11:00.', time: '2026-10-06T09:02' },
       { from: 'guest', text: 'Hi, I just booked for today. Can I check in at 12?', time: '2026-10-06T09:05' },
       { from: 'guest', text: 'Also is there parking?', time: '2026-10-06T09:06' }
@@ -823,6 +823,8 @@
     invCats: invCats, invItems: invItems, invMoves: invMoves, itemById: itemById, checklists: checklists, capexTypes: CAPEX_TYPES,
     channels: channels, channelOrder: channelOrder, staff: staff, properties: properties, propById: propById, buildings: buildings, unitTypes: unitTypes, places: places,
     bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies, greetings: greetings,
+    /* the inbox's named chat lists, shared by the team (conversations[].lists holds their ids) */
+    inboxLists: [{ id: 'L-vip', name: 'VIP guests' }, { id: 'L-follow', name: 'Follow up' }],
     expenses: expenses, expenseTypes: expenseTypes, payMethods: payMethods, events: events,
     rateFor: rateFor, eventFor: eventFor, compSet: compSet, compPrice: compPrice, countryName: COUNTRY,
     staffById: function (id) { return staff.filter(function (s) { return s.id === id; })[0] || null; },

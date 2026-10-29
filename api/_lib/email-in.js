@@ -11,7 +11,8 @@
  *   bodyText(email), stripQuoted(text)       the readable text of an email
  *   agodaMessage(email)                      an Agoda guest email: the guest's words, Agoda's translation, a special request's answer links
  *   receiveEmail(sb, cfg, orgId, email, opts)  one email -> a guest message (answerable by email) or a notification
- *   sendEmail(cfg, msg, opts)                one reply by email (from the workspace's address, so answers come back)
+ *   sendEmail(cfg, msg, opts)                one reply by email (from the workspace's address, so answers come back);
+ *                                            msg.attachments [{filename, path}]: files Resend fetches from https addresses
  *
  * Emails are untrusted: they are stored as plain text (never HTML) and nothing in them is followed or run.
  */
@@ -440,6 +441,8 @@ export async function sendEmail(cfg, msg, opts = {}) {
     subject: /^re:/i.test(subject) ? subject : 'Re: ' + (subject || 'Your stay'),
     text: String(msg.text || '')
   };
+  const files = (Array.isArray(msg.attachments) ? msg.attachments : []).filter((a) => a && typeof a.path === 'string' && /^https:\/\//.test(a.path)).slice(0, 5);
+  if (files.length) body.attachments = files.map((a) => ({ filename: String(a.filename || 'file').replace(/[\\/\r\n"<>]/g, '').slice(0, 120) || 'file', path: a.path }));
   if (msg.inReplyTo && /^<[^<>\s]{3,300}>$/.test(msg.inReplyTo)) body.headers = { 'In-Reply-To': msg.inReplyTo, References: msg.inReplyTo };
   const r = await call(cfg, 'POST', '/emails', body, opts);
   return r.id || null;

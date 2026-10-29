@@ -287,8 +287,8 @@
   var SEC_IDS = ['intro', 'units', 'amenities', 'reviews', 'location', 'book'];
   var SEC_LABEL = { hero: 'Hero', intro: 'Introduction', units: 'Homes and prices', amenities: 'Amenities', reviews: 'Guest reviews', location: 'Location and area', book: 'Booking and enquiry form', footer: 'Footer',
     gallery: 'Photo gallery', overview: 'Overview and facts', calendar: 'Availability calendar and booking', story: 'Our story', team: 'Our team', stats: 'Numbers', faq: 'Questions and answers', contact: 'Contact form and WhatsApp' };
-  var SEC_DESC = { hero: 'Always at the top', footer: 'Contact details and social links, always at the bottom', units: 'Featured homes with "from x / night" prices', reviews: 'Recent five-star reviews from your platforms', book: 'Enquiries arrive in Guest inbox', location: 'Your areas on a map, with a line about each',
-    calendar: 'Live availability from your calendar, with prices', contact: 'Enquiries arrive in Guest inbox', faq: 'Check-in, door codes, tourism tax, invoices', intro: 'A short welcome and a few key facts', amenities: 'What every stay includes' };
+  var SEC_DESC = { hero: 'Always at the top', footer: 'Contact details and social links, always at the bottom', units: 'Featured homes with "from x / night" prices', reviews: 'Recent five-star reviews from your platforms', book: 'Enquiries arrive in the Inbox', location: 'Your areas on a map, with a line about each',
+    calendar: 'Live availability from your calendar, with prices', contact: 'Enquiries arrive in the Inbox', faq: 'Check-in, door codes, tourism tax, invoices', intro: 'A short welcome and a few key facts', amenities: 'What every stay includes' };
   function homeList(t) {
     var S = site();
     if (!Array.isArray(S.home)) return t.order.map(function (id) { return { id: id, on: true }; });
@@ -1215,7 +1215,7 @@
     if (a === 'search') { var F = facts(); if (F.props.length) goSitePage('property', root, ctx); else U.toast('Add properties to let guests search your homes.'); return; }
     if (a === 'addprops') { U.toast('This is a placeholder. Add properties and your homes appear here with photos and prices.'); return; }
     if (a === 'social') { U.toast(b.dataset.net === 'Email' ? 'On the live site this opens an email to ' + b.dataset.h + '.' : 'On the live site this opens ' + b.dataset.net + ' (' + b.dataset.h + ').'); return; }
-    if (a === 'enquire') { U.toast('Preview: on the live site this enquiry arrives in Guest inbox.', 'ok'); return; }
+    if (a === 'enquire') { U.toast('Preview: on the live site this enquiry arrives in the Inbox.', 'ok'); return; }
     if (a === 'book') {
       var pid = b.dataset.pid; if (!pid) { if (facts().props.length) goSitePage('property', root, ctx); else U.toast('Add properties to take bookings on your site.'); return; }
       var x = facts().byId[pid], q = x && quote(x);
