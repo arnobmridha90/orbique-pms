@@ -67,8 +67,9 @@ jobs:
               if (/ style=\"/.test(s)) throw new Error(f + ' has an inline style attribute (the CSP blocks it)');
               if (/<script>/.test(s)) throw new Error(f + ' has an inline script (the CSP blocks it)');
             }
+            for (const d of fs.readdirSync(path.join(R, 'assets/vendor'))) if (!fs.readdirSync(path.join(R, 'assets/vendor', d)).some((x) => /^LICENSE/.test(x))) throw new Error(R + '/assets/vendor/' + d + ' has no LICENSE file');
             console.log('websites/orbique ok');"
-          for f in websites/orbique/assets/js/*.js; do cp "$f" "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; node --check "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; done
+          for f in websites/orbique/assets/js/*.js websites/orbique/assets/vendor/*/*.js; do cp "$f" "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; node --check "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; done
 
       - name: API functions load
         run: |

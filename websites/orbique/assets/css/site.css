@@ -71,11 +71,18 @@ p { margin: 0 0 14px; }
 @media (max-width: 560px) { .top-nav a[href="#calendar"] { display: none; } .top-nav { gap: 2px; } .top-nav a:not(.btn) { padding: 8px 6px; font-size: 0.9rem; } .top-nav .btn-sm { padding: 0 12px; font-size: 0.86rem; min-height: 38px; } .brand { gap: 8px; } .brand span { font-size: 0.98rem; } }
 @media (max-width: 359px) { .brand span { display: none; } }
 
-/* reveal on scroll: visible by default, html.js turns the animation on */
-.js .rv { opacity: 0; transform: translate3d(0, 26px, 0); transition: opacity 0.6s var(--ease), transform 0.75s var(--ease); transition-delay: var(--d, 0ms); }
+/* reveal on scroll: visible by default; html.js hides these until GSAP (site.js) plays them in */
+.js .rv { opacity: 0; transform: translate3d(0, 26px, 0); }
 .js .rv.rv-s { transform: scale(0.94); }
 .js .rv.rv-l { transform: translate3d(-32px, 0, 0); }
-.js .rv.in { opacity: 1; transform: none; }
+/* headings split into lines by SplitText: each line rises out of its own mask; the padding keeps descenders unclipped */
+.sl-mask { padding-bottom: 0.14em; margin-bottom: -0.14em; }
+.sl { will-change: transform; }
+
+/* smooth wheel scrolling (Lenis, desktop only): the rules from lenis.css */
+html.lenis, html.lenis body { height: auto; }
+.lenis:not(.lenis-autoToggle).lenis-stopped { overflow: clip; }
+.lenis.lenis-smooth iframe { pointer-events: none; }
 
 /* hero: the copy is never hidden behind JavaScript; a CSS entrance that paints on the first frame */
 .h-in { animation: rise 0.6s var(--ease) both; }
@@ -104,9 +111,10 @@ p { margin: 0 0 14px; }
 }
 .sites { list-style: none; margin: 0 0 18px; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .site { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--navy-2); border: 1px solid var(--line); font-weight: 600; font-size: 0.9rem; }
-.js .site { opacity: 0; transform: translate3d(0, -18px, 0) scale(0.9); transition: opacity 0.5s var(--ease), transform 0.6s var(--spring); }
-.js .site.s-airbnb { transition-delay: 0.25s; } .js .site.s-booking { transition-delay: 0.32s; } .js .site.s-agoda { transition-delay: 0.39s; } .js .site.s-expedia { transition-delay: 0.46s; } .js .site.s-trip { transition-delay: 0.53s; }
-.js .hero-visual.in .site { opacity: 1; transform: none; }
+/* the booking-site chips drop in on the first frame, pure CSS (the hero never waits for a script) */
+.site { animation: drop 0.6s var(--spring) both; }
+.site.s-airbnb { animation-delay: 0.25s; } .site.s-booking { animation-delay: 0.32s; } .site.s-agoda { animation-delay: 0.39s; } .site.s-expedia { animation-delay: 0.46s; } .site.s-trip { animation-delay: 0.53s; }
+@keyframes drop { from { opacity: 0.01; transform: translate3d(0, -18px, 0) scale(0.9); } to { opacity: 1; transform: none; } }
 .pi { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-family: var(--head); font-weight: 800; font-size: 12px; line-height: 1; flex-shrink: 0; box-shadow: 0 0 0 1.5px #FFFFFF; }
 .pi.airbnb { background: #FF385C; color: #FFFFFF; } .pi.booking { background: #003580; color: #FFFFFF; } .pi.expedia { background: #FDDB32; color: #191E3B; } .pi.trip { background: #287DFA; color: #FFFFFF; }
 .pi.agoda { background: #FFFFFF; gap: 1.5px; } .pi.agoda i { width: 3.5px; height: 3.5px; border-radius: 50%; display: block; }
@@ -115,9 +123,9 @@ p { margin: 0 0 14px; }
 .screen-bar { height: 26px; background: #E9EDF2; display: flex; align-items: center; gap: 6px; padding: 0 12px; }
 .screen-bar i { width: 9px; height: 9px; border-radius: 50%; background: #C5CDD8; }
 .hero-screen { max-width: 960px; margin: 0 auto; }
-/* the hero screen is the LCP element: it only moves, it is never hidden */
-.js .hero-screen { transform: perspective(1400px) rotateX(16deg) translate3d(0, 48px, 0) scale(0.95); transform-origin: 50% 0; transition: transform 1.1s var(--ease) 0.1s; }
-.js .hero-visual.in .hero-screen { transform: none; }
+/* the hero screen is the LCP element: it only moves (pure CSS, first frame), it is never hidden */
+.hero-screen { transform-origin: 50% 0; animation: tilt 1.1s var(--ease) 0.1s both; }
+@keyframes tilt { from { transform: perspective(1400px) rotateX(16deg) translate3d(0, 48px, 0) scale(0.95); } to { transform: none; } }
 .demo-note { font-size: 0.8rem; color: var(--muted); margin: 12px 0 0; text-align: center; }
 
 /* exploded view */
@@ -156,7 +164,7 @@ p { margin: 0 0 14px; }
 .xl-a { position: absolute; right: 0; top: 50%; width: 1px; height: 1px; }
 .xl-o { position: absolute; inset: -8px; border: 1.5px dashed rgba(79, 193, 177, 0.75); border-radius: 12px; opacity: 0; pointer-events: none; }
 .xv-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; display: none; }
-.xv-lines .xv-l { stroke: rgba(79, 193, 177, 0.7); stroke-width: 1; fill: none; }
+.xv-lines .xv-l { stroke: rgba(79, 193, 177, 0.75); stroke-width: 1.25; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .xv-lines .xv-d { fill: var(--teal-2); }
 .xv-dim { position: absolute; left: 0; right: 0; bottom: 4px; display: flex; justify-content: space-between; font: 600 11px/1 var(--head); letter-spacing: 0.14em; text-transform: uppercase; color: rgba(79, 193, 177, 0.65); pointer-events: none; }
 .xv-callouts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; position: relative; z-index: 2; }
@@ -182,8 +190,7 @@ p { margin: 0 0 14px; }
   .xv-callouts li::before { left: 12px; top: 13px; width: 22px; height: 22px; line-height: 22px; font-size: 12px; }
   .xv-lines { display: block; }
 }
-.js .xv-callouts li { opacity: 0.25; transform: translate3d(12px, 0, 0); transition: opacity 0.35s, transform 0.45s var(--ease); }
-.js .xv-callouts li.on { opacity: 1; transform: none; }
+.js .xv-callouts li { opacity: 0.25; transform: translate3d(12px, 0, 0); }
 
 /* counters */
 .stats { padding: 72px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #0D1828, var(--navy)); }
@@ -193,6 +200,7 @@ p { margin: 0 0 14px; }
 .stat small { font-size: 0.42em; margin-left: 4px; color: var(--teal-2); letter-spacing: 0; }
 .stat > span { display: block; margin-top: 8px; color: var(--muted); font-size: 0.95rem; line-height: 1.4; }
 .ct { font-variant-numeric: tabular-nums; }
+.js .ct { display: inline-block; }
 
 /* feature sections */
 .feat { padding: 88px 0; position: relative; }
@@ -233,11 +241,7 @@ p { margin: 0 0 14px; }
 .mc-a { grid-column: 2 / span 3; } .mc-b { grid-column: 6 / span 3; } .mc-c { grid-column: 2 / span 2; } .mc-d { grid-column: 4 / span 3; }
 .mc-e { grid-column: 2 / span 2; } .mc-f { grid-column: 5 / span 3; } .mc-g { grid-column: 2 / span 5; } .mc-h { grid-column: 2 / span 4; } .mc-i { grid-column: 6 / span 3; }
 @media (min-width: 600px) { .mini-cal { font-size: 13px; padding: 16px; } .mc-head, .mc-row { grid-template-columns: 130px repeat(7, minmax(0, 1fr)); } .mc-row em { font-size: 12.5px; } .mc-bar { font-size: 12px; } .mc-row { height: 46px; } }
-.js .mc-bar { transform: scaleX(0); opacity: 0; transition: transform 0.7s var(--ease), opacity 0.2s; }
-.js .mini-cal.in .mc-bar { transform: none; opacity: 1; }
-.js .mini-cal.in .mc-a { transition-delay: 0.1s; } .js .mini-cal.in .mc-c { transition-delay: 0.18s; } .js .mini-cal.in .mc-e { transition-delay: 0.26s; }
-.js .mini-cal.in .mc-g { transition-delay: 0.34s; } .js .mini-cal.in .mc-h { transition-delay: 0.42s; } .js .mini-cal.in .mc-d { transition-delay: 0.55s; }
-.js .mini-cal.in .mc-f { transition-delay: 0.63s; } .js .mini-cal.in .mc-b { transition-delay: 0.71s; } .js .mini-cal.in .mc-i { transition-delay: 0.79s; }
+.js .mc-bar { transform: scaleX(0); opacity: 0; }
 .shot-sm { max-width: 520px; justify-self: end; width: 100%; }
 .shot-tall { max-width: 380px; justify-self: center; }
 .wf-note { font-size: 0.78rem; color: var(--muted); margin: 10px 0 0; }
@@ -286,9 +290,7 @@ p { margin: 0 0 14px; }
 .note > span:last-child { grid-column: 2; font-size: 0.88rem; color: #4A5565; }
 .nt { grid-row: span 2; font: 800 0.72rem/1 var(--head); letter-spacing: 0.06em; text-transform: uppercase; padding: 8px 9px; border-radius: 8px; background: #E8F0FE; color: #1A4FB8; }
 .nt.wa { background: #E3F6EA; color: #136B3A; } .nt.ph { background: #FFF6DA; color: #7A5C00; }
-.js .note { opacity: 0; transform: translate3d(0, -26px, 0) scale(0.96); transition: opacity 0.45s var(--ease), transform 0.6s var(--spring); }
-.js .alerts.in .note { opacity: 1; transform: none; }
-.js .alerts.in .n1 { transition-delay: 0.35s; } .js .alerts.in .n2 { transition-delay: 0.6s; } .js .alerts.in .n3 { transition-delay: 0.85s; }
+.js .note { opacity: 0; transform: translate3d(0, -26px, 0) scale(0.96); }
 .alerts-cap { font-size: 0.8rem; color: var(--muted); margin: 0; }
 
 /* pricing waterfall */
@@ -306,13 +308,8 @@ p { margin: 0 0 14px; }
 .wf4 { bottom: 188px; height: 8.5px; } .wf5 { bottom: 167.5px; height: 20.5px; } .wf6 { bottom: 167px; height: 2px; } .wf7 { bottom: 52px; height: 115px; }
 .wf-col:nth-child(1) em { bottom: 176px; } .wf-col:nth-child(2) em { bottom: 197px; } .wf-col:nth-child(3) em { bottom: 200px; }
 .wf-col:nth-child(4) em { bottom: 170px; } .wf-col:nth-child(5) em { bottom: 148px; } .wf-col:nth-child(6) em { bottom: 148px; } .wf-col:nth-child(7) em { bottom: 171px; color: var(--gold-2); }
-.js .wf-b { transform: scaleY(0); transition: transform 0.5s var(--ease); }
-.js .wf.in .wf-b { transform: none; }
-.js .wf.in .wf2 { transition-delay: 0.35s; } .js .wf.in .wf3 { transition-delay: 0.55s; } .js .wf.in .wf4 { transition-delay: 0.75s; }
-.js .wf.in .wf5 { transition-delay: 0.95s; } .js .wf.in .wf6 { transition-delay: 1.15s; } .js .wf.in .wf7 { transition-delay: 1.4s; transition-duration: 0.8s; }
-.js .wf-col em { opacity: 0; transition: opacity 0.3s; } .js .wf.in .wf-col em { opacity: 1; }
-.js .wf.in .wf-col:nth-child(2) em { transition-delay: 0.45s; } .js .wf.in .wf-col:nth-child(3) em { transition-delay: 0.65s; } .js .wf.in .wf-col:nth-child(4) em { transition-delay: 0.85s; }
-.js .wf.in .wf-col:nth-child(5) em { transition-delay: 1.05s; } .js .wf.in .wf-col:nth-child(6) em { transition-delay: 1.25s; } .js .wf.in .wf-col:nth-child(7) em { transition-delay: 1.9s; }
+.js .wf-b { transform: scaleY(0); }
+.js .wf-col em { opacity: 0; }
 
 /* team */
 .roles { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
@@ -348,9 +345,8 @@ p { margin: 0 0 14px; }
 .phones { grid-template-columns: 1fr 1fr; gap: 16px; max-width: 520px; justify-self: center; width: 100%; }
 .phone { border-radius: 30px; border: 8px solid #0A111C; overflow: hidden; background: #FFFFFF; box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08); }
 .phone.p2 { margin-top: 48px; }
-.js .phone { opacity: 0; transform: translate3d(0, 80px, 0) rotate(-3deg); transition: opacity 0.7s var(--ease), transform 1s var(--ease); }
-.js .phone.p2 { transform: translate3d(0, 120px, 0) rotate(3deg); transition-delay: 0.15s; }
-.js .phones.in .phone { opacity: 1; transform: none; }
+.js .phone { opacity: 0; transform: translate3d(0, 80px, 0) rotate(-3deg); }
+.js .phone.p2 { transform: translate3d(0, 140px, 0) rotate(3deg); }
 
 /* end + footer */
 .end { padding: 96px 0; text-align: center; background: radial-gradient(60% 80% at 50% 100%, rgba(11, 93, 84, 0.45), rgba(11, 93, 84, 0)); border-top: 1px solid var(--line); }
@@ -369,7 +365,7 @@ p { margin: 0 0 14px; }
 /* reduced motion: final states, no movement */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .h-in, .js .rv, .js .site, .js .hero-screen, .js .phone, .js .mc-bar, .js .note, .js .wf-b, .js .wf-col em, .js .phone, .js .xv-callouts li { opacity: 1 !important; transform: none !important; }
+  .h-in, .js .rv, .site, .hero-screen, .js .phone, .js .mc-bar, .js .note, .js .wf-b, .js .wf-col em, .js .xv-callouts li { opacity: 1 !important; transform: none !important; }
   .js .si-w { opacity: 0 !important; } .js .si-w.w1 { opacity: 1 !important; transform: none !important; }
   .progress { display: none; }
   .xv { height: auto; }
