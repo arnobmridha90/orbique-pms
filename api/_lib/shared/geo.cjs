@@ -8,6 +8,7 @@
  * A place (records collection 'places', one list per building):
  *   {id, buildingId, name, category, note, address, lat, lng, hours, phone, order,
  *    route: {coords: [[lng, lat], ...] (at most MAX_ROUTE_POINTS), meters, minutes, mode: 'foot'} | null, osmId, updatedAt}
+ *   (routeStale: true while the building moved and the route is being found again; staff only)
  * A building carries lat / lng (decimal degrees) for its own pin.
  *
  * Shared by the page (inlined by scripts/build.mjs as O.geo), the node tests (tests/places.test.mjs) and, for the limits,
@@ -202,6 +203,36 @@ function coverPoints(building, places) {
   });
   return pts;
 }
+/* the tiles a building saves for offline use: first the close area (the building, every place and route, padded by
+   padMeters) at every zoom, then, while under the cap, the wider area each place's map screen shows (a phone screen
+   fitted to the walk shows up to about 0.65 of its length beyond the line on each side), lowest zoom first.
+   -> {tiles: [[z, x, y]], skipped} */
+function coverTiles(building, places, zmin, zmax, cap, padMeters) {
+  var limit = cap == null ? MAX_TILES : cap, core = bbox(coverPoints(building, places), padMeters == null ? 400 : padMeters);
+  var first = tilesFor(core, zmin, zmax, limit), seen = {}, out = first.tiles.slice(), skipped = first.skipped;
+  out.forEach(function (t) { seen[t.join('/')] = 1; });
+  if (!core) return { tiles: out, skipped: skipped };
+  var home = building && validLatLng(building.lat, building.lng) ? { lat: num(building.lat), lng: num(building.lng) } : null, wide = [];
+  (places || []).forEach(function (p) {
+    if (!p || !home || !validLatLng(p.lat, p.lng)) return;
+    var pts = coverPoints(building, [p]), m = distance(home, { lat: num(p.lat), lng: num(p.lng) });
+    if (p.route && num(p.route.meters)) m = Math.max(m, num(p.route.meters) * 0.7);
+    var pad = 0.65 * m;
+    if (pad > (padMeters == null ? 400 : padMeters)) wide.push(bbox(pts, pad));
+  });
+  for (var z = zmin; z <= zmax; z++) {
+    wide.forEach(function (bb) {
+      var r = tileRange(bb, z);
+      for (var x = r.x0; x <= r.x1; x++) for (var y = r.y0; y <= r.y1; y++) {
+        var k = z + '/' + x + '/' + y;
+        if (seen[k]) continue;
+        seen[k] = 1;
+        if (out.length >= limit) skipped++; else out.push([z, x, y]);
+      }
+    });
+  }
+  return { tiles: out, skipped: skipped };
+}
 function fillTemplate(tpl, z, x, y) { return String(tpl).replace('{z}', z).replace('{x}', x).replace('{y}', y); }
 
 /* ---------- OpenStreetMap suggestions (Overpass) ---------- */
@@ -303,14 +334,21 @@ function scaleBar(pxPerMeter, widthPx) {
 }
 
 /* ---------- places as the guest sees them ---------- */
+/* a stored route line as guests get it: only [lng, lat] number pairs that are real coordinates, in order; null when fewer
+   than 2 remain or the list is not 2 to 1000 entries long (guest__coords in 0021_guest_places.sql) */
+function routeCoords(c) {
+  if (!Array.isArray(c) || c.length < 2 || c.length > 1000) return null;
+  var out = c.filter(function (q) { return Array.isArray(q) && q.length === 2 && typeof q[0] === 'number' && typeof q[1] === 'number' && isFinite(q[0]) && isFinite(q[1]) && q[0] >= -180 && q[0] <= 180 && q[1] >= -90 && q[1] <= 90; })
+    .map(function (q) { return [q[0], q[1]]; });
+  return out.length >= 2 ? out : null;
+}
 /* a stored place -> the fields a guest may see (also what guest__nearby returns), or null when it has no position */
 function guestPlace(p) {
   if (!p || typeof p !== 'object' || p.archived === true || !validLatLng(p.lat, p.lng)) return null;
   var str = function (v, n) { return typeof v === 'string' ? v.slice(0, n) : ''; };
   var r = p.route, route = null;
-  if (r && typeof r === 'object' && Array.isArray(r.coords) && r.coords.length >= 2 && r.coords.length <= 1000) {
-    route = { coords: r.coords, meters: num(r.meters), minutes: num(r.minutes), mode: 'foot' };
-  }
+  var coords = r && typeof r === 'object' ? routeCoords(r.coords) : null;
+  if (coords) route = { coords: coords, meters: num(r.meters), minutes: num(r.minutes), mode: 'foot' };
   return { id: String(p.id), name: str(p.name, 80) || 'Place', category: CAT_BY_ID[p.category] ? p.category : 'other', note: str(p.note, 240), address: str(p.address, 160),
     lat: num(p.lat), lng: num(p.lng), hours: str(p.hours, 80), phone: str(p.phone, 40), route: route };
 }
@@ -328,7 +366,7 @@ module.exports = {
   CATEGORIES: CATEGORIES, category: category, WALK_M_PER_MIN: WALK_M_PER_MIN, MAX_ROUTE_POINTS: MAX_ROUTE_POINTS, MAX_PLACES: MAX_PLACES, MAX_TILES: MAX_TILES, SUGGEST_RADIUS: SUGGEST_RADIUS,
   num: num, validLatLng: validLatLng, distance: distance, bearing: bearing, compassWord: compassWord, fmtDistance: fmtDistance, walkMinutes: walkMinutes, fmtWalk: fmtWalk, directionText: directionText,
   simplify: simplify, lineLength: lineLength, routeFromOsrm: routeFromOsrm, reverseRoute: reverseRoute, progress: progress,
-  lngToX: lngToX, latToY: latToY, bbox: bbox, tileRange: tileRange, tilesFor: tilesFor, coverPoints: coverPoints, fillTemplate: fillTemplate,
+  lngToX: lngToX, latToY: latToY, bbox: bbox, tileRange: tileRange, tilesFor: tilesFor, coverPoints: coverPoints, coverTiles: coverTiles, fillTemplate: fillTemplate,
   overpassQuery: overpassQuery, categoryOfTags: categoryOfTags, mapOverpass: mapOverpass, parseCoords: parseCoords,
-  fit: fit, scaleBar: scaleBar, guestPlace: guestPlace, guestPlaces: guestPlaces
+  fit: fit, scaleBar: scaleBar, routeCoords: routeCoords, guestPlace: guestPlace, guestPlaces: guestPlaces
 };

@@ -3,7 +3,8 @@
    1. Data: records 'places' (registered in core.js, rules and maths in api/_lib/shared/geo.cjs as O.geo), the building's
       lat / lng. O.nearby.forBooking(b) is the payload's 'nearby' for the local O.guestApi; the database builds the same in
       guest__nearby (supabase/migrations/0021_guest_places.sql).
-   2. Offline: the guest's own phone keeps the last payload (localStorage) and saves the building's map (MapLibre files, the
+   2. Offline: the guest's own phone keeps a slim copy of the last payload (localStorage: the stay's dates, house info and
+      the nearby places, never the door code, Wi-Fi, messages or check-in details) and saves the building's map (MapLibre files, the
       OpenFreeMap style, sprites, Latin glyphs and the vector tiles around the building and its places, at most 250) in the
       Cache Storage cache 'orbique-maps-<buildingId>', which public/sw.js answers from first. Once per building per 30 days.
    3. The guest screens, drawn by guestapp.js (tab 'nearby', view 'place'): the list by category and a map screen with the
@@ -75,16 +76,34 @@
      2. OFFLINE: the last payload and the saved map
      ================================================================= */
   function payloadKey(token) { return 'orbique-guest:' + token; }
-  /* the guest's own phone keeps the last payload, so the app (and Nearby) opens without internet */
-  function remember(token, p) {
-    if (!p || !p.ok) return;
-    store(payloadKey(token), { at: Date.now(), p: p });
+  /* the copy kept for offline use: the stay's dates, house info and the nearby places. Never the door code, the Wi-Fi,
+     messages, requests, problem reports or check-in names: a phone can be shared or lost, and a saved code can be out of
+     date (changed, cancelled). Offline, the guest app says those show again once online. */
+  function offlineCopy(p) {
+    var c = JSON.parse(JSON.stringify(p)), dr = c.door || {};
+    c.door = { visible: false, code: null, from: dr.from || null, until: dr.until || null, waitingFor: ['offline'], helpOpen: false };
+    if (c.property) c.property.wifi = null;
+    var ci = c.checkin || {};
+    c.checkin = { done: !!ci.done, idSubmitted: !!ci.idSubmitted, idVerified: !!ci.idVerified, names: [], at: null, arrivalTime: null, signedName: null };
+    c.messages = []; c.requests = []; c.reports = []; c.feedback = null;
+    return c;
   }
+  /* the guest's own phone keeps that copy, so the app (and Nearby) opens without internet. Written only when it changed. */
+  var lastSaved = {};
+  function remember(token, p) {
+    if (!p || !p.ok || !p.booking) return;
+    var c = offlineCopy(p), j = JSON.stringify(c);
+    if (lastSaved[token] === j) return;
+    lastSaved[token] = j;
+    store(payloadKey(token), { at: Date.now(), p: c });
+  }
+  /* the server said the link does not open a stay (expired, cancelled, revoked): drop the saved copy */
+  function forget(token) { delete lastSaved[token]; store(payloadKey(token), null); }
   function recall(token) {
     var s = store(payloadKey(token));
     if (!s || !s.p || !s.p.ok || !s.p.booking) return null;
-    /* the link stops working 30 days after check-out; the saved copy goes with it */
-    var end = Date.parse(String(s.p.booking.checkOut) + 'T00:00:00Z') + 31 * 864e5;
+    /* the saved copy is for the stay itself: it goes the day after check-out */
+    var end = Date.parse(String(s.p.booking.checkOut) + 'T00:00:00Z') + 864e5;
     if (!(end > Date.now())) { store(payloadKey(token), null); return null; }
     return s;
   }
@@ -135,7 +154,9 @@
     list.forEach(function (u) { ['.json', '.png', '@2x.json', '@2x.png'].forEach(function (x) { out.push(u + x); }); });
     return out;
   }
-  /* save the building's map for offline use on this phone. onProgress(done, total). -> Promise({ok, tiles, skipped}) */
+  /* save the building's map for offline use on this phone. onProgress(done, total). -> Promise({ok, tiles, skipped})
+     The download goes into a second cache ('-a' / '-b'); only when it is good does it replace the saved map, so a refresh
+     that fails half way (weak signal, phone locked) keeps the map the phone already has. */
   function saveMaps(n, onProgress, force) {
     if (!n || !hasHome(n)) return Promise.resolve({ ok: false, why: 'nolocation' });
     var bid = n.building.id, st = mapsState(n);
@@ -143,9 +164,10 @@
     if (SAVE.busy[bid]) return SAVE.busy[bid];
     if (st === 'saved' && !force) return Promise.resolve({ ok: true, cached: true });
     if (navigator.onLine === false) return Promise.resolve({ ok: false, why: 'offline' });
-    var name = MAPS_CACHE + String(bid).replace(/[^A-Za-z0-9_-]/g, '_'), cache, urls = [], vb = vendorBase();
+    var base = MAPS_CACHE + String(bid).replace(/[^A-Za-z0-9_-]/g, '_'), prev = store(mapsKey(bid)) || {};
+    var keep = prev.ok && prev.cache ? prev.cache : null, name = base + (keep === base + '-a' ? '-b' : '-a'), cache, urls = [], vb = vendorBase();
     SAVE.done[bid] = 0; SAVE.total[bid] = 0; SAVE.err[bid] = null;
-    var bb = G.bbox(G.coverPoints(n.building, n.places), 400), tiles = { tiles: [], skipped: 0 };
+    var tiles = { tiles: [], skipped: 0 };
     var job = caches.delete(name).then(function () { return caches.open(name); }).then(function (c) {
       cache = c;
       urls.push(vb + 'maplibre-gl.js', vb + 'maplibre-gl.css');
@@ -162,7 +184,7 @@
       })).then(function (tjs) {
         tjs.forEach(function (tj) {
           if (!tj || !Array.isArray(tj.tiles) || !tj.tiles.length) return;
-          var top = Math.min(ZMAX, typeof tj.maxzoom === 'number' ? tj.maxzoom : ZMAX), t = G.tilesFor(bb, ZMIN, Math.max(ZMIN, top), G.MAX_TILES);
+          var top = Math.min(ZMAX, typeof tj.maxzoom === 'number' ? tj.maxzoom : ZMAX), t = G.coverTiles(n.building, n.places, ZMIN, Math.max(ZMIN, top), G.MAX_TILES, 400);
           tiles.tiles = tiles.tiles.concat(t.tiles); tiles.skipped += t.skipped;
           t.tiles.forEach(function (z) { urls.push(G.fillTemplate(tj.tiles[0], z[0], z[1], z[2])); });
         });
@@ -175,11 +197,17 @@
     }).then(function (res) {
       /* most of the map is enough: a few missing labels or tiles at the edge do not stop it working */
       var ok = res.ok > 0 && res.bad <= Math.max(3, Math.round(urls.length * 0.1));
-      store(mapsKey(bid), { at: Date.now(), ok: ok, sig: bboxSig(n), tiles: tiles.tiles.length, skipped: tiles.skipped, missed: res.bad });
-      delete SAVE.busy[bid];
-      return { ok: ok, tiles: tiles.tiles.length, skipped: tiles.skipped, missed: res.bad };
-    }, function (e) {
+      if (!ok) throw new Error(res.bad + ' of ' + urls.length + ' map files did not download');
+      store(mapsKey(bid), { at: Date.now(), ok: true, cache: name, sig: bboxSig(n), tiles: tiles.tiles.length, skipped: tiles.skipped, missed: res.bad });
+      /* the new map is in: the old copy (and the cache name used before the '-a' / '-b' pair) can go */
+      return Promise.all([base, base + (name === base + '-a' ? '-b' : '-a')].map(function (k) { return caches.delete(k).catch(function () { return false; }); })).then(function () {
+        delete SAVE.busy[bid];
+        return { ok: true, tiles: tiles.tiles.length, skipped: tiles.skipped, missed: res.bad };
+      });
+    }).catch(function (e) {
       console.warn('Nearby maps could not be saved', e);
+      /* keep the map saved before (if any); drop only the half-done download */
+      caches.delete(name).catch(function () { return false; });
       delete SAVE.busy[bid]; SAVE.err[bid] = String(e && e.message || e);
       return { ok: false, why: 'network' };
     });
@@ -193,6 +221,9 @@
     if (!n || !hasHome(n) || autoTried[n.building.id]) return;
     var st = mapsState(n);
     if (st !== 'none' && st !== 'old') return;
+    /* not on its own on a data saver or a very slow connection (roaming guests pay for it): the button still works */
+    var cn = navigator.connection;
+    if (cn && (cn.saveData || /(^|-)2g$/.test(String(cn.effectiveType || '')))) return;
     autoTried[n.building.id] = true;
     saveMaps(n, progressPaint).then(progressPaint);
   }
@@ -221,7 +252,8 @@
   }
   /* can the full map work here? WebGL and either a connection or a saved map */
   function webgl() { try { var c = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))); } catch (e) { return false; } }
-  function vectorPossible(n) { return !!vendorBase() && webgl() && (navigator.onLine !== false || mapsState(n) === 'saved' || mapsState(n) === 'old'); }
+  function online() { return navigator.onLine !== false && !(CUR.st && CUR.st.offline); }
+  function vectorPossible(n) { var ms = mapsState(n); return !!vendorBase() && webgl() && (online() || ms === 'saved' || ms === 'old'); }
 
   /* =================================================================
      3. GUEST SCREENS (drawn by guestapp.js)
@@ -255,14 +287,15 @@
     var out = '<h1 class="gx-h1">Nearby</h1><p class="gx-p">' + (places.length ? 'Places our team likes around ' + esc(bd.name || 'your building') + ', with walking directions.' : 'Walking directions back to ' + esc(bd.name || 'your building') + ' from wherever you are.') + '</p>' + saveLineHTML(n, opts && opts.preview);
     if (hasHome(n)) out += '<button type="button" class="gx-nb-home" data-gx-view="place" data-gx-place="home">' + catBadge('home') + '<span class="gx-grow"><b>Back to ' + esc(bd.name || 'your building') + '</b><span>' + esc(bd.address || 'Directions from where you are') + '</span></span>' + O.icon('right') + '</button>';
     if (cats.length > 1) out += '<div class="gx-chips">' + [{ id: 'all', label: 'All' }].concat(cats).map(function (c) { return '<button type="button" class="chip' + (cat === c.id ? ' on' : '') + '" data-nb-cat="' + esc(c.id) + '">' + esc(c.label) + '</button>'; }).join('') + '</div>';
-    if (!places.length) return out;
+    var credit = '<p class="gx-p gx-fine gx-nb-credit">Place and map data © OpenStreetMap contributors.</p>';
+    if (!places.length) return out + credit;
     var groups = G.CATEGORIES.filter(function (c) { return cat === 'all' ? cats.indexOf(c) >= 0 : c.id === cat; });
     return out + '<div class="gx-nb-groups">' + groups.map(function (c) {
       var list = places.filter(function (x) { return x.category === c.id; });
       return '<section class="gx-card gx-nb-grp"><h2>' + esc(c.label) + '</h2>' + list.map(function (pl) {
         return '<button type="button" class="gx-nb-row" data-gx-view="place" data-gx-place="' + esc(pl.id) + '">' + catBadge(pl.category) + '<span class="gx-grow"><b>' + esc(pl.name) + '</b>' + (pl.note ? '<span>' + esc(pl.note) + '</span>' : '') + '<span class="gx-nb-meta">' + esc(metaLine(n, pl)) + '</span></span>' + O.icon('right') + '</button>';
       }).join('') + '</section>';
-    }).join('') + '</div>';
+    }).join('') + '</div>' + credit;
   }
   /* the target and the line for the map screen */
   function legFor(n, id, dir) {
@@ -286,9 +319,11 @@
     var seg = pl && hasHome(n) ? '<div class="gx-seg two gx-nb-dir" role="radiogroup" aria-label="Direction"><button type="button" role="radio" aria-checked="' + (dir === 'to') + '" data-nb-dir="to" class="' + (dir === 'to' ? 'on' : '') + '">To ' + esc(pl.name) + '</button><button type="button" role="radio" aria-checked="' + (dir === 'back') + '" data-nb-dir="back" class="' + (dir === 'back' ? 'on' : '') + '">Back to ' + esc(bd.name || 'the building') + '</button></div>' : '';
     var leg = legFor(n, id, dir);
     return '<section class="gx-card gx-nb-view" data-nb-view>' + head + seg +
-      '<div class="gx-nb-guide" aria-live="polite"><span class="gx-nb-arrow" data-nb-arrow>' + ARROW + '</span><div class="gx-grow"><b data-nb-dist></b><span data-nb-hint></span></div></div>' +
-      '<div class="gx-nb-map" data-nb-map role="img" aria-label="Map from ' + esc(leg.fromName || 'your location') + ' to ' + esc(leg.targetName) + '"></div>' +
-      '<div class="gx-nb-tools"><button type="button" class="btn btn-ghost btn-sm" data-nb-act="compass" hidden>' + O.icon('refresh') + 'Use compass</button>' +
+      '<div class="gx-nb-guide"><span class="gx-nb-arrow" data-nb-arrow>' + ARROW + '</span><div class="gx-grow"><b data-nb-dist></b><span data-nb-hint></span></div></div>' +
+      '<span class="sr-only" role="status" data-nb-say></span>' +
+      '<div class="gx-nb-map" data-nb-map role="region" aria-label="Map from ' + esc(leg.fromName || 'your location') + ' to ' + esc(leg.targetName) + '"></div>' +
+      '<div class="gx-nb-tools"><button type="button" class="btn btn-primary btn-sm" data-nb-act="locate" hidden>' + O.icon('pin') + 'Show where you are</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-nb-act="compass" hidden>' + O.icon('refresh') + 'Use compass</button>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-nb-act="mode" hidden></button>' +
         '<a class="btn btn-ghost btn-sm" data-nb-online href="' + esc(gmapsLink(leg.target)) + '" target="_blank" rel="noopener">' + O.icon('map') + 'Open in Google Maps</a></div>' +
       '<p class="gx-p gx-fine" data-nb-gps>' + (opts && opts.preview ? 'In the guest\'s own app this shows their live position too.' : 'Finding where you are...') + '</p></section>';
@@ -301,8 +336,27 @@
     var c = CTL; CTL = null;
     if (c.watch != null && navigator.geolocation) try { navigator.geolocation.clearWatch(c.watch); } catch (e) { /* ignore */ }
     if (c.onOrient) { window.removeEventListener('deviceorientationabsolute', c.onOrient, true); window.removeEventListener('deviceorientation', c.onOrient, true); }
+    if (c.onNet) { window.removeEventListener('online', c.onNet); window.removeEventListener('offline', c.onNet); }
+    if (c.raf && window.cancelAnimationFrame) window.cancelAnimationFrame(c.raf);
     if (c.map) try { c.map.remove(); } catch (e) { /* ignore */ }
     clearTimeout(c.failT);
+  }
+  /* the guest says yes to showing their position once; after that the map screen asks the browser straight away */
+  var LOC_KEY = 'orbique-guest:locate';
+  function startWatch(c) {
+    if (c.watch != null || !navigator.geolocation || !navigator.geolocation.watchPosition) return;
+    var lb = O.$('[data-nb-act=locate]', c.el); if (lb) lb.hidden = true;
+    c.asked = true;
+    try {
+      c.watch = navigator.geolocation.watchPosition(function (pos) {
+        if (CTL !== c) return;
+        c.pos = { lat: pos.coords.latitude, lng: pos.coords.longitude }; c.acc = pos.coords.accuracy; c.gpsErr = null;
+        /* the direction of walking, for phones with no compass (or before iOS allows it) */
+        if (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 0.6) c.course = pos.coords.heading;
+        else if (!(pos.coords.speed > 0.6)) c.course = null;
+        guideSoon(c); moveMe(c);
+      }, function (err) { if (CTL !== c) return; c.gpsErr = err && err.code === 1 ? 'denied' : 'unavailable'; guideSoon(c); }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
+    } catch (e) { c.gpsErr = 'unavailable'; }
   }
   function startMap(el, n, S, opts) {
     var dir = S.nbDir === 'back' ? 'back' : 'to', leg = legFor(n, S.nbId || 'home', dir);
@@ -312,16 +366,11 @@
     c.mode = S.nbMode === 'sketch' || !vectorPossible(n) ? 'sketch' : 'vector';
     drawMap(c, box, S);
     guide(c);
-    /* live position: GPS works without internet */
+    /* live position: GPS works without internet. The first time, the guest taps "Show where you are" so the browser's
+       question comes with a reason; "Back to the building" and later visits start straight away */
     if (!c.preview && navigator.geolocation && navigator.geolocation.watchPosition) {
-      try {
-        c.watch = navigator.geolocation.watchPosition(function (pos) {
-          if (CTL !== c) return;
-          c.pos = { lat: pos.coords.latitude, lng: pos.coords.longitude }; c.acc = pos.coords.accuracy; c.gpsErr = null;
-          if (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 0.6 && c.heading == null) c.course = pos.coords.heading;
-          guide(c); moveMe(c);
-        }, function (err) { if (CTL !== c) return; c.gpsErr = err && err.code === 1 ? 'denied' : 'unavailable'; guide(c); }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
-      } catch (e) { c.gpsErr = 'unavailable'; }
+      if (store(LOC_KEY) || leg.toHome && !leg.place) startWatch(c);
+      else { var lb = O.$('[data-nb-act=locate]', el); if (lb) lb.hidden = false; }
     } else if (!c.preview) c.gpsErr = 'unsupported';
     /* compass: Android gives it straight away; iOS asks first (the button) */
     var DOE = window.DeviceOrientationEvent;
@@ -329,57 +378,83 @@
       c.onOrient = function (e) {
         var h = typeof e.webkitCompassHeading === 'number' ? e.webkitCompassHeading : (e.absolute && typeof e.alpha === 'number' ? 360 - e.alpha : null);
         if (h == null || isNaN(h) || CTL !== c) return;
-        c.heading = (h + 360) % 360; guide(c);
+        /* alpha is relative to the screen's top: add the screen's rotation when the phone is held sideways */
+        if (typeof e.webkitCompassHeading !== 'number') h += screenAngle();
+        c.heading = ((h % 360) + 360) % 360; guideSoon(c);
       };
       if (typeof DOE.requestPermission === 'function') { var cb = O.$('[data-nb-act=compass]', el); if (cb) cb.hidden = false; }
       else { window.addEventListener('deviceorientationabsolute', c.onOrient, true); window.addEventListener('deviceorientation', c.onOrient, true); }
     }
+    /* the signal comes and goes on the walk: the full map and the Google Maps link follow it */
+    c.onNet = function () { if (CTL === c) modeButton(c); };
+    window.addEventListener('online', c.onNet); window.addEventListener('offline', c.onNet);
     modeButton(c);
   }
+  function screenAngle() {
+    var o = window.screen && window.screen.orientation;
+    var a = o && typeof o.angle === 'number' ? o.angle : typeof window.orientation === 'number' ? window.orientation : 0;
+    return a || 0;
+  }
+  /* at most one redraw of the arrow and the text per frame (the compass fires up to 60 times a second) */
+  function guideSoon(c) {
+    if (c.raf) return;
+    var raf = window.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+    c.raf = raf(function () { c.raf = null; if (CTL === c) guide(c); });
+  }
+  function setText(el, t) { if (el && el.textContent !== t) el.textContent = t; }
   function modeButton(c) {
     var b = O.$('[data-nb-act=mode]', c.el); if (!b) return;
     var canVector = vectorPossible(c.n);
     b.hidden = !(c.mode === 'vector' || canVector);
     b.innerHTML = c.mode === 'vector' ? O.icon('file') + 'Simple map' : O.icon('map') + 'Full map';
-    var g = O.$('[data-nb-online]', c.el); if (g) g.hidden = navigator.onLine === false;
+    var g = O.$('[data-nb-online]', c.el); if (g) g.hidden = !online();
   }
   /* the arrow, the distance and the hint */
   function guide(c) {
     var el = c.el, leg = c.leg, dist = O.$('[data-nb-dist]', el), hint = O.$('[data-nb-hint]', el), arrow = O.$('[data-nb-arrow]', el), gps = O.$('[data-nb-gps]', el);
     if (!dist) return;
-    var aim, remaining, b, text, from = c.pos || leg.from;
+    var aim, remaining, b, text, from = c.pos || leg.from, dtext;
+    /* which way the phone faces: the compass, else the direction of walking */
+    var facing = c.heading != null ? c.heading : c.course != null ? c.course : null;
     if (c.pos) {
       var prog = leg.coords ? G.progress(leg.coords, c.pos) : null;
       remaining = prog ? prog.remaining : G.distance(c.pos, leg.target);
       aim = prog && prog.onRoute ? prog.ahead : leg.target;
       b = G.bearing(c.pos, aim);
-      if (remaining < 25) { dist.textContent = 'You are there'; text = leg.toHome ? 'Welcome back.' : 'Look around for ' + leg.targetName + '.'; }
+      if (remaining < 25) { dtext = 'You are there'; text = leg.toHome ? 'Welcome back.' : 'Look around for ' + leg.targetName + '.'; }
       else {
-        dist.textContent = G.fmtDistance(remaining) + ' to go';
+        dtext = G.fmtDistance(remaining) + ' to go';
         text = (prog && prog.onRoute ? 'Follow the line, heading ' : 'Walk ') + G.compassWord(b) + (prog && !prog.onRoute ? '. You are away from the line, so the arrow points straight there.' : '.');
       }
     } else if (from) {
       remaining = leg.meters || G.distance(from, leg.target);
       b = G.bearing(from, leg.coords ? { lat: leg.coords[Math.min(1, leg.coords.length - 1)][1], lng: leg.coords[Math.min(1, leg.coords.length - 1)][0] } : leg.target);
-      dist.textContent = G.fmtDistance(remaining) + ' · ' + G.fmtWalk(leg.minutes || G.walkMinutes(remaining * (leg.coords ? 1 : 1.3)));
+      dtext = G.fmtDistance(remaining) + ' · ' + G.fmtWalk(leg.minutes || G.walkMinutes(remaining * (leg.coords ? 1 : 1.3)));
       text = 'From ' + leg.fromName + ': walk ' + G.compassWord(G.bearing(from, leg.target)) + (leg.coords ? ' along the line.' : ' in a straight line, ' + G.fmtDistance(G.distance(from, leg.target)) + '.');
     } else {
-      dist.textContent = leg.targetName;
+      dtext = leg.targetName;
       text = 'Allow location to see the way from where you are.';
     }
-    hint.textContent = text;
+    setText(dist, dtext); setText(hint, text);
+    /* only arriving is read out by screen readers, not every few metres */
+    var there = dtext === 'You are there';
+    if (there !== !!c.said) { c.said = there; setText(O.$('[data-nb-say]', el), there ? 'You are there. ' + text : ''); }
     if (arrow) {
-      var rot = b == null ? 0 : c.heading != null ? b - c.heading : b;
-      arrow.style.transform = 'rotate(' + Math.round(rot) + 'deg)';
+      var want = b == null ? 0 : facing != null ? b - facing : b;
+      /* turn the shortest way from where the arrow points now (no full spin when the compass passes north) */
+      var last = c.rot == null ? want : c.rot, delta = ((want - last) % 360 + 540) % 360 - 180;
+      c.rot = Math.round((last + delta) * 10) / 10;
+      var tr = 'rotate(' + Math.round(c.rot) + 'deg)';
+      if (arrow.style.transform !== tr) arrow.style.transform = tr;
       arrow.classList.toggle('dim', b == null);
-      arrow.title = c.heading != null ? 'Points the way to go' : 'Points the way to go, with north at the top';
+      arrow.title = c.heading != null ? 'Points the way to go' : c.course != null ? 'Points the way to go, as you walk' : 'Points the way to go, with north at the top';
     }
     if (gps && !c.preview) {
-      gps.textContent = c.gpsErr === 'denied' ? 'Location is off. Allow location for this site in your browser settings to see where you are.'
+      setText(gps, c.gpsErr === 'denied' ? 'Location is off. Allow location for this site in your browser settings to see where you are.'
         : c.gpsErr === 'unsupported' ? 'This browser cannot share your location. Follow the line from ' + (leg.fromName || 'the start') + '.'
           : c.gpsErr && !c.pos ? 'Your location is not found yet. Step outside for a clearer GPS signal.'
-            : c.pos ? 'Your location' + (c.acc ? ', accurate to about ' + (c.acc < 1000 ? Math.max(5, Math.round(c.acc / 5) * 5) + ' m' : G.fmtDistance(c.acc)) : '') + '.' + (c.heading != null ? ' The arrow follows your compass.' : ' North is at the top.')
-              : 'Finding where you are...';
+            : c.pos ? 'Your location' + (c.acc ? ', accurate to about ' + (c.acc < 1000 ? Math.max(5, Math.round(c.acc / 5) * 5) + ' m' : G.fmtDistance(c.acc)) : '') + '.' + (c.heading != null ? ' The arrow follows your compass.' : c.course != null ? ' The arrow follows your walking direction.' : ' North is at the top.')
+              : c.asked ? 'Finding where you are...' : 'Tap Show where you are to see your position. It works without internet.');
     }
   }
 
@@ -391,7 +466,8 @@
     if (leg.from) pts.push(leg.from);
     pts.push(leg.target);
     if (c.pos && G.distance(c.pos, leg.target) < 8000) pts.push(c.pos);
-    var f = G.fit(pts, SW, SH, 34), line = function (list) { return list.map(function (p) { var xy = f(p); return xy[0] + ',' + xy[1]; }).join(' '); };
+    /* fitted inside a band that leaves the top (north arrow) and the bottom (scale bar) clear for the pins' labels */
+    var f0 = G.fit(pts, SW - 40, SH - 70, 30), f = function (p) { var xy = f0(p); return [Math.round((xy[0] + 20) * 10) / 10, Math.round((xy[1] + 30) * 10) / 10]; }, line = function (list) { return list.map(function (p) { var xy = f(p); return xy[0] + ',' + xy[1]; }).join(' '); };
     var s = '<svg class="gx-nb-sketch" viewBox="0 0 ' + SW + ' ' + SH + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">';
     s += '<rect width="' + SW + '" height="' + SH + '" class="sk-bg"/>';
     for (var gx = 30; gx < SW; gx += 60) s += '<path d="M' + gx + ' 0V' + SH + '" class="sk-grid"/>';
@@ -407,17 +483,17 @@
     if (leg.from) s += pin(leg.from, leg.fromCat || 'home', leg.fromName);
     s += pin(leg.target, leg.targetCat, leg.targetName);
     if (c.pos) {
-      var me = f(c.pos), r = Math.max(6, Math.min(60, (c.acc || 0) * f.scale));
+      var me = f(c.pos), r = Math.max(6, Math.min(60, (c.acc || 0) * f0.scale));
       s += '<circle cx="' + me[0] + '" cy="' + me[1] + '" r="' + r.toFixed(1) + '" class="sk-acc"/><circle cx="' + me[0] + '" cy="' + me[1] + '" r="7" class="sk-me"/>';
     }
-    var bar = G.scaleBar(f.scale, SW), barPx = Math.round(bar * f.scale);
+    var bar = G.scaleBar(f0.scale, SW), barPx = Math.round(bar * f0.scale);
     s += '<g transform="translate(12 ' + (SH - 14) + ')"><path d="M0 -4V0H' + barPx + 'V-4" class="sk-bar"/><text x="' + (barPx + 6) + '" y="0" class="sk-small">' + G.fmtDistance(bar).replace('Here', bar + ' m') + '</text></g>';
     s += '<g transform="translate(' + (SW - 22) + ' 24)"><path d="M0 -14 6 4 0 0-6 4z" class="sk-north"/><text y="16" text-anchor="middle" class="sk-small">N</text></g>';
     return s + '</svg>';
   }
   function drawSketch(c, box) {
     box.classList.add('sketch'); box.classList.remove('vector');
-    box.innerHTML = sketchSVG(c) + '<div class="gx-nb-note">' + (c.leg.coords ? 'Simple map from the saved route. Streets are not drawn: follow the line and the arrow.' : 'Simple map: the straight line and the direction. Streets are not drawn.') + (c.leg.coords ? ' Route data © OpenStreetMap contributors.' : '') + '</div>';
+    box.innerHTML = sketchSVG(c) + '<div class="gx-nb-note">' + (c.leg.coords ? 'Simple map from the saved route. Streets are not drawn: follow the line and the arrow.' : 'Simple map: the straight line and the direction. Streets are not drawn.') + ' Data © OpenStreetMap contributors.</div>';
   }
 
   /* ---------- the full map (MapLibre with OpenFreeMap tiles) ---------- */
@@ -448,8 +524,11 @@
         map = c.map = new ml.Map({ container: box, style: STYLE_URL, bounds: [[bb[0], bb[1]], [bb[2], bb[3]]], fitBoundsOptions: { padding: 36, maxZoom: 17 }, attributionControl: { compact: false }, dragRotate: false, pitchWithRotate: false });
       } catch (e) { return fail(e && e.message || 'no WebGL'); }
       map.touchZoomRotate && map.touchZoomRotate.disableRotation && map.touchZoomRotate.disableRotation();
-      map.on('error', function (e) { if (!c.loaded) fail(e && e.error && e.error.message || 'style'); });
-      map.on('load', function () {
+      /* only the style or the library failing means no map. A tile or a label font that cannot load (offline, at the edge
+         of the saved area, letters outside the saved ranges) leaves a blank patch, not a broken map */
+      map.on('error', function (e) { if (!c.loaded && !(e && (e.tile || e.sourceId || e.source))) fail(e && e.error && e.error.message || 'style'); });
+      /* the route and the pins go on as soon as the style is in, without waiting for every tile */
+      map.once('style.load', function () {
         if (CTL !== c) return;
         c.loaded = true; clearTimeout(c.failT);
         var line = leg.coords || (leg.from ? [[leg.from.lng, leg.from.lat], [leg.target.lng, leg.target.lat]] : null);
@@ -511,6 +590,7 @@
       drawMap(CTL, O.$('[data-nb-map]', CTL.el), S); modeButton(CTL); moveMe(CTL);
       return;
     }
+    if (a === 'locate' && CTL) { store(LOC_KEY, 1); startWatch(CTL); guide(CTL); return; }
     if (a === 'compass' && CTL) {
       var c = CTL;
       window.DeviceOrientationEvent.requestPermission().then(function (res) {
@@ -522,7 +602,7 @@
   O.nearby = {
     forBooking: forBooking, forBuilding: forBuilding, available: available, hasHome: hasHome,
     listHTML: listHTML, placeHTML: placeHTML, after: after, stop: stop,
-    remember: remember, recall: recall, autoSave: autoSave, saveMaps: saveMaps, mapsState: mapsState,
+    remember: remember, recall: recall, forget: forget, offlineCopy: offlineCopy, autoSave: autoSave, saveMaps: saveMaps, mapsState: mapsState,
     loadLib: loadLib, vendorBase: vendorBase, catBadge: catBadge, catIcon: catIcon, legOf: legOf, metaLine: metaLine,
     STYLE_URL: STYLE_URL, TILE_HOST: TILE_HOST
   };

@@ -20,6 +20,8 @@
 .gx-nb-save .btn{min-height:40px;}
 .gx-nb-home,.gx-nb-row{display:flex; align-items:center; gap:12px; width:100%; text-align:left; border:none; background:none; color:inherit; cursor:pointer; padding:10px 4px; border-radius:12px; font-size:15px;}
 .gx-nb-home{background:var(--surface); border:1px solid var(--border); padding:12px; box-shadow:var(--shadow); min-height:64px;}
+.gx-ex-nb{margin:14px 0 4px;}
+.gx-nb-credit{margin:14px 2px 0;}
 .gx-nb-home:hover,.gx-nb-row:hover{background:var(--surface-2);}
 .gx-nb-home b,.gx-nb-row b{display:block; font-size:15px;}
 .gx-nb-home .gx-grow > span,.gx-nb-row .gx-grow > span{display:block; font-size:13.5px; color:var(--text-2); overflow-wrap:anywhere;}

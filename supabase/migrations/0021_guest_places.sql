@@ -10,11 +10,22 @@
 -- Only those public fields leave the database: never createdBy / updatedBy, osmId or anything else staff store.
 -- The building is the booking's unit type's building, else the unit's own building (as O.buildingOf in core.js).
 --
--- guest__nearby is new. guest__payload is re-created from 0020_reveal_24h.sql (the latest definition) with only these
+-- guest__coords and guest__nearby are new. guest__payload is re-created from 0020_reveal_24h.sql (the latest definition) with only these
 -- changes: the declared bd_id, the line that sets it, and the 'nearby' key at the end. Re-runnable. If 0003, 0008 or 0020
 -- is ever re-applied (migrate.mjs --reapply), re-apply this file after it, or the payload loses 'nearby'.
 -- Mirrors app/pages/nearby.js (forBuilding) and api/_lib/shared/geo.cjs (guestPlace, guestPlaces: at most 60 places,
 -- ordered by order, then name, then id; text cut to 80 / 240 / 160 / 80 / 40 characters; a route of 2 to 1000 points).
+
+-- a stored route line as guests get it: only [lng, lat] pairs of numbers that are real coordinates, in order; null when
+-- fewer than 2 remain or the list is not an array of 2 to 1000 entries (routeCoords in api/_lib/shared/geo.cjs)
+create or replace function public.guest__coords(c jsonb) returns jsonb
+language sql immutable set search_path = public as $$
+  select case when cnt >= 2 then pts end from (
+    select count(*) cnt, jsonb_agg(jsonb_build_array((e->>0)::numeric, (e->>1)::numeric) order by i) pts
+    from jsonb_array_elements(case when jsonb_typeof(c) = 'array' and jsonb_array_length(c) between 2 and 1000 then c else '[]'::jsonb end) with ordinality a(e, i)
+    where jsonb_typeof(e) = 'array' and jsonb_array_length(e) = 2 and jsonb_typeof(e->0) = 'number' and jsonb_typeof(e->1) = 'number'
+      and (e->>0)::numeric between -180 and 180 and (e->>1)::numeric between -90 and 90) q
+$$;
 
 -- the nearby places of a building, as the guest sees them (forBuilding in nearby.js)
 create or replace function public.guest__nearby(p_org uuid, p_bid text) returns jsonb
@@ -42,9 +53,8 @@ begin
           'lat', to_jsonb(public.guest__num(x.data->'lat')), 'lng', to_jsonb(public.guest__num(x.data->'lng')),
           'hours', to_jsonb(case when jsonb_typeof(x.data->'hours') = 'string' then left(x.data->>'hours', 80) else '' end),
           'phone', to_jsonb(case when jsonb_typeof(x.data->'phone') = 'string' then left(x.data->>'phone', 40) else '' end),
-          'route', case when jsonb_typeof(x.data->'route') = 'object' and jsonb_typeof(x.data->'route'->'coords') = 'array'
-                          and jsonb_array_length(x.data->'route'->'coords') between 2 and 1000
-                        then jsonb_build_object('coords', x.data->'route'->'coords', 'meters', to_jsonb(public.guest__num(x.data->'route'->'meters')),
+          'route', case when jsonb_typeof(x.data->'route') = 'object' and public.guest__coords(x.data->'route'->'coords') is not null
+                        then jsonb_build_object('coords', public.guest__coords(x.data->'route'->'coords'), 'meters', to_jsonb(public.guest__num(x.data->'route'->'meters')),
                           'minutes', to_jsonb(public.guest__num(x.data->'route'->'minutes')), 'mode', 'foot') end) o
       from records x
       where x.org_id = p_org and x.coll = 'places' and not x.deleted and x.data->>'buildingId' = p_bid
@@ -187,7 +197,7 @@ end $$;
 do $$
 declare fn text;
 begin
-  foreach fn in array array['guest__nearby(uuid, text)', 'guest__payload(uuid, text, jsonb)'] loop
+  foreach fn in array array['guest__coords(jsonb)', 'guest__nearby(uuid, text)', 'guest__payload(uuid, text, jsonb)'] loop
     execute format('revoke all on function public.%s from public', fn);
     if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke all on function public.%s from anon', fn); end if;
     if exists (select 1 from pg_roles where rolname = 'authenticated') then execute format('revoke all on function public.%s from authenticated', fn); end if;

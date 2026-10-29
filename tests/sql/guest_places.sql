@@ -25,6 +25,9 @@ insert into public.records (org_id, coll, id, data) values
   ('00000000-0000-4000-8000-0000000000c1', 'places', 'PL-5', '{"id":"PL-5","buildingId":"BD-a","name":"No position","category":"food"}'),
   ('00000000-0000-4000-8000-0000000000c1', 'places', 'PL-6', '{"id":"PL-6","buildingId":"BD-a","name":"Zero","category":"food","lat":0,"lng":0}'),
   ('00000000-0000-4000-8000-0000000000c1', 'places', 'PL-7', '{"id":"PL-7","buildingId":"BD-a","name":"Bad route","category":"food","lat":3.06,"lng":101.69,"order":3,"route":{"coords":"x"}}'),
+  -- route points pass to guests only as [lng, lat] number pairs inside the world; one good point is no line
+  ('00000000-0000-4000-8000-0000000000c1', 'places', 'PL-10', '{"id":"PL-10","buildingId":"BD-a","name":"Mixed route","category":"food","lat":3.06,"lng":101.69,"order":4,"route":{"coords":[[101.6887,3.0561],null,["a",1],[500,3],[1,2,3],{"x":1},[101.69,3.06]],"meters":500}}'),
+  ('00000000-0000-4000-8000-0000000000c1', 'places', 'PL-11', '{"id":"PL-11","buildingId":"BD-a","name":"One point","category":"food","lat":3.06,"lng":101.69,"order":5,"route":{"coords":[[101.6887,3.0561],[null,null],["101.69","3.06"]]}}'),
   ('00000000-0000-4000-8000-0000000000c1', 'places', 'PL-b', '{"id":"PL-b","buildingId":"BD-b","name":"Beta Money Changer","category":"money","lat":3.1,"lng":101.7}'),
   ('00000000-0000-4000-8000-0000000000c1', 'bookings', 'B-a', '{"id":"B-a","propertyId":"P-a","unitTypeId":"UT-a","checkIn":"2026-11-02","checkOut":"2026-11-04","status":"confirmed","guestToken":"gPlaceTest0001","doorCode":"1111","guest":{"name":"A"}}'),
   ('00000000-0000-4000-8000-0000000000c1', 'bookings', 'B-n', '{"id":"B-n","propertyId":null,"unitTypeId":"UT-a","needsUnit":true,"checkIn":"2026-11-02","checkOut":"2026-11-04","status":"confirmed","guestToken":"gPlaceTest0002","guest":{"name":"N"}}'),
@@ -59,18 +62,21 @@ begin
   if j->>'ok' <> 'true' then raise exception 'B-a: %', j; end if;
   if nb->'building' <> '{"id":"BD-a","name":"Alpha Residences","address":"1 Jalan Alpha","lat":3.0561,"lng":101.6887}'::jsonb then raise exception 'B-a building: %', nb->'building'; end if;
   select string_agg(x->>'id', ',' order by n) into ids from jsonb_array_elements(nb->'places') with ordinality e(x, n);
-  if ids is distinct from 'PL-1,PL-2,PL-3,PL-7' then raise exception 'B-a places: %', ids; end if;
+  if ids is distinct from 'PL-1,PL-2,PL-3,PL-7,PL-10,PL-11' then raise exception 'B-a places: %', ids; end if;
   pl := nb->'places'->1;
   if pl <> '{"id":"PL-2","name":"Kopi Alpha","category":"cafe","note":"Kaya toast","address":"","lat":3.0552,"lng":101.6905,"hours":"8 AM to 6 PM","phone":"+60 3 0000 0000","route":null}'::jsonb then raise exception 'B-a place PL-2: %', pl; end if;
   if nb::text like '%staffOnly%' or nb::text like '%do not show%' or nb::text like '%osmId%' or nb::text like '%updatedBy%' or nb::text like '%createdBy%' then raise exception 'staff fields leaked: %', nb; end if;
   if nb->'places'->0->'route' <> '{"coords":[[101.6887,3.0561],[101.6874,3.0561],[101.6874,3.0546]],"meters":310,"minutes":4,"mode":"foot"}'::jsonb then raise exception 'B-a route: %', nb->'places'->0->'route'; end if;
   if nb->'places'->2->>'category' <> 'other' or nb->'places'->2->'lat' <> '3.06'::jsonb then raise exception 'PL-3 (odd category, text numbers): %', nb->'places'->2; end if;
   if nb->'places'->3->'route' <> 'null'::jsonb then raise exception 'PL-7 bad route: %', nb->'places'->3; end if;
+  if nb->'places'->4->'route' <> '{"coords":[[101.6887,3.0561],[101.69,3.06]],"meters":500,"minutes":null,"mode":"foot"}'::jsonb then raise exception 'PL-10 mixed route: %', nb->'places'->4->'route'; end if;
+  if nb->'places'->5->'route' <> 'null'::jsonb then raise exception 'PL-11 one-point route: %', nb->'places'->5->'route'; end if;
+  if has_function_privilege('anon', 'public.guest__coords(jsonb)', 'execute') then raise exception 'anon can run guest__coords'; end if;
   if j::text like '%Beta Money Changer%' or j::text like '%Other Org%' or j::text like '%Archived%' or j::text like '%Deleted%' or j::text like '%No position%' or j::text like '%"Zero"%' then raise exception 'B-a got a place it should not: %', nb; end if;
 
   -- a typed stay with no unit yet still gets its building's places (from the unit type)
   j := public.guest_get('gPlaceTest0002');
-  if j->'nearby'->'building'->>'id' <> 'BD-a' or jsonb_array_length(j->'nearby'->'places') <> 4 then raise exception 'B-n (no unit yet): %', j->'nearby'; end if;
+  if j->'nearby'->'building'->>'id' <> 'BD-a' or jsonb_array_length(j->'nearby'->'places') <> 6 then raise exception 'B-n (no unit yet): %', j->'nearby'; end if;
 
   -- Beta: its own place, and no pin while its latitude is not a number
   j := public.guest_get('gPlaceTest0003'); nb := j->'nearby';
@@ -84,7 +90,7 @@ begin
 
   -- an untyped unit inside a building: that building's places
   j := public.guest_get('gPlaceTest0005');
-  if j->'nearby'->'building'->>'id' <> 'BD-a' or jsonb_array_length(j->'nearby'->'places') <> 4 then raise exception 'B-w (untyped unit in a building): %', j->'nearby'; end if;
+  if j->'nearby'->'building'->>'id' <> 'BD-a' or jsonb_array_length(j->'nearby'->'places') <> 6 then raise exception 'B-w (untyped unit in a building): %', j->'nearby'; end if;
 
   -- the other workspace, same ids: only its own building and places
   j := public.guest_get('gPlaceTest0009'); nb := j->'nearby';

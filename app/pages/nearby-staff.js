@@ -4,8 +4,9 @@
    Staff add places by name (OpenStreetMap Nominatim search), by dropping a pin on the map (or pasting coordinates), or by
    ticking suggestions from OpenStreetMap (Overpass, within 1.5 km). On save the walking route from the building is
    worked out (FOSSGIS OSRM foot routing) and stored, so guests need no connection for it; without a route the guest app
-   shows the straight line and the direction. These calls run in the staff browser only, lightly (Nominatim at most once a
-   second, after typing stops), and every failure is told plainly.
+   shows the straight line and the direction. These calls run in the staff browser only, lightly (Nominatim and the router
+   at most once a second, search only when staff press Search or Enter, never as they type), and every failure is told
+   plainly.
    Permissions: the tab needs the guest app section; adding, editing, ordering and removing need guestapp.edit. */
 (function () {
   'use strict';
@@ -53,10 +54,25 @@
     return getJSON(OVERPASS, { method: 'POST', body: body, headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' } }, 40000)
       .then(function (j) { return G.mapOverpass(j && j.elements, home, { radius: G.SUGGEST_RADIUS, perCategory: 8 }); });
   }
-  /* the walking route building -> place, or null when the routing service has none or cannot be reached */
+  /* the walking route building -> place, or null when the routing service has none or cannot be reached. Fair use of the
+     FOSSGIS router: one request at a time, at least 1.2 s apart, and a minute's pause after it says "too many" (429) */
+  var routeGate = Promise.resolve(), lastRoute = 0, routeBusyUntil = 0;
+  function routeLimited() { return Date.now() < routeBusyUntil; }
   function route(home, pl) {
     var url = ROUTER + home.lng + ',' + home.lat + ';' + pl.lng + ',' + pl.lat + '?overview=full&geometries=geojson&steps=false';
-    return getJSON(url, null, 15000).then(G.routeFromOsrm).catch(function (e) { console.info('Nearby: no walking route', e && e.message); return null; });
+    var job = routeGate.then(function () {
+      if (routeLimited()) return null;
+      var wait = Math.max(0, lastRoute + 1200 - Date.now());
+      return new Promise(function (res) { setTimeout(res, wait); }).then(function () {
+        lastRoute = Date.now();
+        return getJSON(url, null, 15000).then(G.routeFromOsrm);
+      }).catch(function (e) {
+        if (e && /HTTP 429/.test(e.message)) routeBusyUntil = Date.now() + 60000;
+        console.info('Nearby: no walking route', e && e.message); return null;
+      });
+    });
+    routeGate = job.then(function () { return null; });
+    return job;
   }
 
   /* ---------- the building location field (Guest App tab and the building dialog) ---------- */
@@ -130,7 +146,7 @@
   /* ---------- the tab ---------- */
   var ST = { bid: null, mode: 'search', q: '', hits: null, searching: false, searchErr: '', sugg: null, suggBusy: false, suggErr: '', pick: {}, pin: null, routing: {}, note: '' };
   var M = null; /* {el, opts} while mounted */
-  var searchT = null, pinMap = null;
+  var pinMap = null;
   function canEdit() { return !!(M && M.opts.canEdit && M.opts.canEdit()); }
   function changed() { if (M && M.opts.changed) M.opts.changed('places'); else O.emit('data', { type: 'places' }); }
   function buildings() { return D.buildings.filter(function (b) { return b && !b.archived; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); }); }
@@ -142,7 +158,7 @@
 
   function rowHTML(bd, p, i, n, ed) {
     var nb = NB(), home = homeOf(bd), meta = nb && home ? nb.metaLine({ building: { lat: home.lat, lng: home.lng } }, G.guestPlace(p) || p) : '';
-    var routePill = ST.routing[p.id] ? U.pill('Finding the walking route', 'info') : p.route && Array.isArray(p.route.coords) ? U.pill('Walking route', 'ok') : U.pill('Straight line', 'neutral');
+    var routePill = ST.routing[p.id] ? U.pill('Finding the walking route', 'info') : p.routeStale ? U.pill('Needs a new route', 'warn') : p.route && Array.isArray(p.route.coords) ? U.pill('Walking route', 'ok') : U.pill('Straight line', 'neutral');
     return '<div class="np-row"><span class="np-n">' + (i + 1) + '</span>' + (nb ? nb.catBadge(p.category) : '') + '<div class="ga-rm"><div class="ga-rt"><b>' + esc(p.name || 'Place') + '</b>' + routePill + '</div>' +
       '<div class="ga-rs">' + esc([G.category(p.category).label, meta].filter(Boolean).join(' · ')) + '</div>' + (p.note ? '<div class="ga-rx">' + esc(p.note) + '</div>' : '') + '</div>' +
       (ed ? '<div class="ga-ea"><button type="button" class="ga-ib" data-np-move="' + esc(p.id) + ':-1" aria-label="Move ' + esc(p.name) + ' up"' + (i === 0 ? ' disabled' : '') + '>' + ic('up') + '</button>' +
@@ -155,7 +171,8 @@
     var seg = U.seg([['search', 'Search by name'], ['pin', 'Drop a pin'], ['suggest', 'Suggest nearby']], ST.mode, 'data-np-mode');
     var body = '';
     if (ST.mode === 'search') {
-      body = '<div class="field"><label for="np-q">Name of the place</label><input id="np-q" class="input" data-np-q value="' + esc(ST.q) + '" maxlength="80" placeholder="e.g. nasi lemak, Pavilion, hospital" autocomplete="off"></div>' +
+      body = '<div class="field"><label for="np-q">Name of the place</label><div class="np-loc-row"><input id="np-q" class="input" data-np-q value="' + esc(ST.q) + '" maxlength="80" placeholder="e.g. nasi lemak, Pavilion, hospital" autocomplete="off" enterkeyhint="search">' +
+        '<button type="button" class="btn btn-primary btn-sm" data-np-search' + (ST.searching ? ' disabled' : '') + '>' + ic('search') + 'Search</button></div></div>' +
         '<div class="np-hits" aria-live="polite">' + (ST.searching ? '<span class="small muted">Searching OpenStreetMap...</span>' : ST.searchErr ? '<span class="small ga-err">' + esc(ST.searchErr) + '</span>'
           : ST.hits ? (ST.hits.length ? ST.hits.map(function (h, i) {
             var taken = nearbyTaken(bd.id, h);
@@ -221,7 +238,7 @@
       });
     }
   }
-  function mount(el, opts) { M = { el: el, opts: opts || {} }; if (!el._npBound) { el._npBound = true; el.addEventListener('click', onClick); el.addEventListener('input', onInput); el.addEventListener('change', onChange); } draw(); }
+  function mount(el, opts) { M = { el: el, opts: opts || {} }; if (!el._npBound) { el._npBound = true; el.addEventListener('click', onClick); el.addEventListener('input', onInput); el.addEventListener('keydown', onKey); el.addEventListener('change', onChange); } draw(); }
 
   /* ---------- editing ---------- */
   function placeForm(p) {
@@ -251,7 +268,7 @@
         var rec = isNew ? Object.assign({ id: O.uid('PL'), buildingId: bd.id, order: placesOf(bd.id).length + 1, createdAt: D.NOW, createdBy: O.state.viewer }, p.osmId ? { osmId: p.osmId } : {}) : p;
         Object.keys(v).forEach(function (k) { rec[k] = v[k]; });
         rec.lat = ll.lat; rec.lng = ll.lng; rec.updatedAt = D.NOW; rec.updatedBy = O.state.viewer;
-        if (moved) rec.route = null;
+        if (moved) { rec.route = null; delete rec.routeStale; }
         if (isNew) D.places.push(rec);
         changed();
         if (moved) findRoute(bd, rec, true); else { U.toast('Saved ' + rec.name); draw(); }
@@ -266,7 +283,7 @@
       delete ST.routing[p.id];
       var live = D.places.filter(function (x) { return x.id === p.id; })[0];
       if (!live) { draw(); return null; }
-      if (r) { live.route = r; live.updatedAt = D.NOW; changed(); U.toast((fresh ? 'Saved ' : 'Route updated for ') + live.name + ': ' + G.fmtDistance(r.meters) + ', ' + G.fmtWalk(r.minutes) + '.'); }
+      if (r) { live.route = r; delete live.routeStale; live.updatedAt = D.NOW; changed(); U.toast((fresh ? 'Saved ' : 'Route updated for ') + live.name + ': ' + G.fmtDistance(r.meters) + ', ' + G.fmtWalk(r.minutes) + '.'); }
       else U.toast((fresh ? 'Saved ' + live.name + '. ' : '') + 'The walking route could not be found, so guests see a straight line and the direction. Try again later.', 'bad');
       draw();
       return r;
@@ -299,8 +316,9 @@
       route(home, p).then(function (r) {
         delete ST.routing[p.id];
         if (r && D.places.indexOf(p) >= 0) { p.route = r; found++; changed(); }
+        if (routeLimited()) { i = made.length; }
         ST.note = 'Finding the walking routes: ' + i + ' of ' + made.length + '...'; draw();
-        setTimeout(next, 400);
+        next();
       });
     })();
   }
@@ -313,33 +331,49 @@
     draw();
     if (moved) reroute(bd);
   }
-  /* every route starts at the building: when it moves, the stored routes are dropped and found again, one at a time */
+  /* every route starts at the building: when it moves (or gets its first location), every place's route is found again,
+     one at a time. A place keeps its old route, marked routeStale, until the new one is in; places left when the browser
+     goes offline or the router is busy carry on when it is back online. */
+  var rerouteBusy = {};
   function reroute(bd) {
-    var list = D.places.filter(function (p) { return p && p.buildingId === bd.id && p.route; });
+    if (!bd || !homeOf(bd)) return;
+    D.places.forEach(function (p) { if (p && p.buildingId === bd.id && !p.archived && G.validLatLng(p.lat, p.lng)) p.routeStale = true; });
+    changed();
+    resumeReroute(bd);
+  }
+  function resumeReroute(bd) {
+    if (rerouteBusy[bd.id]) return;
+    var list = D.places.filter(function (p) { return p && p.buildingId === bd.id && p.routeStale && !p.archived; });
     if (!list.length) return;
-    list.forEach(function (p) { p.route = null; }); changed();
+    rerouteBusy[bd.id] = true;
     var i = 0;
     (function next() {
-      if (i >= list.length) return;
-      var p = list[i++], home = homeOf(bd);
-      if (!home || navigator.onLine === false) return;
+      var home = homeOf(bd);
+      if (i >= list.length || !home || navigator.onLine === false || routeLimited()) { delete rerouteBusy[bd.id]; if (M) draw(); return; }
+      var p = list[i++];
+      if (D.places.indexOf(p) < 0 || !p.routeStale) return next();
       ST.routing[p.id] = true;
       route(home, p).then(function (r) {
         delete ST.routing[p.id];
-        if (r && D.places.indexOf(p) >= 0) { p.route = r; changed(); }
+        if (D.places.indexOf(p) >= 0) {
+          /* found: the new route. None (too far, no path): a straight line beats a route from the old spot */
+          if (r) { p.route = r; delete p.routeStale; p.updatedAt = D.NOW; changed(); }
+          else if (navigator.onLine !== false && !routeLimited()) { p.route = null; delete p.routeStale; changed(); }
+        }
         if (M) draw();
-        setTimeout(next, 400);
+        next();
       });
     })();
   }
+  /* back online: finish any building whose routes were left half done */
+  window.addEventListener('online', function () { D.buildings.forEach(function (b) { if (b && !b.archived) resumeReroute(b); }); });
   function doSearch() {
     var bd = current(), q = ST.q.trim();
-    if (q.length < 3) { ST.hits = null; ST.searchErr = ''; ST.searching = false; return draw(); }
+    if (ST.searching) return;
+    if (q.length < 3) { ST.hits = null; ST.searchErr = q ? 'Type at least 3 letters, then press Search.' : ''; ST.searching = false; return redrawKeepInput(); }
     if (navigator.onLine === false) { ST.searchErr = 'You are offline. Drop a pin or paste the coordinates instead.'; return draw(); }
     ST.searching = true; ST.searchErr = ''; draw();
-    var asked = q;
     searchPlaces(q, homeOf(bd)).then(function (hits) {
-      if (asked !== ST.q.trim()) return;
       ST.searching = false;
       var home = homeOf(bd);
       ST.hits = hits.sort(function (a, b) { return (a.meters == null ? 1e9 : a.meters) - (b.meters == null ? 1e9 : b.meters); }).filter(function (h) { return !home || h.meters < 30000; });
@@ -374,6 +408,7 @@
       return;
     }
     if (ds.npAddpicked != null) return addPicked(bd);
+    if (ds.npSearch != null) { var qi = O.$('[data-np-q]', M.el); if (qi) ST.q = qi.value; return doSearch(); }
     var p, parts;
     if (ds.npEdit) { p = D.places.filter(function (x) { return x.id === ds.npEdit; })[0]; if (p) editPlace(bd, p, false); return; }
     if (ds.npDel) { p = D.places.filter(function (x) { return x.id === ds.npDel; })[0]; if (p) removePlace(p); return; }
@@ -385,9 +420,14 @@
       list.forEach(function (x, k) { x.order = k + 1; }); changed(); return draw();
     }
   }
+  /* Nominatim's usage policy does not allow search as you type: it runs on Search or Enter only */
   function onInput(e) {
     var t = e.target;
-    if (t.hasAttribute('data-np-q')) { ST.q = t.value; clearTimeout(searchT); searchT = setTimeout(doSearch, 600); }
+    if (t.hasAttribute('data-np-q')) ST.q = t.value;
+  }
+  function onKey(e) {
+    var t = e.target;
+    if (e.key === 'Enter' && t.hasAttribute && t.hasAttribute('data-np-q')) { e.preventDefault(); ST.q = t.value; if (canEdit()) doSearch(); }
   }
   function onChange(e) {
     var t = e.target;

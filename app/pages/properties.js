@@ -661,7 +661,7 @@
       /* the map pin for the guest app's Nearby section; the walking routes start here, so they are found again when it moves */
       var oldLl = O.geo.validLatLng(b.lat, b.lng) ? { lat: +b.lat, lng: +b.lng } : null;
       if (O.$('[name="ll"]', el)) { if (ll) { b.lat = ll.lat; b.lng = ll.lng; } else { delete b.lat; delete b.lng; } }
-      var llMoved = !isNew && oldLl && ll && O.geo.distance(oldLl, ll) > 5;
+      var llMoved = !isNew && ll && (!oldLl || O.geo.distance(oldLl, ll) > 5); /* a first location counts too: places added before it get routes */
       if (isNew) D.buildings.push(b);
       audit((isNew ? 'Added building ' : 'Updated building ') + b.name);
       O.emit('data');

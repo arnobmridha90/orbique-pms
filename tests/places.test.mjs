@@ -231,3 +231,33 @@ test('places as the guest sees them: one building, staff order, public fields on
   assert.equal(G.category('money').label, 'Money exchange');
   assert.equal(G.category('x').id, 'other');
 });
+
+test('route points reach guests only as real [lng, lat] number pairs', () => {
+  assert.deepEqual(G.routeCoords([[101.6887, 3.0561], null, ['a', 1], [500, 3], [1, 2, 3], { x: 1 }, [NaN, 1], [101.69, 3.06]]), [[101.6887, 3.0561], [101.69, 3.06]]);
+  assert.equal(G.routeCoords([[101.6887, 3.0561], [null, null], ['101.69', '3.06']]), null);
+  assert.equal(G.routeCoords('x'), null);
+  assert.equal(G.routeCoords(new Array(1001).fill([101.69, 3.06])), null);
+  const p = G.guestPlace({ id: 'p', lat: 3.06, lng: 101.69, route: { coords: [[101.6887, 3.0561], null, [101.69, 3.06]], meters: 500 } });
+  assert.deepEqual(p.route, { coords: [[101.6887, 3.0561], [101.69, 3.06]], meters: 500, minutes: null, mode: 'foot' });
+});
+
+test('offline map tiles: the close area at every zoom, then the wider view of far places, within the cap', () => {
+  const near = [{ lat: 3.0574, lng: 101.6896 }];
+  /* close places only: the same as the padded box */
+  const a = G.coverTiles(HOME, near, 12, 14, 250, 400), plain = G.tilesFor(G.bbox(G.coverPoints(HOME, near), 400), 12, 14, 250);
+  assert.deepEqual(a.tiles, plain.tiles);
+  /* a hospital 4 km south: the phone screen fitted to that walk also shows the sides, and those tiles are saved too */
+  const far = near.concat([{ lat: HOME.lat - 0.036, lng: HOME.lng }]);
+  const b = G.coverTiles(HOME, far, 12, 14, 250, 400);
+  const keys = new Set(b.tiles.map((t) => t.join('/')));
+  assert.equal(keys.size, b.tiles.length, 'no tile twice');
+  const side = { lat: HOME.lat - 0.018, lng: HOME.lng + deg(0.6 * 4000) };
+  for (let z = 12; z <= 14; z++) assert.ok(keys.has(z + '/' + G.lngToX(side.lng, z) + '/' + G.latToY(side.lat, z)), 'side of the walk at z' + z);
+  /* every close-area tile is still there, and the cap holds */
+  plain.tiles.forEach((t) => assert.ok(keys.has(t.join('/'))));
+  const c = G.coverTiles(HOME, far.concat([{ lat: HOME.lat + 0.25, lng: HOME.lng + 0.25 }]), 12, 16, 250, 400);
+  assert.ok(c.tiles.length <= 250 && c.skipped > 0);
+  assert.equal(c.tiles[0][0], 12);
+  assert.deepEqual(G.coverTiles(null, [], 12, 14, 250, 400), { tiles: [], skipped: 0 });
+  function deg(m) { return m / (6371008.8 * Math.cos(HOME.lat * Math.PI / 180)) * 180 / Math.PI; }
+});

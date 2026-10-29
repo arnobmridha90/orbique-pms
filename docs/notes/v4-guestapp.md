@@ -30,13 +30,21 @@ It reads and writes only through `O.guestApi`, never `D`.
   hospitals, clinics, pharmacies, money changers, ATMs, shops, transport, police, laundry) grouped by category, plus
   "Back to <building>". Each place opens a map screen: the stored walking route, the guest's live GPS position, the
   distance and time left, an arrow (with the compass where the phone allows it), a To / Back toggle and "Open in
-  Google Maps". The tab shows only when the stay is in a building with places or a map pin.
-  **Offline**: the guest's phone keeps the last payload (`localStorage` `orbique-guest:<token>`, kept until check-out
-  + 31 days) and, once per building per 30 days while online, saves the map: MapLibre (`/vendor`), the OpenFreeMap
-  "liberty" style, sprites, Latin glyphs and up to 250 vector tiles (zoom 12 to 14) around the building and its places,
-  in the Cache Storage cache `orbique-maps-<buildingId>`. `public/sw.js` answers `tiles.openfreemap.org` from those
-  caches first. Without a saved map (or without MapLibre, as in the local single-file build) a drawn sketch of the route
-  shows instead, from the payload alone. Offline the app shows a notice and actions are blocked.
+  Google Maps". The section shows only when the stay is in a building with places or a map pin. It opens from a Home
+  tile and from Explore (not the bottom bar, which keeps five tabs so the labels fit a 360 px phone). The location
+  prompt comes after a "Show where you are" tap the first time (not for "Back to <building>"). The arrow turns the
+  shortest way, follows the compass (with the screen's rotation), else the GPS walking direction; only "You are there"
+  is read out by screen readers. "Place and map data © OpenStreetMap contributors" shows under the list and every sketch.
+  **Offline**: the guest's phone keeps a slim copy of the last payload (`localStorage` `orbique-guest:<token>`, written
+  only when it changes, removed the day after check-out or as soon as the server says the link no longer opens a stay).
+  The copy never holds the door code, Wi-Fi, messages, requests, problem reports or check-in names; offline the app says
+  they show again online and hides Requests and Messages. Once per building per 30 days while online (not on a data
+  saver or 2G), it saves the map: MapLibre (`/vendor`), the OpenFreeMap "liberty" style, sprites, Latin glyphs and up to
+  250 vector tiles (zoom 12 to 14): first the building, places and routes padded 400 m, then the wider area each
+  place's map screen shows (`G.coverTiles`). The download goes into `orbique-maps-<buildingId>-a` or `-b` and replaces
+  the saved map only when it is complete, so a failed refresh keeps the old one. `public/sw.js` answers
+  `tiles.openfreemap.org` from those caches first. A missing tile or label font leaves a blank patch; only a style or
+  library failure (or 12 s with no style) switches to the drawn sketch of the route, from the payload alone.
 - **Feedback** (check-out day and after): 1 to 5 stars and a comment, when `reviewPrompt` is on.
 - States: loading, unknown link, expired (30 days after check-out), cancelled, paused workspace (read only, with call /
   WhatsApp buttons), network error with retry. Re-reads every 30 s while visible, on local data changes and after every action.
@@ -67,11 +75,14 @@ highlights and scrolls to that booking; `preview: true` with `bookingId` opens i
 - **Local tips**: things to do per city, "don't" list, videos.
 - **Nearby places** (`app/pages/nearby-staff.js`): pick a building, set its map location (also in the building modal of
   Properties: paste coordinates or a Google Maps link, "Find from the address" with Nominatim, or drop a pin), then add
-  places by search (Nominatim, debounced, at most 1 request per second), by a pin on the map, or from suggestions around
+  places by search (Nominatim, on Search or Enter only, never as you type, at most 1 request per second), by a pin on the map, or from suggestions around
   the building (Overpass, 1.5 km). Saving a place stores its walking route from the building (OSRM foot server,
   simplified to at most 400 points); when that fails the place is saved without one and guests see a straight line.
-  Reorder, edit, delete, "Find the route again", and a live "What guests see" preview. Moving the building recomputes
-  the routes. These calls go from the staff browser only, with no personal data. Records `places`
+  Reorder, edit, delete, "Find the route again", and a live "What guests see" preview. Moving the building (or giving it
+  its first location) recomputes every place's route: each keeps its old one, marked `routeStale` ("Needs a new route"),
+  until the new one is in, and the rest carry on when the browser is back online. Route requests are one at a time, at
+  least 1.2 s apart, with a minute's pause after a 429. Route points reach guests only as valid `[lng, lat]` number pairs
+  (`guest__coords` in SQL, `G.routeCoords` in JS). These calls go from the staff browser only, with no personal data. Records `places`
   `{id, buildingId, name, category, note, address, lat, lng, hours, phone, order, route: {coords [[lng, lat]...],
   meters, minutes, mode: 'foot'} | null, osmId}`; buildings gain `lat` / `lng`.
 - **Settings**: door code timing: 24 hours before check-in, with the unit number (`codeLeadHours` kept but unused), require online check-in, require ID (both
@@ -162,8 +173,9 @@ highlights and scrolls to that booking; `preview: true` with `bookingId` opens i
 - Nearby (0021): the JS and SQL versions differ only in edge cases: numbers are read with `Number()` in JS and a
   numeric pattern in SQL; text is cut in UTF-16 units in JS and characters in SQL; names are sorted with lowercase
   `<` in JS and `lower() collate "C"` in SQL. The map service calls (OpenFreeMap, OSRM, Overpass, Nominatim) were tested
-  with mocks only. The whole payload is kept offline, not only the places. The map cache is filled by the page, not
-  by the service worker. Public services have fair-use limits; a busy workspace may need its own tile or route server.
+  with mocks only. The 30 s poll returns the routes every time (tens of KB for a typical building, at most about
+  0.5 MB at 60 places of 400 points); a separate "routes changed" RPC would cut that. The map cache is filled by the
+  page, not by the service worker. Public services have fair-use limits; a busy workspace may need its own tile or route server.
 
 ## Requests for core and others
 

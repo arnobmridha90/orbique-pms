@@ -618,6 +618,8 @@
         if (!alive) return;
         /* the guest's own phone keeps the last stay (and saves the Nearby maps once), so the app also opens offline */
         if (full && p && p.ok && O.nearby) { O.nearby.remember(token, p); O.nearby.autoSave(p); }
+        /* the link no longer opens a stay (ended, cancelled, revoked): the copy on this phone goes too */
+        if (full && p && p.ok === false && O.nearby) O.nearby.forget(token);
         var j = JSON.stringify(p), wasOffline = !!S.offline;
         if (quiet && !wasOffline && (j === lastJSON || typing())) return;
         S.offline = null;
@@ -699,18 +701,25 @@
       return '<div class="gx" style="' + brandVars(p.brand) + '">' + topHTML(p, tabs) +
         '<main class="gx-main">' + (preview ? '<div class="gx-pv-bar">' + ic('eye') + '<span>Preview of what ' + esc(firstName(p.booking.guestName)) + ' sees right now. Buttons here do not send anything.</span></div>' : '') +
         (S.notice ? '<div class="gx-notice ' + S.notice.kind + '" role="status">' + esc(S.notice.text) + '</div>' : '') +
-        (S.offline ? '<div class="gx-notice info gx-offline">' + ic('wifi') + '<span>You are offline. This is your stay as saved on ' + esc(fmt.dateTime(offlineAt(S.offline))) + '. Nearby maps and directions still work.</span></div>' : '') +
+        (S.offline ? '<div class="gx-notice info gx-offline">' + ic('wifi') + '<span>' + (navigator.onLine === false ? 'You are offline.' : 'We could not reach the server.') + ' This is your stay as saved on ' + esc(fmt.dateTime(offlineAt(S.offline))) + '.' +
+          (nb ? ' Nearby maps and directions still work.' : '') + ' Your door code, Wi-Fi and messages show again when you are back online.</span></div>' : '') +
         (p.readOnly ? '<div class="gx-notice info">' + esc(GERR.read_only) + '</div>' : '') +
-        body + '</main>' + (S.view ? '' : navHTML(tabs, 'gx-nav-bot')) + '</div>';
+        body + '</main>' + (S.view ? '' : navHTML(navTabs(tabs), 'gx-nav-bot')) + '</div>';
     }
     function tabsFor(p) {
       if (p.state === 'past' || p.state === 'cancelled') return ['home', 'chat'];
-      return ['home', 'stay', 'explore'].concat(O.nearby && O.nearby.available(p) ? ['nearby'] : []).concat(['requests', 'chat']);
+      var nb = O.nearby && O.nearby.available(p) ? ['nearby'] : [];
+      /* offline (the copy saved on this phone): no messages or requests, they cannot be sent or read without internet */
+      if (S.offline) return ['home', 'stay', 'explore'].concat(nb);
+      return ['home', 'stay', 'explore'].concat(nb).concat(['requests', 'chat']);
     }
+    /* the bars keep at most five tabs so the labels fit a phone: Nearby opens from Home and Explore */
+    function navTabs(tabs) { return tabs.filter(function (t) { return t !== 'nearby'; }); }
+    function tabOn(t) { return !S.view && (S.tab === t || (t === 'explore' && S.tab === 'nearby')); }
     function offlineAt(ms) { var t = new Date(ms + 8 * 3600e3).toISOString(); return t.slice(0, 10) + 'T' + t.slice(11, 16); } /* Malaysia time, like the rest of the app */
     function navHTML(tabs, cls) {
       return '<nav class="gx-nav ' + cls + '" aria-label="Guest app">' + tabs.map(function (t) {
-        return '<button type="button" data-gx-tab="' + t + '" class="' + (S.tab === t && !S.view ? 'on' : '') + '"' + (S.tab === t && !S.view ? ' aria-current="page"' : '') + '>' + ic(TABS[t][0]) + '<span>' + TABS[t][1] + '</span></button>';
+        return '<button type="button" data-gx-tab="' + t + '" class="' + (tabOn(t) ? 'on' : '') + '"' + (tabOn(t) ? ' aria-current="page"' : '') + '>' + ic(TABS[t][0]) + '<span>' + TABS[t][1] + '</span></button>';
       }).join('') + '</nav>';
     }
     function logoHTML(br) {
@@ -719,7 +728,7 @@
     function topHTML(p, tabs) {
       var br = p.brand || {};
       return '<header class="gx-top"><div class="gx-top-in">' + logoHTML(br) + '<div class="gx-top-t"><div class="gx-bn">' + esc(br.name || 'Your host') + '</div><div class="gx-bs">' + esc((p.property && p.property.name) || 'Your stay') + '</div></div>' +
-        (S.view ? '<button type="button" class="btn btn-ghost btn-sm gx-back" data-gx-back>' + ic('left') + 'Back</button>' : navHTML(tabs, 'gx-nav-top')) + '</div></header>';
+        (S.view ? '<button type="button" class="btn btn-ghost btn-sm gx-back" data-gx-back>' + ic('left') + 'Back</button>' : navHTML(navTabs(tabs), 'gx-nav-top')) + '</div></header>';
     }
     function errorHTML() {
       var e = S.err || (S.p && S.p.error) || 'not_found', br = (S.p && S.p.brand) || null;
@@ -745,6 +754,9 @@
     function doorHTML(p) {
       var dr = p.door, w = dr.waitingFor || [], b = p.booking, pr = p.property || {}, app = p.app || {}, ci = p.checkin || {};
       if (w.indexOf('ended') >= 0) return '';
+      /* the copy saved on this phone never holds the code (it may have changed since) */
+      if (w.indexOf('offline') >= 0) return '<section class="gx-door off" aria-label="Door code"><div class="gx-door-l">' + ic('lock') + 'Door code</div><div class="gx-code dim" aria-hidden="true">• • • •</div>' +
+        '<p class="gx-door-msg">Your door code shows here when you are back online. Connect to Wi-Fi or mobile data to see it.</p></section>';
       if (dr.visible) {
         var hidden = !!opts.hideCode;
         return '<section class="gx-door on" aria-label="Door code"><div class="gx-door-l">' + ic('key') + 'Your door code</div>' +
@@ -772,7 +784,7 @@
     }
     function wifiHTML(p, big) {
       var pr = p.property || {}, w = pr.wifi;
-      if (!w) return big ? '<section class="gx-card" id="gx-wifi"><h2>' + ic('wifi') + 'Wi-Fi</h2><p class="gx-p">' + (p.state === 'upcoming' ? 'The Wi-Fi name and password show here 24 hours before check-in.' : 'There are no Wi-Fi details for this stay.') + '</p></section>' : '';
+      if (!w) return big ? '<section class="gx-card" id="gx-wifi"><h2>' + ic('wifi') + 'Wi-Fi</h2><p class="gx-p">' + (S.offline ? 'The Wi-Fi name and password show here when you are back online.' : p.state === 'upcoming' ? 'The Wi-Fi name and password show here 24 hours before check-in.' : 'There are no Wi-Fi details for this stay.') + '</p></section>' : '';
       var pw = opts.hideWifi ? '••••••••' : (w.password || '');
       return '<section class="gx-card gx-wifi" id="gx-wifi"><span class="gx-ico">' + ic('wifi') + '</span><div class="gx-grow"><div class="gx-k">Wi-Fi</div><div class="gx-v">' + esc(w.name || '') + '</div><div class="gx-k2">Password <b>' + esc(pw) + '</b></div></div>' +
         (w.password && !opts.hideWifi ? '<button type="button" class="btn btn-ghost btn-sm gx-copy" data-gx-act="copywifi" aria-label="Copy the Wi-Fi password">' + ic('copy') + 'Copy</button>' : '') + '</section>';
@@ -782,6 +794,7 @@
         ['requests', null, 'sparkle', 'Requests'], ['explore', null, 'map', 'Things to do'], ['chat', null, 'chat', 'Message us']];
       if (ACTIVE.indexOf(p.state) >= 0) t.splice(5, 0, ['report', null, 'alert', 'Report a problem']);
       if (O.nearby && O.nearby.available(p)) t.splice(t.length - 2, 0, ['nearby', null, 'pin', 'Nearby places']);
+      if (S.offline) t = t.filter(function (x) { return ['requests', 'chat', 'report'].indexOf(x[0]) < 0; });
       return '<section class="gx-tiles">' + t.map(function (x) {
         return '<button type="button" class="gx-tile" ' + (x[0] === 'report' ? 'data-gx-view="report"' : 'data-gx-tab="' + x[0] + '"' + (x[1] ? ' data-gx-anchor="' + x[1] + '"' : '')) + '><span class="gx-ico">' + ic(x[2]) + '</span><span>' + x[3] + '</span></button>';
       }).join('') + '</section>';
@@ -789,7 +802,7 @@
     function contactHTML(p, title) {
       var c = (p.app && p.app.contact) || {}, br = p.brand || {}, phone = digits(c.phone), wa = digits(c.whatsapp || c.phone).replace(/^\+/, '');
       return '<section class="gx-card"><h2>' + esc(title || 'Need help?') + '</h2><p class="gx-p">' + esc((br.name || 'Our') + ' team' + (c.hours ? ', ' + c.hours : '') + '. Message us here any time.') + '</p>' +
-        '<div class="gx-row2"><button type="button" class="btn btn-primary gx-btn" data-gx-tab="chat">' + ic('chat') + 'Message us</button>' +
+        '<div class="gx-row2">' + (S.offline ? '' : '<button type="button" class="btn btn-primary gx-btn" data-gx-tab="chat">' + ic('chat') + 'Message us</button>') +
         (phone ? '<a class="btn btn-ghost gx-btn" href="tel:' + esc(phone) + '">' + ic('phone') + 'Call</a>' : '') +
         (wa ? '<a class="btn btn-ghost gx-btn" href="https://wa.me/' + esc(wa) + '" target="_blank" rel="noopener">' + ic('whatsapp') + 'WhatsApp</a>' : '') + '</div></section>';
     }
@@ -840,7 +853,8 @@
       var home = cityOf((p.property || {}).area), city = S.exCity || home || 'kl';
       var out = '<h1 class="gx-h1">Explore</h1><div class="gx-seg" role="tablist">' + [['todo', 'Things to do'], ['dont', 'Good to know'], ['videos', 'Videos']].filter(function (t) { return t[0] !== 'videos' || videos.length; }).map(function (t) {
         return '<button type="button" role="tab" aria-selected="' + (S.exTab === t[0]) + '" data-gx-ex="' + t[0] + '" class="' + (S.exTab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+        (O.nearby && O.nearby.available(p) ? '<button type="button" class="gx-nb-home gx-ex-nb" data-gx-tab="nearby">' + O.nearby.catBadge('other') + '<span class="gx-grow"><b>Nearby places</b><span>Food, clinics, money exchange and the way back, with maps that work offline</span></span>' + ic('right') + '</button>' : '');
       if (S.exTab === 'dont') {
         return out + '<p class="gx-p">Laws and customs worth knowing. Most locals are very forgiving of visitors, but some laws are strict.</p><div class="gx-list">' + (dont.length ? dont.map(function (n) {
           return '<div class="gx-item gx-dont ' + esc(n.kind || '') + '"><div class="gx-item-h"><b>' + esc(n.title) + '</b>' + U.pill(n.kind || 'Tip', n.kind === 'Law' ? 'bad' : n.kind === 'Safety' ? 'warn' : 'info') + '</div><p>' + esc(n.text) + '</p></div>';
