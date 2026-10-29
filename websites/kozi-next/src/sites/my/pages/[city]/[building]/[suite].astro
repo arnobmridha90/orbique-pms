@@ -46,8 +46,9 @@ const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURICompo
 const short = b.name.replace(/^Kozi @ /, '');
 const usual = suite.bedrooms === 2 && suite.bathrooms === 2 && suite.sleeps === 4;
 const title = suite.seoTitle ?? `${suite.name} at ${short}, ${b.city} | Kozi`;
+// a line that already names the bedrooms (the Standard's does) isn't said twice
 const description = suite.seoDescription ?? (usual
-  ? `${suite.name} at ${b.name}: two bedrooms, two bathrooms and a full kitchen for four in central ${b.city}. ${suite.line} See live prices and book direct.`
+  ? `${suite.name} at ${b.name}: ${/\bbedroom/i.test(suite.line) ? `${suite.line.charAt(0).toLowerCase()}${suite.line.slice(1).replace(/\.$/, '')}, for four in central ${b.city}.` : `two bedrooms, two bathrooms and a full kitchen for four in central ${b.city}. ${suite.line}`} See live prices and book direct.`
   : `${suite.name} at ${b.name}, ${b.city}: ${plural(suite.bedrooms, 'bedroom')}, ${plural(suite.bathrooms, 'bathroom')}, sleeps ${suite.sleeps}. ${suite.line}`).trim();
 const [nameA, nameB] = / Suite$/.test(suite.name) ? [suite.name.replace(/ Suite$/, ''), 'Suite'] : [suite.name, ''];
 ---

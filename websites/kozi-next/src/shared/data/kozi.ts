@@ -12,6 +12,12 @@ export const BRAND = {
   my: (import.meta.env.PUBLIC_MY_URL as string | undefined) || 'https://www.staykozi.my',
 };
 
+// Whether the global site is public. Until staykozi.com is attached, PUBLIC_COM_URL is its hidden preview
+// (*.vercel.app, noindex), so the Malaysia site neither links to it nor names it in its hreflang or structured data.
+export const COM_LIVE = !/\.vercel\.app$/i.test(new URL(BRAND.com).hostname);
+/** The address that stands for Kozi as a whole: staykozi.com once it is public, the Malaysia site until then. */
+export const BRAND_HOME = COM_LIVE ? BRAND.com : BRAND.my;
+
 // Vortex KLCC as the fixed parts of the site know it (the footer, the confirmation page, the guides). The building's
 // own pages, and every list of suites, read the content instead.
 export const PROPERTY = {

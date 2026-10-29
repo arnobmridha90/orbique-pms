@@ -82,6 +82,9 @@ const pinList = [
   </script>
   <ClientRouter />
   {jsonld.map((j) => <script type="application/ld+json" set:html={ldText(j)} />)}
+  {/* Vercel Web Analytics (no cookies): visits and where they came from, on the live site only. It follows the
+      ClientRouter's page changes by itself. Analytics must be switched on in the Vercel project. */}
+  {import.meta.env.PUBLIC_NOINDEX !== '1' && <script is:inline defer src="/_vercel/insights/script.js"></script>}
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
