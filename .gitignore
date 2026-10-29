@@ -17,3 +17,4 @@ mobile/www/
 *.mobileprovision
 !websites/kozi/**/*.png
 !websites/kozi-next/**/*.png
+!websites/orbique/**/*.png
