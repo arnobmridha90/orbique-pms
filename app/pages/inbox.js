@@ -923,11 +923,17 @@
     var n = greetings(c).length; if (!n) return '';
     return '<button type="button" class="qr greet" data-act="greet" title="Send the building\'s greeting message, filled in for this guest">' + O.icon('greetings') + 'Send greeting</button>';
   }
+  /* no greeting yet for this chat's building: a writer gets a way to the Greeting Messages page from here */
+  function greetSetupHTML(c) {
+    if (greetings(c).length || !O.can('inbox.greetings') || !O.allowed('greetings')) return '';
+    var bd = O.greet && O.greet.buildingOf(bk(c)); if (!bd) return '';
+    return '<button type="button" class="qr manage" data-act="greetsetup" title="Write the greeting message for ' + esc(bd.name || 'this building') + '">' + O.icon('greetings') + 'Set up greeting</button>';
+  }
   /* the row above the composer: quick replies for people who may message guests, else only the greeting */
   function qrWrapHTML(c) { return canSend() ? qrBarHTML(c) : greetBtnHTML(c) ? '<div class="qr-bar" role="group" aria-label="Greeting">' + greetBtnHTML(c) + '</div>' : ''; }
   function qrBarHTML(c) {
     var b = bk(c), list = repliesFor(b.propertyId);
-    return '<div class="qr-bar" role="group" aria-label="Quick replies">' + greetBtnHTML(c) + '<span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
+    return '<div class="qr-bar" role="group" aria-label="Quick replies">' + greetBtnHTML(c) + greetSetupHTML(c) + '<span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
       list.map(function (q) {
         var unit = q.propertyIds.length ? '<span class="unit" title="Tagged to ' + esc(q.propertyIds.map(function (x) { return prop(x).short; }).join(', ')) + '">' + O.icon('home') + esc(prop(b.propertyId).short) + (q.propertyIds.length > 1 ? ' +' + (q.propertyIds.length - 1) : '') + '</span>' : '';
         return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '">' + esc(q.title) + unit + '</button>';
@@ -1248,6 +1254,7 @@
         if (st.mode === 'note' ? !canNote() : !canSend()) { U.toast(st.mode === 'note' ? 'Writing internal notes is not part of your access' : NO_SEND, 'bad'); return; }
         var ta = O.$('#ib-input', chat), text = ta ? ta.value.trim() : '', files = st.pending[c.id] || [];
         if (!text && !files.length) return;
+        if (st.mode !== 'note' && O.greeting && text.indexOf(O.greeting.MASK) >= 0) { U.toast('Replace "' + O.greeting.MASK + '" before sending, or use Send greeting, which sends the real code.', 'bad'); return; }
         if (st.mode !== 'note' && liveOn()) { sendLive(c, text, files); return; }
         var from = st.mode === 'note' ? 'note' : 'staff', base = { from: from, staffId: O.state.viewer };
         files.forEach(function (a, i) {
@@ -1688,13 +1695,14 @@
         function route() { if (!live0) return null; var want = ui.via || (routeOf(c) || {}).via; return rs.filter(function (x) { return x.via === want; })[0] || routeOf(c); }
         function paintBody() {
           var gr = g(), filled = O.greet.fill(gr, b), r = route();
-          var text = ui.server && ui.server.id === gr.id ? ui.server : null;
+          var server = ui.server && ui.server.id === gr.id ? ui.server : null; /* live: exactly what the server would send now */
+          if (server) filled = server;
           var routeLine = !live0 ? O.icon('whatsapp') + '<span>To ' + esc(phoneOf(b)) + ' on WhatsApp</span>'
             : !rs.length ? O.icon('alert') + '<span>' + esc(noRouteWhy(c)) + '</span>'
               : O.icon(r.via === 'whatsapp' ? 'whatsapp' : 'chat') + '<span>Sent by</span>' + (rs.length > 1 ? '<label class="sr-only" for="ib-gr-via">Send by</label><select id="ib-gr-via" class="select" data-g="via">' + rs.map(function (x) { return '<option value="' + x.via + '"' + (x === r ? ' selected' : '') + '>' + esc(x.label) + (x.open ? '' : ' (closed)') + '</option>'; }).join('') + '</select>' : '<b>' + esc(r.label) + '</b>');
           var notes = O.greet.heldNote(filled, gr);
           body.innerHTML = (list.length > 1 ? '<div class="field"><label for="ib-gr">Greeting</label><select id="ib-gr" class="select" data-g="pick">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === gr.id ? ' selected' : '') + '>' + esc(x.name || 'Untitled') + '</option>'; }).join('') + '</select></div>' : '') +
-            '<div class="field"><label>What ' + esc(guestFirst(b.guest.name)) + ' gets now</label><div class="gm-pv"><div class="pvb">' + (text ? esc(text.text) : O.greet.partsHTML(filled, gr)) + '</div></div>' +
+            '<div class="field"><label>What ' + esc(guestFirst(b.guest.name)) + ' gets now</label><div class="gm-pv"><div class="pvb">' + O.greet.partsHTML(filled, gr) + '</div></div>' +
             (notes.length ? '<div class="gm-notes">' + notes.map(function (n) { return '<div>' + esc(n) + '</div>'; }).join('') + '</div>' : '') +
             (!canCodes() ? '<div class="gm-notes"><div>Door codes are not part of your access, so they show as hidden here. The guest gets the real code.</div></div>' : '') + '</div>' +
             '<div class="route">' + routeLine + '</div>' +
@@ -1703,7 +1711,7 @@
         function loadServer() {
           if (!live0) return;
           var my = ++ui.seq, id = g().id;
-          O.auth.inbox('greeting-preview', { conversationId: c.id, greetingId: id }).then(function (res) { if (my === ui.seq && document.body.contains(body)) { ui.server = { id: id, text: res.text }; paintBody(); } }, function () {});
+          O.auth.inbox('greeting-preview', { conversationId: c.id, greetingId: id }).then(function (res) { if (my === ui.seq && document.body.contains(body)) { ui.server = { id: id, text: res.text, parts: res.parts || [], held: res.held || [], why: res.why || {}, revealAt: res.revealAt || null, missing: res.missing || [] }; paintBody(); } }, function () {});
         }
         body.addEventListener('change', function (e) {
           var t = e.target;
@@ -1740,14 +1748,16 @@
           return false;
         }
         var actions = [{ label: 'Cancel' }];
+        if (O.can('inbox.greetings') && O.allowed('greetings')) actions.push({ label: 'Edit greeting', onClick: function () { O.go('greetings', { buildingId: g().buildingId }); } });
         if (canSend()) actions.push({ label: 'Edit before sending', onClick: function () {
           var gr = g(), ta = O.$('#ib-input', chat), filled = O.greet.fill(gr, b);
+          /* a viewer without door-code access only has the hidden text; editing it would send "[door code hidden]" */
+          if (filled.text.indexOf(O.greeting.MASK) >= 0) { U.toast('This greeting has a door code or private part you cannot see, so it cannot be edited here. Use Send greeting to send it as written.', 'bad'); return false; }
           if (st.mode !== 'reply') { st.mode = 'reply'; rebuildComposer(); ta = O.$('#ib-input', chat); }
           if (!ta) return;
           var cur = ta.value.trim();
           ta.value = cur ? cur + '\n' + filled.text : filled.text; st.drafts[c.id] = ta.value;
           autosize(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); paintSendBtn();
-          if (!canCodes() && filled.text.indexOf(O.greeting.MASK) >= 0) U.toast('Door codes are not part of your access, so they show as "' + O.greeting.MASK + '". Send it with Send greeting to include them.', 'bad');
         } });
         actions.push({ label: 'Send greeting', kind: 'primary', id: 'ib-gr-send', onClick: sendIt });
         paintBody(); loadServer();
@@ -1842,6 +1852,7 @@
         if (act === 'invoice') { if (O.can('invoices.send')) O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); else U.toast('Your access does not include sending invoices and receipts', 'bad'); return; }
         if (act === 'attach') { O.$('.att-menu', chat).classList.toggle('open'); return; }
         if (act === 'greet') { openGreeting(c); return; }
+        if (act === 'greetsetup') { var gbd = O.greet && O.greet.buildingOf(b); O.go('greetings', gbd ? { buildingId: gbd.id } : {}); return; }
         if (act === 'xltoggle') { live.xl[c.id] = !live.xl[c.id]; var tx = O.$('#ib-input', chat); if (tx) st.drafts[c.id] = tx.value; rebuildComposer(); var ty = O.$('#ib-input', chat); if (ty) ty.focus(); return; }
         if (act === 'send') { send(); return; }
         if (act === 'record') { startRecording(); return; }
