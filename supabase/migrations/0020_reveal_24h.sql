@@ -9,6 +9,8 @@
 --     arrival); before they showed only on the arrival, in-house and check-out days. An untyped unit's Wi-Fi follows too.
 -- The other door-code conditions (online check-in, ID check, confirmation, a code set) are unchanged.
 -- Mirrors app/pages/guestapp.js (stayInfo, guestProperty) and api/_lib/shared/assign.cjs (REVEAL_MINUTES).
+-- If 0003_guest.sql or 0008_guest_units.sql is ever re-applied (migrate.mjs --reapply), re-apply this file after it,
+-- or the 30-minute functions come back.
 
 -- the stage of a stay and the door-code rule (stayInfo in guestapp.js)
 create or replace function public.guest__stay(b jsonb, g jsonb, p_now text) returns jsonb

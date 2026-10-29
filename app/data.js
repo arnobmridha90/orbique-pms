@@ -201,7 +201,7 @@
     { propertyId: 'hv2', guest: 'Daniel Wei', country: 'SG', channel: 'vrbo', checkIn: '2026-10-06', checkOut: '2026-10-11', createdAt: '2026-08-11T09:02', checkInTime: '15:00', idVerified: true, codeStatus: 'sent', guests: 5 },
     /* same-day bookings: confirmed this morning, arriving today */
     { propertyId: 'bf1a', guest: 'Hafiz Aziz', country: 'MY', channel: 'airbnb', checkIn: '2026-10-06', checkOut: '2026-10-07', createdAt: '2026-10-06T09:02', checkInTime: '12:00', idVerified: false, codeStatus: 'held', sameDay: true },
-    { propertyId: 'kls', guest: 'Emma Laurent', country: 'FR', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-08', createdAt: '2026-10-06T09:47', checkInTime: '15:00', idVerified: true, codeStatus: 'scheduled', sameDay: true },
+    { propertyId: 'kls', guest: 'Emma Laurent', country: 'FR', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-08', createdAt: '2026-10-06T09:47', checkInTime: '15:00', idVerified: true, codeStatus: 'sent', sameDay: true },
     /* in-house guests */
     { propertyId: 'mkr', guest: 'Mohammed Al-Farsi', country: 'OM', channel: 'booking', checkIn: '2026-10-03', checkOut: '2026-10-09', createdAt: '2026-08-02T16:40', idVerified: true, codeStatus: 'sent', guests: 6 },
     { propertyId: 'hsg', guest: 'Olivia Chen', country: 'AU', channel: 'airbnb', checkIn: '2026-10-04', checkOut: '2026-10-08', createdAt: '2026-07-19T07:55', idVerified: true, codeStatus: 'sent', guests: 5 },
@@ -674,7 +674,7 @@
   }
   /* the story: one Deluxe guest arrives today (unit number shows at 2:30 PM), a Deluxe Supreme family is in-house, and an
      Agoda booking for Deluxe on 11 to 14 Oct has no unit yet: each night one Deluxe unit is free, but never the same one */
-  saujanaBooking({ propertyId: 'ss211', guest: 'Aiko Suzuki', country: 'JP', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-09', createdAt: '2026-09-18T22:14', checkInTime: '15:00', guests: 2, idVerified: true, codeStatus: 'scheduled' });
+  saujanaBooking({ propertyId: 'ss211', guest: 'Aiko Suzuki', country: 'JP', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-09', createdAt: '2026-09-18T22:14', checkInTime: '15:00', guests: 2, idVerified: true, codeStatus: 'sent' });
   saujanaBooking({ propertyId: 'ss461', guest: 'Wang Fang', country: 'CN', channel: 'agoda', checkIn: '2026-10-04', checkOut: '2026-10-08', createdAt: '2026-09-09T08:31', guests: 5, idVerified: true, codeStatus: 'sent' });
   saujanaBooking({ propertyId: 'ss211', guest: 'Nur Aisyah', country: 'MY', channel: 'airbnb', checkIn: '2026-10-10', checkOut: '2026-10-12', createdAt: '2026-09-27T13:02', guests: 3 });
   saujanaBooking({ propertyId: 'ss226', guest: 'Haruto Sato', country: 'JP', channel: 'booking', checkIn: '2026-10-12', checkOut: '2026-10-15', createdAt: '2026-09-30T19:45', guests: 2 });

@@ -54,7 +54,7 @@ highlights and scrolls to that booking; `preview: true` with `bookingId` opens i
 - **House info**: welcome, house rules, getting in, house guide, check-out; edit inline, move, delete, add; steps and
   topics can be limited to one unit.
 - **Local tips**: things to do per city, "don't" list, videos.
-- **Settings**: door code timing (0, 1, 2, 3 or 6 hours before check-in), require online check-in, require ID (both
+- **Settings**: door code timing: 24 hours before check-in, with the unit number (`codeLeadHours` kept but unused), require online check-in, require ID (both
   need `guestapp.doorCodes`), require a typed signature, review prompt, contact (phone, WhatsApp, hours; the workspace
   phone is the fallback), services on / off.
 - **Bell** (`O.notifiers`): door code not working, new guest requests, ID photos to check (with `guestapp.edit` or
