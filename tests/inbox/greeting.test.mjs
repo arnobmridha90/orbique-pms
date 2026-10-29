@@ -1,5 +1,5 @@
 /* api/messages.js 'greeting' and 'greeting-preview': who may send the building's greeting, and that the server fills it
- * from the records with its own clock (the door code only from 24 hours before check-in).
+ * from the records, always in full (owner, 2026-10-29: no time hold and no ID-check hold for greetings).
  *
  *   node --test tests/inbox/greeting.test.mjs
  */
@@ -47,7 +47,8 @@ function db(role, blobs = {}, rec = REC, convMessages = null) {
 const body = { orgId: ORG, conversationId: 'C-1', greetingId: 'GR1', via: 'whatsapp' };
 const me = { id: 'user-1' };
 const AFTER = Date.parse('2026-11-02T06:31:00Z'); // 14:31 in Malaysia, check-in 15:00
-const BEFORE = Date.parse('2026-11-01T06:59:00Z'); // 14:59 the day before in Malaysia, one minute before 24 hours
+const BEFORE = Date.parse('2026-11-02T06:29:00Z');
+const EARLY = Date.parse('2026-10-30T01:00:00Z'); // 09:00 in Malaysia, three days before check-in
 
 test('greeting: inbox view is enough, without inbox.send (maintenance can open the inbox but not reply)', async () => {
   const { sb, rpcs } = db('maintenance');
@@ -76,13 +77,30 @@ test('greeting: no inbox access is refused before anything is sent', async () =>
   }
 });
 
-test('greeting: the server clock holds the door code and private fields until 24 hours before check-in', async () => {
-  const { sb } = db('owner');
-  let sent;
-  const fetch = async (url, init) => { sent = JSON.parse(init.body); return new Response(JSON.stringify({ messages: [{ id: 'wamid.I' }] })); };
-  const r = await greetingAction(sb, body, me, { now: BEFORE, fetch, waConfig: WA });
-  assert.ok(!/4821|2101/.test(sent.text.body), sent.text.body);
-  assert.deepEqual(r.held.sort(), ['door_code', 'f_lobby']);
+test('greeting: sent in full whenever staff send it, days before check-in and before the ID check', async () => {
+  const conv = { bookingId: 'B-1', wa: '60123456789', waLastIn: '2026-10-29T20:00:00Z', messages: [] };
+  for (const extra of [{}, { idVerified: false }, { codeStatus: 'held' }]) {
+    const rec = Object.assign({}, REC, { conversations: { 'C-1': conv }, bookings: { 'B-1': Object.assign({}, REC.bookings['B-1'], extra) } });
+    let sent;
+    const fetch = async (url, init) => { sent = JSON.parse(init.body); return new Response(JSON.stringify({ messages: [{ id: 'wamid.I' }] })); };
+    const r = await greetingAction(db('owner', {}, rec).sb, body, me, { now: EARLY, fetch, waConfig: WA });
+    assert.equal(sent.text.body, 'Hi Ana, door 4821, lobby 2101', JSON.stringify(extra));
+    assert.equal(r.held, undefined);
+  }
+  let sent2;
+  await greetingAction(db('owner').sb, body, me, { now: BEFORE, fetch: async (url, init) => { sent2 = JSON.parse(init.body); return new Response(JSON.stringify({ messages: [{ id: 'wamid.J' }] })); }, waConfig: WA });
+  assert.equal(sent2.text.body, 'Hi Ana, door 4821, lobby 2101');
+});
+
+test('greeting preview: early is true while check-in is more than 24 hours away, false from 24 hours before', async () => {
+  const at = async (ms) => (await greetingFor(db('owner').sb, ORG, body, { now: ms })).filled;
+  const early = await at(EARLY);
+  assert.equal(early.early, true);
+  assert.equal(early.checkInAt, '2026-11-02T15:00');
+  assert.equal(early.text, 'Hi Ana, door 4821, lobby 2101');
+  assert.equal((await at(Date.parse('2026-11-01T06:59:00Z'))).early, true, '14:59 the day before: one minute before 24 hours');
+  assert.equal((await at(Date.parse('2026-11-01T07:00:00Z'))).early, false, '15:00 the day before: exactly 24 hours');
+  assert.equal((await at(AFTER)).early, false);
 });
 
 test('greeting: demo workspaces send nothing; a greeting for another building is refused', async () => {
@@ -118,7 +136,8 @@ test('greeting preview: the server decides the masking from the caller\'s door-c
   const f = await greetingPreview(db('frontdesk').sb, body, me);
   assert.equal(f.masked, false);
   assert.ok(Array.isArray(f.parts) && f.parts.length > 0);
-  assert.ok('why' in f && 'revealAt' in f);
+  assert.ok('early' in f && 'checkInAt' in f);
+  assert.ok(!('held' in f) && !('why' in f));
 });
 
 test('greeting: refused when it was last saved by someone who cannot write greetings', async () => {

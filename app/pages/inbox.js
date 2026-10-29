@@ -1700,7 +1700,7 @@
           var routeLine = !live0 ? O.icon('whatsapp') + '<span>To ' + esc(phoneOf(b)) + ' on WhatsApp</span>'
             : !rs.length ? O.icon('alert') + '<span>' + esc(noRouteWhy(c)) + '</span>'
               : O.icon(r.via === 'whatsapp' ? 'whatsapp' : 'chat') + '<span>Sent by</span>' + (rs.length > 1 ? '<label class="sr-only" for="ib-gr-via">Send by</label><select id="ib-gr-via" class="select" data-g="via">' + rs.map(function (x) { return '<option value="' + x.via + '"' + (x === r ? ' selected' : '') + '>' + esc(x.label) + (x.open ? '' : ' (closed)') + '</option>'; }).join('') + '</select>' : '<b>' + esc(r.label) + '</b>');
-          var notes = O.greet.heldNote(filled, gr);
+          var notes = O.greet.notes(filled, gr);
           body.innerHTML = (list.length > 1 ? '<div class="field"><label for="ib-gr">Greeting</label><select id="ib-gr" class="select" data-g="pick">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === gr.id ? ' selected' : '') + '>' + esc(x.name || 'Untitled') + '</option>'; }).join('') + '</select></div>' : '') +
             '<div class="field"><label>What ' + esc(guestFirst(b.guest.name)) + ' gets now</label><div class="gm-pv"><div class="pvb">' + O.greet.partsHTML(filled, gr) + '</div></div>' +
             (notes.length ? '<div class="gm-notes">' + notes.map(function (n) { return '<div>' + esc(n) + '</div>'; }).join('') + '</div>' : '') +
@@ -1711,7 +1711,7 @@
         function loadServer() {
           if (!live0) return;
           var my = ++ui.seq, id = g().id;
-          O.auth.inbox('greeting-preview', { conversationId: c.id, greetingId: id }).then(function (res) { if (my === ui.seq && document.body.contains(body)) { ui.server = { id: id, text: res.text, parts: res.parts || [], held: res.held || [], why: res.why || {}, revealAt: res.revealAt || null, missing: res.missing || [] }; paintBody(); } }, function () {});
+          O.auth.inbox('greeting-preview', { conversationId: c.id, greetingId: id }).then(function (res) { if (my === ui.seq && document.body.contains(body)) { ui.server = { id: id, text: res.text, parts: res.parts || [], checkInAt: res.checkInAt || null, early: !!res.early, missing: res.missing || [] }; paintBody(); } }, function () {});
         }
         body.addEventListener('change', function (e) {
           var t = e.target;

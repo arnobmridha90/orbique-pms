@@ -18,13 +18,14 @@
  *                                                              clock, exactly as written -> {conversation}. Owner and every
  *                                                              employee who can open the inbox may send it, even without
  *                                                              inbox.send (who has inbox.send may edit it and use `send`).
- *                                                              The door code and private fields also wait for the ID check.
+ *                                                              It always goes in full: door code, private fields, unit
+ *                                                              number and Wi-Fi, with no time or ID-check hold.
  *                                                              Only a greeting last saved by someone who may write greetings
  *                                                              (inbox.greetings) is sent. Without inbox.send the same greeting
  *                                                              goes to a chat at most once in GREETING_REPEAT_MS.
  *   greeting-preview {conversationId, greetingId}
  *                                               inbox viewer   the text as it would go now ->
- *                                                              {id, name, text, parts, held, why, revealAt, missing, masked};
+ *                                                              {id, name, text, parts, checkInAt, early, missing, masked};
  *                                                              door codes and private fields are "[door code hidden]" for a
  *                                                              caller without guestapp.doorCodes (the send uses the real ones)
  *
@@ -160,7 +161,7 @@ async function sendAction(sb, body, me) {
 
 /**
  * The greeting filled for a chat's booking, from the records as they are now (never from what the page sent):
- * -> {conv, booking, greeting, filled: {text, parts, held, missing}}. o = {mask, now (ms)}.
+ * -> {conv, booking, greeting, filled: {text, parts, checkInAt, early, missing}}. o = {mask, now (ms)}.
  */
 export async function greetingFor(sb, orgId, body, o = {}) {
   const conv = await conversation(sb, orgId, body.conversationId);
@@ -190,7 +191,7 @@ export async function greetingPreview(sb, body, me) {
   const ws = await workspace(sb, body, me);
   const mask = !(await canInbox(sb, ws.org.id, ws.member, 'guestapp.doorCodes'));
   const { greeting, filled } = await greetingFor(sb, ws.org.id, body, { mask });
-  return { id: greeting.id, name: greeting.name || '', text: filled.text, parts: filled.parts, held: filled.held, why: filled.why, revealAt: filled.revealAt, missing: filled.missing, masked: mask };
+  return { id: greeting.id, name: greeting.name || '', text: filled.text, parts: filled.parts, checkInAt: filled.checkInAt, early: filled.early, missing: filled.missing, masked: mask };
 }
 
 export async function greetingAction(sb, body, me, opts = {}) {
@@ -209,7 +210,7 @@ export async function greetingAction(sb, body, me, opts = {}) {
     orgId: ws.org.id, conv, booking, via, text: filled.text, greeting: greeting.id, now: opts.now, fetch: opts.fetch, waConfig: opts.waConfig,
     staffId: ws.member.staff_id || null, userId: me.id, channexConfig: cx, fromAddress, fromName: ws.org.name
   });
-  return { conversation: { id: conv.id, data }, held: filled.held };
+  return { conversation: { id: conv.id, data } };
 }
 
 async function translateAction(sb, body, me) {

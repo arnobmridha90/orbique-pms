@@ -11,10 +11,11 @@
  *   the writer's own fields (change per unit): {f_<key>}, e.g. {f_lobby_code} with a value for each unit
  * Unknown placeholders stay as they are. A unit with no value for a field gives an empty value (listed in `missing`).
  *
- * The owner's rule (O.guestmsg / guestmsg.cjs): the door code, and for a typed unit the unit number and the Wi-Fi, reach
- * the guest only from 24 hours before check-in. A private field ("like a door code") follows the same rule. Before that
- * the value is replaced by wording that sends the guest to the guest app. A door code held for the ID check stays held too.
- *
+ * Greetings always go in full (owner, 2026-10-29: "We can always decide that we will send everything early ... so that
+ * they can have everything saved before they board the flight"). Whenever staff send one, the guest gets the real door
+ * code, private fields, unit number and Wi-Fi: no time hold and no ID-check hold. A private field ("like a door code")
+ * only decides who can SEE its values on screens: staff without guestapp.doorCodes see MASK in previews, the guest gets
+ * the real value. The preview tells staff when check-in is more than 24 hours away (`early`), so they know the codes go now.
  * Shared by the page (inlined by scripts/build.mjs as O.greeting, after O.guestmsg), the server (api/messages.js
  * 'greeting' and 'greeting-preview', so the preview and the message sent match) and node tests (tests/greeting.test.mjs).
  * ES5, no dependencies other than guestmsg.cjs.
@@ -144,39 +145,21 @@ function builtins(ctx) {
   return { vars: vars, typed: !!(t || (p && p.unitTypeId)), ciTime: ciTime, sample: false };
 }
 
-/* the guest-facing words for a held value. The door code (and a typed unit's number and Wi-Fi) really are in the guest
-   app from the reveal time. The writer's own fields are not in the guest app, so their words promise only a later
-   message; the staff note (heldNote in pages/greetings.js) tells the sender to send the greeting again then. */
-function heldWords(key, link, why) {
-  var own = /^f_/.test(key);
-  if (why === 'id') return own ? 'shared with you once your ID is checked' : 'in ' + (link ? 'your guest app (' + link + ')' : 'your guest app') + ' once your ID is checked';
-  if (!own) return GM.heldText(key, link);
-  return 'shared with you closer to check-in';
-}
-
 /* Fill a greeting for one booking at one moment.
    ctx as builtins(); o = {now: 'YYYY-MM-DDTHH:MM' (Malaysia time; the server's clock when sending), mask: true to show
-   MASK instead of a private value that would be sent (a person without door-code access)}.
-   -> {text, parts: [{kind: 'fixed'|'var'|'held'|'missing'|'unknown', key?, text}], held: [keys], why: {key: 'time'|'id'},
-       revealAt: 'YYYY-MM-DDTHH:MM' | null (check-in minus 24 hours), missing: [keys], sample}
-   The door code and private fields are held before check-in minus 24 hours and when the send time is unknown; they
-   also wait while the booking's ID check is not done (idVerified, codeStatus 'held'), as quick replies do. */
+   MASK instead of a door code or private value (a person without door-code access; the guest always gets the value)}.
+   -> {text, parts: [{kind: 'fixed'|'var'|'missing'|'unknown', key?, text}], checkInAt: 'YYYY-MM-DDTHH:MM' | null,
+       early: true when now is more than 24 hours before check-in (the preview's note to staff), missing: [keys], sample}
+   Nothing is held: the door code, private fields and a typed unit's number and Wi-Fi go in full whenever it is sent. */
 function fill(greeting, ctx, o) {
   o = o || {}; ctx = ctx || {};
   var g = clean(greeting), b = ctx.booking || null;
   var base = builtins(ctx);
-  /* the held wording names the guest app link only when the text does not already give it */
-  var link = ctx.link && keysIn(g.text).indexOf('guest_app_link') < 0 ? ctx.link : '';
-  var guarded = b ? GM.guardVars(base.vars, { b: b, sendAt: o.now, ciTime: base.ciTime, typed: base.typed, link: link }) : { vars: base.vars, held: [] };
-  var vals = guarded.vars, held = guarded.held.slice();
-  var at = b ? GM.revealAt(b, base.ciTime) : null;
-  var early = !!b && (!o.now || !at || String(o.now) < at);
-  var idHold = !!b && (!b.idVerified || b.codeStatus === 'held'); /* as the inbox's quick replies: no code before the ID check */
-  var why = Object.create(null);
-  held.forEach(function (k) { why[k] = 'time'; });
+  var vals = base.vars;
+  var ciAt = b && /^\d{4}-\d{2}-\d{2}$/.test(String(b.checkIn || '')) ? b.checkIn + 'T' + base.ciTime : null;
+  var at = b ? GM.revealAt(b, base.ciTime) : null; /* check-in minus 24 hours */
+  var early = !!(b && at && o.now && String(o.now) < at);
   var privateKeys = Object.create(null); privateKeys.door_code = true; /* masked for a viewer without door-code access */
-  /* the door code also waits for the ID check */
-  if (b && idHold && vals.door_code && held.indexOf('door_code') < 0) { vals.door_code = heldWords('door_code', link, 'id'); held.push('door_code'); why.door_code = 'id'; }
   var fieldBy = Object.create(null), missing = [];
   g.fields.forEach(function (f) {
     var k = 'f_' + f.key; fieldBy[k] = f;
@@ -184,7 +167,6 @@ function fill(greeting, ctx, o) {
     var v = !b ? ((!f.private || !o.mask) && (f.values[pid] || firstValue(f))) || '[' + f.label + ']' : (pid && f.values[pid]) || '';
     if (b && !v) { missing.push(k); vals[k] = ''; return; }
     if (f.private) privateKeys[k] = true;
-    if (b && f.private && (early || idHold)) { why[k] = early ? 'time' : 'id'; vals[k] = heldWords(k, link, why[k]); held.push(k); return; }
     vals[k] = v;
   });
   var parts = [], text = '', last = 0, src = g.text, re = /\{([a-z0-9_]+)\}/g, m;
@@ -193,7 +175,6 @@ function fill(greeting, ctx, o) {
     push('fixed', src.slice(last, m.index));
     var key = m[1];
     if (!has(vals, key) || (!BUILTIN_KEYS[key] && !fieldBy[key])) push('unknown', m[0], key);
-    else if (held.indexOf(key) >= 0) push('held', vals[key], key);
     else if (missing.indexOf(key) >= 0 || vals[key] === '') push('missing', '', key);
     else if (o.mask && privateKeys[key] && !base.sample) push('var', MASK, key);
     else push('var', String(vals[key]), key);
@@ -201,9 +182,7 @@ function fill(greeting, ctx, o) {
   }
   push('fixed', src.slice(last));
   var used = keysIn(src), inText = function (k) { return used.indexOf(k) >= 0; }; /* report only what the text uses */
-  var heldUsed = held.filter(inText), whyUsed = {};
-  heldUsed.forEach(function (k) { whyUsed[k] = why[k] || 'time'; });
-  return { text: text, parts: parts, held: heldUsed, why: whyUsed, revealAt: at, missing: missing.filter(inText), sample: !!base.sample };
+  return { text: text, parts: parts, checkInAt: ciAt, early: early, missing: missing.filter(inText), sample: !!base.sample };
 }
 function firstValue(f) { var ks = Object.keys(f.values || {}); return ks.length ? f.values[ks[0]] : ''; }
 
