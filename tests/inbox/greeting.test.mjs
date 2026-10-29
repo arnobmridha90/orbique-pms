@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { greetingAction, greetingFor } from '../../api/messages.js';
+import { greetingAction, greetingFor, greetingPreview } from '../../api/messages.js';
 import { fakeSb, op } from './fake-sb.mjs';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
@@ -18,14 +18,25 @@ const REC = {
   greetings: { GR1: { buildingId: 'BD', name: 'Arrival', text: 'Hi {guest_first}, door {door_code}, lobby {f_lobby}', fields: [{ key: 'lobby', label: 'Lobby code', private: true, values: { u1: '2101' } }] } }
 };
 
-function db(role, blobs = {}) {
+/* who last saved each greeting (records.updated_by): 'writer' is an ops member */
+const BY = { GR1: 'writer', GR2: 'writer' };
+const MEMBERS = { writer: { staff_id: 's1', role: 'ops' }, mender: { staff_id: 's2', role: 'maintenance' } };
+
+function db(role, blobs = {}, rec = REC, convMessages = null) {
   const rpcs = [];
   const sb = fakeSb({
     handler: (t, ops) => {
-      if (t === 'members') return { data: { org_id: ORG, user_id: 'user-1', staff_id: 's9', role, status: 'active' }, error: null };
+      if (t === 'members') {
+        const u = op(ops, 'eq', 'user_id'), x = MEMBERS[u];
+        return { data: x ? { org_id: ORG, user_id: u, staff_id: x.staff_id, role: x.role, status: 'active' } : { org_id: ORG, user_id: 'user-1', staff_id: 's9', role, status: 'active' }, error: null };
+      }
       if (t === 'orgs') return { data: { id: ORG, name: 'Test stays', plan: 'pro', status: 'active' }, error: null };
       if (t === 'blobs') { const k = op(ops, 'eq', 'key'); return { data: blobs[k] !== undefined ? { data: { v: blobs[k] } } : null, error: null }; }
-      if (t === 'records') { const c = op(ops, 'eq', 'coll'), id = op(ops, 'eq', 'id'); const r = REC[c] && REC[c][id]; return { data: r ? { id, data: r } : null, error: null }; }
+      if (t === 'records') {
+        const c = op(ops, 'eq', 'coll'), id = op(ops, 'eq', 'id'); let r = rec[c] && rec[c][id];
+        if (r && c === 'conversations' && convMessages) r = Object.assign({}, r, { messages: convMessages });
+        return { data: r ? { id, data: r, updated_by: c === 'greetings' ? BY[id] || null : null } : null, error: null };
+      }
       if (t === 'whatsapp_numbers') return { data: { phone_number_id: '1234567', display_phone: '60300000000' }, error: null };
       return { data: null, error: null };
     },
@@ -77,9 +88,8 @@ test('greeting: the server clock holds the door code and private fields until 30
 test('greeting: demo workspaces send nothing; a greeting for another building is refused', async () => {
   const { sb } = db('owner', { workspaceMeta: { demo: true } });
   await assert.rejects(greetingAction(sb, body, me, { now: AFTER, waConfig: WA }), /demo workspace/);
-  const other = db('owner').sb;
-  REC.greetings.GR2 = { buildingId: 'OTHER', name: 'x', text: 'x', fields: [] };
-  await assert.rejects(greetingFor(other, ORG, Object.assign({}, body, { greetingId: 'GR2' })), /another building/);
+  const rec = Object.assign({}, REC, { greetings: Object.assign({}, REC.greetings, { GR2: { buildingId: 'OTHER', name: 'x', text: 'x', fields: [] } }) });
+  await assert.rejects(greetingFor(db('owner', {}, rec).sb, ORG, Object.assign({}, body, { greetingId: 'GR2' })), /another building/);
 });
 
 test('greeting preview: masked for people without door-code access, real for the send', async () => {
@@ -99,4 +109,36 @@ test('permissions: inbox.greetings and guestapp.doorCodes follow the app default
   assert.equal(await canInbox(sb, ORG, m('housekeeping'), 'guestapp.doorCodes'), false);
   assert.equal(await canInbox(sb, ORG, m('maintenance'), 'guestapp.doorCodes'), false);
   assert.equal(await canInbox(sb, ORG, m('owner'), 'guestapp.doorCodes'), true);
+});
+
+test('greeting preview: the server decides the masking from the caller\'s door-code access', async () => {
+  const m = await greetingPreview(db('maintenance').sb, body, me);
+  assert.equal(m.masked, true);
+  assert.ok(!/4821|2101/.test(m.text), m.text);
+  const f = await greetingPreview(db('frontdesk').sb, body, me);
+  assert.equal(f.masked, false);
+  assert.ok(Array.isArray(f.parts) && f.parts.length > 0);
+  assert.ok('why' in f && 'revealAt' in f);
+});
+
+test('greeting: refused when it was last saved by someone who cannot write greetings', async () => {
+  BY.GR3 = 'mender';
+  try {
+    const rec = Object.assign({}, REC, { greetings: Object.assign({}, REC.greetings, { GR3: { buildingId: 'BD', name: 'Spam', text: 'Click this link', fields: [] } }) });
+    const { sb, rpcs } = db('owner', {}, rec);
+    let called = false;
+    const b3 = Object.assign({}, body, { greetingId: 'GR3' });
+    await assert.rejects(greetingAction(sb, b3, me, { now: AFTER, fetch: async () => { called = true; }, waConfig: WA }), (e) => e.status === 403 && /not saved by someone/.test(e.message));
+    assert.equal(called, false); assert.equal(rpcs.length, 0);
+    await assert.rejects(greetingPreview(db('owner', {}, rec).sb, b3, me), (e) => e.status === 403);
+  } finally { delete BY.GR3; }
+});
+
+test('greeting: without inbox.send the same greeting is not sent to a chat twice within 10 minutes', async () => {
+  const recent = [{ from: 'staff', type: 'text', text: 'Hi', time: '2026-11-02T14:25', greeting: 'GR1' }];
+  const fetch = async () => new Response(JSON.stringify({ messages: [{ id: 'wamid.J' }] }));
+  await assert.rejects(greetingAction(db('maintenance', {}, REC, recent).sb, body, me, { now: AFTER, fetch, waConfig: WA }), (e) => e.status === 429);
+  await greetingAction(db('frontdesk', {}, REC, recent).sb, body, me, { now: AFTER, fetch, waConfig: WA }); // inbox.send: no limit
+  const old = [{ from: 'staff', type: 'text', text: 'Hi', time: '2026-11-02T14:10', greeting: 'GR1' }];
+  await greetingAction(db('maintenance', {}, REC, old).sb, body, me, { now: AFTER, fetch, waConfig: WA });
 });

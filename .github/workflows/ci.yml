@@ -58,6 +58,8 @@ jobs:
               const m = await import('./api/' + f + '.js');
               if (typeof m.default !== 'function') throw new Error('api/' + f + '.js has no default export');
             }
+            const G = (await import('./api/_lib/shared/greeting.cjs')).default;
+            if (typeof G.fill !== 'function') throw new Error('api/_lib/shared/greeting.cjs has no fill');
             console.log('api functions load');"
 
       - name: Channex tests (node --test)

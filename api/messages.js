@@ -18,8 +18,13 @@
  *                                                              clock, exactly as written -> {conversation}. Owner and every
  *                                                              employee who can open the inbox may send it, even without
  *                                                              inbox.send (who has inbox.send may edit it and use `send`).
+ *                                                              The door code and private fields also wait for the ID check.
+ *                                                              Only a greeting last saved by someone who may write greetings
+ *                                                              (inbox.greetings) is sent. Without inbox.send the same greeting
+ *                                                              goes to a chat at most once in GREETING_REPEAT_MS.
  *   greeting-preview {conversationId, greetingId}
- *                                               inbox viewer   the text as it would go now -> {text, parts, held, missing};
+ *                                               inbox viewer   the text as it would go now ->
+ *                                                              {id, name, text, parts, held, why, revealAt, missing, masked};
  *                                                              door codes and private fields are "[door code hidden]" for a
  *                                                              caller without guestapp.doorCodes (the send uses the real ones)
  *
@@ -29,7 +34,7 @@
  * Sign-in: "Authorization: Bearer <Supabase access token>"; the caller must be an active member of an active workspace.
  * Demo workspaces never send anything. Tokens and keys never leave the server; nothing here returns them.
  */
-import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, conflict, id as idField, uuid as uuidField } from './_lib/http.js';
+import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, conflict, tooMany, id as idField, uuid as uuidField } from './_lib/http.js';
 import { requireAdminClient, caller, getOrg, membership } from './_lib/supabase.js';
 import { channexConfig } from './_lib/channex.js';
 import { must, record, blob, tracked } from './_lib/channex-db.js';
@@ -41,12 +46,11 @@ import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiv
 import { allowedOrg } from './channex.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
 import { pullReviews, replyReview } from './_lib/reviews.js';
-import { createRequire } from 'node:module';
-
-const GREETING = createRequire(import.meta.url)('./_lib/shared/greeting.cjs');
+import GREETING from './_lib/shared/greeting.cjs';
 
 export const SITES_BUDGET_MS = 15000; // Vercel stops api functions at 20 s (vercel.json)
 export const BACKFILL_THREADS = 15;
+export const GREETING_REPEAT_MS = 10 * 60000; // without inbox.send: the same greeting to the same chat at most once in 10 minutes
 export const MEDIA_MAX = 3 * 1024 * 1024; // base64 grows it by a third; Vercel answers at most 4.5 MB
 
 // Booking-site chat and reviews through Channex's Messaging & Reviews app (switched on 2026-10-19). A building without
@@ -167,8 +171,13 @@ export async function greetingFor(sb, orgId, body, o = {}) {
   const unitType = typeId ? await record(sb, orgId, 'unitTypes', String(typeId)) : null;
   const buildingId = (unit && unit.buildingId) || (unitType && unitType.buildingId) || null;
   const building = buildingId ? await record(sb, orgId, 'buildings', String(buildingId)) : null;
-  const g = await record(sb, orgId, 'greetings', idField(body.greetingId, 'Greeting'));
+  const row = must(await sb.from('records').select('id, data, updated_by').eq('org_id', orgId).eq('coll', 'greetings').eq('id', idField(body.greetingId, 'Greeting')).eq('deleted', false).maybeSingle(), 'load greeting');
+  const g = row && row.data && typeof row.data === 'object' ? Object.assign({}, row.data, { id: row.id }) : null;
   if (!g) throw bad('not-found', 'This greeting message is no longer there. Refresh the page.');
+  /* every member can write records rows, and this greeting is sent with inbox view only: send it only when the person
+     who last saved it (updated_by, stamped by the database, never by the page) may still write greetings */
+  const writer = row.updated_by ? await membership(sb, orgId, row.updated_by) : null;
+  if (!writer || !(await canInbox(sb, orgId, writer, 'inbox.greetings'))) throw forbidden('This greeting was not saved by someone who can write greeting messages. Ask the owner to open it under Greeting Messages and save it again.');
   if (!building || g.buildingId !== building.id) throw bad('wrong-building', 'This greeting is for another building than this guest\'s stay.');
   if (!String(g.text || '').trim()) throw bad('empty', 'This greeting has no text yet. Write it under Greeting Messages first.');
   const base = appUrl();
@@ -177,17 +186,23 @@ export async function greetingFor(sb, orgId, body, o = {}) {
   return { conv, booking, greeting: g, filled };
 }
 
-async function greetingPreview(sb, body, me) {
+export async function greetingPreview(sb, body, me) {
   const ws = await workspace(sb, body, me);
   const mask = !(await canInbox(sb, ws.org.id, ws.member, 'guestapp.doorCodes'));
   const { greeting, filled } = await greetingFor(sb, ws.org.id, body, { mask });
-  return { id: greeting.id, name: greeting.name || '', text: filled.text, parts: filled.parts, held: filled.held, missing: filled.missing, masked: mask };
+  return { id: greeting.id, name: greeting.name || '', text: filled.text, parts: filled.parts, held: filled.held, why: filled.why, revealAt: filled.revealAt, missing: filled.missing, masked: mask };
 }
 
 export async function greetingAction(sb, body, me, opts = {}) {
   const ws = await workspace(sb, body, me); // inbox view is enough: "Owner and all employees can send this"
   if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is sent to guests.');
   const { conv, booking, greeting, filled } = await greetingFor(sb, ws.org.id, body, { now: opts.now });
+  if (!(await canInbox(sb, ws.org.id, ws.member, 'inbox.send'))) {
+    /* view-only senders: no flooding a guest with the same greeting */
+    const since = myt((opts.now || Date.now()) - GREETING_REPEAT_MS);
+    const again = (Array.isArray(conv.messages) ? conv.messages : []).some((m) => m && m.greeting === greeting.id && String(m.time || '') >= since);
+    if (again) throw tooMany('This greeting was sent to this guest a few minutes ago. Please wait before sending it again.');
+  }
   if (!filled.text.trim()) throw bad('empty', 'This greeting has no text yet. Write it under Greeting Messages first.');
   const { via, cx, fromAddress } = await replyRoute(sb, ws, body, me);
   const data = await sendReply(sb, {
