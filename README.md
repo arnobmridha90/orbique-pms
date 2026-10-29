@@ -8,7 +8,8 @@ One code base, three ways to use it:
 
 - **Desktop**: the full app in a browser.
 - **Phone**: the same app with a phone layout and a bottom tab bar, installable from the browser (it works like an app).
-- **Guest app**: one private link per booking (`/guest/<token>`) with check-in details, door code, Wi-Fi and requests.
+- **Guest app**: one private link per booking (`/guest/<token>`) with check-in details, door code, Wi-Fi and requests,
+  and nearby places per building (food, hospitals, money changers and more) with maps that work offline.
   Guests never sign in.
 
 Orbique staff have a **platform admin** area to add operators, set their plan and pause them. It shows counts only,

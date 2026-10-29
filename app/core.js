@@ -567,20 +567,23 @@
   /* ---------------- buildings and unit types ----------------
      D.buildings  {id: 'BD-…', name, address, city, state, zip, country, currency, checkInTime, checkOutTime, archived}
      D.unitTypes  {id: 'UT-…', buildingId, name: 'Deluxe', maxGuests, beds, description, order, archived}
+     D.places     {id: 'PL-…', buildingId, name, category, note, lat, lng, route, …}: the building's nearby places for the guest
+                  app (rules in api/_lib/shared/geo.cjs, page in app/pages/nearby.js). A building may carry lat / lng.
      A unit (property) may carry buildingId, unitTypeId, unitNo ('21-1', only the team sees it) and assignPriority.
      A booking of a typed unit carries unitTypeId (what was sold), propertyId (the unit, null while none is free),
      assignment {how: 'auto'|'manual', by, at, locked} and needsUnit. Untyped units and their bookings work as before. */
   D.buildings = D.buildings || [];
   D.unitTypes = D.unitTypes || [];
+  D.places = D.places || [];
   /* ---------------- country view ----------------
      With buildings in more than one country, the top bar picks a country (O.viewCountry(), '' = all countries) and
-     D.properties, D.buildings, D.unitTypes, D.bookings, D.blocks, D.tasks, D.reviews, D.expenses and D.conversations
+     D.properties, D.buildings, D.unitTypes, D.places, D.bookings, D.blocks, D.tasks, D.reviews, D.expenses and D.conversations
      hold that country only. Pages read and change them as before: push / unshift / splice on a country list change the
      full list too (never assign by index or set .length on them). The full lists: O.raw(key), or run code in
      O.unscoped(fn). Saving, background jobs and the channel manager always see every country.
      A building's country is building.country (else the one its currency is from); units, unit types and records follow
      their building. Records with no unit: expenses and bookings belong to the main country, tasks and chats to every country. */
-  var SCOPED = ['properties', 'buildings', 'unitTypes', 'bookings', 'blocks', 'tasks', 'reviews', 'expenses', 'conversations'];
+  var SCOPED = ['properties', 'buildings', 'unitTypes', 'places', 'bookings', 'blocks', 'tasks', 'reviews', 'expenses', 'conversations'];
   var EVERYWHERE = { tasks: 1, conversations: 1 };
   var CUR_COUNTRY = { MYR: 'MY', SGD: 'SG', THB: 'TH', IDR: 'ID', PHP: 'PH', VND: 'VN', JPY: 'JP', AUD: 'AU', USD: 'US', GBP: 'UK', CNY: 'CN', HKD: 'HK', INR: 'IN', KRW: 'KR', TWD: 'TW', NZD: 'NZ' };
   var RAW = {}, VIEW = {}, SC = { ver: 0, off: 0, list: null, listVer: -1 };
@@ -1602,7 +1605,7 @@
     last: { records: {}, blobs: {} },
     pending: false, pendingRemote: false, _timer: null, _writing: null, _demo: null
   };
-  ['bookings', 'blocks', 'tasks', 'reviews', 'conversations', 'quickReplies', 'greetings', 'expenses', 'staff', 'properties', 'buildings', 'unitTypes', 'invMoves', 'guestRequests', 'damageReports', 'staffInvites', 'ownerMessages'].forEach(function (k) { S.records(k, 'demo'); });
+  ['bookings', 'blocks', 'tasks', 'reviews', 'conversations', 'quickReplies', 'greetings', 'expenses', 'staff', 'properties', 'buildings', 'unitTypes', 'places', 'invMoves', 'guestRequests', 'damageReports', 'staffInvites', 'ownerMessages'].forEach(function (k) { S.records(k, 'demo'); });
   ['invItems', 'checklists'].forEach(function (k) { S.records(k, 'config'); });
   ['lockLog', 'sentLog', 'auditLog', 'priceLog'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo', cap: 500 }; });
   ['priceOverrides', 'priceOverrideMeta', 'pricingRules', 'ownerPayouts', 'staffMeta'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'demo' }; });
