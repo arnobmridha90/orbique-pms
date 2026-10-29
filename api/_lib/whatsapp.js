@@ -12,6 +12,7 @@
  *   phoneNumberInfo(cfg, phoneNumberId)        -> {display_phone_number, verified_name}
  *   Embedded Signup (connecting a number that stays on the WhatsApp Business app, "coexistence"):
  *   exchangeCode(cfg, code)                    the code from the pop-up -> the token for that WhatsApp account
+ *   renewToken(cfg, token)                     that token -> a new one for another 60 days (the nightly job)
  *   signupNumber(cfg, token, {wabaId, phoneNumberId})  -> {wabaId, phoneNumberId, info} (finds what the pop-up left out)
  *   subscribeApp(cfg, token, wabaId, callback) sends that WhatsApp account's webhooks to this site
  *   requestSync(cfg, token, phoneNumberId, type)  'smb_app_state_sync' (contacts) or 'history' (older chats) -> request id
@@ -318,6 +319,21 @@ export async function exchangeCode(cfg, code, opts = {}) {
   const t = j && typeof j.access_token === 'string' ? j.access_token : '';
   if (!t) throw new WhatsAppError('Facebook did not give a token for this WhatsApp account. Try connecting again.');
   return t;
+}
+
+/**
+ * A number's Embedded Signup token for a fresh one. The configuration's tokens expire 60 days after they are made or
+ * last renewed, and an expired one cannot be renewed, so the nightly job renews them well before that. The old token
+ * keeps working until it expires. -> {token, expiresIn (seconds, or null)}
+ */
+export async function renewToken(cfg, token, opts = {}) {
+  if (!cfg.appId || !cfg.appSecret) throw new WhatsAppError('Connecting with Facebook is not set up on the server yet (WHATSAPP_APP_ID and WHATSAPP_APP_SECRET).', { code: -1 });
+  const q = new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: cfg.appId, client_secret: cfg.appSecret, set_token_expires_in_60_days: 'true', fb_exchange_token: String(token) });
+  const j = await graph(Object.assign({}, cfg, { secret: cfg.appSecret + ' ' + token }), 'GET', '/oauth/access_token?' + q.toString(), null, Object.assign({ noAuth: true }, opts));
+  const t = j && typeof j.access_token === 'string' ? j.access_token : '';
+  if (!t) throw new WhatsAppError('Facebook did not give a new token for this WhatsApp number.');
+  const n = Number(j.expires_in);
+  return { token: t, expiresIn: Number.isFinite(n) && n > 0 ? n : null };
 }
 
 /**
