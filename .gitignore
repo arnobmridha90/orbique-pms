@@ -5,6 +5,7 @@ dist-local/
 .env
 .env.*
 *.png
+!websites/orbique/**/*.png
 !public/**/*.png
 __pycache__/
 !android/**/*.png

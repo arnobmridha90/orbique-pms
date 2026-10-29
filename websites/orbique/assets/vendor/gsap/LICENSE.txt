@@ -1,0 +1,10 @@
+GSAP 3.15.0 (gsap, ScrollTrigger, SplitText, DrawSVGPlugin)
+Copyright GreenSock, Inc. (https://gsap.com). Files copied unchanged from the npm package gsap@3.15.0 (dist/*.min.js).
+
+The npm package ships no separate license file. Its package.json states:
+  "license": "Standard 'no charge' license: https://gsap.com/standard-license."
+and every file header says:
+  "Subject to the terms at https://gsap.com/standard-license."
+
+GSAP and all its plugins (including SplitText and DrawSVGPlugin) are free to use under that license.
+The full terms are at https://gsap.com/standard-license.
