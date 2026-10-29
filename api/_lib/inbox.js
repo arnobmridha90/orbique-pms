@@ -13,7 +13,9 @@
  *                                               accepted / declined reservation, thread assigned
  *   postNotice(sb, orgId, n, opts)              a platform notification: in the booking's chat, else the platform's feed
  *   sendReply(sb, ctx)                          one reply on WhatsApp, the booking site or email, then stored
- *   canInbox(sb, orgId, member, key)            the app's permission rules (O.can) for inbox.send / inbox.notes
+ *                                               (ctx.greeting: the greeting it was filled from, kept on the message)
+ *   canInbox(sb, orgId, member, key)            the app's permission rules (O.can) for inbox.send / inbox.notes /
+ *                                               inbox.greetings / reviews.reply / guestapp.doorCodes
  *
  * Message times are written the way the app writes them: Malaysia time 'YYYY-MM-DDTHH:MM'.
  */
@@ -402,16 +404,20 @@ export async function receiveChannex(sb, prop, event, p, opts = {}) {
 
 const SECTION_DEFAULT = {
   inbox: { ops: 'edit', housekeeping: 'edit', frontdesk: 'edit', maintenance: 'view', accountant: 'none' },
-  reviews: { ops: 'edit', frontdesk: 'edit' }
+  reviews: { ops: 'edit', frontdesk: 'edit' },
+  guestapp: { ops: 'edit', housekeeping: 'edit', frontdesk: 'edit' }
 };
 const ACTION_DEFAULT = {
   'inbox.send': ['ops', 'housekeeping', 'frontdesk'],
   'inbox.notes': ['ops', 'housekeeping', 'frontdesk'],
-  'reviews.reply': ['ops', 'frontdesk']
+  'inbox.greetings': ['ops', 'frontdesk'],
+  'reviews.reply': ['ops', 'frontdesk'],
+  'guestapp.doorCodes': ['ops', 'frontdesk']
 };
 const LV = { none: 0, view: 1, edit: 2 };
 
-/** Whether this member may do key ('inbox' = see the inbox, 'inbox.send', 'inbox.notes', 'reviews.reply'). */
+/** Whether this member may do key ('inbox' = see the inbox, 'inbox.send', 'inbox.notes', 'inbox.greetings',
+ *  'reviews.reply', 'guestapp.doorCodes'). */
 export async function canInbox(sb, orgId, member, key) {
   if (!member || member.status !== 'active') return false;
   if (member.role === 'owner') return true;
@@ -420,7 +426,7 @@ export async function canInbox(sb, orgId, member, key) {
   if (meta && meta.status === 'suspended') return false;
   const ov = meta && isObj(meta.overrides) ? meta.overrides : {};
   const rp = isObj(rolePerms) ? rolePerms[member.role] : null;
-  const sec = key.split('.')[0] === 'reviews' ? 'reviews' : 'inbox';
+  const sec = Object.prototype.hasOwnProperty.call(SECTION_DEFAULT, key.split('.')[0]) ? key.split('.')[0] : 'inbox';
   const section = ('section:' + sec) in ov ? ov['section:' + sec] || 'none'
     : rp && isObj(rp.sections) && sec in rp.sections ? rp.sections[sec] : SECTION_DEFAULT[sec][member.role] || 'none';
   if (key === sec) return LV[section] >= 1;
@@ -482,6 +488,7 @@ export async function sendReply(sb, ctx) {
   if (ctx.staffId) msg.staffId = ctx.staffId;
   if (ctx.orig && ctx.orig !== text) { msg.orig = clip(ctx.orig, MAX_TEXT); if (langCode(ctx.origLang)) msg.origLang = langCode(ctx.origLang); }
   if (langCode(ctx.lang)) msg.lang = langCode(ctx.lang);
+  if (ctx.greeting) msg.greeting = clip(ctx.greeting, 80); // sent as a greeting message (api/messages.js 'greeting')
   const patch = {};
   if (ctx.via === 'whatsapp') {
     const base = ctx.waConfig || waConfig();

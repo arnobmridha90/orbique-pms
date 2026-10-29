@@ -21,7 +21,11 @@
    threads that match no booking wait at the top of the list to be linked. Photos, files and voice notes still go out only as
    internal notes; guests' WhatsApp files open through the server. Agoda's guest emails show only what the guest wrote
    (api/_lib/email-in.js agodaMessage); a special request carries Agoda's answer buttons (m.actions), which open Agoda's
-   own page, and the chat notes the answer picked (c.picks by message xid: {label, at, staffId}). */
+   own page, and the chat notes the answer picked (c.picks by message xid: {label, at, staffId}).
+   Greeting messages (pages/greetings.js): when the chat's booking is in a building with a greeting, "Send greeting" sits
+   next to the quick replies and in a new chat's first-message card. It shows the greeting filled for this booking now
+   and the route, then sends it. Anyone who can open the inbox may send it (live: api/messages.js 'greeting', filled on the
+   server); with inbox.send it can go into the composer to edit first. Private greeting values are hidden like door codes. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
@@ -249,6 +253,13 @@
 .pg-inbox .qr .unit{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;color:var(--brand-text);background:var(--brand-soft);border-radius:10px;padding:0 6px;}
 .pg-inbox .qr .unit svg{width:11px;height:11px;}
 .pg-inbox .qr.manage{border-style:dashed;color:var(--muted);}
+.pg-inbox .qr.greet{border-color:var(--brand-strong);background:var(--brand-soft);color:var(--brand-text);}
+.pg-inbox .qr.greet svg{width:14px;height:14px;}
+.ib-greet{display:flex;flex-direction:column;gap:12px;}
+.ib-greet .route{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2);flex-wrap:wrap;}
+.ib-greet .route svg{width:15px;height:15px;}
+.ib-greet .route .select{width:auto;flex:1;min-width:0;}
+.ib-greet .warn{font-size:12px;color:var(--warn);font-weight:600;}
 .pg-inbox .qr.manage svg{width:13px;height:13px;}
 .pg-inbox .cmp-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .pg-inbox .cmp-top .seg button{padding:4px 10px;font-size:12px;}
@@ -487,6 +498,7 @@
   function codeSafe(c, text) {
     var raw = String(text || ''), b = bk(c);
     if (!canCodes() && b && b.doorCode && String(b.doorCode).length >= 3) raw = raw.split(String(b.doorCode)).join('••••');
+    if (!canCodes() && b && O.greet) O.greet.secretsFor(b).forEach(function (v) { raw = raw.split(v).join('••••'); }); /* private greeting fields (pages/greetings.js) */
     return raw;
   }
   function phoneOf(b) { return b && b.guest ? (canContacts() ? b.guest.phone || '' : maskPhone(b.guest.phone)) : ''; }
@@ -872,7 +884,8 @@
       var r0 = liveOn() ? routeOf(c) : null;
       return '<div class="ib-hello"><b>Start the conversation with ' + esc(b0.guest.name) + '</b><br>' + (!canSend() ? 'No messages yet.'
         : liveOn() ? (r0 && r0.open ? 'Your first message goes by ' + esc(r0.label) + '. Use a quick reply below or type a message.' : 'WhatsApp only takes a reply after the guest has written to your WhatsApp number. Share the number in your booking confirmation' + (routesFor(c).some(function (x) { return x.via === 'channex'; }) ? ', or reply through the booking site below' : '') + '.')
-        : 'Your first message goes to ' + esc(phoneOf(b0)) + ' on WhatsApp. Use a quick reply below or type a message.') + '</div>';
+        : 'Your first message goes to ' + esc(phoneOf(b0)) + ' on WhatsApp. Use a quick reply below or type a message.') +
+        (greetBtnHTML(c) ? '<div style="margin-top:10px"><button type="button" class="btn btn-primary btn-sm" data-act="greet">' + O.icon('greetings') + 'Send the greeting message</button></div>' : '') + '</div>';
     }
     var out = [], prevDay = null, prevKey = null, prevTime = null, b = bk(c), mark = st.unreadMark[c.id];
     var firstUnread = mark ? mark.i : -1;
@@ -904,9 +917,17 @@
     });
     return out.join('');
   }
+  /* "Send greeting": the building's greeting message (pages/greetings.js). Anyone who can open the inbox may send it. */
+  function greetings(c) { var b = bk(c); return b && O.greet ? O.greet.listFor(b) : []; }
+  function greetBtnHTML(c) {
+    var n = greetings(c).length; if (!n) return '';
+    return '<button type="button" class="qr greet" data-act="greet" title="Send the building\'s greeting message, filled in for this guest">' + O.icon('greetings') + 'Send greeting</button>';
+  }
+  /* the row above the composer: quick replies for people who may message guests, else only the greeting */
+  function qrWrapHTML(c) { return canSend() ? qrBarHTML(c) : greetBtnHTML(c) ? '<div class="qr-bar" role="group" aria-label="Greeting">' + greetBtnHTML(c) + '</div>' : ''; }
   function qrBarHTML(c) {
     var b = bk(c), list = repliesFor(b.propertyId);
-    return '<div class="qr-bar" role="group" aria-label="Quick replies"><span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
+    return '<div class="qr-bar" role="group" aria-label="Quick replies">' + greetBtnHTML(c) + '<span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
       list.map(function (q) {
         var unit = q.propertyIds.length ? '<span class="unit" title="Tagged to ' + esc(q.propertyIds.map(function (x) { return prop(x).short; }).join(', ')) + '">' + O.icon('home') + esc(prop(b.propertyId).short) + (q.propertyIds.length > 1 ? ' +' + (q.propertyIds.length - 1) : '') + '</span>' : '';
         return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '">' + esc(q.title) + unit + '</button>';
@@ -924,7 +945,7 @@
   function modes() { var m = []; if (canSend()) m.push(['reply', 'Reply to guest']); if (canNote()) m.push(['note', 'Internal note']); return m; }
   function composerHTML(c) {
     var ms = modes();
-    if (!ms.length) return '<div class="ib-compose"><div class="ib-ro">' + O.icon('lock') + '<span>You can read this chat. Replying to guests and writing notes are not part of your access.</span></div></div>';
+    if (!ms.length) return '<div class="ib-compose">' + (greetBtnHTML(c) ? '<div class="qr-wrap">' + qrWrapHTML(c) + '</div>' : '') + '<div class="ib-ro">' + O.icon('lock') + '<span>You can read this chat' + (greetBtnHTML(c) ? ' and send the greeting message' : '') + '. Replying to guests and writing notes are not part of your access.</span></div></div>';
     if (!ms.some(function (x) { return x[0] === st.mode; })) st.mode = ms[0][0];
     var b = bk(c), note = st.mode === 'note', rec = st.rec && st.rec.convId === c.id;
     var draft = st.drafts[c.id] || '', hasStuff = draft.trim() || (st.pending[c.id] || []).length;
@@ -934,7 +955,7 @@
       '<button type="button" data-pick="camera"><span class="ai">' + O.icon('camera') + '</span><span>Camera<small>Take a photo on a phone or tablet</small></span></button>' +
       '<button type="button" data-pick="doc"><span class="ai">' + O.icon('file') + '</span><span>Document<small>PDF, Word, Excel or any file</small></span></button>' +
       '<button type="button" data-pick="audio"><span class="ai">' + O.icon('mic') + '</span><span>Audio file<small>Send a recording as a voice note</small></span></button></div>' +
-      (canSend() ? '<div class="qr-wrap">' + qrBarHTML(c) + '</div>' : '') +
+      (qrWrapHTML(c) ? '<div class="qr-wrap">' + qrWrapHTML(c) + '</div>' : '') +
       '<div class="tray-wrap">' + trayHTML(c) + '</div>' +
       (!note && liveOn() && routeOf(c) && !routeOf(c).open ? '<div class="cmp-warn">' + esc(routeOf(c).why) + '</div>' : '') +
       '<div class="cmp-top">' + (ms.length > 1 ? U.seg(ms, st.mode, 'data-mode') : '') +
@@ -1164,7 +1185,7 @@
         }
         var head = O.$('.ib-head', chat); head.outerHTML = headHTML(c);
         var stay = O.$('.ib-stay', chat); stay.outerHTML = stayHTML(c);
-        var qw = O.$('.qr-wrap', chat); if (qw) qw.innerHTML = qrBarHTML(c);
+        var qw = O.$('.qr-wrap', chat); if (qw) qw.innerHTML = qrWrapHTML(c); else if (qrWrapHTML(c)) rebuildComposer(); /* a greeting was added for this building */
         paintThread(false);
       }
       chat.addEventListener('load', function (e) {
@@ -1654,6 +1675,85 @@
         else if (/\{door_code\}/.test(q.text) && (!b.idVerified || b.codeStatus === 'held')) U.toast(b.guest.name + ' has not verified their ID yet, so the door code was left out', 'bad');
       }
 
+      /* ---------- greeting messages (pages/greetings.js, api/_lib/shared/greeting.cjs) ----------
+         A preview filled for this booking now, the route it goes by, and Send. Live: the server fills and sends it
+         ('greeting-preview' / 'greeting'), so the guest gets exactly what the server's clock allows. Who has inbox.send
+         may put it in the composer to edit first; everyone else sends it as written. */
+      function openGreeting(c) {
+        var b = bk(c), list = greetings(c); if (!b || !list.length) { U.toast('There is no greeting message for this building yet', 'bad'); return; }
+        var ui = { id: list[0].id, via: null, seq: 0, server: null, busy: false };
+        var live0 = liveOn(), rs = live0 ? routesFor(c) : [];
+        var body = O.html('<div class="ib-greet"></div>');
+        function g() { return list.filter(function (x) { return x.id === ui.id; })[0] || list[0]; }
+        function route() { if (!live0) return null; var want = ui.via || (routeOf(c) || {}).via; return rs.filter(function (x) { return x.via === want; })[0] || routeOf(c); }
+        function paintBody() {
+          var gr = g(), filled = O.greet.fill(gr, b), r = route();
+          var text = ui.server && ui.server.id === gr.id ? ui.server : null;
+          var routeLine = !live0 ? O.icon('whatsapp') + '<span>To ' + esc(phoneOf(b)) + ' on WhatsApp</span>'
+            : !rs.length ? O.icon('alert') + '<span>' + esc(noRouteWhy(c)) + '</span>'
+              : O.icon(r.via === 'whatsapp' ? 'whatsapp' : 'chat') + '<span>Sent by</span>' + (rs.length > 1 ? '<label class="sr-only" for="ib-gr-via">Send by</label><select id="ib-gr-via" class="select" data-g="via">' + rs.map(function (x) { return '<option value="' + x.via + '"' + (x === r ? ' selected' : '') + '>' + esc(x.label) + (x.open ? '' : ' (closed)') + '</option>'; }).join('') + '</select>' : '<b>' + esc(r.label) + '</b>');
+          var notes = O.greet.heldNote(filled, gr);
+          body.innerHTML = (list.length > 1 ? '<div class="field"><label for="ib-gr">Greeting</label><select id="ib-gr" class="select" data-g="pick">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === gr.id ? ' selected' : '') + '>' + esc(x.name || 'Untitled') + '</option>'; }).join('') + '</select></div>' : '') +
+            '<div class="field"><label>What ' + esc(guestFirst(b.guest.name)) + ' gets now</label><div class="gm-pv"><div class="pvb">' + (text ? esc(text.text) : O.greet.partsHTML(filled, gr)) + '</div></div>' +
+            (notes.length ? '<div class="gm-notes">' + notes.map(function (n) { return '<div>' + esc(n) + '</div>'; }).join('') + '</div>' : '') +
+            (!canCodes() ? '<div class="gm-notes"><div>Door codes are not part of your access, so they show as hidden here. The guest gets the real code.</div></div>' : '') + '</div>' +
+            '<div class="route">' + routeLine + '</div>' +
+            (live0 && r && !r.open ? '<div class="warn">' + esc(r.why) + '</div>' : '');
+        }
+        function loadServer() {
+          if (!live0) return;
+          var my = ++ui.seq, id = g().id;
+          O.auth.inbox('greeting-preview', { conversationId: c.id, greetingId: id }).then(function (res) { if (my === ui.seq && document.body.contains(body)) { ui.server = { id: id, text: res.text }; paintBody(); } }, function () {});
+        }
+        body.addEventListener('change', function (e) {
+          var t = e.target;
+          if (t.dataset.g === 'pick') { ui.id = t.value; ui.server = null; paintBody(); loadServer(); }
+          if (t.dataset.g === 'via') { ui.via = t.value; paintBody(); }
+        });
+        function sendIt(close) {
+          var gr = g();
+          if (!live0) {
+            /* demo / no connection: the same filled text the preview shows, with the real values */
+            var text = O.greet.fill(gr, b, { mask: false }).text;
+            push(c, { from: 'staff', staffId: O.state.viewer, type: 'text', text: text, time: nowISO(), status: 'sent', greeting: gr.id });
+            delete st.unreadMark[c.id];
+            if (st.sel === c.id) paintThread(true); paintRows();
+            U.toast('Greeting sent to ' + b.guest.name + ' on WhatsApp. Sending is not connected in this version.');
+            O.emit('data', { type: 'message', id: c.id });
+            return;
+          }
+          var r = route();
+          if (!r) { U.toast(noRouteWhy(c), 'bad'); return false; }
+          if (!r.open) { U.toast(r.why, 'bad'); return false; }
+          if (ui.busy) return false;
+          ui.busy = true;
+          var btn = O.$('#ib-gr-send'); if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+          O.auth.inbox('greeting', { conversationId: c.id, greetingId: gr.id, via: r.via }).then(function (res) {
+            applyConv(res.conversation); delete st.unreadMark[c.id];
+            if (st.sel === c.id) paintThread(true); paintRows();
+            U.toast('Greeting sent to ' + b.guest.name + ' by ' + r.label);
+            close();
+          }, function (er) {
+            ui.busy = false; var b2 = O.$('#ib-gr-send'); if (b2) { b2.disabled = false; b2.textContent = 'Send greeting'; }
+            U.toast(er.message || 'The greeting was not sent. Please try again.', 'bad');
+          });
+          return false;
+        }
+        var actions = [{ label: 'Cancel' }];
+        if (canSend()) actions.push({ label: 'Edit before sending', onClick: function () {
+          var gr = g(), ta = O.$('#ib-input', chat), filled = O.greet.fill(gr, b);
+          if (st.mode !== 'reply') { st.mode = 'reply'; rebuildComposer(); ta = O.$('#ib-input', chat); }
+          if (!ta) return;
+          var cur = ta.value.trim();
+          ta.value = cur ? cur + '\n' + filled.text : filled.text; st.drafts[c.id] = ta.value;
+          autosize(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); paintSendBtn();
+          if (!canCodes() && filled.text.indexOf(O.greeting.MASK) >= 0) U.toast('Door codes are not part of your access, so they show as "' + O.greeting.MASK + '". Send it with Send greeting to include them.', 'bad');
+        } });
+        actions.push({ label: 'Send greeting', kind: 'primary', id: 'ib-gr-send', onClick: sendIt });
+        paintBody(); loadServer();
+        U.modal({ title: 'Send greeting', sub: b.guest.name + ' · ' + O.bookingPlace(b) + ' · ' + d.fmtRange(b.checkIn, b.checkOut), body: body, autofocus: false, actions: actions });
+      }
+
       /* ---------- new conversation ---------- */
       function newChat() {
         if (!canSend()) { U.toast(NO_SEND, 'bad'); return; }
@@ -1741,6 +1841,7 @@
         if (act === 'pin') { c.pinned = !c.pinned; paintRows(); paintChat(false); U.toast(c.pinned ? 'Chat pinned to the top' : 'Chat unpinned'); return; }
         if (act === 'invoice') { if (O.can('invoices.send')) O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); else U.toast('Your access does not include sending invoices and receipts', 'bad'); return; }
         if (act === 'attach') { O.$('.att-menu', chat).classList.toggle('open'); return; }
+        if (act === 'greet') { openGreeting(c); return; }
         if (act === 'xltoggle') { live.xl[c.id] = !live.xl[c.id]; var tx = O.$('#ib-input', chat); if (tx) st.drafts[c.id] = tx.value; rebuildComposer(); var ty = O.$('#ib-input', chat); if (ty) ty.focus(); return; }
         if (act === 'send') { send(); return; }
         if (act === 'record') { startRecording(); return; }
@@ -1795,7 +1896,7 @@
         paintFilters(); paintRows(); paintTabs();
         if (oc && liveOn()) { var sig = JSON.stringify(routesFor(oc).map(function (r) { return [r.via, r.open]; })); if (chat.dataset.rsig && chat.dataset.rsig !== sig) rebuildComposer(); chat.dataset.rsig = sig; }
         if (conv(st.sel)) paintChat(false); else if (st.sel) { st.sel = null; paintChat(true); }
-        if (p && p.type === 'quickreplies') { var w = O.$('.qr-wrap', chat), c = conv(st.sel); if (w && c) w.innerHTML = qrBarHTML(c); }
+        if (p && p.type === 'quickreplies') { var w = O.$('.qr-wrap', chat), c = conv(st.sel); if (w && c) w.innerHTML = qrWrapHTML(c); }
       });
 
       paintChat(true);

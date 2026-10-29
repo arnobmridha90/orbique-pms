@@ -88,7 +88,8 @@ once stored; whatever is left the worker finishes. `GET /bookings` is never used
 ## POST /api/messages
 
 The live guest inbox (`api/messages.js`, `api/_lib/inbox.js`). Signed in, `{action, orgId, ...}`; permissions follow the
-app's rules (`inbox` to read, `inbox.send` to reply; role settings and personal overrides from `rolePerms` / `staffMeta`).
+app's rules (`inbox` to read and to send a greeting message, `inbox.send` to reply, `guestapp.doorCodes` to see door codes
+in a greeting preview; role settings and personal overrides from `rolePerms` / `staffMeta`).
 Demo workspaces never send.
 
 | action | who | body | answer |
@@ -100,6 +101,8 @@ Demo workspaces never send.
 | `media` | inbox | `{orgId, conversationId, index}` | `{mime, name, data}` (base64, at most 3 MB): a file the guest sent on WhatsApp |
 | `whatsapp-connect` | owner | `{orgId, phoneNumberId}` | Checks the number with Meta and saves it in `whatsapp_numbers`: `{number: {phone, name}}` |
 | `whatsapp-disconnect` | owner | `{orgId}` | `{number: null}` |
+| `greeting` | inbox | `{orgId, conversationId, greetingId, via}` | Sends the building's greeting message (records `greetings`, `api/_lib/shared/greeting.cjs`) filled on the server for the chat's booking, unit, unit type and building, by the server's clock: the door code, private fields and for a typed unit the unit number and Wi-Fi only from 30 minutes before check-in (else the guest-app wording). Inbox view is enough: owner and every employee who can open the inbox may send it, even without inbox.send. It goes exactly as written, by the same routes and checks as `send`, and the message carries `greeting: <id>`. `{conversation: {id, data}, held: [keys]}`. Refused: `no-booking`, `not-found`, `wrong-building`, `empty`, demo workspaces |
+| `greeting-preview` | inbox | `{orgId, conversationId, greetingId}` | `{id, name, text, parts, held, missing, masked}`: the text as `greeting` would send it now. For a caller without guestapp.doorCodes the door code and private values read `[door code hidden]` (`masked: true`); the send still uses the real values |
 
 ## GET/POST /api/whatsapp-webhook
 
