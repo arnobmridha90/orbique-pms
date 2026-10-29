@@ -51,6 +51,25 @@ jobs:
         run: |
           node -e "for (const f of ['vercel.json', 'public/manifest.webmanifest', 'config/platform-owners.json', 'package.json']) JSON.parse(require('fs').readFileSync(f, 'utf8'))"
 
+      - name: Marketing website (websites/orbique)
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path'), R = 'websites/orbique';
+            for (const f of ['index.html', 'privacy.html', '404.html', 'robots.txt', 'sitemap.xml', 'favicon.svg', 'assets/css/site.css']) if (!fs.statSync(path.join(R, f)).size) throw new Error(R + '/' + f + ' is empty');
+            JSON.parse(fs.readFileSync(path.join(R, 'vercel.json'), 'utf8'));
+            for (const f of ['index.html', 'privacy.html', '404.html']) {
+              const s = fs.readFileSync(path.join(R, f), 'utf8');
+              for (const m of s.matchAll(/<script type=\"application\/ld\+json\">([\s\S]*?)<\/script>/g)) JSON.parse(m[1]);
+              for (const m of s.matchAll(/(?:src|href|srcset|imagesrcset)=\"([^\"]+)\"/g)) for (const u of m[1].split(',').map((x) => x.trim().split(' ')[0])) {
+                if (!u.startsWith('/') || u.startsWith('//') || u === '/' || u === '/privacy') continue;
+                if (!fs.existsSync(path.join(R, u.split('?')[0]))) throw new Error(f + ' points to a missing file: ' + u);
+              }
+              if (/ style=\"/.test(s)) throw new Error(f + ' has an inline style attribute (the CSP blocks it)');
+              if (/<script>/.test(s)) throw new Error(f + ' has an inline script (the CSP blocks it)');
+            }
+            console.log('websites/orbique ok');"
+          for f in websites/orbique/assets/js/*.js; do cp "$f" "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; node --check "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; done
+
       - name: API functions load
         run: |
           node --input-type=module -e "
