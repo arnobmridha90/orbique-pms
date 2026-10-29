@@ -5,6 +5,9 @@
    (D.alertSettings: {on, kinds: {new, cancelled, changed}, emails: [..], whatsapp: ['+60..'], push}), shows which
    channels the server has set up (/api/alerts status) and sends a test alert. On the phone app, O.native.push
    (app/native/bridge.js) turns alerts on for this phone.
+   While Orbique is open, a new booking from a booking site or the guest website (saved by nobody on the team, like
+   the server's alert) rings O.alertSound (app/core.js), unless alerts or new-booking alerts are off. A new message from
+   a guest rings it too (app/pages/inbox.js, on any page). The card has this device's sound switch and a Play button.
    =================================================================== */
 /* Loads after app/server/auth.js (files load in name order), which defines O.auth. */
 (function () {
@@ -32,6 +35,16 @@
       .then(function () { st.loading = false; st.at = Date.now(); repaint(); });
   }
 
+  /* ---------- the sound for a new booking that arrives while the app is open ---------- */
+  O.on('remote-rows', function (rows) {
+    var s = settings(); if (!s.on || !s.kinds.new || !O.alertSound) return;
+    var have = {}; (D.bookings || []).forEach(function (b) { have[String(b.id)] = 1; });
+    var fresh = rows.some(function (r) {
+      return r.coll === 'bookings' && !r.deleted && r.data && !r.by && !have[String(r.id)] && !/^(cancelled|deleted)$/.test(String(r.data.status || ''));
+    });
+    if (fresh) O.alertSound.play();
+  });
+
   /* ---------- the card ---------- */
   function line(icon, name, ready, who, why) {
     return '<div class="row-flex" style="gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid var(--border)">' + O.icon(icon, 'al-ic') +
@@ -57,8 +70,20 @@
       line('chat', 'WhatsApp', x ? x.whatsapp && s.whatsapp.length > 0 : null, waWho, waWhy) +
       line('phone', 'Phone app', x ? x.push && s.push && x.phones > 0 : null, esc(phoneWho), pushWhy) +
       (native && edit && x && x.push && s.push ? '<button type="button" class="btn btn-primary btn-sm" data-al="phone" style="margin-top:8px">' + O.icon('bell') + (x.myPhones ? 'Check alerts on this phone' : 'Turn on alerts on this phone') + '</button>' : '') +
+      soundLine() +
       (st.last ? '<div class="note" style="margin-top:8px">' + st.last + '</div>' : '') + recent +
       '</div></div>';
+  }
+
+  /* this device's alert sound: on or off (O.store), and a Play button to hear it */
+  function soundLine() {
+    if (!O.alertSound) return '';
+    var on = !O.alertSound.muted();
+    return '<div class="row-flex" style="gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--border)">' + O.icon('bell', 'al-ic') +
+      '<div class="grow" style="min-width:0"><b>Sound in the app</b><div class="small muted">' + (on ? 'On for this device: a loud chime for new bookings and guest messages while Orbique is open' : 'Off for this device') + '</div>' +
+      '<div class="xs muted" style="margin-top:2px">Your device\'s volume still applies. Phone notifications use the same chime.</div></div>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-al="sound-play">' + O.icon('play') + 'Play</button>' +
+      '<label class="row-flex" style="gap:6px"><input type="checkbox" data-al-sound' + (on ? ' checked' : '') + '> <span class="small">On</span></label></div>';
   }
 
   /* ---------- edit ---------- */
@@ -103,7 +128,16 @@
     var b = e.target.closest('[data-al]'); if (!b || !b.closest('[data-alerts-card]')) return;
     if (b.dataset.al === 'edit') editModal();
     else if (b.dataset.al === 'test') sendTest();
+    else if (b.dataset.al === 'sound-play' && O.alertSound) { if (!O.alertSound.test()) U.toast('This browser cannot play sounds', 'bad'); }
     else if (b.dataset.al === 'phone' && O.native && O.native.push) O.native.push.enable(true).then(function (r) { U.toast(r && r.ok ? 'Alerts are on for this phone' : (r && r.message) || 'Alerts could not be turned on', r && r.ok ? 'ok' : 'bad'); load(true); });
+  });
+
+  document.addEventListener('change', function (e) {
+    var c = e.target.closest('[data-al-sound]'); if (!c || !O.alertSound) return;
+    O.alertSound.setMuted(!c.checked);
+    U.toast(c.checked ? 'Alert sound on for this device' : 'Alert sound off for this device');
+    if (c.checked) O.alertSound.test();
+    repaint();
   });
 
   O.alertsUI = { card: function () { load(false); return card(); }, refresh: function () { load(true); } };

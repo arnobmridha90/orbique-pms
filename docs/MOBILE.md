@@ -53,6 +53,12 @@ from the same place). If the phone says the app was not installed, for example b
 package", the key has changed: uninstall Orbique, install the new build and sign in again. The release page says so
 in bold when a build needs this. To stop it happening, see "Same key for every test build" below.
 
+**To hear the new alert sound** (Orbique's own loud chime for booking and message alerts): uninstall the old Orbique
+test app first, then install the newest build from the address above and sign in. Android remembers a notification
+sound for good once an app has set it up, so only a fresh install is sure to get the new one. Then allow notifications
+when asked. The phone's notification volume still applies: turn it up, and check Do Not Disturb is off. In the phone's
+settings (Apps, Orbique, Notifications) the alerts are listed as **Booking and message alerts**.
+
 **Which build is this?** The release page
 https://github.com/arnobmridha90/orbique-pms/releases/tag/android-test shows the commit, the build number, the date,
 the site the build connects to and whether it installs over the old test app.
@@ -293,7 +299,8 @@ of `capacitor.config.json` under `android/app/src/main/assets/` and `ios/App/App
   notes.
 - **Privacy.** Both stores need a privacy policy address. Apple also asks for the "App Privacy" answers in App Store
   Connect.
-- **Push notifications are a later phase.** The app does not send notifications yet.
+- **Push notifications.** Booking alerts reach the Android app through Firebase (docs/DEPLOY.md, "Booking alerts"). The
+  iPhone app also needs an Apple push key added to the Firebase project before it gets them.
 
 ---
 
@@ -318,6 +325,12 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
 - `mobile/www` is git-ignored. `scripts/build.mjs --mobile` writes `index.html` (the same page as the website plus
   `app/native/bridge.js`), Capacitor's runtime and plugins as plain scripts in `vendor/`, and `config.js`
   (`native: true`, `apiBase` and `appUrl` set to the site address).
+- The alert sound `orbique_alert.wav` is made by `python3 scripts/alert-sound.py`, which writes it to
+  `android/app/src/main/res/raw/` (the notification channel `alerts_loud` in `app/native/bridge.js` and the FCM
+  payload in `api/_lib/alerts.js` name it `orbique_alert`), `ios/App/App/` (in the Xcode project's resources; APNs
+  sound `orbique_alert.wav`) and `public/sounds/` (copied to `mobile/www/sounds/` for the in-app player
+  `O.alertSound`). Android fixes a channel's sound when the app first makes it: to change the sound, give the channel
+  a new id in both files (the app deletes the old `bookings` channel the same way).
 - The site address comes from the environment variable `ORBIQUE_SITE_URL` or `config/mobile.json` (`siteUrl`), for
   example `ORBIQUE_SITE_URL=https://app.orbique.my npm run mobile:sync`. The build reads the public Supabase URL and
   key from that site's `/config.js` (or from `SUPABASE_URL` and `SUPABASE_ANON_KEY`), fails loudly if the site is set
@@ -445,5 +458,5 @@ Never commit a keystore: the repository is public.
 
 ### Not done yet
 
-Push notifications, automatic Google Play uploads, opening guest or invite links in the app instead of the browser,
+Push notifications on the iPhone (needs an Apple push key in Firebase), automatic Google Play uploads, opening guest or invite links in the app instead of the browser,
 and working offline.

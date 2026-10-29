@@ -1,4 +1,4 @@
-/* Orbique Command Center v4 — Guest inbox (WhatsApp-style)
+/* Orbique Command Center v4 — Inbox (WhatsApp-style; called "Guest inbox" before 2026-10-29)
    Arnob: "Better to have the guest names on the left side and messages on the right, just like WhatsApp.
    Need options of adding and editing quick replies. Need to be able to attach. Also should be able to record
    and send voice notes. I should also be able to tag certain quick texts to certain units."
@@ -25,7 +25,30 @@
    Greeting messages (pages/greetings.js): when the chat's booking is in a building with a greeting, "Send greeting" sits
    next to the quick replies and in a new chat's first-message card. It shows the greeting filled for this booking now
    and the route, then sends it. Anyone who can open the inbox may send it (live: api/messages.js 'greeting', filled on the
-   server); with inbox.send it can go into the composer to edit first. Private greeting values are hidden like door codes. */
+   server); with inbox.send it can go into the composer to edit first. Private greeting values are hidden like door codes.
+   Organising (Arnob, 2026-10-29: "put the chats on list, archive them, pin chats, mark as read, mark as favourites ... delete
+   chats/emails"): every chat row has a menu (the ⋯ button on hover or a right-click on a computer, a long press on a phone),
+   and the open chat's header menu has the same: Pin, Mark as read / unread, Favourite, Add to list, Archive, Delete.
+     - Lists (D.inboxLists [{id, name}], c.lists [ids]) are shared by the team and show as chips after the filters; "Manage
+       lists" in the list menu adds, renames and removes them.
+     - Favourites are personal: c.favBy holds the user ids (live) or staff ids (this test copy) of who starred the chat.
+     - Archived (c.archived) and Deleted (c.trashedAt, c.trashedBy) chats leave the main list; "Archived (n)" and
+       "Deleted (n)" at the top of the list open them. A new message from the guest brings a chat back from either, so no
+       guest is missed. Deleted chats can be restored, and are removed for good after 30 days, or at once with "Delete
+       forever" there. The Email & updates tab works the same way.
+     - Everything but favourites needs the inbox's edit level, as pin and assign did; Delete and Delete forever ask first.
+     - Live, these go through api/messages.js ('organize', 'lists', 'purge') and the server owns the flags (0022), so a copy
+       of a chat saved from an older screen cannot undo them; in this test copy they change D and save as before.
+     - Email & updates rows have no Favourite or Add to list (that tab has no filter chips for them).
+     - On a computer, when the open chat leaves the view, the next one opens only if it has nothing unread (quietFirst),
+       so no guest's message is marked read unseen. On phones the filter chips scroll sideways; on a computer they wrap.
+   A new guest message that arrives live rings the alert chime (O.alertSound) on any page while Orbique is open.
+   Photos and videos to guests (reply mode, attach menu): photos JPEG / PNG up to 5 MB, videos MP4 / 3GP up to 16 MB, with
+   the message as the caption. Live, each file goes from the browser straight to Storage ('media-upload' gives a signed
+   upload address, so nothing big passes through the api), then 'send-media' sends it on WhatsApp (within the 24 hours),
+   by email (as an attachment) or on the booking site (photos only; videos are refused there with a pointer to WhatsApp or
+   email). Sent files show as photo / video bubbles with ticks and open from a signed address ('media'). Guests' WhatsApp
+   videos play in the chat. Documents and voice notes still go to guests only in this test copy (live: as internal notes). */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
 
@@ -51,13 +74,34 @@
     if (!c.assigneeId) { var sm = c.messages.filter(function (m) { return m.from === 'staff' && m.staffId; }).pop(); c.assigneeId = sm ? sm.staffId : 's4'; }
   });
 
-  var st = { sel: null, view: 'list', tab: 'guests', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
+  /* ---- the alert chime for a new guest message (O.alertSound, app/core.js) ---------------------------------------
+     Live changes from the server ('remote-rows', sent before they are applied) ring once per batch when a chat gets a
+     message from the guest that this device did not have yet. Not on first load (that is not a live change), not for
+     the team's own saves (r.by) or messages, and not in this test copy, which has no live changes. Runs while Orbique is
+     open, on any page. play() does nothing when muted and skips repeats within 3 seconds. */
+  function newGuestMessages(rows) {
+    var have = {}; (D.conversations || []).forEach(function (c) { have[String(c.id)] = c; });
+    return (rows || []).some(function (r) {
+      if (r.coll !== 'conversations' || r.deleted || r.by || !r.data || !Array.isArray(r.data.messages)) return false;
+      var old = have[String(r.id)], om = old && Array.isArray(old.messages) ? old.messages : [], xids = {};
+      om.forEach(function (m) { if (m && m.xid) xids[m.xid] = 1; });
+      return r.data.messages.some(function (m, i) { return m && m.from === 'guest' && (m.xid ? !xids[m.xid] : i >= om.length); });
+    });
+  }
+  O.on('remote-rows', function (rows) { if (O.alertSound && newGuestMessages(rows)) O.alertSound.play(); });
+  O.inboxNewGuest = newGuestMessages; /* for checks in the browser console and tests */
+
+  var st = { sel: null, view: 'list', tab: 'guests', box: 'main', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
   var player = { key: null, audio: null, raf: 0, t0: 0, dur: 0 };
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var VARS = [['guest_first', 'Guest first name'], ['property', 'Property'], ['wifi_name', 'Wi-Fi name'], ['wifi_password', 'Wi-Fi password'], ['parking', 'Parking'], ['checkin_time', 'Check-in time'], ['checkout_time', 'Check-out time'], ['door_code', 'Door code']];
   var PAUSE_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
   var PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>';
   var PIN_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15.5 2.5 21.5 8.5l-2.2.6-3.6 3.6.4 4.6-1.8 1.8-4.1-4.1L5 20.2 3.8 19l5.2-5.2-4.1-4.1 1.8-1.8 4.6.4 3.6-3.6z"/></svg>';
+  var ARCH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>';
+  var LIST_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/></svg>';
+  var READ_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9 17.5 20 6.5"/></svg>';
+  var UNDO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>';
   var TICK1 = '<svg class="tick" viewBox="0 0 16 11" aria-hidden="true"><path d="M1.5 5.8 4.8 9 11 1.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var TICK2 = '<svg class="tick" viewBox="0 0 16 11" aria-hidden="true"><path d="M1 5.8 4.3 9 10.5 1.8M7.2 8.2 8 9l6.2-7.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -410,6 +454,52 @@
 .ib-xl-prev .orig{font-size:12.5px;color:var(--muted);white-space:pre-wrap;border-left:3px solid var(--border);padding-left:8px;}
 `);
 
+  O.css('inbox-organize', `
+.pg-inbox .cv-row{position:relative;}
+.pg-inbox .cv-row .cv{padding-right:40px;}
+.pg-inbox .cv-more{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s;padding:0;}
+.pg-inbox .cv-more svg{width:16px;height:16px;}
+.pg-inbox .cv-row:hover .cv-more, .pg-inbox .cv-more:focus-visible, .pg-inbox .cv-more[aria-expanded="true"]{opacity:1;}
+.pg-inbox .cv-fav{color:var(--warn);}
+.pg-inbox .cv-fav svg{width:13px;height:13px;}
+.pg-inbox .cv-lists{display:inline-flex;gap:3px;flex-shrink:0;}
+.pg-inbox .cv-lists span{font-size:10px;font-weight:700;padding:0 6px;border-radius:9px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pg-inbox .ib-box{display:flex;align-items:center;gap:10px;width:100%;padding:9px 16px;border:none;border-bottom:1px solid var(--border);background:none;font-size:13px;font-weight:700;color:var(--text-2);text-align:left;}
+.pg-inbox .ib-box:hover{background:var(--surface-2);}
+.pg-inbox .ib-box svg{width:17px;height:17px;color:var(--muted);}
+.pg-inbox .ib-box .n{margin-left:auto;font-size:11.5px;color:var(--muted);font-weight:700;}
+.pg-inbox .ib-box .n.un{color:var(--brand-text);}
+.pg-inbox .ib-boxhead{display:flex;align-items:center;gap:6px;padding:4px 12px 8px;}
+.pg-inbox .ib-boxhead b{font-size:15px;}
+.pg-inbox .ib-boxnote{font-size:12px;color:var(--muted);padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface-2);}
+.pg-inbox .cv-row{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+@media (hover:none){
+  .pg-inbox .ib-filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+  .pg-inbox .ib-filters::-webkit-scrollbar{display:none;}
+  .pg-inbox .ib-filters .chip{flex-shrink:0;}
+}
+.pg-inbox .ib-filters .chip.lst svg{width:12px;height:12px;}
+.pg-inbox .ib-lhead .ib-more .ib-menu{min-width:230px;}
+.ib-pop{position:fixed;z-index:400;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);min-width:220px;max-width:calc(100vw - 24px);overflow:hidden;}
+.ib-pop button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:none;border:none;border-top:1px solid var(--border);font-size:13px;text-align:left;white-space:nowrap;min-height:40px;color:var(--text);}
+.ib-pop button:first-child{border-top:none;}
+.ib-pop button:hover, .ib-pop button:focus-visible{background:var(--surface-2);}
+.ib-pop button.bad, .pg-inbox .ib-menu button.bad{color:var(--bad);}
+.ib-pop svg{width:15px;height:15px;color:var(--muted);flex-shrink:0;}
+.ib-pop button.bad svg, .pg-inbox .ib-menu button.bad svg{color:var(--bad);}
+.pg-inbox .vid{display:block;max-width:300px;width:100%;max-height:320px;border-radius:7px;background:#000;}
+.pg-inbox .vid-ph{display:flex;align-items:center;justify-content:center;gap:8px;width:260px;max-width:100%;height:150px;border-radius:7px;background:rgba(127,127,127,0.18);border:none;color:inherit;font-weight:700;}
+.pg-inbox .vid-ph svg{width:26px;height:26px;}
+.pg-inbox .tray-it video{display:block;width:86px;height:64px;object-fit:cover;background:#000;}
+.ib-lists-m .lrow{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);}
+.ib-lists-m .lrow input.input{flex:1;}
+.ib-lists-m .lrow .nm{flex:1;font-weight:700;}
+.ib-lists-m .add{display:flex;gap:8px;margin-top:10px;}
+.ib-lists-m .add input{flex:1;}
+.ib-addlist label{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-weight:600;}
+@media (hover: none){ .pg-inbox .cv-more{display:none;} .pg-inbox .cv-row .cv{padding-right:14px;} }
+`);
+
   /* ------------------------------------------------------------------ live inbox (server mode) */
   var LANGS = [['en', 'English'], ['ms', 'Malay'], ['zh', 'Chinese'], ['bn', 'Bengali'], ['ar', 'Arabic'], ['hi', 'Hindi'], ['ta', 'Tamil'], ['id', 'Indonesian'],
     ['th', 'Thai'], ['vi', 'Vietnamese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'], ['pt', 'Portuguese'],
@@ -418,7 +508,7 @@
   var VIA = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site', guestapp: 'Guest app', email: 'Email', agoda: 'Agoda', tripcom: 'Trip.com' };
   var FEED_PLAT = { airbnb: 'airbnb', booking: 'booking', agoda: 'agoda', tripcom: 'ctrip', expedia: 'expedia' };
   var DAY_MS = 24 * 3600 * 1000;
-  var live = { org: null, cfg: null, loading: false, busy: {}, media: {}, via: {}, xl: {}, origOpen: {} };
+  var live = { org: null, cfg: null, loading: false, busy: {}, media: {}, failed: {}, via: {}, xl: {}, origOpen: {} };
   function server() { return !!(O.auth && O.auth.enabled && O.auth.enabled() && O.sync.adapter && O.sync.adapter.name === 'server' && O.auth.orgId && O.auth.orgId() && O.auth.inbox); }
   function liveCfg() { return server() && live.org === O.auth.orgId() ? live.cfg : null; }
   /* live sending is on when the workspace has WhatsApp connected or booking-site messages switched on (and is not a demo) */
@@ -476,6 +566,19 @@
     return D.conversations.filter(function (c) { return !c.bookingId && (c.kind === 'email' || c.kind === 'feed') && c.messages && c.messages.length; })
       .sort(function (a, b) { if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1; return lastTime(a) < lastTime(b) ? 1 : -1; });
   }
+  /* ---- organising: Archived, Deleted, lists, favourites ---- */
+  /* the box a chat is in: 'trash' (Deleted), 'archived' or 'main' */
+  function boxOf(c) { return c.trashedAt ? 'trash' : c.archived ? 'archived' : 'main'; }
+  function inBox(c) { return boxOf(c) === st.box; }
+  /* who I am for favourites: the user id when signed in, else the viewer (this test copy) */
+  function myKey() { var u = server() && O.auth.user ? O.auth.user() : null; return u && u.id ? u.id : O.state.viewer; }
+  function isFav(c) { return Array.isArray(c.favBy) && c.favBy.indexOf(myKey()) >= 0; }
+  function lists() { return Array.isArray(D.inboxLists) ? D.inboxLists.filter(function (l) { return l && l.id && l.name; }) : []; }
+  function listById(id) { return lists().filter(function (l) { return l.id === id; })[0] || null; }
+  function onList(c, id) { return Array.isArray(c.lists) && c.lists.indexOf(id) >= 0; }
+  /* the chats of the open tab (Guests or Email & updates), any box */
+  function tabAll() { return st.tab === 'updates' ? upds() : convs(); }
+  function boxCount(box) { return tabAll().filter(function (c) { return boxOf(c) === box; }).length; }
   function isUpd(c) { return !!c && !c.bookingId && (c.kind === 'email' || c.kind === 'feed'); }
   function updName(c) { return (c.contact && c.contact.name) || c.em || 'Email'; }
 
@@ -516,7 +619,7 @@
   function lastMsg(c) { return c.messages[c.messages.length - 1] || null; }
   function lastTime(c) { var m = lastMsg(c); return m ? m.time : (c.createdAt || D.NOW); }
   function sorted() {
-    return convs().sort(function (a, b) {
+    return convs().filter(inBox).sort(function (a, b) {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       return lastTime(a) < lastTime(b) ? 1 : lastTime(a) > lastTime(b) ? -1 : 0;
     });
@@ -558,6 +661,16 @@
     if (b.checkOut === D.TODAY) return (b.status === 'checked_out' ? 'Checked out today ' : 'Checks out today ') + fmt.time(b.checkOutTime);
     if (b.checkOut > D.TODAY) return 'In-house until ' + d.fmt(b.checkOut);
     return 'Checked out ' + d.fmt(b.checkOut);
+  }
+  /* what goes to guests as a photo or video (the server checks the same: api/_lib/inbox.js MEDIA) */
+  var MEDIA_RULES = { image: { mimes: ['image/jpeg', 'image/png'], max: 5 * 1048576, what: 'Photos', types: 'JPEG or PNG' }, video: { mimes: ['video/mp4', 'video/3gpp'], max: 16 * 1048576, what: 'Videos', types: 'MP4 or 3GP' } };
+  /* why this photo / video cannot go to the guest by route r (null: it can) */
+  function mediaProblem(a, r) {
+    var rule = MEDIA_RULES[a.kind]; if (!rule) return null;
+    if (rule.mimes.indexOf(String(a.mime || '').toLowerCase()) < 0) return a.name + ' cannot be sent: send ' + rule.what.toLowerCase() + ' as ' + rule.types + '.';
+    if (a.size > rule.max) return a.name + ' is ' + sizeText(a.size) + '. ' + rule.what + ' can be up to ' + rule.max / 1048576 + ' MB.';
+    if (a.kind === 'video' && r && r.via === 'channex') return 'Videos cannot be sent on ' + String(r.label || 'the booking site').replace(/ chat$/, '') + '. Send it on WhatsApp or by email instead.';
+    return null;
   }
   function sizeText(bytes) { return bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? Math.round(bytes / 1024) + ' KB' : (bytes / 1048576).toFixed(1) + ' MB'; }
   function durText(s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
@@ -615,31 +728,49 @@
     for (var i = D.conversations.length - 1; i >= 0; i--) { var c = D.conversations[i]; if (c.id !== keepId && c.createdAt && !c.messages.length && !c.wa && !c.cx) D.conversations.splice(i, 1); }
   }
 
+  /* this test copy: chats in Deleted for 30 days go for good (live, the server does it: api/_lib/inbox.js purgeTrash) */
+  function expireTrash() {
+    var cut = d.add(D.TODAY, -30), gone = 0;
+    for (var i = D.conversations.length - 1; i >= 0; i--) { var c = D.conversations[i]; if (c.trashedAt && String(c.trashedAt).slice(0, 10) < cut) { D.conversations.splice(i, 1); gone++; } }
+    if (gone) O.emit('data', { type: 'inbox-purge' });
+  }
+
   /* ------------------------------------------------------------------ list */
   function inProp(c) { var b = bk(c); return !st.prop || (b && b.propertyId === st.prop); }
   function filterCounts() {
-    var all = convs().filter(inProp);
-    return {
+    var all = convs().filter(inBox).filter(inProp);
+    var out = {
       all: all.length,
       unread: all.filter(function (c) { return c.unread > 0; }).length,
+      fav: all.filter(isFav).length,
       today: all.filter(function (c) { return arrivingToday(bk(c)); }).length,
       inhouse: all.filter(function (c) { return inHouse(bk(c)); }).length
     };
+    lists().forEach(function (l) { out['l:' + l.id] = all.filter(function (c) { return onList(c, l.id); }).length; });
+    return out;
   }
   function visibleConvs() {
     var q = st.q.toLowerCase();
     return sorted().filter(function (c) {
       var b = bk(c);
-      if (!inProp(c)) return false;
-      if (st.filter === 'unread' && !(c.unread > 0) && c.id !== st.sel) return false;
-      if (st.filter === 'today' && !arrivingToday(b)) return false;
-      if (st.filter === 'inhouse' && !inHouse(b)) return false;
+      if (st.box === 'main') {
+        if (!inProp(c)) return false;
+        if (!filterOk(c, b)) return false;
+      }
       if (q) {
-        var hay = (b ? b.guest.name + ' ' + prop(b.propertyId).name + ' ' + b.id : '') + ' ' + c.messages.map(function (m) { return m.text || ''; }).join(' ');
-        if (hay.toLowerCase().indexOf(q) < 0) return false;
+        var hay0 = (b ? b.guest.name + ' ' + prop(b.propertyId).name + ' ' + b.id : '') + ' ' + c.messages.map(function (m) { return m.text || ''; }).join(' ');
+        if (hay0.toLowerCase().indexOf(q) < 0) return false;
       }
       return true;
     });
+  }
+  function filterOk(c, b) {
+    if (st.filter === 'unread' && !(c.unread > 0) && c.id !== st.sel) return false;
+    if (st.filter === 'today' && !arrivingToday(b)) return false;
+    if (st.filter === 'inhouse' && !inHouse(b)) return false;
+    if (st.filter === 'fav' && !isFav(c)) return false;
+    if (st.filter.indexOf('l:') === 0 && !onList(c, st.filter.slice(2))) return false;
+    return true;
   }
   function previewHTML(c) {
     var m = lastMsg(c);
@@ -652,43 +783,79 @@
     if (m.from === 'system') return '<span class="sys">' + esc(m.text) + '</span>';
     if (m.type === 'voice') body = O.icon('mic') + 'Voice message (' + durText(m.duration) + ')';
     else if (m.type === 'image') body = O.icon('image') + esc(m.caption || 'Photo');
+    else if (m.type === 'video') body = O.icon('video') + esc(m.caption || 'Video');
     else if (m.type === 'file') body = O.icon('file') + esc(m.name || m.text);
     else body = esc(codeSafe(c, m.text));
     return ticks + (who ? '<span class="who">' + esc(who) + '</span>' : '') + body;
   }
+  /* the ⋯ button next to a chat row (a right-click or a long press opens the same menu) */
+  function rowMoreHTML(c, name) { return '<button type="button" class="cv-more" data-rowmenu="' + c.id + '" aria-haspopup="true" aria-expanded="false" aria-label="Options for the chat with ' + esc(name) + '" title="Chat options">' + O.icon('more') + '</button>'; }
+  /* star and list names on a row */
+  function marksHTML(c) {
+    var ls = (Array.isArray(c.lists) ? c.lists : []).map(listById).filter(Boolean);
+    return (isFav(c) ? '<span class="cv-fav" title="Favourite" aria-label="Favourite">' + O.icon('star') + '</span>' : '') +
+      (ls.length ? '<span class="cv-lists">' + ls.slice(0, 2).map(function (l) { return '<span title="On the list ' + esc(l.name) + '">' + esc(l.name) + '</span>'; }).join('') + (ls.length > 2 ? '<span>+' + (ls.length - 2) + '</span>' : '') + '</span>' : '');
+  }
   function rowHTML(c) {
     var b = bk(c), p = b ? prop(b.propertyId) : null, m = lastMsg(c), unread = c.unread > 0;
     var soon = b && (arrivingToday(b) || b.checkIn === d.add(D.TODAY, 1));
-    return '<button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc((b ? b.guest.name : 'Guest') + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
+    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc((b ? b.guest.name : 'Guest') + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
       '<span class="cv-av">' + U.avatar(b ? b.guest.name : '?') + (b ? U.platIcon(b.channel) : '') + '</span>' +
       '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + (p ? esc(p.short) + ' · ' : '') + '<span class="' + (soon ? 'soon' : '') + '">' + esc(listPhrase(b)) + '</span></span>' + (b && b.sameDay ? '<span class="sd">Same-day</span>' : '') + '</span>' +
-      '<span class="cv-l3"><span class="cv-prev">' + previewHTML(c) + '</span>' + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>';
+      '<span class="cv-l3"><span class="cv-prev">' + previewHTML(c) + '</span>' + marksHTML(c) + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>' + rowMoreHTML(c, b ? b.guest.name : 'the guest') + '</div>';
   }
   function listHTML() {
     var fc = filterCounts();
-    var filters = [['all', 'All', null], ['unread', 'Unread', fc.unread], ['today', 'Arriving today', fc.today], ['inhouse', 'In-house', fc.inhouse]].map(function (f) {
-      return '<button type="button" class="chip' + (st.filter === f[0] ? ' on' : '') + '" data-filter="' + f[0] + '" aria-pressed="' + (st.filter === f[0]) + '">' + f[1] + (f[2] != null ? ' <span class="n">' + f[2] + '</span>' : '') + '</button>';
+    var fl = [['all', 'All', null], ['unread', 'Unread', fc.unread], ['fav', 'Favourites', fc.fav], ['today', 'Arriving today', fc.today], ['inhouse', 'In-house', fc.inhouse]];
+    lists().forEach(function (l) { fl.push(['l:' + l.id, l.name, fc['l:' + l.id], true]); });
+    if (st.filter !== 'all' && !fl.some(function (f) { return f[0] === st.filter; })) st.filter = 'all'; /* a list that was removed */
+    var filters = fl.map(function (f) {
+      return '<button type="button" class="chip' + (f[3] ? ' lst' : '') + (st.filter === f[0] ? ' on' : '') + '" data-filter="' + esc(f[0]) + '" aria-pressed="' + (st.filter === f[0]) + '">' + (f[3] ? LIST_SVG : '') + esc(f[1]) + (f[2] != null ? ' <span class="n">' + f[2] + '</span>' : '') + '</button>';
     }).join('');
-    var nu = upds().filter(function (c) { return c.unread > 0; }).length, ng = convs().filter(function (c) { return c.unread > 0; }).length;
+    var main = function (c) { return boxOf(c) === 'main'; };
+    var nu = upds().filter(main).filter(function (c) { return c.unread > 0; }).length, ng = convs().filter(main).filter(function (c) { return c.unread > 0; }).length;
     var tabs = '<div class="ib-tabs" role="tablist" aria-label="Show">' +
       '<button type="button" role="tab" data-tab="guests" aria-selected="' + (st.tab !== 'updates') + '" class="' + (st.tab !== 'updates' ? 'on' : '') + '">Guests' + (ng ? ' <span class="n">' + ng + '</span>' : '') + '</button>' +
       '<button type="button" role="tab" data-tab="updates" aria-selected="' + (st.tab === 'updates') + '" class="' + (st.tab === 'updates' ? 'on' : '') + '">Email &amp; updates' + (nu ? ' <span class="n">' + nu + '</span>' : '') + '</button></div>';
-    if (st.tab === 'updates') {
-      return '<div class="ib-lhead"><h2>Chats</h2></div>' + tabs +
-        '<div class="ib-tools"><label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search email and updates" aria-label="Search email and updates" value="' + esc(st.q) + '"></label></div>' +
+    var head = '<div class="ib-lhead"><h2>Chats</h2>' +
+      (st.tab !== 'updates' && canSend() ? '<button type="button" class="ib-ic" data-act="newchat" title="New conversation" aria-label="New conversation">' + O.icon('plus') + '</button>' : '') +
+      (st.tab !== 'updates' && canQR() ? '<button type="button" class="ib-ic" data-act="manage" title="Quick replies" aria-label="Manage quick replies">' + O.icon('sparkle') + '</button>' : '') +
+      '<div class="ib-more"><button type="button" class="ib-ic" data-act="listmenu" aria-haspopup="true" aria-label="More chat list options" title="More">' + O.icon('more') + '</button><div class="ib-menu" role="menu">' + listMenuHTML() + '</div></div></div>';
+    var search = '<label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="' + (st.tab === 'updates' ? 'Search email and updates' : 'Search chats') + '" aria-label="' + (st.tab === 'updates' ? 'Search email and updates' : 'Search guests, units or messages') + '" value="' + esc(st.q) + '"></label>';
+    if (st.tab === 'updates' || st.box !== 'main') {
+      return head + tabs + '<div class="ib-tools">' + search + '</div>' +
         '<div class="ib-rows">' + rowsHTML() + '</div>' +
         '<div class="ib-lfoot">' + footHTML() + '</div>';
     }
-    return '<div class="ib-lhead"><h2>Chats</h2>' +
-      (canSend() ? '<button type="button" class="ib-ic" data-act="newchat" title="New conversation" aria-label="New conversation">' + O.icon('plus') + '</button>' : '') +
-      (canQR() ? '<button type="button" class="ib-ic" data-act="manage" title="Quick replies" aria-label="Manage quick replies">' + O.icon('sparkle') + '</button>' : '') + '</div>' +
-      tabs + '<div class="ib-tools"><label class="ib-search">' + O.icon('search') + '<input type="search" data-f="q" placeholder="Search chats" aria-label="Search guests, units or messages" value="' + esc(st.q) + '"></label>' +
-      propSelectHTML() + '</div>' +
+    return head + tabs + '<div class="ib-tools">' + search + propSelectHTML() + '</div>' +
       '<div class="ib-filters" role="group" aria-label="Filter chats">' + filters + '</div>' +
       '<div class="ib-loose-wrap">' + looseHTML() + '</div>' +
       '<div class="ib-rows">' + rowsHTML() + '</div>' +
       '<div class="ib-lfoot">' + footHTML() + '</div>';
+  }
+  /* the list's own menu: mark everything read, lists, Archived and Deleted */
+  function listMenuHTML() {
+    var unread = (st.tab === 'updates' ? visibleUpds() : visibleConvs()).filter(function (c) { return c.unread > 0; }).length;
+    return (canEdit() && unread ? '<button type="button" data-act="allread">' + READ_SVG + 'Mark all as read</button>' : '') +
+      (canEdit() ? '<button type="button" data-act="lists">' + LIST_SVG + 'Manage lists</button>' : '') +
+      (st.box !== 'archived' ? '<button type="button" data-box="archived">' + ARCH_SVG + 'Archived chats (' + boxCount('archived') + ')</button>' : '') +
+      (st.box !== 'trash' ? '<button type="button" data-box="trash">' + O.icon('trash') + 'Deleted chats (' + boxCount('trash') + ')</button>' : '') +
+      (st.box !== 'main' ? '<button type="button" data-box="main">' + O.icon('chat') + 'All chats</button>' : '');
+  }
+  /* above the rows: the way into Archived and Deleted, or the way back from them */
+  function boxBarHTML() {
+    if (st.box !== 'main') {
+      var trash = st.box === 'trash';
+      return '<div class="ib-boxhead"><button type="button" class="ib-ic" data-box="main" aria-label="Back to all chats">' + O.icon('left') + '</button><b>' + (trash ? 'Deleted' : 'Archived') + '</b></div>' +
+        '<div class="ib-boxnote">' + (trash ? 'Deleted chats are removed for good after 30 days. A new message from the guest brings a chat back.' : 'Archived chats stay here until the guest writes again, then they go back to the main list.') + '</div>';
+    }
+    var out = '';
+    [['archived', 'Archived', ARCH_SVG], ['trash', 'Deleted', O.icon('trash')]].forEach(function (x) {
+      var list = tabAll().filter(function (c) { return boxOf(c) === x[0]; }), n = list.length, un = list.filter(function (c) { return c.unread > 0; }).length;
+      if (n) out += '<button type="button" class="ib-box" data-box="' + x[0] + '">' + x[2] + '<span>' + x[1] + '</span><span class="n' + (un ? ' un' : '') + '">' + (un ? un + ' unread · ' : '') + n + '</span></button>';
+    });
+    return out;
   }
   function footHTML() {
     var cfg = liveCfg(), owner = O.auth && O.auth.role && O.auth.role() === 'owner', set = owner || canEdit() ? '<button type="button" class="lk" data-act="livesettings">Settings</button>' : '';
@@ -715,6 +882,7 @@
   function visibleUpds() {
     var q = st.q.toLowerCase();
     return upds().filter(function (c) {
+      if (!inBox(c)) return false;
       if (!q) return true;
       var hay = updName(c) + ' ' + (c.em || '') + ' ' + c.messages.map(function (m) { return (m.subject || '') + ' ' + (m.text || ''); }).join(' ');
       return hay.toLowerCase().indexOf(q) >= 0;
@@ -725,13 +893,19 @@
     var av = feed ? '<span class="cv-feed">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c));
     var sub = feed ? 'Notifications' : 'Email' + (c.ota ? ' via ' + c.ota : '');
     var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text)) : '';
-    return '<button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(updName(c) + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
+    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(updName(c) + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
       '<span class="cv-av">' + av + '</span>' +
       '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + esc(sub) + '</span></span>' +
-      '<span class="cv-l3"><span class="cv-prev">' + prev + '</span>' + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>';
+      '<span class="cv-l3"><span class="cv-prev">' + prev + '</span>' + marksHTML(c) + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>' + rowMoreHTML(c, updName(c)) + '</div>';
   }
-  function rowsHTML() {
+  function rowsHTML() { return boxBarHTML() + rowsInner(); }
+  function rowsInner() {
+    if (st.box !== 'main') {
+      var bl = st.tab === 'updates' ? visibleUpds() : visibleConvs();
+      if (bl.length) return bl.map(st.tab === 'updates' ? updRowHTML : rowHTML).join('');
+      return '<div class="ib-empty">' + U.empty(st.q ? 'Nothing matches "' + st.q + '".' : st.box === 'trash' ? 'Nothing in Deleted.' : 'No archived chats.', '∅') + '<button type="button" class="btn btn-ghost" data-box="main">Back to all chats</button></div>';
+    }
     if (st.tab === 'updates') {
       var ul = visibleUpds();
       if (ul.length) return ul.map(updRowHTML).join('');
@@ -742,7 +916,7 @@
     var list = visibleConvs();
     if (list.length) return list.map(rowHTML).join('');
     /* one sentence plus the main action */
-    var ps = st.prop ? prop(st.prop).short : '', any = convs().length > 0, here = convs().filter(inProp).length > 0, msg, btn = '';
+    var ps = st.prop ? prop(st.prop).short : '', any = convs().filter(inBox).length > 0, here = convs().filter(inBox).filter(inProp).length > 0, msg, btn = '';
     if (!any) {
       msg = 'No guest chats yet.';
       if (!D.properties.length) { if (O.can('properties.create')) btn = '<button type="button" class="btn btn-primary" data-go="properties">' + O.icon('plus') + 'Add your first property</button>'; }
@@ -751,11 +925,31 @@
     }
     else if (st.prop && !here) { msg = 'No chats with guests at ' + ps + ' yet.'; btn = '<button type="button" class="btn btn-ghost" data-act="allprops">Show all properties</button>'; }
     else {
-      msg = st.q ? 'No chats match "' + st.q + '"' : st.filter === 'unread' ? 'No unread chats' : st.filter === 'today' ? 'No chats with guests arriving today' : st.filter === 'inhouse' ? 'No chats with in-house guests' : 'No chats';
+      msg = st.q ? 'No chats match "' + st.q + '"' : st.filter === 'unread' ? 'No unread chats' : st.filter === 'today' ? 'No chats with guests arriving today' : st.filter === 'inhouse' ? 'No chats with in-house guests' : st.filter === 'fav' ? 'No favourite chats yet. Star a chat from its menu' : st.filter.indexOf('l:') === 0 ? 'No chats on ' + ((listById(st.filter.slice(2)) || {}).name || 'this list') + ' yet. Add one from a chat\'s menu' : 'No chats';
       msg += (st.prop ? ' at ' + ps : '') + (st.filter === 'unread' && !st.q ? '. You are all caught up.' : '.');
       btn = st.prop ? '<button type="button" class="btn btn-ghost" data-act="allprops">Show all properties</button>' : st.q ? '<button type="button" class="btn btn-ghost" data-act="clearq">Clear the search</button>' : st.filter !== 'all' ? '<button type="button" class="btn btn-ghost" data-filter="all">Show all chats</button>' : '';
     }
     return '<div class="ib-empty">' + U.empty(msg, st.filter === 'unread' && !st.q ? '✓' : '∅') + btn + '</div>';
+  }
+
+  /* ------------------------------------------------------------------ chat menu (row ⋯, right-click, long press, header) */
+  /* [action, label, icon, bad] for one chat; favourites for everyone who can open the inbox, the rest at its edit level */
+  function chatActions(c) {
+    var out = [], ed = canEdit(), trash = !!c.trashedAt;
+    if (trash) {
+      if (ed) out.push(['restore', 'Restore chat', UNDO_SVG], ['purge', 'Delete forever', O.icon('trash'), true]);
+      return out;
+    }
+    if (ed) out.push(['pin', c.pinned ? 'Unpin chat' : 'Pin chat to top', PIN_SVG]);
+    if (ed) out.push(c.unread > 0 ? ['read', 'Mark as read', READ_SVG] : ['unread', 'Mark as unread', O.icon('chat')]);
+    var upd = isUpd(c); /* the Email & updates tab has no favourite or list filters, so it has no favourites or lists */
+    if (!upd) out.push(['fav', isFav(c) ? 'Remove from favourites' : 'Add to favourites', O.icon('star')]);
+    if (ed && !upd) out.push(['addlist', 'Add to list', LIST_SVG]);
+    if (ed) out.push([c.archived ? 'unarchive' : 'archive', c.archived ? 'Unarchive chat' : 'Archive chat', ARCH_SVG], ['delete', 'Delete chat', O.icon('trash'), true]);
+    return out;
+  }
+  function chatMenuHTML(c) {
+    return chatActions(c).map(function (a) { return '<button type="button" role="menuitem"' + (a[3] ? ' class="bad"' : '') + ' data-cact="' + a[0] + '" data-cid="' + esc(c.id) + '">' + a[2] + esc(a[1]) + '</button>'; }).join('');
   }
 
   /* ------------------------------------------------------------------ chat */
@@ -766,8 +960,7 @@
       '<span class="ib-who-s">' + U.platIcon(b.channel) + '<span>' + esc(p.name) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest') + '</span></span></span>';
     var tel = (b.guest.phone || '').replace(/[^+\d]/g, '');
     var menu = (canBk ? '<button type="button" data-act="booking" class="sm-only">' + O.icon('bookings') + 'Open booking ' + esc(b.id) + '</button>' : '') +
-      (canEdit() ? '<button type="button" data-act="unread">' + O.icon('chat') + 'Mark as unread</button>' +
-        '<button type="button" data-act="pin">' + PIN_SVG + (c.pinned ? 'Unpin chat' : 'Pin chat to top') + '</button>' : '') +
+      chatMenuHTML(c) +
       (O.can('invoices.send') && b.invoiceNo ? '<button type="button" data-act="invoice">' + O.icon('invoices') + 'Send invoice ' + esc(b.invoiceNo) + '</button>' : '') +
       (canQR() ? '<button type="button" data-act="manage">' + O.icon('sparkle') + 'Manage quick replies</button>' : '');
     return '<header class="ib-head">' +
@@ -786,7 +979,7 @@
     var who = (feed ? '<span class="cv-feed lg">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c), 'lg')) +
       '<span class="ib-who-t"><span class="ib-who-n"><span class="ib-nm">' + esc(updName(c)) + '</span></span>' +
       '<span class="ib-who-s"><span>' + esc(feed ? 'Notifications from the site, read only' : (c.em || '') + (c.ota ? ' · through ' + c.ota : '')) + '</span></span></span>';
-    var menu = canEdit() ? '<button type="button" data-act="unread">' + O.icon('chat') + 'Mark as unread</button><button type="button" data-act="pin">' + PIN_SVG + (c.pinned ? 'Unpin' : 'Pin to top') + '</button>' : '';
+    var menu = chatMenuHTML(c);
     return '<header class="ib-head">' +
       '<button type="button" class="ib-ic ib-back" data-act="back" aria-label="Back to chats">' + O.icon('left') + '</button>' +
       '<div class="ib-who static">' + who + '</div><div class="ib-hacts">' +
@@ -794,13 +987,20 @@
       '</div></header>';
   }
   function updComposerHTML(c) {
+    if (c.trashedAt) return trashBarHTML(c);
     if (c.kind !== 'email') return '';
     if (!canSend()) return '<div class="ib-compose"><div class="ib-ro">' + O.icon('lock') + '<span>You can read this email. Replying is not part of your access.</span></div></div>';
     if (!emailOn()) return '<div class="ib-compose"><div class="ib-ro">' + O.icon('alert') + '<span>Replying by email is not set up yet. Reply from your own mailbox for now.</span></div></div>';
     var draft = st.drafts[c.id] || '';
-    return '<div class="ib-compose"><div class="cmp-top"><span class="cmp-hint only"><span class="cmp-route">' + O.icon('chat') + '<span class="ellipsis">Email to ' + esc(c.em) + '</span></span></span></div>' +
-      '<div class="cmp-bar"><div class="cmp-box"><label class="sr-only" for="ib-input">Message</label><textarea id="ib-input" rows="1" data-f="msg" title="Enter sends, Shift + Enter adds a new line" placeholder="Reply to ' + esc(updName(c)) + '">' + esc(draft) + '</textarea></div>' +
-      '<button type="button" class="round go" data-act="send" aria-label="Send">' + O.icon('send') + '</button></div></div>';
+    /* photos and videos go as email attachments */
+    return '<div class="ib-compose"><div class="att-menu" role="menu">' +
+      '<button type="button" data-pick="photo"><span class="ai">' + O.icon('image') + '</span><span>Photos<small>JPEG or PNG, up to 5 MB each</small></span></button>' +
+      '<button type="button" data-pick="video"><span class="ai">' + O.icon('video') + '</span><span>Video<small>MP4 or 3GP, up to 16 MB</small></span></button></div>' +
+      '<div class="tray-wrap">' + trayHTML(c) + '</div>' +
+      '<div class="cmp-top"><span class="cmp-hint only"><span class="cmp-route">' + O.icon('chat') + '<span class="ellipsis">Email to ' + esc(c.em) + '</span></span></span></div>' +
+      '<div class="cmp-bar"><button type="button" class="round plain" data-act="attach" aria-label="Attach a photo or video" aria-haspopup="true" title="Attach">' + O.icon('clip') + '</button><div class="cmp-box"><label class="sr-only" for="ib-input">Message</label><textarea id="ib-input" rows="1" data-f="msg" title="Enter sends, Shift + Enter adds a new line" placeholder="Reply to ' + esc(updName(c)) + '">' + esc(draft) + '</textarea></div>' +
+      '<button type="button" class="round go" data-act="send" aria-label="Send">' + O.icon('send') + '</button></div>' +
+      '<input type="file" hidden data-in="photo" accept="image/jpeg,image/png" multiple><input type="file" hidden data-in="video" accept="video/mp4,video/3gpp"></div>';
   }
   /* links in emails (a forwarding confirmation, a payout statement) open in a new tab; everything else stays text */
   function linkify(text) {
@@ -833,15 +1033,34 @@
     }
     return '';
   }
+  /* a photo or video whose address is known (sent from this device, or opened from the server) */
+  function shownMedia(m, key, url) {
+    var cap = m.caption ? '<div class="cap">' + esc(m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.caption) + (m.from === 'guest' ? xlHTML(m, key) : '') + '</div>' : '';
+    if (m.type === 'video') return { media: true, cap: m.caption, html: '<video class="vid" controls preload="metadata" playsinline src="' + esc(url) + '" aria-label="' + esc(m.name || 'Video') + '"></video>' + cap };
+    return { media: true, cap: m.caption, html: '<button type="button" class="img-btn" data-img="' + key + '" aria-label="Open photo"><img src="' + esc(url) + '" alt="' + esc(m.name || 'Photo') + '"></button>' + cap };
+  }
   function bubbleInner(c, m, i) {
     var key = c.id + ':' + i;
+    /* a photo or video the team sent from Orbique: kept in Storage, opened from a signed address ('media') */
+    if (m.file && m.file.path && !m.url) {
+      var got = live.media[key];
+      if (got && got.url) return shownMedia(m, key, got.url);
+      var vk = m.type === 'video' ? 'Video' : 'Photo';
+      return { media: true, cap: m.caption, html: '<button type="button" class="vid-ph" data-loadfile="' + key + '" aria-label="Show ' + vk.toLowerCase() + '">' + O.icon(m.type === 'video' ? 'video' : 'image') + (live.busy['m' + key] ? 'Loading…' : vk) + '</button>' + (m.caption ? '<div class="cap">' + esc(m.caption) + '</div>' : '') };
+    }
     if (m.media && m.media.id && !m.url) {
-      var kind = m.type === 'image' ? 'Photo' : m.type === 'voice' ? 'Voice message' : m.name || m.text || 'File';
-      return { media: true, file: true, cap: m.caption, html: '<div class="fileb"><span class="fi ' + (m.type === 'image' ? 'img' : 'gen') + '">' + O.icon(m.type === 'image' ? 'image' : m.type === 'voice' ? 'mic' : 'file') + '</span><span class="fn"><b>' + esc(kind) + '</b><span>On WhatsApp</span></span><button type="button" class="dl" data-wamedia="' + key + '" aria-label="Open ' + esc(kind) + '">' + (live.busy['m' + key] ? '…' : O.icon('download')) + '</button></div>' + (m.caption ? '<div class="cap">' + esc(m.tr && m.tr.text ? m.tr.text : m.caption) + xlHTML(m, key) + '</div>' : '') };
+      var seen = live.media[key];
+      if (seen && seen.url && (m.type === 'video' || m.type === 'image')) return shownMedia(m, key, seen.url);
+      var kind = m.type === 'image' ? 'Photo' : m.type === 'voice' ? 'Voice message' : m.type === 'video' ? 'Video' : m.name || m.text || 'File';
+      return { media: true, file: true, cap: m.caption, html: '<div class="fileb"><span class="fi ' + (m.type === 'image' || m.type === 'video' ? 'img' : 'gen') + '">' + O.icon(m.type === 'image' ? 'image' : m.type === 'voice' ? 'mic' : m.type === 'video' ? 'video' : 'file') + '</span><span class="fn"><b>' + esc(kind) + '</b><span>On WhatsApp</span></span><button type="button" class="dl" data-wamedia="' + key + '" aria-label="Open ' + esc(kind) + '">' + (live.busy['m' + key] ? '…' : O.icon('download')) + '</button></div>' + (m.caption ? '<div class="cap">' + esc(m.tr && m.tr.text ? m.tr.text : m.caption) + xlHTML(m, key) + '</div>' : '') };
     }
     if (m.type === 'image') {
       var img = m.url ? '<img src="' + esc(m.url) + '" alt="' + esc(m.name || 'Photo') + '">' : m.art === 'sink' ? sinkArt() : '<span class="fileb">' + O.icon('image') + esc(m.text) + '</span>';
       return { media: true, cap: m.caption, html: '<button type="button" class="img-btn" data-img="' + key + '" aria-label="Open photo">' + img + '</button>' + (m.caption ? '<div class="cap">' + esc(m.caption) + '</div>' : '') };
+    }
+    if (m.type === 'video') {
+      if (m.url) return shownMedia(m, key, m.url);
+      return { media: true, cap: m.caption, html: '<span class="fileb">' + O.icon('video') + esc(m.text || 'Video') + '</span>' };
     }
     if (m.type === 'file') {
       var e = ext(m.name || m.text), kind = e === 'PDF' ? '' : /DOC|TXT|XLS|CSV|PPT/.test(e) ? 'doc' : /PNG|JPG|JPEG|GIF|HEIC|WEBP/.test(e) ? 'img' : 'gen';
@@ -944,12 +1163,19 @@
     var list = st.pending[c.id] || [];
     if (!list.length) return '';
     return '<div class="tray" aria-label="Attachments to send">' + list.map(function (a, i) {
-      return '<div class="tray-it">' + (a.kind === 'image' ? '<img src="' + esc(a.url) + '" alt="">' : '<div class="tf">' + O.icon(a.kind === 'audio' ? 'mic' : 'file') + '<span class="xs">' + esc(a.kind === 'audio' ? 'Audio' : ext(a.name)) + '</span></div>') +
+      return '<div class="tray-it">' + (a.kind === 'image' ? '<img src="' + esc(a.url) + '" alt="">' : a.kind === 'video' ? '<video src="' + esc(a.url) + '" muted preload="metadata" aria-hidden="true"></video>' : '<div class="tf">' + O.icon(a.kind === 'audio' ? 'mic' : 'file') + '<span class="xs">' + esc(a.kind === 'audio' ? 'Audio' : ext(a.name)) + '</span></div>') +
         '<div class="tn" title="' + esc(a.name) + '">' + esc(a.name) + '</div><button type="button" class="rm" data-rm="' + i + '" aria-label="Remove ' + esc(a.name) + '">' + O.icon('x') + '</button></div>';
     }).join('') + '</div>';
   }
   function modes() { var m = []; if (canSend()) m.push(['reply', 'Reply to guest']); if (canNote()) m.push(['note', 'Internal note']); return m; }
+  /* a chat in Deleted: no composer, a way back */
+  function trashBarHTML(c) {
+    var until = String(c.trashedAt || '').slice(0, 10);
+    return '<div class="ib-compose"><div class="ib-ro">' + O.icon('trash') + '<span class="grow">This chat is in Deleted' + (/^\d{4}-\d{2}-\d{2}$/.test(until) ? ' and is removed for good on ' + esc(d.fmt(d.add(until, 30))) : '') + '. A new message from the guest brings it back.</span>' +
+      (canEdit() ? '<button type="button" class="btn btn-ghost btn-sm" data-cact="restore" data-cid="' + esc(c.id) + '">Restore</button>' : '') + '</div></div>';
+  }
   function composerHTML(c) {
+    if (c.trashedAt) return trashBarHTML(c);
     var ms = modes();
     if (!ms.length) return '<div class="ib-compose">' + (greetBtnHTML(c) ? '<div class="qr-wrap">' + qrWrapHTML(c) + '</div>' : '') + '<div class="ib-ro">' + O.icon('lock') + '<span>You can read this chat' + (greetBtnHTML(c) ? ' and send the greeting message' : '') + '. Replying to guests and writing notes are not part of your access.</span></div></div>';
     if (!ms.some(function (x) { return x[0] === st.mode; })) st.mode = ms[0][0];
@@ -957,8 +1183,9 @@
     var draft = st.drafts[c.id] || '', hasStuff = draft.trim() || (st.pending[c.id] || []).length;
     return '<div class="ib-compose' + (note ? ' is-note' : '') + '">' +
       '<div class="att-menu" role="menu">' +
-      '<button type="button" data-pick="photo"><span class="ai">' + O.icon('image') + '</span><span>Photos<small>Shows as a picture in the chat</small></span></button>' +
+      '<button type="button" data-pick="photo"><span class="ai">' + O.icon('image') + '</span><span>Photos<small>JPEG or PNG, up to 5 MB each</small></span></button>' +
       '<button type="button" data-pick="camera"><span class="ai">' + O.icon('camera') + '</span><span>Camera<small>Take a photo on a phone or tablet</small></span></button>' +
+      '<button type="button" data-pick="video"><span class="ai">' + O.icon('video') + '</span><span>Video<small>MP4 or 3GP, up to 16 MB</small></span></button>' +
       '<button type="button" data-pick="doc"><span class="ai">' + O.icon('file') + '</span><span>Document<small>PDF, Word, Excel or any file</small></span></button>' +
       '<button type="button" data-pick="audio"><span class="ai">' + O.icon('mic') + '</span><span>Audio file<small>Send a recording as a voice note</small></span></button></div>' +
       (qrWrapHTML(c) ? '<div class="qr-wrap">' + qrWrapHTML(c) + '</div>' : '') +
@@ -968,12 +1195,13 @@
       '<span class="cmp-hint' + (ms.length > 1 ? '' : ' only') + '">' + (note ? O.icon('lock') + '<span>' + (ms.length > 1 ? 'Only your team sees notes. Type @ and a name to mention someone.' : 'Your access allows internal notes only. The guest does not see them.') + '</span>'
         : liveOn() ? routeHTML(c) : O.icon('whatsapp') + '<span class="ellipsis">To ' + esc(phoneOf(b)) + ' on WhatsApp</span>') + (canSend() && !liveOn() ? '<span class="k">Type / for quick replies</span>' : '') + '</span></div>' +
       '<div class="cmp-bar">' + (rec ? recHTML() :
-        '<button type="button" class="round plain" data-act="attach" aria-label="Attach a photo, file or audio" aria-haspopup="true" title="Attach">' + O.icon('clip') + '</button>' +
+        '<button type="button" class="round plain" data-act="attach" aria-label="Attach a photo, video, file or audio" aria-haspopup="true" title="Attach">' + O.icon('clip') + '</button>' +
         '<div class="cmp-box"><label class="sr-only" for="ib-input">' + (note ? 'Internal note' : 'Message') + '</label><textarea id="ib-input" rows="1" data-f="msg" title="Enter sends, Shift + Enter adds a new line" placeholder="' + (note ? 'Write an internal note' : 'Message ' + esc(guestFirst(b.guest.name))) + '">' + esc(draft) + '</textarea></div>' +
         (hasStuff ? '<button type="button" class="round go" data-act="send" aria-label="Send">' + O.icon('send') + '</button>'
           : '<button type="button" class="round go" data-act="record" aria-label="Record a voice note" title="Record a voice note">' + O.icon('mic') + '</button>')) + '</div>' +
       '<input type="file" hidden data-in="photo" accept="image/*" multiple>' +
       '<input type="file" hidden data-in="camera" accept="image/*" capture="environment">' +
+      '<input type="file" hidden data-in="video" accept="video/mp4,video/3gpp">' +
       '<input type="file" hidden data-in="doc" multiple>' +
       '<input type="file" hidden data-in="audio" accept="audio/*">' +
       '</div>';
@@ -1149,12 +1377,13 @@
         var c0 = D.conversations.filter(function (c) { return c.bookingId === pr.bookingId; })[0], b0 = D.booking(pr.bookingId);
         if (!c0 && b0 && canSend()) { c0 = { id: O.uid('C'), bookingId: pr.bookingId, unread: 0, messages: [], createdAt: nowISO(), assigneeId: O.state.viewer }; D.conversations.push(c0); }
         if (c0 && conv(c0.id)) {
-          st.sel = c0.id; st.view = 'chat'; st.filter = 'all'; st.q = ''; st.tab = 'guests';
+          st.sel = c0.id; st.view = 'chat'; st.filter = 'all'; st.q = ''; st.tab = 'guests'; st.box = boxOf(c0); /* an archived or deleted chat opens where it is */
           if (st.prop && b0 && b0.propertyId !== st.prop) { st.prop = ''; O.store.set('inbox:prop', ''); } /* the chat asked for must be in the list */
         } else if (b0 && !canSend()) U.toast('There is no chat with ' + b0.guest.name + ' yet, and messaging guests is not part of your access', 'bad');
         ctx.params = {};
       } else if (ctx.fresh) { st.view = 'list'; }
       pruneEmpty(st.sel);
+      if (!server()) expireTrash();
       if (!st.sel || !conv(st.sel)) { st.sel = isPhone() ? null : ((st.tab === 'updates' ? visibleUpds() : visibleConvs())[0] || {}).id || null; }
 
       root.innerHTML = '<div class="pg-inbox"><div class="ib' + (st.view === 'chat' && st.sel ? ' show-chat' : '') + '"><section class="ib-list" aria-label="Chats">' + listHTML() + '</section><section class="ib-chat" aria-label="Conversation"></section></div></div>';
@@ -1174,6 +1403,8 @@
       function paintFilters() { var fc = filterCounts(); O.$$('[data-filter]', listEl).forEach(function (b) { b.classList.toggle('on', b.dataset.filter === st.filter); b.setAttribute('aria-pressed', b.dataset.filter === st.filter); var n = O.$('.n', b); if (n) n.textContent = fc[b.dataset.filter]; }); }
       function paintChat(full) {
         var c = conv(st.sel);
+        if (c && !full && chat.dataset.trash !== (c.trashedAt ? '1' : '')) full = true; /* deleted or restored meanwhile: the composer changes */
+        chat.dataset.trash = c && c.trashedAt ? '1' : '';
         if (!c) { chat.innerHTML = '<div class="ib-none"><span class="art">' + O.icon('chat') + '</span>' + (convs().length ? '<h3>Choose a chat</h3><div>Pick a guest on the left to read and reply. Messages, photos, files and voice notes all live in one thread per stay.</div>' : '<h3>Guest chats show up here</h3><div>When a guest books or messages you, their chat opens here with the stay details next to it.</div>') + '</div>'; return; }
         if (isUpd(c)) {
           if (full || !O.$('.ib-thread', chat)) {
@@ -1202,6 +1433,7 @@
         var c = conv(st.sel), th = O.$('.ib-thread', chat); if (!c || !th) return;
         var atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 60;
         th.innerHTML = threadHTML(c);
+        O.$$('[data-loadfile]', th).forEach(function (el) { loadFile(el.dataset.loadfile, false); });
         if (player.key && player.key.indexOf(c.id + ':') === 0) paintVoice(player.key, 0, null);
         if (toBottom || atBottom) th.scrollTop = th.scrollHeight;
       }
@@ -1256,11 +1488,12 @@
         if (!text && !files.length) return;
         if (st.mode !== 'note' && O.greeting && text.indexOf(O.greeting.MASK) >= 0) { U.toast('Replace "' + O.greeting.MASK + '" before sending, or use Send greeting, which sends the real code.', 'bad'); return; }
         if (st.mode !== 'note' && liveOn()) { sendLive(c, text, files); return; }
+        if (st.mode !== 'note') { for (var fi = 0; fi < files.length; fi++) { var why = mediaProblem(files[fi], null); if (why) { U.toast(why, 'bad'); return; } } }
         var from = st.mode === 'note' ? 'note' : 'staff', base = { from: from, staffId: O.state.viewer };
         files.forEach(function (a, i) {
           var cap = i === files.length - 1 && text ? text : '';
           if (a.kind === 'audio') push(c, Object.assign({}, base, { type: 'voice', text: 'Voice message', url: a.url, duration: a.duration || 0, name: a.name, time: nowISO(), status: from === 'staff' ? 'sent' : undefined }));
-          else push(c, Object.assign({}, base, { type: a.kind === 'image' ? 'image' : 'file', text: a.name, name: a.name, size: sizeText(a.size), url: a.url, mime: a.mime, caption: cap, time: nowISO(), status: from === 'staff' ? 'sent' : undefined }));
+          else push(c, Object.assign({}, base, { type: a.kind === 'image' ? 'image' : a.kind === 'video' ? 'video' : 'file', text: a.name, name: a.name, size: sizeText(a.size), url: a.url, mime: a.mime, caption: cap, time: nowISO(), status: from === 'staff' ? 'sent' : undefined }));
           if (cap) text = '';
         });
         if (text) push(c, Object.assign({}, base, { type: 'text', text: text, time: nowISO(), status: from === 'staff' ? 'sent' : undefined }));
@@ -1275,12 +1508,16 @@
 
       /* ---------- live sending (api/messages.js) ---------- */
       function sendLive(c, text, files) {
-        if (files.length) { U.toast('Photos, files and voice notes cannot go to guests from Orbique yet. Send them as an internal note, or from WhatsApp on your phone.', 'bad'); return; }
-        if (!text) return;
+        if (files.some(function (a) { return a.kind !== 'image' && a.kind !== 'video'; })) { U.toast('Only photos and videos can go to guests from Orbique. Send documents and voice notes as an internal note, or from WhatsApp on your phone.', 'bad'); return; }
+        if (!text && !files.length) return;
         var r = routeOf(c);
         if (!r) { U.toast(noRouteWhy(c), 'bad'); return; }
         if (!r.open) { U.toast(r.why, 'bad'); return; }
         if (live.busy['send' + c.id]) return;
+        if (files.length) {
+          for (var i = 0; i < files.length; i++) { var why = mediaProblem(files[i], r); if (why) { U.toast(why, 'bad'); return; } }
+          sendFilesLive(c, r, text, files.slice()); return;
+        }
         var cfg = liveCfg();
         if (live.xl[c.id] && cfg && cfg.translate) { previewThenSend(c, r, text); return; }
         deliver(c, r, { text: text }, text);
@@ -1300,6 +1537,42 @@
           live.busy['send' + c.id] = false;
           var b2 = O.$('.round.go', chat); if (b2) b2.disabled = false;
           paintSendBtn();
+        });
+      }
+      /* photos and videos: each goes from the browser to Storage (a signed upload address from the server, after its
+         checks), then the server sends it; the message, when it fits, is the last file's caption */
+      function sendFilesLive(c, r, text, files) {
+        var sb = O.auth.supabase && O.auth.supabase();
+        if (!sb || !sb.storage) { U.toast('Sending photos is not available here. Please reload the page.', 'bad'); return; }
+        live.busy['send' + c.id] = true;
+        var btn = O.$('.round.go', chat); if (btn) btn.disabled = true;
+        var capOk = text.length <= 1024, chain = Promise.resolve(), sent = 0;
+        U.toast('Sending ' + (files.length === 1 ? (files[0].kind === 'video' ? 'the video' : 'the photo') : files.length + ' files') + '…');
+        files.forEach(function (a, i) {
+          var cap = capOk && i === files.length - 1 ? text : '';
+          chain = chain.then(function () {
+            return O.auth.inbox('media-upload', { conversationId: c.id, via: r.via, mime: a.mime, size: a.size, name: a.name }).then(function (up) {
+              return sb.storage.from(up.bucket).uploadToSignedUrl(up.path, up.token, a.file, { contentType: a.mime }).then(function (res) {
+                if (res && res.error) throw new Error(a.name + ' could not be uploaded. Check your connection and try again.');
+                return O.auth.inbox('send-media', { conversationId: c.id, via: r.via, path: up.path, caption: cap, name: a.name });
+              }).then(function (res) {
+                applyConv(res.conversation); sent++;
+                var cc = conv(c.id), list = cc ? cc.messages : [];
+                for (var k = list.length - 1; k >= 0; k--) if (list[k].file && list[k].file.path === up.path) { live.media[c.id + ':' + k] = { url: a.url, mime: a.mime, name: a.name }; break; } /* shown from this device at once */
+                var pl = st.pending[c.id] || [], at = pl.indexOf(a); if (at >= 0) pl.splice(at, 1);
+                if (cap) { var ta = O.$('#ib-input', chat); if (ta && ta.value.trim() === text) { ta.value = ''; autosize(ta); } if ((st.drafts[c.id] || '').trim() === text) st.drafts[c.id] = ''; }
+                if (st.sel === c.id) { paintTray(); paintThread(true); }
+              });
+            });
+          });
+        });
+        chain.then(function () {
+          delete st.unreadMark[c.id];
+          if (!capOk && text) { live.busy['send' + c.id] = false; deliver(c, r, { text: text }, text); }
+        }, function (e) { live.busy['send' + c.id] = false; U.toast((sent ? sent + ' sent. ' : '') + (e.message || 'The file was not sent. Please try again.'), 'bad'); }).then(function () {
+          if (capOk || !text) live.busy['send' + c.id] = false;
+          var b2 = O.$('.round.go', chat); if (b2 && !live.busy['send' + c.id]) b2.disabled = false;
+          paintRows(); paintSendBtn();
         });
       }
       function previewThenSend(c, r, text) {
@@ -1339,17 +1612,22 @@
         var p = key.split(':'), c = conv(p[0]), m = c && c.messages[+p[1]]; if (!m) return;
         function show(f) {
           var from = m.from === 'guest' ? (bk(c) ? bk(c).guest.name : 'Guest') : 'Team', sub = 'From ' + from + ' · ' + fmt.dateTime(m.time);
-          if (/^image\//.test(f.mime)) U.modal({ title: f.name || 'Photo', sub: sub, size: 'wide', body: '<div class="ib-lightbox"><img src="' + esc(f.url) + '" alt="Photo from the guest"></div>', actions: [{ label: 'Download', onClick: function () { O.download(f.name || 'photo.jpg', f.blob, f.mime); return false; } }, { label: 'Close', kind: 'primary' }] });
-          else if (/^(audio|video)\//.test(f.mime)) U.modal({ title: m.type === 'voice' ? 'Voice message' : f.name || 'Video', sub: sub, body: '<' + (/^audio/.test(f.mime) ? 'audio' : 'video') + ' controls autoplay style="width:100%" src="' + esc(f.url) + '"></' + (/^audio/.test(f.mime) ? 'audio' : 'video') + '>', actions: [{ label: 'Download', onClick: function () { O.download(f.name || 'voice.ogg', f.blob, f.mime); return false; } }, { label: 'Close', kind: 'primary' }] });
-          else O.download(f.name || 'file', f.blob, f.mime);
+          function dl(name) { if (f.blob) O.download(f.name || name, f.blob, f.mime); else window.open(f.url, '_blank', 'noopener'); return false; }
+          if (/^image\//.test(f.mime)) U.modal({ title: f.name || 'Photo', sub: sub, size: 'wide', body: '<div class="ib-lightbox"><img src="' + esc(f.url) + '" alt="Photo from the guest"></div>', actions: [{ label: 'Download', onClick: function () { return dl('photo.jpg'); } }, { label: 'Close', kind: 'primary' }] });
+          else if (/^(audio|video)\//.test(f.mime)) U.modal({ title: m.type === 'voice' ? 'Voice message' : f.name || 'Video', sub: sub, body: '<' + (/^audio/.test(f.mime) ? 'audio' : 'video') + ' controls autoplay playsinline style="width:100%" src="' + esc(f.url) + '"></' + (/^audio/.test(f.mime) ? 'audio' : 'video') + '>', actions: [{ label: 'Download', onClick: function () { return dl(/^audio/.test(f.mime) ? 'voice.ogg' : 'video.mp4'); } }, { label: 'Close', kind: 'primary' }] });
+          else dl('file');
         }
         if (live.media[key]) { show(live.media[key]); return; }
         if (live.busy['m' + key]) return;
         live.busy['m' + key] = true; paintThread(false);
         O.auth.inbox('media', { conversationId: c.id, index: +p[1] }).then(function (res) {
-          var bin = atob(res.data), bytes = new Uint8Array(bin.length);
-          for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          var blob = new Blob([bytes], { type: res.mime }), f = { blob: blob, mime: res.mime, name: res.name || m.name || null, url: URL.createObjectURL(blob) };
+          var f;
+          if (res.url) f = { blob: null, mime: res.mime || m.mime || '', name: res.name || m.name || null, url: res.url }; /* large videos: a signed address */
+          else {
+            var bin = atob(res.data), bytes = new Uint8Array(bin.length);
+            for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            var blob = new Blob([bytes], { type: res.mime }); f = { blob: blob, mime: res.mime, name: res.name || m.name || null, url: URL.createObjectURL(blob) };
+          }
           live.media[key] = f; show(f);
         }, function (e) { U.toast(e.message || 'The file could not be opened.', 'bad'); }).then(function () { delete live.busy['m' + key]; paintThread(false); });
       }
@@ -1548,8 +1826,9 @@
         var list = st.pending[c.id] = st.pending[c.id] || [];
         Array.prototype.slice.call(fileList).forEach(function (f) {
           if (f.size > 25 * 1048576) { U.toast(f.name + ' is larger than 25 MB, the WhatsApp limit', 'bad'); return; }
-          var isImg = /^image\//.test(f.type), isAudio = kind === 'audio' || (/^audio\//.test(f.type) && kind !== 'doc');
-          var a = { kind: isAudio ? 'audio' : isImg && kind !== 'doc' ? 'image' : 'file', name: f.name, size: f.size, mime: f.type, url: URL.createObjectURL(f) };
+          var isImg = /^image\//.test(f.type), isAudio = kind === 'audio' || (/^audio\//.test(f.type) && kind !== 'doc'), isVideo = kind === 'video' || (/^video\//.test(f.type) && kind !== 'doc');
+          var a = { kind: isAudio ? 'audio' : isVideo ? 'video' : isImg && kind !== 'doc' ? 'image' : 'file', name: f.name, size: f.size, mime: f.type, url: URL.createObjectURL(f), file: f };
+          if (st.mode !== 'note' && (a.kind === 'image' || a.kind === 'video')) { var why = mediaProblem(a, liveOn() ? routeOf(c) : null); if (why) { U.toast(why, 'bad'); try { URL.revokeObjectURL(a.url); } catch (e) {} return; } }
           if (a.kind === 'audio') {
             var au = new Audio(); au.preload = 'metadata';
             au.onloadedmetadata = function () { if (isFinite(au.duration)) a.duration = au.duration; };
@@ -1764,6 +2043,254 @@
         U.modal({ title: 'Send greeting', sub: b.guest.name + ' · ' + O.bookingPlace(b) + ' · ' + d.fmtRange(b.checkIn, b.checkOut), body: body, autofocus: false, actions: actions });
       }
 
+      /* ---------- organising: the chat menu, lists, Archived and Deleted ---------- */
+      var pop = null, listSig = JSON.stringify(lists());
+      function closePop() {
+        if (!pop) return;
+        var btn = O.$('[data-rowmenu="' + pop.dataset.cid + '"]', listEl); if (btn) btn.setAttribute('aria-expanded', 'false');
+        pop.remove(); pop = null;
+      }
+      /* the chat's menu next to the ⋯ button (at), or where the right-click or long press was (x, y) */
+      function openPop(id, at, x, y) {
+        closePop();
+        var c = conv(id); if (!c) return;
+        var html = chatMenuHTML(c); if (!html) return;
+        pop = O.html('<div class="ib-pop" role="menu" aria-label="Chat options">' + html + '</div>');
+        pop.dataset.cid = id;
+        page.appendChild(pop);
+        var r = at ? at.getBoundingClientRect() : { left: x, right: x, top: y, bottom: y };
+        var w = pop.offsetWidth, h = pop.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+        var left = at ? r.right - w : x, top = at ? r.bottom + 4 : y;
+        if (left + w > vw - 8) left = vw - w - 8; if (left < 8) left = 8;
+        if (top + h > vh - 8) top = Math.max(8, (at ? r.top - h - 4 : y - h));
+        pop.style.left = left + 'px'; pop.style.top = top + 'px';
+        if (at) at.setAttribute('aria-expanded', 'true');
+        var first = O.$('button', pop); if (first) first.focus();
+      }
+      window.addEventListener('resize', closePop); ctx.onLeave(function () { window.removeEventListener('resize', closePop); closePop(); });
+      listEl.addEventListener('scroll', closePop, true); /* the rows scroll inside the list */
+
+      /* the same change here (this test copy) as the server makes (0022 inbox_mark) */
+      function applyLocal(c, op, extra) {
+        var key = myKey();
+        if (op === 'pin') c.pinned = true;
+        if (op === 'unpin') delete c.pinned;
+        if (op === 'archive') c.archived = true;
+        if (op === 'unarchive') delete c.archived;
+        if (op === 'read') c.unread = 0;
+        if (op === 'unread') c.unread = Math.max(1, c.unread || 0);
+        if (op === 'favourite') { c.favBy = Array.isArray(c.favBy) ? c.favBy : []; if (c.favBy.indexOf(key) < 0) c.favBy.push(key); }
+        if (op === 'unfavourite' && Array.isArray(c.favBy)) { c.favBy = c.favBy.filter(function (k) { return k !== key; }); if (!c.favBy.length) delete c.favBy; }
+        if (op === 'delete') { c.trashedAt = nowISO(); c.trashedBy = O.state.viewer; }
+        if (op === 'restore') { delete c.trashedAt; delete c.trashedBy; }
+        if (op === 'list-add') { c.lists = Array.isArray(c.lists) ? c.lists : []; if (c.lists.indexOf(extra.listId) < 0) c.lists.push(extra.listId); }
+        if (op === 'list-remove' && Array.isArray(c.lists)) { c.lists = c.lists.filter(function (k) { return k !== extra.listId; }); if (!c.lists.length) delete c.lists; }
+      }
+      var ORG_TOAST = { pin: 'Chat pinned to the top', unpin: 'Chat unpinned', archive: 'Chat archived. It comes back when the guest writes again.', unarchive: 'Chat moved back to all chats',
+        read: 'Marked as read', unread: 'Marked as unread', favourite: 'Added to your favourites', unfavourite: 'Removed from your favourites',
+        'delete': 'Chat moved to Deleted. You can restore it there for 30 days.', restore: 'Chat restored' };
+      /* one change to one or more chats: live through the server, else here */
+      function organize(list, op, extra) {
+        list = list.filter(Boolean); if (!list.length) return Promise.resolve(false);
+        var many = list.length > 1;
+        if (op === 'unread' && list.some(function (c) { return c.id === st.sel; })) { /* leave the chat first, or opening it would read it again */
+          delete st.unreadMark[st.sel]; if (st.rec) cancelRecording(true); st.sel = null; st.view = 'list'; ib.classList.remove('show-chat'); paintChat(true);
+        }
+        var done;
+        if (server()) {
+          done = O.auth.inbox('organize', Object.assign({ conversationIds: list.map(function (c) { return c.id; }), op: op }, extra || {}))
+            .then(function (res) { (res.conversations || []).forEach(applyConv); });
+        } else {
+          list.forEach(function (c) { applyLocal(c, op, extra || {}); });
+          O.emit('data', { type: 'inbox-organize' });
+          done = Promise.resolve();
+        }
+        return done.then(function () {
+          if (op === 'read') list.forEach(function (c) { delete st.unreadMark[c.id]; });
+          var t = ORG_TOAST[op];
+          if (t && !extra) U.toast(many && op === 'read' ? fmt.plural(list.length, 'chat') + ' marked as read' : t);
+          afterChange();
+          return true;
+        }, function (e) { U.toast(e.message || 'That did not work. Please try again.', 'bad'); return false; });
+      }
+      /* the chat to open by itself on a computer: the first in view, but never one with unread messages (opening it
+         would mark them read without anyone seeing them), so the pane then waits on "Choose a chat" */
+      function quietFirst() {
+        var f = (st.tab === 'updates' ? visibleUpds() : visibleConvs())[0];
+        return f && !(f.unread > 0) ? f : null;
+      }
+      /* the open chat left this view (archived, deleted, restored): on a computer the next one opens if it has nothing unread */
+      function afterChange() {
+        var cur = conv(st.sel);
+        if (cur && !inBox(cur)) {
+          if (st.rec) cancelRecording(true);
+          st.sel = null;
+          if (isPhone()) { st.view = 'list'; ib.classList.remove('show-chat'); }
+          else { var nx = quietFirst(); if (nx) { select(nx.id, false); repaintList(); return; } }
+          paintChat(true);
+        } else if (cur) paintChat(false);
+        repaintList();
+      }
+      function repaintList() {
+        var q = O.$('[data-f=q]', listEl), focused = q && document.activeElement === q;
+        listEl.innerHTML = listHTML();
+        if (focused) { var q2 = O.$('[data-f=q]', listEl); if (q2) { q2.focus(); q2.setSelectionRange(q2.value.length, q2.value.length); } }
+      }
+      function setBox(box) {
+        if (st.box === box) return;
+        st.box = box; st.q = ''; closePop();
+        repaintList();
+        var cur = conv(st.sel);
+        if (!isPhone() && (!cur || !inBox(cur))) { var f0 = quietFirst(); if (f0) select(f0.id, false); else { st.sel = null; paintChat(true); } }
+      }
+      function chatAction(act, id) {
+        var c = conv(id); closePop(); if (!c) return;
+        var name = bk(c) ? bk(c).guest.name : updName(c);
+        if (act === 'fav') { organize([c], isFav(c) ? 'unfavourite' : 'favourite'); return; }
+        if (!canEdit()) { U.toast('Your access to the inbox is read only', 'bad'); return; }
+        if (act === 'addlist') { addToList(c); return; }
+        if (act === 'pin') { organize([c], c.pinned ? 'unpin' : 'pin'); return; }
+        var what = !isUpd(c) ? 'The chat with ' + name : c.kind === 'feed' ? 'These updates from ' + name : 'This email from ' + name;
+        if (act === 'delete') {
+          var feed = isUpd(c) && c.kind === 'feed';
+          U.confirm(what + (feed ? ' move to Deleted. They stay there for 30 days and can be restored. A new update brings them back by itself.'
+            : ' moves to Deleted. It stays there for 30 days and can be restored. If ' + (isUpd(c) ? 'they write' : 'the guest writes') + ' again, it comes back by itself.'), 'Delete', 'danger', isUpd(c) ? 'Delete this?' : 'Delete this chat?')
+            .then(function (ok) { if (ok) organize([c], 'delete'); });
+          return;
+        }
+        if (act === 'purge') {
+          U.confirm(what + (isUpd(c) ? ' and its files are' : ' and its photos and videos are') + ' removed for good. This cannot be undone.', 'Delete forever', 'danger', 'Delete forever?')
+            .then(function (ok) { if (ok) purgeChats([c]); });
+          return;
+        }
+        if (['read', 'unread', 'archive', 'unarchive', 'restore'].indexOf(act) >= 0) organize([c], act);
+      }
+      function purgeChats(list) {
+        var ids = list.map(function (c) { return c.id; });
+        var gone = function (done, failed) {
+          if (done.indexOf(st.sel) >= 0) st.sel = null;
+          if (failed) U.toast(fmt.plural(failed, 'chat') + ' could not be deleted just now. Please try again.', 'bad');
+          else U.toast(done.length === 1 ? 'Chat deleted for good' : fmt.plural(done.length, 'chat') + ' deleted for good');
+          afterChange(); if (!st.sel) paintChat(true);
+        };
+        if (server()) {
+          O.auth.inbox('purge', { conversationIds: ids }).then(function (res) {
+            var done = res.removed || [];
+            O.sync.remote(done.map(function (id) { return { coll: 'conversations', id: id, deleted: true }; }), []);
+            gone(done, (res.failed || []).length);
+          }, function (e) { U.toast(e.message || 'The chat was not deleted. Please try again.', 'bad'); });
+          return;
+        }
+        for (var i = D.conversations.length - 1; i >= 0; i--) if (ids.indexOf(D.conversations[i].id) >= 0) D.conversations.splice(i, 1);
+        O.emit('data', { type: 'inbox-purge' });
+        gone(ids, 0);
+      }
+      function markAllRead() {
+        if (!canEdit()) { U.toast('Your access to the inbox is read only', 'bad'); return; }
+        var list = (st.tab === 'updates' ? visibleUpds() : visibleConvs()).filter(function (c) { return c.unread > 0; }).slice(0, 200);
+        if (!list.length) { U.toast('Nothing unread here'); return; }
+        organize(list, 'read');
+      }
+
+      /* lists: shared by the team; the server keeps them live ('lists'), this test copy in D.inboxLists */
+      function cleanName(v) { return String(v || '').replace(/\s+/g, ' ').trim().slice(0, 40); }
+      function listsCall(op, args) {
+        if (server()) {
+          return O.auth.inbox('lists', Object.assign({ op: op }, args)).then(function (res) {
+            O.sync.remote((res.conversations || []).map(function (c) { return { coll: 'conversations', id: c.id, data: c.data, deleted: false }; }), [{ key: 'inboxLists', data: res.lists || [] }]);
+            return res.lists || [];
+          });
+        }
+        if (!Array.isArray(D.inboxLists)) D.inboxLists = [];
+        var L = D.inboxLists, name = cleanName(args.name), found = L.filter(function (l) { return l.id === args.id; })[0];
+        var taken = function (id) { return L.some(function (l) { return l.id !== id && String(l.name).toLowerCase() === name.toLowerCase(); }); };
+        if (op !== 'remove' && !name) return Promise.reject(new Error('Give the list a name.'));
+        if (op !== 'remove' && taken(op === 'rename' ? args.id : null)) return Promise.reject(new Error('There is already a list called "' + name + '".'));
+        if (op === 'add') { if (L.length >= 30) return Promise.reject(new Error('You can have up to 30 lists. Remove one first.')); L.push({ id: O.uid('L'), name: name }); }
+        if (op === 'rename' && found) found.name = name;
+        if (op === 'remove' && found) { L.splice(L.indexOf(found), 1); D.conversations.forEach(function (c) { if (onList(c, found.id)) applyLocal(c, 'list-remove', { listId: found.id }); }); }
+        O.emit('data', { type: 'inbox-lists' });
+        return Promise.resolve(L);
+      }
+      function manageLists() {
+        if (!canEdit()) { U.toast('Your access to the inbox is read only', 'bad'); return; }
+        var body = O.html('<div class="ib-lists-m"></div>');
+        function paint() {
+          body.innerHTML = '<div class="small muted" style="margin-bottom:6px">Lists group chats, for example VIP guests or Follow up. Everyone in the team sees the same lists. Put a chat on a list from its menu.</div>' +
+            (lists().length ? lists().map(function (l) {
+              return '<div class="lrow"><label class="sr-only" for="ibl-' + esc(l.id) + '">Name of the list</label><input id="ibl-' + esc(l.id) + '" class="input" maxlength="40" data-lname="' + esc(l.id) + '" value="' + esc(l.name) + '">' +
+                '<button type="button" class="btn btn-ghost btn-sm" data-lsave="' + esc(l.id) + '">Rename</button><button type="button" class="btn btn-ghost btn-sm" data-ldel="' + esc(l.id) + '" aria-label="Remove the list ' + esc(l.name) + '">' + O.icon('trash') + '</button></div>';
+            }).join('') : U.empty('No lists yet. Add the first one below.')) +
+            '<div class="add"><label class="sr-only" for="ibl-new">New list</label><input id="ibl-new" class="input" maxlength="40" data-lnew placeholder="New list, for example VIP guests"><button type="button" class="btn btn-primary btn-sm" data-ladd>Add list</button></div>';
+        }
+        function run(op, args) {
+          listsCall(op, args).then(function () { paint(); repaintList(); var c = conv(st.sel); if (c) paintChat(false); U.toast(op === 'add' ? 'List added' : op === 'rename' ? 'List renamed' : 'List removed. Its chats stay in the inbox.'); }, function (e) { U.toast(e.message || 'That did not work. Please try again.', 'bad'); });
+        }
+        body.addEventListener('click', function (e) {
+          var x;
+          if ((x = e.target.closest('[data-ladd]'))) { run('add', { name: O.$('[data-lnew]', body).value }); return; }
+          if ((x = e.target.closest('[data-lsave]'))) { var inp = O.$('[data-lname="' + x.dataset.lsave + '"]', body); run('rename', { id: x.dataset.lsave, name: inp ? inp.value : '' }); return; }
+          if ((x = e.target.closest('[data-ldel]'))) {
+            var l = listById(x.dataset.ldel); if (!l) return;
+            U.confirm('Remove the list "' + l.name + '"? The chats on it stay in the inbox, they are only taken off the list.', 'Remove list', 'danger', 'Remove this list?').then(function (ok) { if (ok) run('remove', { id: l.id }); });
+          }
+        });
+        body.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.hasAttribute('data-lnew')) { e.preventDefault(); run('add', { name: e.target.value }); } });
+        paint();
+        U.modal({ title: 'Lists', body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
+      }
+      function addToList(c) {
+        var body = O.html('<div class="ib-addlist"></div>');
+        function paint() {
+          body.innerHTML = (lists().length ? lists().map(function (l) { return '<label><input type="checkbox" data-lpick="' + esc(l.id) + '"' + (onList(c, l.id) ? ' checked' : '') + '> <span>' + esc(l.name) + '</span></label>'; }).join('') : '<div class="small muted">No lists yet. Make the first one here.</div>') +
+            '<div class="ib-lists-m"><div class="add"><label class="sr-only" for="ibl-new2">New list</label><input id="ibl-new2" class="input" maxlength="40" data-lnew placeholder="New list"><button type="button" class="btn btn-ghost btn-sm" data-ladd>Make and add</button></div></div>';
+        }
+        body.addEventListener('change', function (e) {
+          var t = e.target; if (!t.dataset.lpick) return;
+          t.disabled = true;
+          organize([c], t.checked ? 'list-add' : 'list-remove', { listId: t.dataset.lpick }).then(function (ok) { if (!ok) t.checked = !t.checked; t.disabled = false; c = conv(c.id) || c; });
+        });
+        function make() {
+          var inp = O.$('[data-lnew]', body), name = cleanName(inp && inp.value);
+          listsCall('add', { name: name }).then(function (L) {
+            var nl = (L || lists()).filter(function (l) { return l.name.toLowerCase() === name.toLowerCase(); })[0];
+            return nl ? organize([c], 'list-add', { listId: nl.id }) : null;
+          }).then(function () { c = conv(c.id) || c; paint(); repaintList(); }, function (e) { U.toast(e.message || 'That did not work. Please try again.', 'bad'); });
+        }
+        body.addEventListener('click', function (e) { if (e.target.closest('[data-ladd]')) make(); });
+        body.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.hasAttribute('data-lnew')) { e.preventDefault(); make(); } });
+        paint();
+        U.modal({ title: 'Add to list', sub: bk(c) ? bk(c).guest.name : updName(c), body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
+      }
+      /* photos and videos the team sent: a signed address from the server, then shown in the bubble */
+      function loadFile(key, loud) {
+        if (!server() || live.media[key] || live.busy['m' + key] || (live.failed[key] && !loud)) return;
+        var p = key.split(':'), c = conv(p[0]); if (!c) return;
+        live.busy['m' + key] = true; delete live.failed[key];
+        O.auth.inbox('media', { conversationId: c.id, index: +p[1] }).then(function (res) {
+          if (res.url) live.media[key] = { url: res.url, mime: res.mime, name: res.name };
+        }, function (e) { live.failed[key] = true; if (loud) U.toast(e.message || 'The file could not be opened.', 'bad'); }).then(function () {
+          delete live.busy['m' + key]; if (st.sel === c.id) paintThread(false);
+        });
+      }
+      /* long press on a phone opens the chat menu (and the tap that follows is not a click on the chat) */
+      /* the menu opens under the finger, and the browser may send a click when the finger lifts: press.endAt lets the
+         page's click handler ignore that one click, so it neither closes the menu nor presses the item under the finger */
+      var press = { t: 0, id: null, fired: 0, armed: false, endAt: 0 };
+      listEl.addEventListener('touchstart', function (e) {
+        var row = e.target.closest('[data-row]'); if (!row || e.touches.length !== 1) return;
+        var tx = e.touches[0].clientX, ty = e.touches[0].clientY;
+        clearTimeout(press.t); press.id = row.dataset.row; press.armed = false;
+        press.t = setTimeout(function () { press.fired = Date.now(); press.armed = true; if (navigator.vibrate) try { navigator.vibrate(15); } catch (er) {} openPop(press.id, null, tx, ty); }, 520);
+      }, { passive: true });
+      ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { listEl.addEventListener(ev, function () { clearTimeout(press.t); if (ev === 'touchend' && press.armed) press.endAt = Date.now(); press.armed = false; }, { passive: true }); });
+      listEl.addEventListener('contextmenu', function (e) {
+        var row = e.target.closest('[data-row]'); if (!row) return;
+        e.preventDefault();
+        if (Date.now() - press.fired < 900) return; /* the long press already opened it */
+        openPop(row.dataset.row, null, e.clientX, e.clientY);
+      });
+
       /* ---------- new conversation ---------- */
       function newChat() {
         if (!canSend()) { U.toast(NO_SEND, 'bad'); return; }
@@ -1803,14 +2330,20 @@
       page.addEventListener('click', function (e) {
         var x, c = conv(st.sel);
         var menu = O.$('.ib-menu.open', page); if (menu && !e.target.closest('.ib-more')) menu.classList.remove('open');
+        if (Date.now() - press.endAt < 600 && (e.target.closest('[data-row]') || e.target.closest('.ib-pop'))) { press.endAt = 0; e.preventDefault(); return; } /* the lift ending a long press: keep its menu open */
+        if (pop && !e.target.closest('.ib-pop') && !e.target.closest('[data-rowmenu]')) closePop();
+        if ((x = e.target.closest('[data-cact]'))) { var om = O.$('.ib-menu.open', page); if (om) om.classList.remove('open'); chatAction(x.dataset.cact, x.dataset.cid); return; }
+        if ((x = e.target.closest('[data-rowmenu]'))) { if (pop && pop.dataset.cid === x.dataset.rowmenu) closePop(); else openPop(x.dataset.rowmenu, x); return; }
+        if ((x = e.target.closest('[data-box]'))) { var lm = O.$('.ib-menu.open', page); if (lm) lm.classList.remove('open'); setBox(x.dataset.box); return; }
+        if ((x = e.target.closest('[data-loadfile]'))) { loadFile(x.dataset.loadfile, true); return; }
         var am = O.$('.att-menu.open', page); if (am && !e.target.closest('.att-menu') && !e.target.closest('[data-act=attach]')) am.classList.remove('open');
         if ((x = e.target.closest('[data-go]'))) { O.go(x.dataset.go); return; }
         if ((x = e.target.closest('[data-conv]'))) { select(x.dataset.conv); return; }
         if ((x = e.target.closest('[data-filter]'))) { st.filter = x.dataset.filter; paintFilters(); paintRows(); return; }
         if ((x = e.target.closest('[data-tab]'))) {
           if (st.tab === x.dataset.tab) return;
-          st.tab = x.dataset.tab; st.q = ''; listEl.innerHTML = listHTML();
-          if (!isPhone()) { var f0 = (st.tab === 'updates' ? visibleUpds() : visibleConvs())[0]; if (f0) select(f0.id, false); else { st.sel = null; paintChat(true); } }
+          st.tab = x.dataset.tab; st.q = ''; st.box = 'main'; listEl.innerHTML = listHTML();
+          if (!isPhone()) { var f0 = quietFirst(); if (f0) select(f0.id, false); else { st.sel = null; paintChat(true); } }
           return;
         }
         if ((x = e.target.closest('[data-pickact]'))) { pickAct(x, c); return; }
@@ -1825,7 +2358,8 @@
         if ((x = e.target.closest('[data-pick]'))) { O.$('.att-menu', chat).classList.remove('open'); var inp = O.$('input[data-in=' + x.dataset.pick + ']', chat); if (inp) inp.click(); return; }
         if ((x = e.target.closest('[data-mode]'))) { st.mode = x.dataset.mode; var ta0 = O.$('#ib-input', chat); if (ta0) st.drafts[st.sel] = ta0.value; rebuildComposer(); var ta1 = O.$('#ib-input', chat); if (ta1) ta1.focus(); return; }
         if ((x = e.target.closest('[data-img]'))) {
-          var p = x.dataset.img.split(':'), cc = conv(p[0]), m = cc && cc.messages[+p[1]]; if (!m) return;
+          var p = x.dataset.img.split(':'), cc = conv(p[0]), m0 = cc && cc.messages[+p[1]]; if (!m0) return;
+          var seenF = live.media[x.dataset.img], m = seenF && seenF.url && !m0.url ? Object.assign({}, m0, { url: seenF.url }) : m0;
           var from = m.from === 'guest' ? bk(cc).guest.name : (staff(m.staffId) || { name: 'Team' }).name;
           U.modal({ title: m.name || m.caption || (m.text && /^photo:/i.test(m.text) ? m.text : 'Photo'), sub: 'From ' + from + ' · ' + fmt.dateTime(m.time), size: 'wide', body: '<div class="ib-lightbox">' + (m.url ? '<img src="' + esc(m.url) + '" alt="' + esc(m.name || 'Photo') + '">' : sinkArt()) + '</div>' + (m.caption ? '<p>' + esc(m.caption) + '</p>' : ''),
             actions: m.url ? [{ label: 'Download', onClick: function () { fetch(m.url).then(function (r) { return r.blob(); }).then(function (bl) { O.download(m.name || 'photo.jpg', bl, m.mime); }); return false; } }, { label: 'Close', kind: 'primary' }] : [{ label: 'Close', kind: 'primary' }] });
@@ -1838,6 +2372,9 @@
         if (act === 'livesettings') { settingsModal(); return; }
         if (act === 'loose') { looseModal(); return; }
         if (act === 'allprops') { setProp(''); return; }
+        if (act === 'listmenu') { var lmn = O.$('.ib-lhead .ib-menu', listEl); if (lmn) { if (!lmn.classList.contains('open')) lmn.innerHTML = listMenuHTML(); lmn.classList.toggle('open'); } return; }
+        if (act === 'allread') { var lm2 = O.$('.ib-menu.open', page); if (lm2) lm2.classList.remove('open'); markAllRead(); return; }
+        if (act === 'lists') { var lm3 = O.$('.ib-menu.open', page); if (lm3) lm3.classList.remove('open'); manageLists(); return; }
         if (act === 'clearq') { st.q = ''; var qx = O.$('[data-f=q]', listEl); if (qx) qx.value = ''; paintRows(); return; }
         if (act === 'manage') { var mm = O.$('.ib-menu.open', page); if (mm) mm.classList.remove('open'); manageQuickReplies(c && bk(c) ? bk(c).propertyId : null, function () { O.emit('data', { type: 'quickreplies' }); }); }
         if (!c) return;
@@ -1845,10 +2382,7 @@
         if (act === 'back') { st.view = 'list'; ib.classList.remove('show-chat'); delete st.unreadMark[c.id]; if (st.rec) cancelRecording(false, 'Recording discarded'); return; }
         if (act === 'booking') { if (O.allowed('bookings')) O.booking.open(b.id); return; }
         if (act === 'lock') { if (canCodes()) O.lock.change({ bookingId: b.id, propertyId: b.propertyId }); return; }
-        if (act === 'more') { O.$('.ib-menu', chat).classList.toggle('open'); return; }
-        if ((act === 'unread' || act === 'pin') && !canEdit()) { U.toast('Your access to the inbox is read only', 'bad'); return; }
-        if (act === 'unread') { c.unread = Math.max(1, c.unread || 0); delete st.unreadMark[c.id]; if (st.rec) cancelRecording(true); st.sel = null; st.view = 'list'; ib.classList.remove('show-chat'); paintRows(); paintFilters(); paintChat(true); U.toast((b ? 'Chat with ' + b.guest.name : updName(c)) + ' marked as unread'); O.emit('data', { type: 'inbox-unread' }); return; }
-        if (act === 'pin') { c.pinned = !c.pinned; paintRows(); paintChat(false); U.toast(c.pinned ? 'Chat pinned to the top' : 'Chat unpinned'); return; }
+        if (act === 'more') { closePop(); O.$('.ib-menu', chat).classList.toggle('open'); return; }
         if (act === 'invoice') { if (O.can('invoices.send')) O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); else U.toast('Your access does not include sending invoices and receipts', 'bad'); return; }
         if (act === 'attach') { O.$('.att-menu', chat).classList.toggle('open'); return; }
         if (act === 'greet') { openGreeting(c); return; }
@@ -1867,7 +2401,7 @@
       });
       page.addEventListener('keydown', function (e) {
         var t = e.target;
-        if (t.dataset.f !== 'msg') { if (e.key === 'Escape') { var mm = O.$('.ib-menu.open, .att-menu.open', page); if (mm) mm.classList.remove('open'); } return; }
+        if (t.dataset.f !== 'msg') { if (e.key === 'Escape') { var mm = O.$('.ib-menu.open, .att-menu.open', page); if (mm) mm.classList.remove('open'); if (pop) { var back = O.$('[data-rowmenu="' + pop.dataset.cid + '"]', listEl); closePop(); if (back) back.focus(); } } return; }
         if (st.slash) {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); var n = st.slash.length; if (n) { st.qrSel = (st.qrSel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; paintSlash(); } return; }
           if ((e.key === 'Enter' || e.key === 'Tab') && st.slash.length) { e.preventDefault(); useQuickReply(st.slash[st.qrSel].id); return; }
@@ -1890,7 +2424,7 @@
         paintFilters(); paintRows();
         var cur = conv(st.sel);
         if (!isPhone() && (!cur || !inProp(cur))) {
-          var first = visibleConvs()[0];
+          var first = quietFirst();
           if (first) select(first.id, false); else { st.sel = null; paintRows(); paintChat(true); }
         }
       }
@@ -1904,7 +2438,8 @@
           st.unreadMark[oc.id] = { i: Math.max(0, oc.messages.length - oc.unread), n: oc.unread }; oc.unread = 0;
           O.emit('data', { type: 'inbox-read', id: oc.id }); return;
         }
-        paintFilters(); paintRows(); paintTabs();
+        var lsig = JSON.stringify(lists());
+        if (lsig !== listSig) { listSig = lsig; repaintList(); } else { paintFilters(); paintRows(); paintTabs(); } /* a list added or renamed elsewhere */
         if (oc && liveOn()) { var sig = JSON.stringify(routesFor(oc).map(function (r) { return [r.via, r.open]; })); if (chat.dataset.rsig && chat.dataset.rsig !== sig) rebuildComposer(); chat.dataset.rsig = sig; }
         if (conv(st.sel)) paintChat(false); else if (st.sel) { st.sel = null; paintChat(true); }
         if (p && p.type === 'quickreplies') { var w = O.$('.qr-wrap', chat), c = conv(st.sel); if (w && c) w.innerHTML = qrWrapHTML(c); }

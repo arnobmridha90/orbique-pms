@@ -5,7 +5,7 @@
    O.chart (line, bars, spark, hbars) · O.download / O.csv / O.pdf
    O.booking.open · O.invoice · O.lock · O.checklist
    O.clock (real Malaysia time) · O.sync (saved data) · O.PERMS / O.can (staff access)
-   O.automation (background jobs) · O.voice (read aloud) · O.guestApi (guest app data)
+   O.automation (background jobs) · O.voice (read aloud) · O.alertSound (alert chime) · O.guestApi (guest app data)
    Loaded after data.js and before every pages/*.js file.
    =================================================================== */
 (function () {
@@ -1447,7 +1447,7 @@
     ['bookings', 'Bookings', [['create', 'Add bookings', 'Direct and walk-in bookings', 'do'], ['edit', 'Edit bookings', 'Dates, guests, times and notes', 'do'], ['cancel', 'Cancel bookings', '', 'do'], ['contacts', 'See guest phone and email', 'When off, contact details are masked', 'see'], ['value', 'See booking value', 'Totals, payouts and platform fees', 'see'], ['export', 'Download bookings', 'CSV export', 'see']]],
     ['calendar', 'Calendar', [['block', 'Block and unblock dates', 'Owner stays and maintenance blocks', 'do']]],
     ['reviews', 'Reviews', [['reply', 'Reply to reviews', 'Public replies on every platform', 'do']]],
-    ['inbox', 'Guest inbox', [['send', 'Message guests', 'Reply on WhatsApp, email and platforms. Without it, people who open the inbox can still send the greeting message.', 'do'], ['notes', 'Write internal notes', 'Notes only the team sees', 'do'], ['quickReplies', 'Edit quick replies', 'Saved replies for the whole team', 'do'], ['greetings', 'Write greeting messages', 'Greeting messages for each building, with the parts that change per booking', 'do']]],
+    ['inbox', 'Inbox', [['send', 'Message guests', 'Reply on WhatsApp, email and platforms. Without it, people who open the inbox can still send the greeting message.', 'do'], ['notes', 'Write internal notes', 'Notes only the team sees', 'do'], ['quickReplies', 'Edit quick replies', 'Saved replies for the whole team', 'do'], ['greetings', 'Write greeting messages', 'Greeting messages for each building, with the parts that change per booking', 'do']]],
     ['tasks', 'Tasks & cleaning', [['create', 'Create tasks', '', 'do'], ['assign', 'Assign tasks to others', 'Create tasks for others and reassign them', 'do'], ['others', 'See other people\'s tasks', 'When off, people see only their own tasks', 'see'], ['delete', 'Delete tasks', '', 'do'], ['checklists', 'Edit checklist templates', 'Check-in, check-out and daily housekeeping lists', 'do']]],
     ['invoices', 'Invoices & receipts', [['send', 'Send invoices and receipts', 'To guests by WhatsApp or email', 'do'], ['payments', 'Record payments', 'Mark invoices paid', 'do'], ['settings', 'Change invoice settings', 'Numbering, tax and automatic sending', 'do']]],
     ['expenses', 'Expenses', [['record', 'Record their own expenses', 'Log what they spend and claim it back', 'do'], ['viewAll', 'See everyone\'s expenses', 'When off, people see only their own', 'see'], ['approve', 'Approve expense claims', 'Pay back staff who paid personally', 'do', true]]],
@@ -1616,6 +1616,8 @@
   REG.channelSim = { type: 'blob', kind: 'demo' };
   /* lastMinuteDeal: the workspace's last-minute deal, which the channel manager applies (the Profit planner reads it) */
   ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings', 'ratePlanner', 'lastMinuteDeal'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
+  /* inboxLists: the workspace's named chat lists [{id, name}] (pages/inbox.js; live, the server writes it: api/messages.js 'lists') */
+  REG.inboxLists = { type: 'blob', kind: 'demo' };
 
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
   function capBlob(key, v) { var r = REG[key]; return r && r.cap && Array.isArray(v) && v.length > r.cap ? v.slice(0, r.cap) : v; }
@@ -1718,7 +1720,10 @@
   O.on('data', function () { S.schedule(); });
   /* remote changes: apply now, re-render when nobody is typing or has a window open */
   function busy() { var a = document.activeElement; return !!(O.$('.modal-back, .drawer') || (a && a !== document.body && /INPUT|TEXTAREA|SELECT/.test(a.tagName) || (a && a.isContentEditable))); }
+  /* 'remote-rows' (rows) goes out before they are applied, so a listener can tell a new record from a changed one
+     (app/server/booking-alerts.js rings for a new booking; rows from the server carry by: the member who saved it, or null) */
   S.remote = function (rows, blobs) {
+    O.emit('remote-rows', rows || []);
     if (!applyRows(rows, blobs)) return;
     if (busy()) { S.pendingRemote = true; return; }
     O.emit('remote'); O.emit('data');
@@ -1824,6 +1829,73 @@
   };
 
   /* ===================================================================
+     ALERT SOUND: O.alertSound.play() / .test() / .muted() / .setMuted(on)
+     Orbique's own loud chime (scripts/alert-sound.py -> sounds/orbique_alert.wav) at full volume, for a new booking
+     from a booking site or a new guest message while the app is open (web and phone app). Muted per device
+     (O.store 'alertSoundMuted'; the switch is on the Booking alerts card in Automations). Browsers only allow sound
+     after the person has tapped or typed on the page once, so that first tap unlocks it and earlier calls stay silent.
+     A call within 3 seconds of the last sound is skipped, so a phone alert and the live update for the same booking
+     ring once. Without the file (the single-file test copy, or offline before it loaded) the same three notes are
+     played with the browser's oscillators. The device's own volume (and an iPhone's silent switch) still applies.
+     play() -> true when it rang. test() rings even when muted (the "Play" button).
+     =================================================================== */
+  O.alertSound = (function () {
+    var KEY = 'alertSoundMuted', GAP = 3000, ctx = null, buf = null, loading = null, last = 0, unlocked = false;
+    var NOTES = [[0, 783.99, 0.8], [0.14, 1046.5, 0.9], [0.28, 1318.51, 1]], PARTIALS = [[1, 1, 0.42], [2, 0.38, 0.2], [3, 0.16, 0.1]];
+    function Ctor() { return window.AudioContext || window.webkitAudioContext; }
+    function context() { if (!ctx && Ctor()) { try { ctx = new (Ctor())(); } catch (e) { ctx = null; } } return ctx; }
+    /* the web app serves it at /sounds/; the phone app and a local file have it next to index.html */
+    function url() { return (/^https?:$/.test(location.protocol) && !(O.native) ? '/' : '') + 'sounds/orbique_alert.wav'; }
+    function load() {
+      var c = context();
+      if (buf || loading || !c || !window.fetch || /^file:/.test(location.href)) return;
+      loading = fetch(url()).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+        .then(function (ab) { return new Promise(function (ok, bad) { var p = c.decodeAudioData(ab, ok, bad); if (p && p.then) p.then(ok, bad); }); })
+        .then(function (b) { buf = b; }, function () { loading = null; /* try again next time */ });
+    }
+    function synth(c) {
+      var t0 = c.currentTime + 0.02, master = c.createGain();
+      master.gain.value = 0.42; master.connect(c.destination);
+      NOTES.forEach(function (n) {
+        PARTIALS.forEach(function (p) {
+          var o = c.createOscillator(), g = c.createGain(), t = t0 + n[0];
+          o.type = 'sine'; o.frequency.value = n[1] * p[0];
+          g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(n[2] * p[1], t + 0.004); g.gain.setTargetAtTime(0, t + 0.004, p[2] / 2.5);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.3);
+        });
+      });
+    }
+    function ring(force) {
+      if (!force && (muted() || Date.now() - last < GAP)) return false;
+      var c = context(); if (!c) return false;
+      if (c.state === 'suspended' && c.resume) c.resume().catch(function () {});
+      if (!force && !unlocked) return false;
+      last = Date.now();
+      try {
+        if (buf) { var s = c.createBufferSource(), g = c.createGain(); g.gain.value = 1; s.buffer = buf; s.connect(g); g.connect(c.destination); s.start(0); }
+        else { load(); synth(c); }
+      } catch (e) { return false; }
+      return true;
+    }
+    function muted() { return O.store.get(KEY, false) === true; }
+    /* the first tap or key press: wake the audio (a silent sample for older iPhones) and fetch the sound */
+    function unlock() {
+      var c = context(); if (!c) return;
+      if (c.state === 'suspended' && c.resume) c.resume().catch(function () {});
+      try { var s = c.createBufferSource(); s.buffer = c.createBuffer(1, 1, 22050); s.connect(c.destination); s.start(0); } catch (e) {}
+      unlocked = true; load();
+      ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { document.removeEventListener(ev, unlock, true); });
+    }
+    if (!O.guestToken()) ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlock, true); });
+    return {
+      play: function () { return ring(false); },
+      test: function () { unlock(); return ring(true); },
+      muted: muted,
+      setMuted: function (on) { O.store.set(KEY, !!on); }
+    };
+  })();
+
+  /* ===================================================================
      READ ALOUD (Jarvis-style brief). O.voice.speak(text, {onend, onboundary}) / O.voice.stop() / O.voice.available()
      Uses the browser's built-in speech; prefers a calm British or Malaysian English voice.
      =================================================================== */
@@ -1879,10 +1951,10 @@
      =================================================================== */
   O.LANGS = [['en', 'English', 'EN'], ['bn', 'বাংলা', 'Bangla'], ['ms', 'Bahasa Malaysia', 'MS'], ['zh', '中文（福建話）', 'Hokkien']];
   var NAV_I18N = {
-    en: { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Guest Inbox', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' },
-    bn: { overview: 'ওভারভিউ', operate: 'পরিচালনা', insights: 'বিশ্লেষণ', finance: 'ফাইন্যান্স', grow: 'প্রবৃদ্ধি', manage: 'ব্যবস্থাপনা', dashboard: 'ড্যাশবোর্ড', bookings: 'বুকিং', calendar: 'ক্যালেন্ডার', reviews: 'রিভিউ', inbox: 'গেস্ট ইনবক্স', greetings: 'স্বাগত বার্তা', tasks: 'কাজ ও পরিষ্কার', statistics: 'পরিসংখ্যান', reports: 'রিপোর্ট', invoices: 'ইনভয়েস ও রসিদ', expenses: 'খরচ', financials: 'আর্থিক হিসাব', website: 'ওয়েবসাইট নির্মাতা', livesite: 'লাইভ ওয়েবসাইট', guestapp: 'গেস্ট অ্যাপ', properties: 'প্রপার্টি', channels: 'চ্যানেল', inventory: 'ইনভেন্টরি', pricing: 'মূল্য নির্ধারণ', planner: 'লাভ পরিকল্পনা', automations: 'স্বয়ংক্রিয়তা', owner: 'মালিক পোর্টাল', staff: 'স্টাফ অ্যাক্সেস', brand: 'ব্র্যান্ড ও সেটআপ', more: 'আরও', home: 'হোম', platform: 'প্ল্যাটফর্ম অ্যাডমিন' },
-    ms: { overview: 'Gambaran', operate: 'Operasi', insights: 'Analisis', finance: 'Kewangan', grow: 'Perkembangan', manage: 'Pengurusan', dashboard: 'Papan Pemuka', bookings: 'Tempahan', calendar: 'Kalendar', reviews: 'Ulasan', inbox: 'Peti Masuk Tetamu', greetings: 'Mesej Ucapan Selamat', tasks: 'Tugasan & Pembersihan', statistics: 'Statistik', reports: 'Laporan', invoices: 'Invois & Resit', expenses: 'Perbelanjaan', financials: 'Penyata Kewangan', website: 'Pembina Laman Web', livesite: 'Laman Web Langsung', guestapp: 'Aplikasi Tetamu', properties: 'Hartanah', channels: 'Saluran', inventory: 'Inventori', pricing: 'Harga', planner: 'Perancang Untung', automations: 'Automasi', owner: 'Portal Pemilik', staff: 'Akses Kakitangan', brand: 'Jenama & Persediaan', more: 'Lagi', home: 'Utama', platform: 'Pentadbir platform' },
-    zh: { overview: '总览', operate: '营运', insights: '分析', finance: '财务', grow: '拓展', manage: '管理', dashboard: '仪表板', bookings: '订单', calendar: '日历', reviews: '评价', inbox: '住客收件箱', greetings: '欢迎信息', tasks: '任务与清洁', statistics: '统计', reports: '报表', invoices: '发票与收据', expenses: '支出', financials: '财务报表', website: '网站建设器', livesite: '在线网站', guestapp: '住客应用', properties: '房源', channels: '渠道', inventory: '库存', pricing: '定价', planner: '利润规划', automations: '自动化', owner: '业主门户', staff: '员工权限', brand: '品牌与设置', more: '更多', home: '首页', platform: '平台管理' }
+    en: { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' },
+    bn: { overview: 'ওভারভিউ', operate: 'পরিচালনা', insights: 'বিশ্লেষণ', finance: 'ফাইন্যান্স', grow: 'প্রবৃদ্ধি', manage: 'ব্যবস্থাপনা', dashboard: 'ড্যাশবোর্ড', bookings: 'বুকিং', calendar: 'ক্যালেন্ডার', reviews: 'রিভিউ', inbox: 'ইনবক্স', greetings: 'স্বাগত বার্তা', tasks: 'কাজ ও পরিষ্কার', statistics: 'পরিসংখ্যান', reports: 'রিপোর্ট', invoices: 'ইনভয়েস ও রসিদ', expenses: 'খরচ', financials: 'আর্থিক হিসাব', website: 'ওয়েবসাইট নির্মাতা', livesite: 'লাইভ ওয়েবসাইট', guestapp: 'গেস্ট অ্যাপ', properties: 'প্রপার্টি', channels: 'চ্যানেল', inventory: 'ইনভেন্টরি', pricing: 'মূল্য নির্ধারণ', planner: 'লাভ পরিকল্পনা', automations: 'স্বয়ংক্রিয়তা', owner: 'মালিক পোর্টাল', staff: 'স্টাফ অ্যাক্সেস', brand: 'ব্র্যান্ড ও সেটআপ', more: 'আরও', home: 'হোম', platform: 'প্ল্যাটফর্ম অ্যাডমিন' },
+    ms: { overview: 'Gambaran', operate: 'Operasi', insights: 'Analisis', finance: 'Kewangan', grow: 'Perkembangan', manage: 'Pengurusan', dashboard: 'Papan Pemuka', bookings: 'Tempahan', calendar: 'Kalendar', reviews: 'Ulasan', inbox: 'Peti Masuk', greetings: 'Mesej Ucapan Selamat', tasks: 'Tugasan & Pembersihan', statistics: 'Statistik', reports: 'Laporan', invoices: 'Invois & Resit', expenses: 'Perbelanjaan', financials: 'Penyata Kewangan', website: 'Pembina Laman Web', livesite: 'Laman Web Langsung', guestapp: 'Aplikasi Tetamu', properties: 'Hartanah', channels: 'Saluran', inventory: 'Inventori', pricing: 'Harga', planner: 'Perancang Untung', automations: 'Automasi', owner: 'Portal Pemilik', staff: 'Akses Kakitangan', brand: 'Jenama & Persediaan', more: 'Lagi', home: 'Utama', platform: 'Pentadbir platform' },
+    zh: { overview: '总览', operate: '营运', insights: '分析', finance: '财务', grow: '拓展', manage: '管理', dashboard: '仪表板', bookings: '订单', calendar: '日历', reviews: '评价', inbox: '收件箱', greetings: '欢迎信息', tasks: '任务与清洁', statistics: '统计', reports: '报表', invoices: '发票与收据', expenses: '支出', financials: '财务报表', website: '网站建设器', livesite: '在线网站', guestapp: '住客应用', properties: '房源', channels: '渠道', inventory: '库存', pricing: '定价', planner: '利润规划', automations: '自动化', owner: '业主门户', staff: '员工权限', brand: '品牌与设置', more: '更多', home: '首页', platform: '平台管理' }
   };
   O.t = function (key) { return (NAV_I18N[O.state.lang] || NAV_I18N.en)[key] || NAV_I18N.en[key] || key; };
 
@@ -1952,7 +2024,7 @@
   function closeSide() { var s = O.$('.side'); if (s) { s.classList.remove('open'); O.$('.scrim').classList.remove('open'); } }
   function navBadge(id) {
     if (!O.allowed(id)) return '<span class="nav-lock">🔒</span>';
-    if (id === 'inbox') { var n = D.conversations.reduce(function (s, c) { return s + (c.unread || 0); }, 0); return n ? '<span class="nav-badge">' + n + '</span>' : ''; }
+    if (id === 'inbox') { var n = D.conversations.reduce(function (s, c) { return s + (c.archived || c.trashedAt ? 0 : c.unread || 0); }, 0); /* Archived and Deleted chats do not count */ return n ? '<span class="nav-badge">' + n + '</span>' : ''; }
     if (id === 'reviews') { var r = D.reviews.filter(function (x) { return !x.reply; }).length; return r ? '<span class="nav-badge">' + r + '</span>' : ''; }
     if (id === 'tasks') { var t = D.tasks.filter(function (x) { return x.status !== 'done' && x.due.slice(0, 10) <= D.TODAY && (O.can('tasks.others') || x.assigneeId === O.state.viewer); }).length; return t ? '<span class="nav-badge">' + t + '</span>' : ''; }
     return '';

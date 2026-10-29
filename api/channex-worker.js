@@ -16,7 +16,9 @@
  *   refresh channel lists,
  *   prune the call log and events older than 60 days, raise needs_unit alerts for unassigned arrivals within 48 h,
  *   re-run unit assignment for stays starting in the next 14 days, renew WhatsApp Embedded Signup tokens a week old
- *   (api/_lib/whatsapp-connect.js; they expire after 60 days), then a normal tick.
+ *   (api/_lib/whatsapp-connect.js; they expire after 60 days), remove inbox chats that have been in Deleted for 30 days
+ *   (api/_lib/inbox.js purgeTrash; opening the inbox does it too, for workspaces without a channel manager), then a
+ *   normal tick.
  * Answers {ok, task, ...summary}. Never returns keys or payloads.
  */
 import { send, cors, readJson, bearer } from './_lib/http.js';
@@ -29,6 +31,7 @@ import { processOutbox } from './_lib/alerts.js';
 import { releaseHolds } from './_lib/website.js';
 import { renewTokens } from './_lib/whatsapp-connect.js';
 import { waConfig } from './_lib/whatsapp.js';
+import { purgeTrash } from './_lib/inbox.js';
 
 export const TICK_BUDGET_MS = 15000;
 const PRUNE_DAYS = 60;
@@ -42,7 +45,8 @@ export const bookingHooks = {
   reassignUpcoming: (sb, opts) => reassignUpcoming(sb, opts),
   alerts: (sb, opts) => processOutbox(sb, opts),
   holds: (sb, opts) => releaseHolds(sb, opts),
-  waTokens: (sb, opts) => renewTokens(sb, Object.assign({ config: waConfig() }, opts))
+  waTokens: (sb, opts) => renewTokens(sb, Object.assign({ config: waConfig() }, opts)),
+  inboxTrash: (sb) => purgeTrash(sb, null)
 };
 
 /** Run a hook; a failure is logged and reported, never stops the tick (ARI still goes out). */
@@ -82,6 +86,7 @@ export async function nightly(sb, opts = {}) {
   out.pruned = await prune(sb);
   out.needsUnit = await flagNeedsUnit(sb, cfg);
   out.whatsappTokens = await safely('WhatsApp tokens', () => bookingHooks.waTokens(sb, {}));
+  out.inboxTrash = await safely('inbox Deleted', () => bookingHooks.inboxTrash(sb));
   // the nightly marks are not someone's edit in progress: no quiet window
   out.tick = await tick(sb, Object.assign({}, opts, { budgetMs: 10000, quietMs: 0 }));
   return out;

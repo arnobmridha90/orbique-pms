@@ -178,7 +178,7 @@
       }
       function listHTML() {
         var l = list();
-        if (!l.length) return '<div class="gm-list">' + U.empty(canEdit() ? 'No greeting for this building yet. Add one to send it from the guest inbox.' : 'No greeting for this building yet.', '✉') + '</div>';
+        if (!l.length) return '<div class="gm-list">' + U.empty(canEdit() ? 'No greeting for this building yet. Add one to send it from the Inbox.' : 'No greeting for this building yet.', '✉') + '</div>';
         return '<div class="gm-list" role="list">' + l.map(function (g) {
           return '<button type="button" role="listitem" class="gm-item' + (g.id === st.sel ? ' on' : '') + '" data-pick="' + esc(g.id) + '"><div class="t">' + esc(g.name || 'Untitled') + '</div><div class="x">' + esc(String(g.text || '').slice(0, 140)) + '</div></button>';
         }).join('') + '</div>';
@@ -332,7 +332,7 @@
           } else {
             rec.id = O.uid('GR'); D.greetings.push(rec);
           }
-          U.toast('Greeting "' + rec.name + '" saved. The team can send it from the guest inbox.');
+          U.toast('Greeting "' + rec.name + '" saved. The team can send it from the Inbox.');
           pick(orig ? orig.id : rec.id); paint(); O.emit('data', { type: 'greetings' }); return;
         }
       });

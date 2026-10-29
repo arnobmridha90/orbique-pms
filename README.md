@@ -2,7 +2,7 @@
 
 Orbique is a property management platform for short-term rental operators in Malaysia. Orbique owns the platform and
 sells it by subscription; each operator (a company that manages rental units) gets its own private **workspace** with
-its units, bookings, calendar, guest inbox, cleaning tasks, inventory, invoices, expenses, reports, staff and branding.
+its units, bookings, calendar, inbox, cleaning tasks, inventory, invoices, expenses, reports, staff and branding.
 
 One code base, three ways to use it:
 
@@ -82,6 +82,8 @@ The same app also ships as an Android and iPhone app built with Capacitor (`capa
 projects. The **Phone app** workflow (`.github/workflows/mobile.yml`) builds both on every change, and the newest
 Android test build is always at
 https://github.com/arnobmridha90/orbique-pms/releases/download/android-test/Orbique-test.apk.
+Booking and message alerts ring Orbique's own loud chime (`scripts/alert-sound.py`). To hear it, uninstall the old
+test app first and install the newest build; the phone's notification volume still applies.
 
 Installing, connecting the app to the live site, TestFlight, Google Play and the developer notes:
 **[docs/MOBILE.md](docs/MOBILE.md)**.

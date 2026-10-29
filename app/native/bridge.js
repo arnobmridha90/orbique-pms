@@ -13,6 +13,8 @@
    - guest and invite links point at the live site (window.ORBIQUE_CONFIG.appUrl), not at the app's own files
    - booking alerts (Firebase Cloud Messaging): owners and ops managers are asked once to allow notifications; the
      phone's token goes to /api/alerts (register-device); tapping an alert opens the booking; signing out removes it
+     alerts ring Orbique's own chime (res/raw/orbique_alert.wav on Android, orbique_alert.wav in the iPhone app); with the
+     app open, O.alertSound plays it instead
    Loaded after app/server/*.js and before O.boot().
    =================================================================== */
 (function () {
@@ -260,10 +262,16 @@
 
   /* ---------------- booking alerts: phone notifications ----------------
      O.native.push.enable(ask) -> Promise {ok, message}: asks for permission when ask is true (otherwise only when it
-     was already given), makes the "Booking alerts" channel, registers with Firebase and sends the token to
+     was already given), makes the loud "Booking and message alerts" channel (and removes the old quiet "bookings"
+     one), registers with Firebase and sends the token to
      /api/alerts. The first time an owner or ops manager opens a workspace on this phone it is asked once by itself. */
   if (Push && O.auth && O.auth.enabled && O.auth.enabled()) {
     var pushToken = null, waiting = [], ASKED = 'pushAsked';
+    /* Android channel for alerts (api/_lib/alerts.js PUSH_CHANNEL): urgent, Orbique's own chime (res/raw/orbique_alert.wav,
+       named without the extension), vibration and the notification light. Android fixes a channel's sound when it is
+       first made, so a new sound needs a new id here and in alerts.js. */
+    var LOUD = { id: 'alerts_loud', name: 'Booking and message alerts', description: 'New bookings, cancellations, date changes and guest messages, with the Orbique chime',
+      importance: 5, visibility: 1, sound: 'orbique_alert', vibration: true, lights: true, lightColor: '#14B8A6' };
     var canAlert = function () { var r = O.auth.role && O.auth.role(); return !!O.auth.orgId() && (r === 'owner' || r === 'ops'); };
     var settle = function (r) { var w = waiting; waiting = []; w.forEach(function (fn) { fn(r); }); };
     var sendToken = function (token) {
@@ -273,7 +281,8 @@
     };
     Push.addListener('registration', function (t) { pushToken = t && t.value; sendToken(pushToken).then(settle); });
     Push.addListener('registrationError', function (e) { settle({ ok: false, message: 'The phone could not sign up for notifications' + (e && e.error ? ': ' + e.error : '.') }); });
-    Push.addListener('pushNotificationReceived', function (n) { /* the app is open: a toast instead of a system notification */
+    Push.addListener('pushNotificationReceived', function (n) { /* the app is open: the chime and a toast instead of a system notification */
+      if (O.alertSound) O.alertSound.play();
       if (n && n.title) U.toast(n.title + (n.body ? ': ' + String(n.body).split('\n')[0] : ''));
     });
     Push.addListener('pushNotificationActionPerformed', function (a) {
@@ -293,7 +302,10 @@
         return Push.requestPermissions();
       }).then(function (p) {
         if (p.receive !== 'granted') return { ok: false, message: 'Notifications are off for Orbique. Turn them on in the phone\'s settings (Apps, Orbique, Notifications).' };
-        var channel = platform === 'android' && Push.createChannel ? Push.createChannel({ id: 'bookings', name: 'Booking alerts', description: 'New bookings, cancellations and date changes', importance: 5, visibility: 1, vibration: true }).catch(function () {}) : Promise.resolve();
+        var channel = platform === 'android' && Push.createChannel ? Push.createChannel(LOUD).catch(function () {}).then(function () {
+          /* the first test apps made a quiet "bookings" channel; channels cannot change, so it goes and LOUD replaces it */
+          return Push.deleteChannel ? Push.deleteChannel({ id: 'bookings' }).catch(function () {}) : null;
+        }) : Promise.resolve();
         return channel.then(function () {
           return new Promise(function (resolve) {
             waiting.push(resolve);
