@@ -436,7 +436,7 @@
 
   /* ------------------------------------------------------------------ buildings and unit types
      A building groups units at one address. A unit type ("Deluxe") is what the channels sell: Orbique picks the unit for each
-     booking (O.assign). Guests, invoices and the website see "Building · Type", and the unit number only from 30 minutes
+     booking (O.assign). Guests, invoices and the website see "Building · Type", and the unit number only from 24 hours
      before check-in. Units without a type keep working exactly as before. */
   var BT = { sel: {} }; /* ticked unit ids in the tagging lists */
   var CURRENCIES = ['MYR', 'SGD', 'THB', 'IDR', 'PHP', 'VND', 'USD', 'EUR', 'GBP', 'AUD'];
@@ -485,7 +485,7 @@
     var html = '<div class="pg-props">' + tabHTML();
     if (!bds.length) {
       html += '<div class="card pp-empty"><h3>Group your units by building and type</h3>' +
-        '<p>When a building has several units of the same kind, for example three Deluxe two-bedroom flats, list them once as a unit type. Channels sell the type, Orbique picks the unit for each booking, and guests see their unit number from 30 minutes before check-in.</p>' +
+        '<p>When a building has several units of the same kind, for example three Deluxe two-bedroom flats, list them once as a unit type. Channels sell the type, Orbique picks the unit for each booking, and guests see their unit number from 24 hours before check-in.</p>' +
         '<p>Units you leave out keep working exactly as they do now.</p>' +
         (canCreate ? '<button type="button" class="btn btn-primary" data-bt="addbd">' + O.icon('plus') + 'Add a building</button>' : '<p class="small">An account owner or ops manager can add buildings.</p>') + '</div>';
     } else {
@@ -970,7 +970,7 @@
     return '<div class="pp-sec"><h4>Building and unit type</h4><div class="sd">Units of one type share a listing on the channels, and Orbique picks the unit for each booking.</div><div class="form-grid">' +
       fld('buildingId', 'Building', '<select class="select" id="pp-buildingId" name="buildingId"><option value="">Not in a building</option>' + bds.map(function (b) { return '<option value="' + esc(b.id) + '"' + (b.id === f.buildingId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select>', { opt: true }) +
       fld('unitTypeId', 'Unit type', '<select class="select" id="pp-unitTypeId" name="unitTypeId">' + typeOptsHTML(f.buildingId, f.unitTypeId) + '</select>', { opt: true }) +
-      fld('unitNo', 'Unit number', inp('unitNo', f.unitNo, ' maxlength="12" placeholder="e.g. 21-1"'), { hint: 'Only your team sees this. Guests get it 30 minutes before check-in.' }) +
+      fld('unitNo', 'Unit number', inp('unitNo', f.unitNo, ' maxlength="12" placeholder="e.g. 21-1"'), { hint: 'Only your team sees this. Guests get it 24 hours before check-in.' }) +
       fld('assignPriority', 'Fill order', inp('assignPriority', f.assignPriority, ' type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="e.g. 1"'), { opt: true, hint: 'Lower numbers get bookings first when two units fit equally well.' }) +
       '</div></div>';
   }

@@ -634,7 +634,7 @@
     }
     var body = '<div class="stack"><div class="bu-list">' + O.unitsOfType(t.id).map(row).join('') + '</div>' +
       (others.length ? '<div class="section-title" style="margin:6px 0 0">Another type (upgrade or move)</div><div class="bu-list">' + others.map(function (x) { return O.unitsOfType(x.id).map(function (p) { return row(p).replace('</b>', ' · ' + esc(x.name) + '</b>'); }).join(''); }).join('') + '</div>' : '') +
-      '<div class="xs muted">Picking a unit holds the booking there: automatic assignment will not move it. The guest sees the unit number from 30 minutes before check-in.</div></div>';
+      '<div class="xs muted">Picking a unit holds the booking there: automatic assignment will not move it. The guest sees the unit number from 24 hours before check-in.</div></div>';
     U.modal({ title: 'Choose a unit', sub: b.guest.name + ' · ' + t.name + ' · ' + d.fmtRange(b.checkIn, b.checkOut), body: body, actions: [{ label: 'Cancel' }, { label: 'Use this unit', kind: 'primary', onClick: function (close, el) {
       var c = O.$('[name=unit]:checked', el); if (!c) { U.toast('Choose a unit.', 'bad'); return false; }
       var p = D.propById[c.value]; if (!p) return false;

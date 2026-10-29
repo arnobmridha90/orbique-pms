@@ -12,7 +12,7 @@
  * Unknown placeholders stay as they are. A unit with no value for a field gives an empty value (listed in `missing`).
  *
  * The owner's rule (O.guestmsg / guestmsg.cjs): the door code, and for a typed unit the unit number and the Wi-Fi, reach
- * the guest only from 30 minutes before check-in. A private field ("like a door code") follows the same rule. Before that
+ * the guest only from 24 hours before check-in. A private field ("like a door code") follows the same rule. Before that
  * the value is replaced by wording that sends the guest to the guest app. A door code held for the ID check stays held too.
  *
  * Shared by the page (inlined by scripts/build.mjs as O.greeting, after O.guestmsg), the server (api/messages.js
@@ -158,8 +158,8 @@ function heldWords(key, link, why) {
    ctx as builtins(); o = {now: 'YYYY-MM-DDTHH:MM' (Malaysia time; the server's clock when sending), mask: true to show
    MASK instead of a private value that would be sent (a person without door-code access)}.
    -> {text, parts: [{kind: 'fixed'|'var'|'held'|'missing'|'unknown', key?, text}], held: [keys], why: {key: 'time'|'id'},
-       revealAt: 'YYYY-MM-DDTHH:MM' | null (check-in minus 30 minutes), missing: [keys], sample}
-   The door code and private fields are held before check-in minus 30 minutes and when the send time is unknown; they
+       revealAt: 'YYYY-MM-DDTHH:MM' | null (check-in minus 24 hours), missing: [keys], sample}
+   The door code and private fields are held before check-in minus 24 hours and when the send time is unknown; they
    also wait while the booking's ID check is not done (idVerified, codeStatus 'held'), as quick replies do. */
 function fill(greeting, ctx, o) {
   o = o || {}; ctx = ctx || {};

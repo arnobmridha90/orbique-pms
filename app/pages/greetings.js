@@ -9,7 +9,7 @@
      Everything else in the text is fixed wording. A live preview fills it from a real upcoming booking in the building
      (or sample values), with the changing parts highlighted, exactly as it would go now.
    - The door code, private fields ("like a door code") and for a typed unit the unit number and Wi-Fi reach the guest
-     only from 30 minutes before check-in (O.greeting / api/_lib/shared/greeting.cjs, the same code the server sends with).
+     only from 24 hours before check-in (O.greeting / api/_lib/shared/greeting.cjs, the same code the server sends with).
    Access: the page opens for anyone who can open the guest inbox (O.PAGE_ACCESS). inbox.greetings adds, edits and deletes
    greetings and fields. Private field values show only to people with guestapp.doorCodes (others see "Hidden" and keep the
    values as they are when saving). Data: D.greetings (records 'greetings'). O.greet: helpers the inbox uses. */
@@ -66,7 +66,7 @@
       var unitField = /^f_/.test(p.key || ''), cls = 'gm-v' + (unitField ? ' unit' : '');
       if (p.kind === 'unknown') return '<span class="gm-v bad" title="Not a known part. It goes to the guest as written.">' + esc(p.text) + '</span>';
       if (p.kind === 'missing') return '<span class="gm-v empty" title="' + esc(labelOf(p.key, g)) + ' has no value for this booking, so it is left blank">' + esc(labelOf(p.key, g)) + ': blank</span>';
-      if (p.kind === 'held') return '<span class="gm-v held" title="' + esc(labelOf(p.key, g)) + ((filled.why || {})[p.key] === 'id' ? ' waits for the guest\'s ID check' : ' only reaches the guest from 30 minutes before check-in') + '">' + esc(p.text) + '</span>';
+      if (p.kind === 'held') return '<span class="gm-v held" title="' + esc(labelOf(p.key, g)) + ((filled.why || {})[p.key] === 'id' ? ' waits for the guest\'s ID check' : ' only reaches the guest from 24 hours before check-in') + '">' + esc(p.text) + '</span>';
       return '<span class="' + cls + '" title="' + esc(labelOf(p.key, g)) + (unitField ? ' (changes per unit)' : ' (changes per booking)') + '">' + esc(p.text) + '</span>';
     }).join('');
   }
@@ -75,7 +75,7 @@
      to send the greeting again. */
   function heldNote(filled, g) {
     var out = [], why = filled.why || {}, at = filled.revealAt;
-    var when = at ? fmtAt(at) : 'check-in minus 30 minutes';
+    var when = at ? fmtAt(at) : 'check-in minus 24 hours';
     var names = function (ks) { return ks.map(function (k) { return labelOf(k, g); }).join(', '); };
     var time = filled.held.filter(function (k) { return why[k] !== 'id'; }), id = filled.held.filter(function (k) { return why[k] === 'id'; });
     var timeApp = time.filter(function (k) { return !/^f_/.test(k); }), timeOwn = time.filter(function (k) { return /^f_/.test(k); });
@@ -219,7 +219,7 @@
           return '<div class="gm-field"><div class="gm-fhead">' +
             (on ? '<label class="sr-only" for="gm-fl' + i + '">Field name</label><input id="gm-fl' + i + '" class="input" data-fl="' + i + '" maxlength="40" value="' + esc(f.label) + '">' : '<b>' + esc(f.label) + '</b>') +
             '<code>{f_' + esc(f.key) + '}</code>' +
-            '<label class="check" title="Like a door code: only sent from 30 minutes before check-in, and only people who can see door codes see the values"><input type="checkbox" data-fp="' + i + '"' + (f.private ? ' checked' : '') + (on ? '' : ' disabled') + '><span>Private, like a door code</span></label>' +
+            '<label class="check" title="Like a door code: only sent from 24 hours before check-in, and only people who can see door codes see the values"><input type="checkbox" data-fp="' + i + '"' + (f.private ? ' checked' : '') + (on ? '' : ' disabled') + '><span>Private, like a door code</span></label>' +
             (on ? '<button type="button" class="btn btn-ghost btn-xs" data-fdel="' + i + '" aria-label="Remove ' + esc(f.label) + '">' + O.icon('trash') + '</button>' : '') + '</div>' +
             (units.length ? '<div class="gm-vals">' + units.map(function (p) {
               var v = f.values[p.id] || '';
@@ -267,7 +267,7 @@
       }
       function addField() {
         var body = O.html('<div class="stack"><div class="field"><label for="gm-nf">Field name</label><input id="gm-nf" class="input" maxlength="40" placeholder="For example: Lobby code or Parking bay"></div>' +
-          '<label class="check"><input type="checkbox" id="gm-np"><span>Private, like a door code: only sent from 30 minutes before check-in, and only people who can see door codes see the values</span></label>' +
+          '<label class="check"><input type="checkbox" id="gm-np"><span>Private, like a door code: only sent from 24 hours before check-in, and only people who can see door codes see the values</span></label>' +
           '<div class="note">Each unit in the building gets its own value. You fill them in under Values per unit.</div></div>');
         var inp = O.$('#gm-nf', body), pv = O.$('#gm-np', body), touched = false;
         inp.addEventListener('input', function () { if (!touched) pv.checked = GR.defaultPrivate(inp.value); });
@@ -280,7 +280,7 @@
           var ta = O.$('#gm-text', page); if (ta) st.draft.text = ta.value;
           st.draft.fields.push({ key: key, label: label, private: !!pv.checked, values: {} });
           touch(); paint();
-          U.toast(pv.checked ? label + ' added as private. It only goes to the guest from 30 minutes before check-in.' : label + ' added. Give each unit its value below.');
+          U.toast(pv.checked ? label + ' added as private. It only goes to the guest from 24 hours before check-in.' : label + ' added. Give each unit its value below.');
         } }] });
       }
 

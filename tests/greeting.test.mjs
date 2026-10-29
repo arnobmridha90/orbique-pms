@@ -1,6 +1,6 @@
 /* Greeting messages (api/_lib/shared/greeting.cjs), the same module the page uses as O.greeting and the server sends with:
  * fixed wording stays, the parts that change per booking and per unit are filled, and the door code and private fields
- * only reach the guest from 30 minutes before check-in.
+ * only reach the guest from 24 hours before check-in.
  *
  *   node --test tests/greeting.test.mjs
  */
@@ -16,8 +16,8 @@ const greeting = (text, fields) => ({ id: 'GR1', buildingId: 'BD', name: 'Arriva
 const LOBBY = { key: 'lobby_code', label: 'Lobby code', private: true, values: { u1: '2101', u2: '2206' } };
 const BAY = { key: 'bay', label: 'Parking bay', private: false, values: { u1: 'P2-21' } };
 const ctx = (extra) => Object.assign({ booking: booking(), unit, building, link: 'https://app.example/guest/tok12345' }, extra || {});
-const BEFORE = '2026-11-02T14:29';
-const AT = '2026-11-02T14:30';
+const BEFORE = '2026-11-01T14:59';
+const AT = '2026-11-01T15:00';
 
 test('fixed text goes untouched', () => {
   const text = 'Welcome! Breakfast is at 8. No smoking, please.\n\nThank you.';
@@ -38,12 +38,12 @@ test('custom fields take the value of the booking\'s unit', () => {
   assert.equal(G.fill(g, ctx({ booking: booking({ propertyId: 'u2' }), unit: unit2 }), { now: AT }).text, 'Bay , lobby 2206');
 });
 
-test('before check-in minus 30 minutes the door code and private fields are held; at that moment they are revealed', () => {
+test('before check-in minus 24 hours the door code and private fields are held; at that moment they are revealed', () => {
   const g = greeting('Door {door_code}, lobby {f_lobby_code}, bay {f_bay}', [LOBBY, BAY]);
   const early = G.fill(g, ctx(), { now: BEFORE });
   assert.deepEqual(early.held.sort(), ['door_code', 'f_lobby_code']);
   assert.ok(!early.text.includes('4821') && !early.text.includes('2101'), early.text);
-  assert.match(early.text, /Door in your guest app \(https:\/\/app\.example\/guest\/tok12345\) from 30 minutes before check-in/);
+  assert.match(early.text, /Door in your guest app \(https:\/\/app\.example\/guest\/tok12345\) from 24 hours before check-in/);
   assert.match(early.text, /bay P2-21$/, 'a field that is not private is sent at once');
   assert.equal(G.fill(g, ctx(), { now: AT }).text, 'Door 4821, lobby 2101, bay P2-21');
   assert.equal(G.fill(g, ctx(), { now: '2026-11-03T09:00' }).text, 'Door 4821, lobby 2101, bay P2-21');
@@ -53,7 +53,7 @@ test('before check-in minus 30 minutes the door code and private fields are held
 
 test('the held wording leaves the link out when the greeting already gives it', () => {
   const r = G.fill(greeting('Code {door_code}. App: {guest_app_link}'), ctx(), { now: BEFORE });
-  assert.equal(r.text, 'Code in your guest app from 30 minutes before check-in. App: https://app.example/guest/tok12345');
+  assert.equal(r.text, 'Code in your guest app from 24 hours before check-in. App: https://app.example/guest/tok12345');
 });
 
 test('a typed unit also holds the unit number and the Wi-Fi before the reveal moment', () => {

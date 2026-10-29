@@ -1,7 +1,8 @@
 /* Guest messages: what a message may tell the guest at the moment it is sent.
  *
  * The owner's rule: the door code, and for a unit type the unit number and the unit's own Wi-Fi, reach the guest only
- * from 30 minutes before check-in (the same moment the guest app shows them, see supabase/migrations/0008_guest_units.sql).
+ * from 24 hours before check-in (the same moment the guest app shows them, see supabase/migrations/0020_reveal_24h.sql).
+ * Owner, 2026-10-29: guests get everything a day early, so it is saved before they board the flight.
  * A message template or a quick reply sent earlier must not carry them: the placeholder is replaced by guest-app wording.
  *
  * Shared by the page (inlined by scripts/build.mjs as O.guestmsg, after O.assign) and node tests (tests/guestmsg.test.mjs).
@@ -18,7 +19,7 @@ function ciTimeOf(b, unit, building) {
   return ok(b && b.checkInTime) || ok(unit && unit.checkInTime) || ok(building && building.checkInTime) || '15:00';
 }
 
-/* the moment the door code (and a typed unit's number) may reach the guest: check-in minus 30 minutes */
+/* the moment the door code (and a typed unit's number) may reach the guest: check-in minus 24 hours */
 function revealAt(b, ciTime) {
   if (!b || !b.checkIn) return null;
   return A.unitRevealAt({ checkIn: b.checkIn, checkInTime: ciTime || b.checkInTime }, ciTime);
@@ -30,7 +31,7 @@ function stepSendAt(stepId, b, ciTime) {
   switch (stepId) {
     case 'j1': case 'j2': return b.createdAt ? String(b.createdAt).slice(0, 16) : null;
     case 'j3': return A.addDays(b.checkIn, -3) + 'T09:00';
-    case 'j4': return revealAt(b, ciTime); /* the door code step: exactly check-in minus 30 minutes */
+    case 'j4': return revealAt(b, ciTime); /* the door code step: exactly check-in minus 24 hours */
     case 'j5': return b.checkIn + 'T09:00';
     case 'j6': return A.addDays(b.checkIn, 1) + 'T09:00';
     case 'j7': return b.checkOut ? A.addDays(b.checkOut, -1) + 'T18:00' : null;
@@ -41,7 +42,7 @@ function stepSendAt(stepId, b, ciTime) {
 /* what a held placeholder says instead */
 function heldText(key, link) {
   if (key === 'wifi_password') return 'in your guest app';
-  return 'in ' + (link ? 'your guest app (' + link + ')' : 'your guest app') + ' from 30 minutes before check-in';
+  return 'in ' + (link ? 'your guest app (' + link + ')' : 'your guest app') + ' from 24 hours before check-in';
 }
 
 /* vars: the template values; o = {b, sendAt, ciTime, typed, link}. Returns {vars, held: [keys]}.

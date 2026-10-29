@@ -1,5 +1,6 @@
--- Guest app and unit types (supabase/migrations/0008_guest_units.sql): the unit number and the door code show from
--- 30 minutes before check-in, the guest sees the building + type name, never the unit's own name.
+-- Guest app and unit types (supabase/migrations/0008_guest_units.sql, timing from 0020_reveal_24h.sql): the unit number,
+-- the Wi-Fi and the door code show from 24 hours before check-in, the guest sees the building + type name, never the
+-- unit's own name.
 -- Runs in one transaction and rolls back, so it leaves nothing behind. Any failed check raises an error.
 --
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/sql/guest_units.sql
@@ -21,7 +22,7 @@ insert into public.records (org_id, coll, id, data) values
   ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-t', '{"id":"B-t","propertyId":"P-t","unitTypeId":"UT-t","checkIn":"2026-11-02","checkOut":"2026-11-04","status":"confirmed","guestToken":"gUnitTest0001","doorCode":"4821","codeStatus":"scheduled","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"Test Guest"},"guest":{"name":"Test Guest"},"guests":2,"nights":2}'),
   -- typed booking with no unit yet
   ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-n', '{"id":"B-n","propertyId":null,"unitTypeId":"UT-t","needsUnit":true,"checkIn":"2026-11-02","checkOut":"2026-11-03","checkInTime":"15:00","status":"confirmed","guestToken":"gUnitTest0002","doorCode":"7710","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"N"},"guest":{"name":"N"}}'),
-  -- untyped unit: same payload as before, door code from 30 minutes before its 16:00 check-in
+  -- untyped unit: same payload as before, door code from 24 hours before its 16:00 check-in
   -- no check-in time on these bookings: the unit's 16:00 (B-v) and the building's 17:00 (B-l) decide, in guest_get and guest_act alike
   ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-v', '{"id":"B-v","propertyId":"P-v","checkIn":"2026-11-02","checkOut":"2026-11-04","status":"confirmed","guestToken":"gUnitTest0004","doorCode":"6060","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"V"},"guest":{"name":"V"}}'),
   ('00000000-0000-4000-8000-0000000000a8', 'bookings', 'B-l', '{"id":"B-l","propertyId":"P-l","unitTypeId":"UT-l","checkIn":"2026-11-02","checkOut":"2026-11-03","status":"confirmed","guestToken":"gUnitTest0005","doorCode":"7070","idVerified":true,"rulesAccepted":{"at":"2026-11-01T09:00","name":"L"},"guest":{"name":"L"}}'),
@@ -32,33 +33,39 @@ create temporary table t_guest_units_ok (n int);
 do $$
 declare j jsonb; pr jsonb;
 begin
-  -- the day before: upcoming, type name only
-  perform set_config('orbique.guest_now', '2026-11-01T20:00', true);
+  -- two days before: upcoming, type name only
+  perform set_config('orbique.guest_now', '2026-10-31T20:00', true);
   j := public.guest_get('gUnitTest0001'); pr := j->'property';
-  if j->>'ok' <> 'true' or j->>'state' <> 'upcoming' then raise exception 'B-t day before: %', j; end if;
+  if j->>'ok' <> 'true' or j->>'state' <> 'upcoming' then raise exception 'B-t two days before: %', j; end if;
   if pr->>'name' <> 'Seri Saujana Residences · Deluxe' then raise exception 'typed name is %', pr->>'name'; end if;
   if pr->>'address' <> '2 Jalan Saujana Indah, 57000 Kuala Lumpur' then raise exception 'typed address is %', pr->>'address'; end if;
-  if pr->>'unitType' <> 'Deluxe' or pr->'unitNo' <> 'null'::jsonb or pr->>'unitAt' <> '2026-11-02T14:30' then raise exception 'unit fields: %', pr; end if;
-  if j::text like '%21-1%' then raise exception 'the unit number leaked the day before: %', j; end if;
+  if pr->>'unitType' <> 'Deluxe' or pr->'unitNo' <> 'null'::jsonb or pr->>'unitAt' <> '2026-11-01T15:00' then raise exception 'unit fields: %', pr; end if;
+  if j::text like '%21-1%' then raise exception 'the unit number leaked two days before: %', j; end if;
 
-  -- T-31 minutes (14:29 for a 15:00 check-in): no unit number, no door code, no Wi-Fi
+  -- one minute before 24 hours (14:59 the day before a 15:00 check-in): no unit number, no door code, no Wi-Fi
+  perform set_config('orbique.guest_now', '2026-11-01T14:59', true);
+  j := public.guest_get('gUnitTest0001'); pr := j->'property';
+  if j->>'state' <> 'upcoming' then raise exception 'B-t state at T-24h-1m: %', j->>'state'; end if;
+  if pr->'unitNo' <> 'null'::jsonb then raise exception 'unitNo at T-24h-1m is %', pr->'unitNo'; end if;
+  if pr->'wifi' <> 'null'::jsonb then raise exception 'wifi at T-24h-1m is %', pr->'wifi'; end if;
+  if (j->'door'->>'visible')::boolean or j->'door'->'code' <> 'null'::jsonb then raise exception 'door code at T-24h-1m: %', j->'door'; end if;
+  if j->'door'->>'from' <> '2026-11-01T15:00' then raise exception 'door from is %', j->'door'->>'from'; end if;
+  if not (j->'door'->'waitingFor' ? 'time') then raise exception 'door not waiting for time at T-24h-1m: %', j->'door'; end if;
+  if j::text like '%21-1%' then raise exception 'the unit number leaked at T-24h-1m: %', j; end if;
+
+  -- exactly 24 hours before, still the day before arrival: the unit number, the door code and the Wi-Fi appear together
+  perform set_config('orbique.guest_now', '2026-11-01T15:00', true);
+  j := public.guest_get('gUnitTest0001'); pr := j->'property';
+  if j->>'state' <> 'upcoming' then raise exception 'B-t state at T-24h: %', j->>'state'; end if;
+  if pr->>'unitNo' is distinct from '21-1' then raise exception 'unitNo at T-24h is %', pr->'unitNo'; end if;
+  if pr->'wifi'->>'name' is distinct from 'Saujana21-1' then raise exception 'wifi at T-24h is %', pr->'wifi'; end if;
+  if not (j->'door'->>'visible')::boolean or j->'door'->>'code' <> '4821' then raise exception 'door code at T-24h: %', j->'door'; end if;
+  if j::text like '%Saujana 21-1%' then raise exception 'the unit''s own name leaked: %', j; end if;
+
+  -- on the arrival day (the old 30-minute moment is long past): still shown
   perform set_config('orbique.guest_now', '2026-11-02T14:29', true);
   j := public.guest_get('gUnitTest0001'); pr := j->'property';
-  if j->>'state' <> 'arrival' then raise exception 'B-t state at T-31: %', j->>'state'; end if;
-  if pr->'unitNo' <> 'null'::jsonb then raise exception 'unitNo at T-31 min is %', pr->'unitNo'; end if;
-  if pr->'wifi' <> 'null'::jsonb then raise exception 'wifi at T-31 min is %', pr->'wifi'; end if;
-  if (j->'door'->>'visible')::boolean or j->'door'->'code' <> 'null'::jsonb then raise exception 'door code at T-31 min: %', j->'door'; end if;
-  if j->'door'->>'from' <> '2026-11-02T14:30' then raise exception 'door from is %', j->'door'->>'from'; end if;
-  if not (j->'door'->'waitingFor' ? 'time') then raise exception 'door not waiting for time at T-31: %', j->'door'; end if;
-  if j::text like '%21-1%' then raise exception 'the unit number leaked at T-31 min: %', j; end if;
-
-  -- T-30 minutes: the unit number, the door code and the Wi-Fi appear together
-  perform set_config('orbique.guest_now', '2026-11-02T14:30', true);
-  j := public.guest_get('gUnitTest0001'); pr := j->'property';
-  if pr->>'unitNo' is distinct from '21-1' then raise exception 'unitNo at T-30 min is %', pr->'unitNo'; end if;
-  if pr->'wifi'->>'name' is distinct from 'Saujana21-1' then raise exception 'wifi at T-30 min is %', pr->'wifi'; end if;
-  if not (j->'door'->>'visible')::boolean or j->'door'->>'code' <> '4821' then raise exception 'door code at T-30 min: %', j->'door'; end if;
-  if j::text like '%Saujana 21-1%' then raise exception 'the unit''s own name leaked: %', j; end if;
+  if j->>'state' <> 'arrival' or pr->>'unitNo' is distinct from '21-1' or j->'door'->>'code' is distinct from '4821' then raise exception 'B-t on arrival day: %', j; end if;
 
   -- after check-out the stay is past: no unit number
   perform set_config('orbique.guest_now', '2026-11-04T12:00', true);
@@ -66,49 +73,53 @@ begin
   if j->>'state' <> 'past' or j->'property'->'unitNo' <> 'null'::jsonb then raise exception 'B-t after check-out: %', j->'property'; end if;
 
   -- a typed booking without a unit: type name, no unit number even after the reveal time
-  perform set_config('orbique.guest_now', '2026-11-02T14:45', true);
+  perform set_config('orbique.guest_now', '2026-11-01T15:15', true);
   j := public.guest_get('gUnitTest0002'); pr := j->'property';
   if pr->>'name' <> 'Seri Saujana Residences · Deluxe' or pr->'unitNo' <> 'null'::jsonb or pr->>'unitType' <> 'Deluxe' then raise exception 'B-n: %', pr; end if;
 
-  -- untyped unit: no unit fields, own name, door code from 15:30 for a 16:00 check-in
-  perform set_config('orbique.guest_now', '2026-11-02T15:29', true);
+  -- untyped unit: no unit fields, own name, door code and Wi-Fi from 16:00 the day before for a 16:00 check-in
+  perform set_config('orbique.guest_now', '2026-11-01T15:59', true);
   j := public.guest_get('gUnitTest0003'); pr := j->'property';
   if pr->>'name' <> 'Bayfront Loft 3B' or pr->>'address' <> '3B Bayfront' or pr ? 'unitNo' or pr ? 'unitType' then raise exception 'B-u property: %', pr; end if;
+  if pr->'wifi' <> 'null'::jsonb then raise exception 'B-u wifi before 24 hours: %', pr->'wifi'; end if;
+  if j->'door'->'code' <> 'null'::jsonb or j->'door'->>'from' <> '2026-11-01T16:00' then raise exception 'B-u door at 15:59 the day before: %', j->'door'; end if;
+  perform set_config('orbique.guest_now', '2026-11-01T16:00', true);
+  j := public.guest_get('gUnitTest0003'); pr := j->'property';
+  if j->'door'->>'code' is distinct from '5150' then raise exception 'B-u door at 16:00 the day before: %', j->'door'; end if;
+  if pr->'wifi'->>'name' is distinct from 'Bayfront3B' then raise exception 'B-u wifi at 24 hours: %', pr->'wifi'; end if;
+  perform set_config('orbique.guest_now', '2026-11-02T09:00', true);
+  j := public.guest_get('gUnitTest0003'); pr := j->'property';
   if pr->'wifi'->>'name' is distinct from 'Bayfront3B' then raise exception 'B-u wifi on arrival day: %', pr->'wifi'; end if;
-  if j->'door'->'code' <> 'null'::jsonb or j->'door'->>'from' <> '2026-11-02T15:30' then raise exception 'B-u door at 15:29: %', j->'door'; end if;
-  perform set_config('orbique.guest_now', '2026-11-02T15:30', true);
-  j := public.guest_get('gUnitTest0003');
-  if j->'door'->>'code' is distinct from '5150' then raise exception 'B-u door at 15:30: %', j->'door'; end if;
 
   -- guest_act uses the same rule: code help only once the code shows
-  perform set_config('orbique.guest_now', '2026-11-02T15:29', true);
+  perform set_config('orbique.guest_now', '2026-11-01T15:59', true);
   j := public.guest_act('gUnitTest0003', 'codehelp', '{}'::jsonb);
   if j->>'error' is distinct from 'not_now' then raise exception 'codehelp before the code shows: %', j; end if;
 
-  perform set_config('orbique.guest_now', '2026-11-02T15:30', true);
+  perform set_config('orbique.guest_now', '2026-11-01T16:00', true);
   j := public.guest_act('gUnitTest0003', 'codehelp', '{}'::jsonb);
   if j->>'ok' is distinct from 'true' then raise exception 'codehelp once the code shows: %', j; end if;
 
   -- guest_act resolves the check-in time like guest_get: booking, then unit, then building, then 15:00
-  perform set_config('orbique.guest_now', '2026-11-02T15:29', true);
+  perform set_config('orbique.guest_now', '2026-11-01T15:59', true);
   j := public.guest_get('gUnitTest0004');
-  if j->'door'->>'from' <> '2026-11-02T15:30' or j->'door'->'code' <> 'null'::jsonb then raise exception 'B-v guest_get at 15:29: %', j->'door'; end if;
+  if j->'door'->>'from' <> '2026-11-01T16:00' or j->'door'->'code' <> 'null'::jsonb then raise exception 'B-v guest_get at 15:59 the day before: %', j->'door'; end if;
   j := public.guest_act('gUnitTest0004', 'codehelp', '{}'::jsonb);
-  if j->>'error' is distinct from 'not_now' then raise exception 'B-v codehelp at 15:29 (unit 16:00): %', j; end if;
-  perform set_config('orbique.guest_now', '2026-11-02T15:30', true);
+  if j->>'error' is distinct from 'not_now' then raise exception 'B-v codehelp at 15:59 the day before (unit 16:00): %', j; end if;
+  perform set_config('orbique.guest_now', '2026-11-01T16:00', true);
   j := public.guest_act('gUnitTest0004', 'codehelp', '{}'::jsonb);
-  if j->>'ok' is distinct from 'true' then raise exception 'B-v codehelp at 15:30: %', j; end if;
+  if j->>'ok' is distinct from 'true' then raise exception 'B-v codehelp at 16:00 the day before: %', j; end if;
 
-  perform set_config('orbique.guest_now', '2026-11-02T16:29', true);
+  perform set_config('orbique.guest_now', '2026-11-01T16:59', true);
   j := public.guest_get('gUnitTest0005');
-  if j->'door'->>'from' <> '2026-11-02T16:30' or j->'door'->'code' <> 'null'::jsonb then raise exception 'B-l guest_get at 16:29: %', j->'door'; end if;
+  if j->'door'->>'from' <> '2026-11-01T17:00' or j->'door'->'code' <> 'null'::jsonb then raise exception 'B-l guest_get at 16:59 the day before: %', j->'door'; end if;
   j := public.guest_act('gUnitTest0005', 'codehelp', '{}'::jsonb);
-  if j->>'error' is distinct from 'not_now' then raise exception 'B-l codehelp at 16:29 (building 17:00): %', j; end if;
-  perform set_config('orbique.guest_now', '2026-11-02T16:30', true);
+  if j->>'error' is distinct from 'not_now' then raise exception 'B-l codehelp at 16:59 the day before (building 17:00): %', j; end if;
+  perform set_config('orbique.guest_now', '2026-11-01T17:00', true);
   j := public.guest_get('gUnitTest0005');
-  if j->'door'->>'code' is distinct from '7070' then raise exception 'B-l guest_get at 16:30: %', j->'door'; end if;
+  if j->'door'->>'code' is distinct from '7070' then raise exception 'B-l guest_get at 17:00 the day before: %', j->'door'; end if;
   j := public.guest_act('gUnitTest0005', 'codehelp', '{}'::jsonb);
-  if j->>'ok' is distinct from 'true' then raise exception 'B-l codehelp at 16:30: %', j; end if;
+  if j->>'ok' is distinct from 'true' then raise exception 'B-l codehelp at 17:00 the day before: %', j; end if;
 
   insert into t_guest_units_ok values (1);
   raise notice 'guest_units: all checks passed';

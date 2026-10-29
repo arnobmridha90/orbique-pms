@@ -1,5 +1,5 @@
 /* api/messages.js 'greeting' and 'greeting-preview': who may send the building's greeting, and that the server fills it
- * from the records with its own clock (the door code only from 30 minutes before check-in).
+ * from the records with its own clock (the door code only from 24 hours before check-in).
  *
  *   node --test tests/inbox/greeting.test.mjs
  */
@@ -47,7 +47,7 @@ function db(role, blobs = {}, rec = REC, convMessages = null) {
 const body = { orgId: ORG, conversationId: 'C-1', greetingId: 'GR1', via: 'whatsapp' };
 const me = { id: 'user-1' };
 const AFTER = Date.parse('2026-11-02T06:31:00Z'); // 14:31 in Malaysia, check-in 15:00
-const BEFORE = Date.parse('2026-11-02T06:29:00Z');
+const BEFORE = Date.parse('2026-11-01T06:59:00Z'); // 14:59 the day before in Malaysia, one minute before 24 hours
 
 test('greeting: inbox view is enough, without inbox.send (maintenance can open the inbox but not reply)', async () => {
   const { sb, rpcs } = db('maintenance');
@@ -76,7 +76,7 @@ test('greeting: no inbox access is refused before anything is sent', async () =>
   }
 });
 
-test('greeting: the server clock holds the door code and private fields until 30 minutes before check-in', async () => {
+test('greeting: the server clock holds the door code and private fields until 24 hours before check-in', async () => {
   const { sb } = db('owner');
   let sent;
   const fetch = async (url, init) => { sent = JSON.parse(init.body); return new Response(JSON.stringify({ messages: [{ id: 'wamid.I' }] })); };

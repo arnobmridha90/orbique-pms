@@ -588,7 +588,7 @@
   function repliesFor(pid) { return D.quickReplies.filter(function (q) { return !q.propertyIds || !q.propertyIds.length || q.propertyIds.indexOf(pid) >= 0; }).sort(function (a, b) { return (b.propertyIds.length ? 1 : 0) - (a.propertyIds.length ? 1 : 0); }); }
   function fill(text, b) {
     if (!b) return text;
-    /* sent now: the door code (and for a unit type the unit number and Wi-Fi) only from 30 minutes before check-in (O.guestmsg) */
+    /* sent now: the door code (and for a unit type the unit number and Wi-Fi) only from 24 hours before check-in (O.guestmsg); the door code also waits for the ID check */
     var p = prop(b.propertyId), held = !b.idVerified || b.codeStatus === 'held', gp = O.guestPlace(b), t = O.unitType(b.unitTypeId) || O.typeOf(D.propById[b.propertyId]);
     var ci = O.guestmsg.ciTimeOf(b, D.propById[b.propertyId], t && O.building(t.buildingId)), link = O.guestLink && b.guestToken ? O.guestLink(b) : ''; /* never creates a token while previewing */
     var wifi = p.wifi || ['', ''];
