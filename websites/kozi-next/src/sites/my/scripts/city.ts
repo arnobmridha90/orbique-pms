@@ -13,6 +13,8 @@ type Any = any;
 declare global { interface Window { THREE: Any; KLC: Any } }
 
 const BASE = '/city/v3/';
+// /city/ is cached for a year (immutable): bump REV whenever a module changes so returning visitors fetch the new one
+const REV = '20261029';
 const SCRIPTS = ['three-r128.min.js', 'klc-data.js', 'ground.js', 'city.js', 'landmarks.js', 'sky.js', 'post.js'];
 
 export type Rig = { px: number; py: number; pz: number; tx: number; ty: number; tz: number; orbit: number };
@@ -100,7 +102,7 @@ function rng(seed: number) {
 }
 const script = (src: string) => new Promise<void>((ok_, no) => {
   const s = document.createElement('script');
-  s.src = BASE + src; s.async = false; s.onload = () => ok_(); s.onerror = () => no(new Error('could not load ' + src));
+  s.src = BASE + src + '?v=' + REV; s.async = false; s.onload = () => ok_(); s.onerror = () => no(new Error('could not load ' + src));
   document.head.append(s);
 });
 const frame = () => new Promise((r) => setTimeout(r, 0));
