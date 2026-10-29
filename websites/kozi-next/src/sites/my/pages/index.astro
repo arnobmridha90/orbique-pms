@@ -8,7 +8,7 @@ import AnimLogo from '@my/components/AnimLogo.astro';
 import SuiteCard from '@my/components/SuiteCard.astro';
 import Photo from '@shared/components/Photo.astro';
 import Viewer from '@shared/components/Viewer.astro';
-import { AMENITIES, BRAND, BUILDING_EXTRAS, POLICIES } from '@shared/data/kozi';
+import { AMENITIES, BRAND, BUILDING_EXTRAS, COM_LIVE, POLICIES } from '@shared/data/kozi';
 import { buildingPath, getContent, inKL, type Photo as P, type Suite } from '@shared/lib/content';
 import { lodgingLd, orgLd } from '@shared/lib/seo';
 import { numberWord } from '@shared/lib/words';
@@ -70,7 +70,7 @@ const web = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi 
 const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
 ---
 <Shell site={site} title={title} description={description} intro cam="hero" pins="on" touch jsonld={[orgLd, web, ...lodgings]}
-  alternates={[{ lang: 'x-default', href: `${BRAND.com}/` }, { lang: 'en', href: `${BRAND.com}/` }, { lang: 'en-MY', href: `${BRAND.my}/` }]}>
+  alternates={COM_LIVE ? [{ lang: 'x-default', href: `${BRAND.com}/` }, { lang: 'en', href: `${BRAND.com}/` }, { lang: 'en-MY', href: `${BRAND.my}/` }] : []}>
   <div class="home" data-home>
     <section class="in hero" data-cam="hero" data-pin-avoid aria-labelledby="h-title">
       <p class="eyebrow">{home ? `${home.name} · ${home.city}` : 'Kuala Lumpur'}</p>

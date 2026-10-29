@@ -1,6 +1,6 @@
 // Structured data shared by many pages. Brand facts come from data/kozi.ts and the buildings and suites from the
 // content (lib/content.ts), so every page says the same thing.
-import { BRAND, BUILDING_EXTRAS, PROPERTY } from '@shared/data/kozi';
+import { BRAND, BRAND_HOME, BUILDING_EXTRAS, PROPERTY } from '@shared/data/kozi';
 import { buildingPath, suitePath, type Building, type Suite } from './content';
 
 export type Crumb = { name: string; path?: string };
@@ -17,8 +17,8 @@ export function crumbsLd(site: string, items: Crumb[]) {
 }
 
 export const orgLd = {
-  '@context': 'https://schema.org', '@type': 'Organization', '@id': `${BRAND.com}/#org`, name: 'Kozi', url: `${BRAND.com}/`,
-  logo: `${BRAND.com}/apple-touch-icon.png`, email: BRAND.email, slogan: BRAND.tagline,
+  '@context': 'https://schema.org', '@type': 'Organization', '@id': `${BRAND_HOME}/#org`, name: 'Kozi', url: `${BRAND_HOME}/`,
+  logo: `${BRAND_HOME}/apple-touch-icon.png`, email: BRAND.email, slogan: BRAND.tagline,
   parentOrganization: { '@type': 'Organization', name: BRAND.company }, sameAs: [BRAND.instagram, BRAND.facebook],
 };
 
@@ -45,10 +45,10 @@ export function lodgingLd(b: Building, suites: Suite[]) {
       ? { '@type': 'PostalAddress', streetAddress: 'Vortex Suites KLCC, 56 Jalan Sultan Ismail', addressLocality: 'Kuala Lumpur', postalCode: '50250', addressCountry: 'MY' }
       : { '@type': 'PostalAddress', streetAddress: `${b.building}, ${b.address}`, addressLocality: b.city, addressCountry: 'MY' },
     ...(vortex ? { geo: { '@type': 'GeoCoordinates', latitude: PROPERTY.geo.lat, longitude: PROPERTY.geo.lon } } : {}),
-    checkinTime: time24(b.checkIn), checkoutTime: time24(b.checkOut), knowsLanguage: ['en'],
+    checkinTime: time24(b.checkIn), checkoutTime: time24(b.checkOut), knowsLanguage: ['en', 'ms', 'id'],
     amenityFeature: ['Kitchen', 'Washing machine', 'Wi-Fi', 'Air conditioning'].map((name) => ({ '@type': 'LocationFeatureSpecification', name, value: true })),
     containsPlace: suites.map((s) => ({ '@id': suiteId(b, s) })),
-    parentOrganization: { '@id': `${BRAND.com}/#org` },
+    parentOrganization: { '@id': orgLd['@id'] },
     sameAs: [BRAND.instagram, BRAND.facebook],
   };
 }

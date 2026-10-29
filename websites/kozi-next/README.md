@@ -83,7 +83,11 @@ Set these in Vercel, never in the repo.
   after Publish. Use the same value in Orbique.
 - `PUBLIC_PHOTO_BASE` (optional): where uploaded photos live. It defaults to the `site-photos` bucket.
 - `PUBLIC_MY_URL`, `PUBLIC_COM_URL`: the two sites' addresses, for the links between them. They default to the
-  www addresses; preview builds point them at the preview sites.
+  www addresses; preview builds point them at the preview sites. While `PUBLIC_COM_URL` is a `*.vercel.app` preview,
+  staykozi.my leaves staykozi.com out: no "Kozi worldwide" link, no hreflang, and Kozi's structured data names
+  staykozi.my. When staykozi.com goes live, set `PUBLIC_COM_URL=https://www.staykozi.com` on staykozi-my-next.
+- Vercel Web Analytics: the live site loads `/_vercel/insights/script.js`; switch Analytics on in the
+  staykozi-my-next project for it to count.
 - `PUBLIC_NOINDEX=1`: keeps search engines out, for previews. Remove it at launch.
 
 ## Booking

@@ -2,7 +2,7 @@
 // The footer: the logo (it builds itself as it comes into view), the ways around the site, contact by email, and the
 // credits the photos and the 3D city's map data ask for.
 import AnimLogo from './AnimLogo.astro';
-import { BRAND, CC_BY_SA, CREDITS, GUIDES, MAP_CREDIT } from '@shared/data/kozi';
+import { BRAND, CC_BY_SA, COM_LIVE, CREDITS, GUIDES, MAP_CREDIT } from '@shared/data/kozi';
 import type { Links } from '@my/lib/nav';
 interface Props { links: Links }
 const { links } = Astro.props;
@@ -35,7 +35,7 @@ const photos = Object.values(CREDITS).map((c) => `${c.title} by ${c.by}`).join('
           <a href="/contact/">Contact</a>
           <a href={BRAND.instagram} rel="noopener">Instagram</a>
           <a href={BRAND.facebook} rel="noopener">Facebook</a>
-          <a href={`${BRAND.com}/`}>Kozi worldwide</a>
+          {COM_LIVE && <a href={`${BRAND.com}/`}>Kozi worldwide</a>}
           <a href="/credits/">Credits</a>
         </nav>
       </div>
