@@ -5,7 +5,6 @@ dist-local/
 .env
 .env.*
 *.png
-!websites/orbique/**/*.png
 !public/**/*.png
 __pycache__/
 !android/**/*.png
@@ -18,3 +17,4 @@ mobile/www/
 *.mobileprovision
 !websites/kozi/**/*.png
 !websites/kozi-next/**/*.png
+!websites/orbique/**/*.png
