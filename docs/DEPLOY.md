@@ -85,6 +85,10 @@ New environment variables only reach a new deployment.
 If the build fails at a `migrate:` line, the website keeps running the previous version. Send the build log to your
 developer.
 
+For developers: `0020_reveal_24h.sql` replaces guest app functions from `0003_guest.sql` and `0008_guest_units.sql`.
+If you ever run `node scripts/migrate.mjs --reapply` on 0003 or 0008, re-apply 0020 straight after, or the door code
+rule goes back to 30 minutes before check-in.
+
 To check that everything is connected, open `https://<your-site>.vercel.app/api/health`. You should see
 `"db":true` and, before step 6, `"needsBootstrap":true`.
 

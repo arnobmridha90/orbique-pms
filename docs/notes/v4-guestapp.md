@@ -54,7 +54,7 @@ highlights and scrolls to that booking; `preview: true` with `bookingId` opens i
 - **House info**: welcome, house rules, getting in, house guide, check-out; edit inline, move, delete, add; steps and
   topics can be limited to one unit.
 - **Local tips**: things to do per city, "don't" list, videos.
-- **Settings**: door code timing (0, 1, 2, 3 or 6 hours before check-in), require online check-in, require ID (both
+- **Settings**: door code timing: 24 hours before check-in, with the unit number (`codeLeadHours` kept but unused), require online check-in, require ID (both
   need `guestapp.doorCodes`), require a typed signature, review prompt, contact (phone, WhatsApp, hours; the workspace
   phone is the fallback), services on / off.
 - **Bell** (`O.notifiers`): door code not working, new guest requests, ID photos to check (with `guestapp.edit` or
@@ -74,15 +74,16 @@ highlights and scrolls to that booking; `preview: true` with `bookingId` opens i
 - **Unit types (0008_guest_units.sql)**: for a booking of a typed unit (`unitTypeId` on the booking or the unit) the payload's
   `property.name` is the building name + type name ("Seri Saujana Residences · Deluxe"), `property.address` is the
   building's address, and three fields are added: `unitType` (type name), `unitNo` (the unit number, `null` until
-  `unitAt` and outside arrival/in-house/check-out days) and `unitAt` (check-in time minus 30 minutes). The Wi-Fi of a typed
-  unit follows the unit number (its name may carry the number). The check-in time falls back from the booking to the unit,
+  `unitAt` and after the stay ends) and `unitAt` (check-in time minus 24 hours, `0020_reveal_24h.sql`; it was 30 minutes
+  until 2026-10-29). The Wi-Fi follows the unit number (its name may carry the number), also for untyped units, so it shows
+  from the day before arrival. The check-in time falls back from the booking to the unit,
   then the building, then 15:00. Untyped units give exactly the payload they gave before (no new fields).
 
 ## Decisions and why
 
 - **One rule for the door code**, written once in JS (`stayInfo`) and once in SQL (`guest__stay`, re-created in
-  `0008_guest_units.sql`): the code shows from 30 minutes before the check-in time (the same moment as the unit number,
-  owner decision 2026-10-15; `codeLeadHours` is kept in the settings and the payload but no longer used) until check-out time, only when
+  `0008_guest_units.sql`, timing in `0020_reveal_24h.sql`): the code shows from 24 hours before the check-in time (the same
+  moment as the unit number, owner decisions 2026-10-15 and 2026-10-29: "We will send 24 hours before checkin"; `codeLeadHours` is kept in the settings and the payload but no longer used) until check-out time, only when
   the booking is not pending or cancelled, the guest checked in online (if required), the ID is verified (if required),
   and a code is set and not cancelled / expired. The guest is told exactly what is missing.
 - **The guest API returns a purpose-built payload**, never raw records: no phone, email, amounts, notes, other bookings,
@@ -184,7 +185,7 @@ Errors: `{ok: false, error: 'not_found'}` (bad token, no booking, more than one 
                      unitType, unitNo | null, unitAt },          // typed units only (0008): unitNo from unitAt on arrival / inhouse / checkout
   checkin: { done, at, names: [], arrivalTime, signedName, idSubmitted, idVerified },
   door: { visible, code: string | null,   // code only when visible
-          from, until,                    // from = check-in time minus 30 minutes (with the unit number); until = check-out
+          from, until,                    // from = check-in time minus 24 hours (with the unit number); until = check-out
           waitingFor: [],                 // 'confirmation' | 'checkin' | 'id' | 'time' | 'host' | 'ended'
           helpOpen },                     // an open code-help request exists
   app: { requireCheckin, requireId, requireName, codeLeadHours (0-12, no longer used), reviewPrompt, welcome,

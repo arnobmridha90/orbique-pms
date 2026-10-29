@@ -12,6 +12,22 @@
  *                                                              Messaging & Reviews app) for every connected building, then
  *                                                              fetch the reviews and recent conversations already there
  *   review-reply        {reviewId, text}        reviews.reply  the public reply to a booking-site review
+ *   greeting    {conversationId, greetingId, via}
+ *                                               inbox viewer   send the building's greeting message, filled here for the
+ *                                                              chat's booking (api/_lib/shared/greeting.cjs) at the server's
+ *                                                              clock, exactly as written -> {conversation}. Owner and every
+ *                                                              employee who can open the inbox may send it, even without
+ *                                                              inbox.send (who has inbox.send may edit it and use `send`).
+ *                                                              It always goes in full: door code, private fields, unit
+ *                                                              number and Wi-Fi, with no time or ID-check hold.
+ *                                                              Only a greeting last saved by someone who may write greetings
+ *                                                              (inbox.greetings) is sent. Without inbox.send the same greeting
+ *                                                              goes to a chat at most once in GREETING_REPEAT_MS.
+ *   greeting-preview {conversationId, greetingId}
+ *                                               inbox viewer   the text as it would go now ->
+ *                                                              {id, name, text, parts, checkInAt, early, missing, masked};
+ *                                                              door codes and private fields are "[door code hidden]" for a
+ *                                                              caller without guestapp.doorCodes (the send uses the real ones)
  *
  * `send` also takes via 'email': the reply goes from the workspace's Orbique address (config.email.address), so the
  * guest's answer comes back into the same conversation.
@@ -19,7 +35,7 @@
  * Sign-in: "Authorization: Bearer <Supabase access token>"; the caller must be an active member of an active workspace.
  * Demo workspaces never send anything. Tokens and keys never leave the server; nothing here returns them.
  */
-import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, conflict, id as idField, uuid as uuidField } from './_lib/http.js';
+import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, conflict, tooMany, id as idField, uuid as uuidField } from './_lib/http.js';
 import { requireAdminClient, caller, getOrg, membership } from './_lib/supabase.js';
 import { channexConfig } from './_lib/channex.js';
 import { must, record, blob, tracked } from './_lib/channex-db.js';
@@ -27,13 +43,15 @@ import { waConfig, withToken, fetchMedia, phoneNumberInfo, WhatsAppError } from 
 import { connectWithSignup } from './_lib/whatsapp-connect.js';
 import { appUrl } from './_lib/alerts.js';
 import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from './_lib/translate.js';
-import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex } from './_lib/inbox.js';
+import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
 import { pullReviews, replyReview } from './_lib/reviews.js';
+import GREETING from './_lib/shared/greeting.cjs';
 
 export const SITES_BUDGET_MS = 15000; // Vercel stops api functions at 20 s (vercel.json)
 export const BACKFILL_THREADS = 15;
+export const GREETING_REPEAT_MS = 10 * 60000; // without inbox.send: the same greeting to the same chat at most once in 10 minutes
 export const MEDIA_MAX = 3 * 1024 * 1024; // base64 grows it by a third; Vercel answers at most 4.5 MB
 
 // Booking-site chat and reviews through Channex's Messaging & Reviews app (switched on 2026-10-19). A building without
@@ -110,11 +128,8 @@ function syncView(v) {
   return { contacts: one(v.contacts), history: one(v.history), disconnected: v.disconnected && typeof v.disconnected === 'object' ? { at: v.disconnected.at || null } : null };
 }
 
-async function sendAction(sb, body, me) {
-  const ws = await workspace(sb, body, me, 'inbox.send');
-  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is sent to guests.');
-  const conv = await conversation(sb, ws.org.id, body.conversationId);
-  const booking = conv.bookingId ? await record(sb, ws.org.id, 'bookings', String(conv.bookingId)) : null;
+/** The route a reply goes by: {via, cx, fromAddress} (the same checks for `send` and `greeting`). */
+async function replyRoute(sb, ws, body, me) {
   const via = body.via === 'whatsapp' || body.via === 'channex' || body.via === 'email' ? body.via : null;
   if (!via) throw bad('bad-via', 'Choose how to send it.');
   const cx = channexConfig();
@@ -125,9 +140,74 @@ async function sendAction(sb, body, me) {
     if (!em.key || !em.domain) throw new ApiError(503, 'not-configured', 'Email is not set up on the server yet.');
     fromAddress = await addressFor(sb, em, ws.org, me.id);
   }
+  return { via, cx, fromAddress };
+}
+
+async function sendAction(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'inbox.send');
+  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is sent to guests.');
+  const conv = await conversation(sb, ws.org.id, body.conversationId);
+  const booking = conv.bookingId ? await record(sb, ws.org.id, 'bookings', String(conv.bookingId)) : null;
+  const { via, cx, fromAddress } = await replyRoute(sb, ws, body, me);
   const data = await sendReply(sb, {
     orgId: ws.org.id, conv, booking, via, text: typeof body.text === 'string' ? body.text : '',
     orig: typeof body.orig === 'string' ? body.orig.slice(0, 4096) : null, origLang: body.origLang, lang: body.lang,
+    staffId: ws.member.staff_id || null, userId: me.id, channexConfig: cx, fromAddress, fromName: ws.org.name
+  });
+  return { conversation: { id: conv.id, data } };
+}
+
+/* ---------- greeting messages (api/_lib/shared/greeting.cjs) ---------- */
+
+/**
+ * The greeting filled for a chat's booking, from the records as they are now (never from what the page sent):
+ * -> {conv, booking, greeting, filled: {text, parts, checkInAt, early, missing}}. o = {mask, now (ms)}.
+ */
+export async function greetingFor(sb, orgId, body, o = {}) {
+  const conv = await conversation(sb, orgId, body.conversationId);
+  const booking = conv.bookingId ? await record(sb, orgId, 'bookings', String(conv.bookingId)) : null;
+  if (!booking || !booking.guest) throw bad('no-booking', 'This chat is not linked to a booking, so there is no greeting to fill.');
+  const unit = booking.propertyId ? await record(sb, orgId, 'properties', String(booking.propertyId)) : null;
+  const typeId = booking.unitTypeId || (unit && unit.unitTypeId) || null;
+  const unitType = typeId ? await record(sb, orgId, 'unitTypes', String(typeId)) : null;
+  const buildingId = (unit && unit.buildingId) || (unitType && unitType.buildingId) || null;
+  const building = buildingId ? await record(sb, orgId, 'buildings', String(buildingId)) : null;
+  const row = must(await sb.from('records').select('id, data, updated_by').eq('org_id', orgId).eq('coll', 'greetings').eq('id', idField(body.greetingId, 'Greeting')).eq('deleted', false).maybeSingle(), 'load greeting');
+  const g = row && row.data && typeof row.data === 'object' ? Object.assign({}, row.data, { id: row.id }) : null;
+  if (!g) throw bad('not-found', 'This greeting message is no longer there. Refresh the page.');
+  /* every member can write records rows, and this greeting is sent with inbox view only: send it only when the person
+     who last saved it (updated_by, stamped by the database, never by the page) may still write greetings */
+  const writer = row.updated_by ? await membership(sb, orgId, row.updated_by) : null;
+  if (!writer || !(await canInbox(sb, orgId, writer, 'inbox.greetings'))) throw forbidden('This greeting was not saved by someone who can write greeting messages. Ask the owner to open it under Greeting Messages and save it again.');
+  if (!building || g.buildingId !== building.id) throw bad('wrong-building', 'This greeting is for another building than this guest\'s stay.');
+  if (!String(g.text || '').trim()) throw bad('empty', 'This greeting has no text yet. Write it under Greeting Messages first.');
+  const base = appUrl();
+  const link = base && typeof booking.guestToken === 'string' && /^[A-Za-z0-9_.~-]{8,}$/.test(booking.guestToken) ? base + '/guest/' + booking.guestToken : '';
+  const filled = GREETING.fill(g, { booking, unit, unitType, building, link }, { now: myt(o.now || Date.now()), mask: !!o.mask });
+  return { conv, booking, greeting: g, filled };
+}
+
+export async function greetingPreview(sb, body, me) {
+  const ws = await workspace(sb, body, me);
+  const mask = !(await canInbox(sb, ws.org.id, ws.member, 'guestapp.doorCodes'));
+  const { greeting, filled } = await greetingFor(sb, ws.org.id, body, { mask });
+  return { id: greeting.id, name: greeting.name || '', text: filled.text, parts: filled.parts, checkInAt: filled.checkInAt, early: filled.early, missing: filled.missing, masked: mask };
+}
+
+export async function greetingAction(sb, body, me, opts = {}) {
+  const ws = await workspace(sb, body, me); // inbox view is enough: "Owner and all employees can send this"
+  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is sent to guests.');
+  const { conv, booking, greeting, filled } = await greetingFor(sb, ws.org.id, body, { now: opts.now });
+  if (!(await canInbox(sb, ws.org.id, ws.member, 'inbox.send'))) {
+    /* view-only senders: no flooding a guest with the same greeting */
+    const since = myt((opts.now || Date.now()) - GREETING_REPEAT_MS);
+    const again = (Array.isArray(conv.messages) ? conv.messages : []).some((m) => m && m.greeting === greeting.id && String(m.time || '') >= since);
+    if (again) throw tooMany('This greeting was sent to this guest a few minutes ago. Please wait before sending it again.');
+  }
+  if (!filled.text.trim()) throw bad('empty', 'This greeting has no text yet. Write it under Greeting Messages first.');
+  const { via, cx, fromAddress } = await replyRoute(sb, ws, body, me);
+  const data = await sendReply(sb, {
+    orgId: ws.org.id, conv, booking, via, text: filled.text, greeting: greeting.id, now: opts.now, fetch: opts.fetch, waConfig: opts.waConfig,
     staffId: ws.member.staff_id || null, userId: me.id, channexConfig: cx, fromAddress, fromName: ws.org.name
   });
   return { conversation: { id: conv.id, data } };
@@ -292,7 +372,8 @@ async function reviewReplyAction(sb, body, me) {
 const ACTIONS = {
   config, send: sendAction, translate: translateAction, preview, media,
   'whatsapp-connect': connectNumber, 'whatsapp-signup': signupNumberAction, 'whatsapp-disconnect': disconnectNumber,
-  'sites-on': sitesOn, 'review-reply': reviewReplyAction
+  'sites-on': sitesOn, 'review-reply': reviewReplyAction,
+  greeting: greetingAction, 'greeting-preview': greetingPreview
 };
 
 export default async function handler(req, res) {

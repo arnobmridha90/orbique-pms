@@ -2,11 +2,11 @@
  *
  *   page navigations (/, /guest/<token>) and /config.js  network first; offline -> the cached copy (index.html)
  *   /vendor/* and /icons/*                               cache first, refreshed in the background
- *   /api/*, Supabase and every other site                never touched (always the network, never cached)
+ *   /api/*, /privacy, Supabase and every other site      never touched (always the network, never cached)
  *
  * Bump VERSION when this file's caching rules change; old caches are deleted on activate.
  */
-const VERSION = 'orbique-v4-1';
+const VERSION = 'orbique-v4-2';
 const PRECACHE = ['/index.html', '/config.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/vendor/supabase.js', '/vendor/jspdf.umd.min.js'];
 const NETWORK_TIMEOUT = 6000; // on a slow connection, fall back to the cached app after this long
 
@@ -39,6 +39,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // Supabase, fonts, CDNs: straight to the network
   if (url.pathname.startsWith('/api/')) return;     // the server API is never cached
+  if (url.pathname === '/privacy' || url.pathname === '/privacy.html') return; // the public privacy page is not the app
   if (req.mode === 'navigate') return event.respondWith(page(event));
   if (url.pathname === '/config.js') return event.respondWith(networkFirst(req, '/config.js'));
   if (url.pathname.startsWith('/vendor/') || url.pathname.startsWith('/icons/')) return event.respondWith(cacheFirst(event, req));

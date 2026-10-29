@@ -44,8 +44,8 @@ jobs:
           done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort; echo public/sw.js)
           exit $fail
 
-      - name: Unit tests (unit assignment, guest message timing, booking alerts, website bookings, profit planner, live website content, staff sign-in)
-        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs
+      - name: Unit tests (unit assignment, guest message timing, greeting messages, booking alerts, website bookings, profit planner, live website content, staff sign-in)
+        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/greeting.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs
 
       - name: Config files are valid JSON
         run: |
@@ -58,6 +58,8 @@ jobs:
               const m = await import('./api/' + f + '.js');
               if (typeof m.default !== 'function') throw new Error('api/' + f + '.js has no default export');
             }
+            const G = (await import('./api/_lib/shared/greeting.cjs')).default;
+            if (typeof G.fill !== 'function') throw new Error('api/_lib/shared/greeting.cjs has no fill');
             console.log('api functions load');"
 
       - name: Channex tests (node --test)
@@ -76,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in index.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png vendor/supabase.js vendor/jspdf.umd.min.js; do
+          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png vendor/supabase.js vendor/jspdf.umd.min.js; do
             test -s "dist/$f" || { echo "::error::dist/$f is missing"; exit 1; }
           done
           grep -q 'server/pwa.js' dist/index.html || { echo "::error::app/server/*.js missing from the production page"; exit 1; }

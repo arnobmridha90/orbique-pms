@@ -20,7 +20,7 @@
  */
 'use strict';
 
-var REVEAL_MINUTES = 30;   /* the guest sees the unit number this many minutes before check-in */
+var REVEAL_MINUTES = 24 * 60;   /* the guest sees the unit number this many minutes before check-in: 24 hours (owner, 2026-10-29) */
 var GAP_CAP = 30;          /* a neighbour further away than this (or none) counts as this many days */
 var DEAD = { cancelled: 1, deleted: 1 };
 
@@ -39,7 +39,7 @@ function addMinutes(iso, mins) {
 }
 function naturalCompare(a, b) { return String(a == null ? '' : a).localeCompare(String(b == null ? '' : b), 'en', { numeric: true, sensitivity: 'base' }); }
 
-/* when the guest may see the unit number: check-in time minus 30 minutes (ciTime falls back to 15:00) */
+/* when the guest may see the unit number: check-in time minus 24 hours (ciTime falls back to 15:00) */
 function unitRevealAt(b, ciTime) {
   if (!b || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.checkIn || ''))) return null;
   return addMinutes(b.checkIn + 'T' + (validTime(b.checkInTime) || validTime(ciTime) || '15:00'), -REVEAL_MINUTES);

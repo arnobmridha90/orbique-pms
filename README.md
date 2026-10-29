@@ -25,7 +25,7 @@ simulated for now: the app records what it would send.
 | `app/server/*.js` | Production only: sign-in, workspaces, the Supabase adapter, platform admin, install support (`pwa.js`). |
 | `api/` | The Vercel serverless functions, one per file (11 of the 12 the Hobby plan allows), for example `GET /api/health`, `POST /api/account` and `POST /api/site` (see `docs/API.md`). Files under `api/_lib/` are shared helpers; Vercel does not turn files or folders whose names start with `_` into endpoints. |
 | `supabase/migrations/` | The database schema, applied in name order by `scripts/migrate.mjs`. |
-| `public/` | Web app manifest, icons and the service worker (copied into `dist/`). |
+| `public/` | Web app manifest, icons, the service worker and the public privacy policy (`privacy.html`, served at `/privacy`), copied into `dist/`. |
 | `vercel.json` | Build command, output folder, rewrites (`/guest/<token>` and other paths serve the app) and cache headers. |
 
 In production the browser talks to **Supabase** (Postgres, Auth, Realtime) with the public key; row level security

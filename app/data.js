@@ -201,7 +201,7 @@
     { propertyId: 'hv2', guest: 'Daniel Wei', country: 'SG', channel: 'vrbo', checkIn: '2026-10-06', checkOut: '2026-10-11', createdAt: '2026-08-11T09:02', checkInTime: '15:00', idVerified: true, codeStatus: 'sent', guests: 5 },
     /* same-day bookings: confirmed this morning, arriving today */
     { propertyId: 'bf1a', guest: 'Hafiz Aziz', country: 'MY', channel: 'airbnb', checkIn: '2026-10-06', checkOut: '2026-10-07', createdAt: '2026-10-06T09:02', checkInTime: '12:00', idVerified: false, codeStatus: 'held', sameDay: true },
-    { propertyId: 'kls', guest: 'Emma Laurent', country: 'FR', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-08', createdAt: '2026-10-06T09:47', checkInTime: '15:00', idVerified: true, codeStatus: 'scheduled', sameDay: true },
+    { propertyId: 'kls', guest: 'Emma Laurent', country: 'FR', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-08', createdAt: '2026-10-06T09:47', checkInTime: '15:00', idVerified: true, codeStatus: 'sent', sameDay: true },
     /* in-house guests */
     { propertyId: 'mkr', guest: 'Mohammed Al-Farsi', country: 'OM', channel: 'booking', checkIn: '2026-10-03', checkOut: '2026-10-09', createdAt: '2026-08-02T16:40', idVerified: true, codeStatus: 'sent', guests: 6 },
     { propertyId: 'hsg', guest: 'Olivia Chen', country: 'AU', channel: 'airbnb', checkIn: '2026-10-04', checkOut: '2026-10-08', createdAt: '2026-07-19T07:55', idVerified: true, codeStatus: 'sent', guests: 5 },
@@ -644,6 +644,18 @@
       buildingId: 'BD-saujana', unitTypeId: u[2], unitNo: u[1], createdAt: '2026-07-20T10:10' };
     properties.push(p); propById[p.id] = p;
   });
+  /* a greeting message for Seri Saujana Residences (pages/greetings.js, api/_lib/shared/greeting.cjs): fixed wording, the
+     parts that change per booking ({guest_first}, {unit_no}, {door_code} ...) and two fields of its own with a value per unit */
+  var greetings = [
+    { id: 'GR-saujana-arrival', buildingId: 'BD-saujana', name: 'Arrival', updatedAt: '2026-10-01T10:00', updatedBy: 's1',
+      text: 'Hi {guest_first}, welcome to {building}!\n\nYour stay: {checkin_date} {checkin_time} to {checkout_date} {checkout_time} ({nights} nights).\n' +
+        'Your unit is {unit_no}. The lobby code is {f_lobby_code} and the door code is {door_code}.\nParking: {f_parking_bay}. Wi-Fi: {wifi_name}, password {wifi_password}.\n\n' +
+        'Everything for your stay is in your guest app: {guest_app_link}\nSee you soon!',
+      fields: [
+        { key: 'lobby_code', label: 'Lobby code', private: true, values: { ss211: '2101', ss226: '2206', ss229: '2209', ss461: '4601', ss49b: '4902' } },
+        { key: 'parking_bay', label: 'Parking bay', private: false, values: { ss211: 'P2, bay 21', ss226: 'P2, bay 26', ss229: 'P2, bay 29', ss461: 'P3, bay 46', ss49b: 'P3, bay 49' } }
+      ] }
+  ];
   var typedFrom = bookings.length;
   function typed(b, typeId) { b.unitTypeId = typeId; b.assignment = { how: 'auto', by: null, at: b.createdAt, locked: false }; return b; }
   var sr = rng(5150);
@@ -662,7 +674,7 @@
   }
   /* the story: one Deluxe guest arrives today (unit number shows at 2:30 PM), a Deluxe Supreme family is in-house, and an
      Agoda booking for Deluxe on 11 to 14 Oct has no unit yet: each night one Deluxe unit is free, but never the same one */
-  saujanaBooking({ propertyId: 'ss211', guest: 'Aiko Suzuki', country: 'JP', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-09', createdAt: '2026-09-18T22:14', checkInTime: '15:00', guests: 2, idVerified: true, codeStatus: 'scheduled' });
+  saujanaBooking({ propertyId: 'ss211', guest: 'Aiko Suzuki', country: 'JP', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-09', createdAt: '2026-09-18T22:14', checkInTime: '15:00', guests: 2, idVerified: true, codeStatus: 'sent' });
   saujanaBooking({ propertyId: 'ss461', guest: 'Wang Fang', country: 'CN', channel: 'agoda', checkIn: '2026-10-04', checkOut: '2026-10-08', createdAt: '2026-09-09T08:31', guests: 5, idVerified: true, codeStatus: 'sent' });
   saujanaBooking({ propertyId: 'ss211', guest: 'Nur Aisyah', country: 'MY', channel: 'airbnb', checkIn: '2026-10-10', checkOut: '2026-10-12', createdAt: '2026-09-27T13:02', guests: 3 });
   saujanaBooking({ propertyId: 'ss226', guest: 'Haruto Sato', country: 'JP', channel: 'booking', checkIn: '2026-10-12', checkOut: '2026-10-15', createdAt: '2026-09-30T19:45', guests: 2 });
@@ -782,7 +794,7 @@
     sd: function (iso) { var D = O.data; if (!iso || !D.SHIFT) return iso; return O.d.add(iso.slice(0, 10), D.SHIFT) + iso.slice(10); },
     invCats: invCats, invItems: invItems, invMoves: invMoves, itemById: itemById, checklists: checklists, capexTypes: CAPEX_TYPES,
     channels: channels, channelOrder: channelOrder, staff: staff, properties: properties, propById: propById, buildings: buildings, unitTypes: unitTypes,
-    bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies,
+    bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies, greetings: greetings,
     expenses: expenses, expenseTypes: expenseTypes, payMethods: payMethods, events: events,
     rateFor: rateFor, eventFor: eventFor, compSet: compSet, compPrice: compPrice, countryName: COUNTRY,
     staffById: function (id) { return staff.filter(function (s) { return s.id === id; })[0] || null; },

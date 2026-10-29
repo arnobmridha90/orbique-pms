@@ -1,7 +1,7 @@
 /* Guest App (v4)
    1. Settings and content of the guest app (D.guestApp, config blob), guest requests and damage reports (demo seeds).
    2. stayInfo(): the stage of a stay and the door-code timing rule. supabase/migrations/0003_guest.sql mirrors it exactly
-      (0008_guest_units.sql re-creates guest__stay and guest__payload: unit types, unit number and door code from 30 minutes before check-in).
+      (0008_guest_units.sql re-creates guest__stay and guest__payload: unit types, unit number and door code; 0020_reveal_24h.sql moves both to 24 hours before check-in).
    3. O.guestApi (local): get(token) / act(token, action, args) over D. In production app/server/auth.js replaces it with
       the database functions guest_get / guest_act, which return the same payload. Contract: docs/notes/v4-guestapp.md.
    4. O.guestMode(root, token, opts): the guest's own app (no sign-in), full screen, phone first. Reads only O.guestApi.
@@ -35,7 +35,7 @@
     requireCheckin: true,      /* online check-in must be done before the door code shows */
     requireId: true,           /* and a verified ID */
     requireName: true,         /* guests type their full name to sign the house rules */
-    codeLeadHours: 0,          /* no longer used: the code shows 30 minutes before check-in, with the unit number (owner decision 2026-10-15) */
+    codeLeadHours: 0,          /* no longer used: the code shows 24 hours before check-in, with the unit number (owner decisions 2026-10-15, 2026-10-29) */
     reviewPrompt: true,        /* ask for feedback after check-out */
     welcome: 'Everything for your stay is here: online check-in, your door code, Wi-Fi, the house guide and a direct line to our team.',
     contact: { phone: '', whatsapp: '', hours: '8 AM to 11 PM' },
@@ -244,7 +244,7 @@
   function on(c, k) { return !(c && c[k] === false); } /* settings that default to on */
   var ACTIVE = ['arrival', 'inhouse', 'checkout'];
   /* the guest sees the unit number (typed units) from this many minutes before check-in; the door code shows at the same time */
-  var UNIT_REVEAL_MIN = 30;
+  var UNIT_REVEAL_MIN = 24 * 60; /* owner, 2026-10-29: a day early, so guests have it saved before the flight */
   /* b: booking, c: guest app settings, now: 'YYYY-MM-DDTHH:MM' Malaysia time, ciFallback: the unit's or building's check-in time */
   function stayInfo(b, c, now, ciFallback) {
     var ciT = hhmm(b.checkInTime, hhmm(ciFallback, '15:00')), coT = hhmm(b.checkOutTime, '11:00');
@@ -343,12 +343,13 @@
     return t && t.status === 'done' ? 'fixed' : (r.when === 'arrival' || isObj(r.noted)) ? 'logged' : 'open';
   }
   /* the guest's payload: only what this guest may see */
-  /* typed units (mirrored in 0008_guest_units.sql): guests see the building + type name and the building's address; the unit
-     number (and the Wi-Fi, whose name may carry it) only from s.unitAt (30 minutes before check-in) while the stay is on */
+  /* typed units (mirrored in 0008_guest_units.sql, timing in 0020_reveal_24h.sql): guests see the building + type name and
+     the building's address; the unit number (and the Wi-Fi, whose name may carry it) only from s.unitAt (24 hours before
+     check-in, so on the day before arrival too) until the stay ends. An untyped unit's Wi-Fi shows from the same moment. */
   function guestProperty(b, p, s) {
     var t = (b.unitTypeId && O.unitType(b.unitTypeId)) || O.typeOf(p);
-    var on = ACTIVE.indexOf(s.state) >= 0, shown = on && nowLocal() >= s.unitAt;
-    if (!t) return p ? { name: nz(p.name), area: p.area || '', address: p.address || '', type: p.type || '', beds: p.beds == null ? null : p.beds, parking: p.parking || '', lockBrand: p.lockBrand || '', photo: photoOf(p), wifi: on ? wifiOf(p) : null } : null;
+    var on = ACTIVE.indexOf(s.state) >= 0, shown = (on || s.state === 'upcoming') && nowLocal() >= s.unitAt;
+    if (!t) return p ? { name: nz(p.name), area: p.area || '', address: p.address || '', type: p.type || '', beds: p.beds == null ? null : p.beds, parking: p.parking || '', lockBrand: p.lockBrand || '', photo: photoOf(p), wifi: on || shown ? wifiOf(p) : null } : null;
     var bd = O.building(t.buildingId) || {};
     return {
       name: O.typeTitle(t), area: (p && p.area) || bd.city || '', address: bd.address || '', type: (p && p.type) || '', beds: p && p.beds != null ? p.beds : (t.beds == null ? null : t.beds),
@@ -748,7 +749,7 @@
     }
     function wifiHTML(p, big) {
       var pr = p.property || {}, w = pr.wifi;
-      if (!w) return big ? '<section class="gx-card" id="gx-wifi"><h2>' + ic('wifi') + 'Wi-Fi</h2><p class="gx-p">' + (p.state === 'upcoming' ? 'The Wi-Fi name and password show here on your arrival day.' : 'There are no Wi-Fi details for this stay.') + '</p></section>' : '';
+      if (!w) return big ? '<section class="gx-card" id="gx-wifi"><h2>' + ic('wifi') + 'Wi-Fi</h2><p class="gx-p">' + (p.state === 'upcoming' ? 'The Wi-Fi name and password show here 24 hours before check-in.' : 'There are no Wi-Fi details for this stay.') + '</p></section>' : '';
       var pw = opts.hideWifi ? '••••••••' : (w.password || '');
       return '<section class="gx-card gx-wifi" id="gx-wifi"><span class="gx-ico">' + ic('wifi') + '</span><div class="gx-grow"><div class="gx-k">Wi-Fi</div><div class="gx-v">' + esc(w.name || '') + '</div><div class="gx-k2">Password <b>' + esc(pw) + '</b></div></div>' +
         (w.password && !opts.hideWifi ? '<button type="button" class="btn btn-ghost btn-sm gx-copy" data-gx-act="copywifi" aria-label="Copy the Wi-Fi password">' + ic('copy') + 'Copy</button>' : '') + '</section>';
@@ -1408,12 +1409,12 @@
     var c = cfg(), edC = writable() && canCode(), ed = canEdit(), noCode = 'Your access does not include door codes', noEdit = 'Your access does not include editing the guest app';
     var from = fmt.time(addMinutes('2026-01-01T15:00', -UNIT_REVEAL_MIN).slice(11, 16));
     var cond = [on(c, 'requireCheckin') ? 'they have checked in online' : null, on(c, 'requireId') ? 'their ID is verified' : null].filter(Boolean);
-    var rule = 'A guest checking in at ' + fmt.time('15:00') + ' sees the door code from ' + from + ' on the arrival day' + (cond.length ? ', once ' + cond.join(' and ') : '') + '.';
+    var rule = 'A guest checking in at ' + fmt.time('15:00') + ' sees the door code from ' + from + ' the day before arrival' + (cond.length ? ', once ' + cond.join(' and ') : '') + '.';
     var services = Array.isArray(c.services) ? c.services : [];
     return (!writable() ? viewOnly('changes') : '') +
       '<div class="ga-sets">' +
       '<section class="card"><div class="card-head"><h3>Door code</h3>' + (edC ? '' : '<span class="sub">' + esc(noCode) + '</span>') + '</div><div class="card-body">' +
-        '<div class="ga-set"><div class="ga-set-t"><b>When the code shows</b><span>30 minutes before the check-in time, together with the unit number.</span></div></div>' +
+        '<div class="ga-set"><div class="ga-set-t"><b>When the code shows</b><span>24 hours before the check-in time, together with the unit number.</span></div></div>' +
         switchRow('requireCheckin', 'Online check-in first', 'Guests confirm their names and arrival time and accept the house rules.', edC, noCode) +
         switchRow('requireId', 'Verified ID first', 'Guests add a passport or MyKad photo and your team marks it verified.', edC, noCode) +
         '<div class="note brand ga-rule">' + esc(rule) + '</div></div></section>' +
