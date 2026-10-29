@@ -58,19 +58,32 @@
     var f = (g && g.fields || []).filter(function (x) { return 'f_' + x.key === key; })[0];
     return f ? f.label : key;
   }
+  /* '2026-11-02T14:30' -> '2:30 PM, Mon, 2 Nov' */
+  function fmtAt(at) { var dt = GR.fmtDate(at.slice(0, 10)); return GR.fmtTime(at.slice(11, 16)) + (dt ? ', ' + dt.replace(/ \d{4}$/, '') : ''); }
   function partsHTML(filled, g) {
     return filled.parts.map(function (p) {
       if (p.kind === 'fixed') return esc(p.text);
       var unitField = /^f_/.test(p.key || ''), cls = 'gm-v' + (unitField ? ' unit' : '');
       if (p.kind === 'unknown') return '<span class="gm-v bad" title="Not a known part. It goes to the guest as written.">' + esc(p.text) + '</span>';
       if (p.kind === 'missing') return '<span class="gm-v empty" title="' + esc(labelOf(p.key, g)) + ' has no value for this booking, so it is left blank">' + esc(labelOf(p.key, g)) + ': blank</span>';
-      if (p.kind === 'held') return '<span class="gm-v held" title="' + esc(labelOf(p.key, g)) + ' only reaches the guest from 30 minutes before check-in">' + esc(p.text) + '</span>';
+      if (p.kind === 'held') return '<span class="gm-v held" title="' + esc(labelOf(p.key, g)) + ((filled.why || {})[p.key] === 'id' ? ' waits for the guest\'s ID check' : ' only reaches the guest from 30 minutes before check-in') + '">' + esc(p.text) + '</span>';
       return '<span class="' + cls + '" title="' + esc(labelOf(p.key, g)) + (unitField ? ' (changes per unit)' : ' (changes per booking)') + '">' + esc(p.text) + '</span>';
     }).join('');
   }
+  /* the staff notes under a preview: what is held and why, and what to do about it. The door code (and a typed unit's
+     number and Wi-Fi) are in the guest app from the reveal time; the writer's own fields are not, so the sender is told
+     to send the greeting again. */
   function heldNote(filled, g) {
-    var out = [];
-    if (filled.held.length) out.push('Held until 30 minutes before check-in: ' + filled.held.map(function (k) { return labelOf(k, g); }).join(', ') + '. The guest gets wording that points to the guest app instead.');
+    var out = [], why = filled.why || {}, at = filled.revealAt;
+    var when = at ? fmtAt(at) : 'check-in minus 30 minutes';
+    var names = function (ks) { return ks.map(function (k) { return labelOf(k, g); }).join(', '); };
+    var time = filled.held.filter(function (k) { return why[k] !== 'id'; }), id = filled.held.filter(function (k) { return why[k] === 'id'; });
+    var timeApp = time.filter(function (k) { return !/^f_/.test(k); }), timeOwn = time.filter(function (k) { return /^f_/.test(k); });
+    var idApp = id.filter(function (k) { return !/^f_/.test(k); }), idOwn = id.filter(function (k) { return /^f_/.test(k); });
+    if (timeApp.length) out.push('Held until ' + when + ': ' + names(timeApp) + '. The guest is pointed to the guest app, which shows it from then.');
+    if (timeOwn.length) out.push('Held until ' + when + ': ' + names(timeOwn) + '. Send this greeting again from then to include it.');
+    if (idApp.length) out.push('Held until the guest\'s ID is checked: ' + names(idApp) + '. The guest app shows it once the ID check is done.');
+    if (idOwn.length) out.push('Held until the guest\'s ID is checked: ' + names(idOwn) + '. Send this greeting again after the ID check to include it.');
     if (filled.missing.length) out.push('No value for this booking, so left blank: ' + filled.missing.map(function (k) { return labelOf(k, g); }).join(', ') + '.');
     return out;
   }

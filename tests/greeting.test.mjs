@@ -110,3 +110,33 @@ test('fields: keys from labels, private by default for codes, cleaned on save', 
   assert.deepEqual(G.keysIn('{a} {b} {a}'), ['a', 'b']);
   assert.deepEqual(G.forBuilding([{ id: '2', buildingId: 'BD', name: 'Long stay' }, { id: '1', buildingId: 'BD', name: 'Arrival' }, { id: '3', buildingId: 'X', name: 'A' }], 'BD').map((g) => g.id), ['1', '2']);
 });
+
+test('held reasons: each held part says whether it waits for the time or the ID check, with the reveal time', () => {
+  const g = greeting('Door {door_code}, lobby {f_lobby_code}', [LOBBY]);
+  const early = G.fill(g, ctx(), { now: BEFORE });
+  assert.deepEqual(early.why, { door_code: 'time', f_lobby_code: 'time' });
+  assert.equal(early.revealAt, AT);
+  assert.match(early.text, /lobby shared with you closer to check-in/); /* not in the guest app, so no promise of it there */
+  const id = G.fill(g, ctx({ booking: booking({ idVerified: false }) }), { now: AT });
+  assert.deepEqual(id.why, { door_code: 'id', f_lobby_code: 'id' });
+  assert.match(id.text, /lobby shared with you once your ID is checked/);
+});
+
+test('mask: a typed unit\'s number and Wi-Fi are not shown as a door code', () => {
+  const g = greeting('Unit {unit_no}, wifi {wifi_name}, door {door_code}');
+  const r = G.fill(g, ctx({ unitType: { id: 'T1', buildingId: 'BD' } }), { now: AT, mask: true });
+  assert.equal(r.text, 'Unit 21-1, wifi Saujana21-1, door [door code hidden]');
+});
+
+test('inherited names like {constructor} and {__proto__} are unknown, not filled', () => {
+  const r = G.fill(greeting('{constructor} {__proto__} {hasownproperty}'), ctx(), { now: AT });
+  assert.equal(r.text, '{constructor} {__proto__} {hasownproperty}');
+  assert.deepEqual(r.parts.filter((p) => p.kind === 'unknown').map((p) => p.key), ['constructor', '__proto__', 'hasownproperty']);
+  assert.deepEqual(G.keysIn('{constructor} {__proto__}'), ['constructor', '__proto__']); /* the editor's unknown-part check sees them */
+  assert.equal(G.isBuiltin('constructor'), false);
+});
+
+test('private by default only for whole words that sound like a code', () => {
+  for (const l of ['Lobby code', 'Door password', 'PIN', 'Doorcode', 'Gate passcode']) assert.equal(G.defaultPrivate(l), true, l);
+  for (const l of ['Shopping mall', 'Postcode', 'Spinning class', 'Parking bay']) assert.equal(G.defaultPrivate(l), false, l);
+});

@@ -42,20 +42,23 @@ var BUILTINS = [
   ['parking', 'Parking', 'Basement P2'],
   ['guest_app_link', 'Guest app link', 'https://example.com/guest/abc']
 ];
-var BUILTIN_KEYS = {};
+var BUILTIN_KEYS = Object.create(null); /* no inherited names: {constructor} is not a built-in */
 BUILTINS.forEach(function (b) { BUILTIN_KEYS[b[0]] = true; });
 
-/* what a person without door-code access sees in place of a code that would go to the guest */
+/* what a person without door-code access sees in place of a door code or private field that would go to the guest
+   (a typed unit's number and Wi-Fi are not masked: staff see those elsewhere in the inbox) */
 var MASK = '[door code hidden]';
 var MAX_FIELDS = 20, MAX_TEXT = 4000, MAX_NAME = 60, MAX_LABEL = 40, MAX_VALUE = 200;
 
-/* a new field is private when its label sounds like a code */
-function defaultPrivate(label) { return /door|password|passcode|code|pin/i.test(String(label || '')); }
+/* a new field is private when its label sounds like a code: "Lobby code", "Door password", "PIN" (whole words, so
+   "Shopping mall" and "Postcode" are not) */
+function defaultPrivate(label) { return /\b(door\w*|passwords?|passcodes?|codes?|pins?)\b/i.test(String(label || '')); }
+function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 
 /* "Lobby code" -> "lobby_code" (unique among `taken`, a-z 0-9 _, at most 24 characters) */
 function fieldKey(label, taken) {
   var base = String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24) || 'field';
-  var key = base, n = 2, used = {};
+  var key = base, n = 2, used = Object.create(null);
   (taken || []).forEach(function (k) { used[k] = true; });
   while (used[key]) { key = base.slice(0, 21) + '_' + n; n++; }
   return key;
@@ -86,7 +89,7 @@ function fmtTime(t) {
 
 /* the placeholders a greeting's text uses, in order, once each */
 function keysIn(text) {
-  var out = [], seen = {};
+  var out = [], seen = Object.create(null);
   String(text || '').replace(/\{([a-z0-9_]+)\}/g, function (m, k) { if (!seen[k]) { seen[k] = true; out.push(k); } return m; });
   return out;
 }
@@ -141,17 +144,21 @@ function builtins(ctx) {
   return { vars: vars, typed: !!(t || (p && p.unitTypeId)), ciTime: ciTime, sample: false };
 }
 
-/* the guest-facing words for a held value */
+/* the guest-facing words for a held value. The door code (and a typed unit's number and Wi-Fi) really are in the guest
+   app from the reveal time. The writer's own fields are not in the guest app, so their words promise only a later
+   message; the staff note (heldNote in pages/greetings.js) tells the sender to send the greeting again then. */
 function heldWords(key, link, why) {
-  if (why === 'id') return 'in ' + (link ? 'your guest app (' + link + ')' : 'your guest app') + ' once your ID is checked';
-  if (key === 'door_code' || key === 'unit_no' || key === 'wifi_name' || key === 'wifi_password') return GM.heldText(key, link);
-  return 'sent to you from 30 minutes before check-in';
+  var own = /^f_/.test(key);
+  if (why === 'id') return own ? 'shared with you once your ID is checked' : 'in ' + (link ? 'your guest app (' + link + ')' : 'your guest app') + ' once your ID is checked';
+  if (!own) return GM.heldText(key, link);
+  return 'shared with you closer to check-in';
 }
 
 /* Fill a greeting for one booking at one moment.
    ctx as builtins(); o = {now: 'YYYY-MM-DDTHH:MM' (Malaysia time; the server's clock when sending), mask: true to show
    MASK instead of a private value that would be sent (a person without door-code access)}.
-   -> {text, parts: [{kind: 'fixed'|'var'|'held'|'missing'|'unknown', key?, text}], held: [keys], missing: [keys], sample}
+   -> {text, parts: [{kind: 'fixed'|'var'|'held'|'missing'|'unknown', key?, text}], held: [keys], why: {key: 'time'|'id'},
+       revealAt: 'YYYY-MM-DDTHH:MM' | null (check-in minus 30 minutes), missing: [keys], sample}
    The door code and private fields are held before check-in minus 30 minutes and when the send time is unknown; they
    also wait while the booking's ID check is not done (idVerified, codeStatus 'held'), as quick replies do. */
 function fill(greeting, ctx, o) {
@@ -165,18 +172,19 @@ function fill(greeting, ctx, o) {
   var at = b ? GM.revealAt(b, base.ciTime) : null;
   var early = !!b && (!o.now || !at || String(o.now) < at);
   var idHold = !!b && (!b.idVerified || b.codeStatus === 'held'); /* as the inbox's quick replies: no code before the ID check */
-  var privateKeys = { door_code: true };
-  if (base.typed) { privateKeys.unit_no = true; privateKeys.wifi_name = true; privateKeys.wifi_password = true; }
+  var why = Object.create(null);
+  held.forEach(function (k) { why[k] = 'time'; });
+  var privateKeys = Object.create(null); privateKeys.door_code = true; /* masked for a viewer without door-code access */
   /* the door code also waits for the ID check */
-  if (b && idHold && vals.door_code && held.indexOf('door_code') < 0) { vals.door_code = heldWords('door_code', link, 'id'); held.push('door_code'); }
-  var fieldBy = {}, missing = [];
+  if (b && idHold && vals.door_code && held.indexOf('door_code') < 0) { vals.door_code = heldWords('door_code', link, 'id'); held.push('door_code'); why.door_code = 'id'; }
+  var fieldBy = Object.create(null), missing = [];
   g.fields.forEach(function (f) {
     var k = 'f_' + f.key; fieldBy[k] = f;
     var pid = ctx.unit && ctx.unit.id != null ? String(ctx.unit.id) : '';
     var v = !b ? ((!f.private || !o.mask) && (f.values[pid] || firstValue(f))) || '[' + f.label + ']' : (pid && f.values[pid]) || '';
     if (b && !v) { missing.push(k); vals[k] = ''; return; }
     if (f.private) privateKeys[k] = true;
-    if (b && f.private && (early || idHold)) { vals[k] = heldWords(k, link, early ? 'time' : 'id'); held.push(k); return; }
+    if (b && f.private && (early || idHold)) { why[k] = early ? 'time' : 'id'; vals[k] = heldWords(k, link, why[k]); held.push(k); return; }
     vals[k] = v;
   });
   var parts = [], text = '', last = 0, src = g.text, re = /\{([a-z0-9_]+)\}/g, m;
@@ -184,7 +192,7 @@ function fill(greeting, ctx, o) {
   while ((m = re.exec(src))) {
     push('fixed', src.slice(last, m.index));
     var key = m[1];
-    if (!(key in vals) || (!BUILTIN_KEYS[key] && !fieldBy[key])) push('unknown', m[0], key);
+    if (!has(vals, key) || (!BUILTIN_KEYS[key] && !fieldBy[key])) push('unknown', m[0], key);
     else if (held.indexOf(key) >= 0) push('held', vals[key], key);
     else if (missing.indexOf(key) >= 0 || vals[key] === '') push('missing', '', key);
     else if (o.mask && privateKeys[key] && !base.sample) push('var', MASK, key);
@@ -193,7 +201,9 @@ function fill(greeting, ctx, o) {
   }
   push('fixed', src.slice(last));
   var used = keysIn(src), inText = function (k) { return used.indexOf(k) >= 0; }; /* report only what the text uses */
-  return { text: text, parts: parts, held: held.filter(inText), missing: missing.filter(inText), sample: !!base.sample };
+  var heldUsed = held.filter(inText), whyUsed = {};
+  heldUsed.forEach(function (k) { whyUsed[k] = why[k] || 'time'; });
+  return { text: text, parts: parts, held: heldUsed, why: whyUsed, revealAt: at, missing: missing.filter(inText), sample: !!base.sample };
 }
 function firstValue(f) { var ks = Object.keys(f.values || {}); return ks.length ? f.values[ks[0]] : ''; }
 
@@ -206,6 +216,6 @@ function forBuilding(list, buildingId) {
 var API = {
   BUILTINS: BUILTINS, MASK: MASK, MAX_FIELDS: MAX_FIELDS, MAX_TEXT: MAX_TEXT,
   defaultPrivate: defaultPrivate, fieldKey: fieldKey, guestFirst: guestFirst, fmtDate: fmtDate, fmtTime: fmtTime,
-  keysIn: keysIn, clean: clean, builtins: builtins, fill: fill, forBuilding: forBuilding, isBuiltin: function (k) { return !!BUILTIN_KEYS[k]; }
+  keysIn: keysIn, clean: clean, builtins: builtins, fill: fill, forBuilding: forBuilding, isBuiltin: function (k) { return !!BUILTIN_KEYS[k]; }, has: has
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
