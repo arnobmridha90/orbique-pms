@@ -1,12 +1,13 @@
 /* Guest App (v4)
    1. Settings and content of the guest app (D.guestApp, config blob), guest requests and damage reports (demo seeds).
    2. stayInfo(): the stage of a stay and the door-code timing rule. supabase/migrations/0003_guest.sql mirrors it exactly
-      (0008_guest_units.sql re-creates guest__stay and guest__payload: unit types, unit number and door code from 30 minutes before check-in).
+      (0008_guest_units.sql re-creates guest__stay and guest__payload: unit types, unit number and door code; 0020_reveal_24h.sql moves both to 24 hours before check-in).
    3. O.guestApi (local): get(token) / act(token, action, args) over D. In production app/server/auth.js replaces it with
       the database functions guest_get / guest_act, which return the same payload. Contract: docs/notes/v4-guestapp.md.
    4. O.guestMode(root, token, opts): the guest's own app (no sign-in), full screen, phone first. Reads only O.guestApi.
    5. The staff page: guests with "Preview guest app" and "Copy guest link", requests, damage reports, house info,
-      local tips and settings. */
+      local tips, nearby places (app/pages/nearby-staff.js) and settings.
+   Nearby places and their offline maps (the guest tab 'nearby', the view 'place') are drawn by app/pages/nearby.js. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
   function clone(v) { return v == null ? v : JSON.parse(JSON.stringify(v)); }
@@ -35,7 +36,7 @@
     requireCheckin: true,      /* online check-in must be done before the door code shows */
     requireId: true,           /* and a verified ID */
     requireName: true,         /* guests type their full name to sign the house rules */
-    codeLeadHours: 0,          /* no longer used: the code shows 30 minutes before check-in, with the unit number (owner decision 2026-10-15) */
+    codeLeadHours: 0,          /* no longer used: the code shows 24 hours before check-in, with the unit number (owner decisions 2026-10-15, 2026-10-29) */
     reviewPrompt: true,        /* ask for feedback after check-out */
     welcome: 'Everything for your stay is here: online check-in, your door code, Wi-Fi, the house guide and a direct line to our team.',
     contact: { phone: '', whatsapp: '', hours: '8 AM to 11 PM' },
@@ -244,7 +245,7 @@
   function on(c, k) { return !(c && c[k] === false); } /* settings that default to on */
   var ACTIVE = ['arrival', 'inhouse', 'checkout'];
   /* the guest sees the unit number (typed units) from this many minutes before check-in; the door code shows at the same time */
-  var UNIT_REVEAL_MIN = 30;
+  var UNIT_REVEAL_MIN = 24 * 60; /* owner, 2026-10-29: a day early, so guests have it saved before the flight */
   /* b: booking, c: guest app settings, now: 'YYYY-MM-DDTHH:MM' Malaysia time, ciFallback: the unit's or building's check-in time */
   function stayInfo(b, c, now, ciFallback) {
     var ciT = hhmm(b.checkInTime, hhmm(ciFallback, '15:00')), coT = hhmm(b.checkOutTime, '11:00');
@@ -343,12 +344,13 @@
     return t && t.status === 'done' ? 'fixed' : (r.when === 'arrival' || isObj(r.noted)) ? 'logged' : 'open';
   }
   /* the guest's payload: only what this guest may see */
-  /* typed units (mirrored in 0008_guest_units.sql): guests see the building + type name and the building's address; the unit
-     number (and the Wi-Fi, whose name may carry it) only from s.unitAt (30 minutes before check-in) while the stay is on */
+  /* typed units (mirrored in 0008_guest_units.sql, timing in 0020_reveal_24h.sql): guests see the building + type name and
+     the building's address; the unit number (and the Wi-Fi, whose name may carry it) only from s.unitAt (24 hours before
+     check-in, so on the day before arrival too) until the stay ends. An untyped unit's Wi-Fi shows from the same moment. */
   function guestProperty(b, p, s) {
     var t = (b.unitTypeId && O.unitType(b.unitTypeId)) || O.typeOf(p);
-    var on = ACTIVE.indexOf(s.state) >= 0, shown = on && nowLocal() >= s.unitAt;
-    if (!t) return p ? { name: nz(p.name), area: p.area || '', address: p.address || '', type: p.type || '', beds: p.beds == null ? null : p.beds, parking: p.parking || '', lockBrand: p.lockBrand || '', photo: photoOf(p), wifi: on ? wifiOf(p) : null } : null;
+    var on = ACTIVE.indexOf(s.state) >= 0, shown = (on || s.state === 'upcoming') && nowLocal() >= s.unitAt;
+    if (!t) return p ? { name: nz(p.name), area: p.area || '', address: p.address || '', type: p.type || '', beds: p.beds == null ? null : p.beds, parking: p.parking || '', lockBrand: p.lockBrand || '', photo: photoOf(p), wifi: on || shown ? wifiOf(p) : null } : null;
     var bd = O.building(t.buildingId) || {};
     return {
       name: O.typeTitle(t), area: (p && p.area) || bd.city || '', address: bd.address || '', type: (p && p.type) || '', beds: p && p.beds != null ? p.beds : (t.beds == null ? null : t.beds),
@@ -379,7 +381,9 @@
       messages: msgs,
       requests: reqs.map(function (r) { return { id: r.id, type: nz(r.type), summary: nz(r.summary), note: r.note || null, status: nz(r.status), at: nz(r.at) }; }),
       reports: reps.map(function (r) { return { id: r.id, room: nz(r.room), item: nz(r.item), desc: nz(r.desc), when: nz(r.when), urgent: r.urgent === true, at: nz(r.at), photos: Array.isArray(r.photos) ? r.photos.length : 0, status: reportStatus(r) }; }),
-      feedback: fb ? { stars: nz(fb.stars), text: nz(fb.text), at: nz(fb.at) } : null
+      feedback: fb ? { stars: nz(fb.stars), text: nz(fb.text), at: nz(fb.at) } : null,
+      /* the building's nearby places and its pin (0021_guest_places.sql: guest__nearby), null outside buildings */
+      nearby: O.nearby ? O.nearby.forBooking(b) : null
     };
   }
   /* a line in the booking's chat for the team (created when the stay has no chat yet) */
@@ -526,7 +530,8 @@
     too_many: 'You have sent a lot in a short time. Please wait a little, or call us if it is urgent.',
     duplicate: 'You have already asked for this. We will confirm it here.',
     unknown_action: 'Something went wrong. Please try again.',
-    network: 'We could not reach the server. Check your connection and try again.'
+    network: 'We could not reach the server. Check your connection and try again.',
+    offline: 'You are offline, so this cannot be sent now. Try again when you have internet.'
   };
   function firstName(n) { n = String(n || 'Guest'); return /^The /.test(n) ? n.replace(/^The /, '').replace(/ Family$/, ' family') : n.split(' ')[0]; }
   function dayLabel(iso) { return d.dowName(iso) + ' ' + d.fmt(iso); }
@@ -595,28 +600,38 @@
       fr.readAsDataURL(file);
     });
   }
-  var TABS = { home: ['home', 'Home'], stay: ['key', 'Your stay'], explore: ['map', 'Explore'], requests: ['sparkle', 'Requests'], chat: ['chat', 'Messages'] };
+  var TABS = { home: ['home', 'Home'], stay: ['key', 'Your stay'], explore: ['map', 'Explore'], nearby: ['pin', 'Nearby'], requests: ['sparkle', 'Requests'], chat: ['chat', 'Messages'] };
 
   O.guestMode = function (root, token, opts) {
     opts = opts || {};
     var preview = !!opts.preview, full = !preview;
-    var S = { p: null, err: null, tab: 'home', view: null, svc: null, vals: {}, rep: null, ci: null, idPhoto: null, idBusy: false, draft: '', notice: null, busy: false, exTab: 'todo', exCity: null, vCity: 'all', stars: 0, fbText: '', anchor: null, formErr: '' };
+    var S = { p: null, err: null, tab: 'home', view: null, svc: null, vals: {}, rep: null, ci: null, idPhoto: null, idBusy: false, draft: '', notice: null, busy: false, exTab: 'todo', exCity: null, vCity: 'all', stars: 0, fbText: '', anchor: null, formErr: '',
+      offline: null, nbId: null, nbDir: 'to', nbCat: 'all', nbMode: null };
     var alive = true, lastJSON = '', poll = null, offData = null, noticeT = null;
     /* the staff preview reads the staff's own data (also right for a booking the server has not saved yet) */
     function api() { return preview ? localApi : (O.guestApi || localApi); }
     function scroller() { return full ? (document.scrollingElement || document.documentElement) : root; }
     function typing() { var a = document.activeElement; return S.busy || !!S.view || !!(a && root.contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)); }
-    function stop() { alive = false; clearInterval(poll); if (offData) offData(); clearTimeout(noticeT); }
+    function stop() { alive = false; clearInterval(poll); if (offData) offData(); clearTimeout(noticeT); if (O.nearby) O.nearby.stop(); }
     function load(quiet) {
       return Promise.resolve().then(function () { return api().get(token); }).then(function (p) {
         if (!alive) return;
-        var j = JSON.stringify(p);
-        if (quiet && (j === lastJSON || typing())) return;
+        /* the guest's own phone keeps the last stay (and saves the Nearby maps once), so the app also opens offline */
+        if (full && p && p.ok && O.nearby) { O.nearby.remember(token, p); O.nearby.autoSave(p); }
+        /* the link no longer opens a stay (ended, cancelled, revoked): the copy on this phone goes too */
+        if (full && p && p.ok === false && O.nearby) O.nearby.forget(token);
+        var j = JSON.stringify(p), wasOffline = !!S.offline;
+        if (quiet && !wasOffline && (j === lastJSON || typing())) return;
+        S.offline = null;
+        if (quiet && wasOffline && typing()) { lastJSON = j; S.p = p; return; }
         lastJSON = j; S.p = p; S.err = null; paint(quiet);
       }, function (e) {
         if (!alive) return;
         console.warn('guest app: load failed', e);
         if (quiet && S.p) return;
+        /* offline: the stay as last saved on this phone */
+        var saved = full && O.nearby ? O.nearby.recall(token) : null;
+        if (saved) { S.p = saved.p; S.offline = saved.at; S.err = null; lastJSON = JSON.stringify(saved.p); paint(); return; }
         S.p = null; S.err = 'network'; paint();
       });
     }
@@ -629,6 +644,7 @@
       if (!alive) return;
       var sc = scroller(), top = sc ? sc.scrollTop : 0;
       root.innerHTML = html();
+      if (O.nearby) O.nearby.after(root, S, S.p && S.p.ok ? S.p : null, { preview: preview, repaint: function () { paint(true); } });
       if (sc) sc.scrollTop = keep ? top : 0;
       if (S.anchor) {
         var el = O.$('#' + S.anchor, root), top0 = O.$('.gx-top', root);
@@ -643,6 +659,7 @@
     function go(tab, anchor) { S.tab = tab; S.view = null; S.anchor = anchor || null; S.formErr = ''; paint(false); }
     function openView(v, svc) {
       S.view = v; S.formErr = '';
+      if (v === 'place') { S.nbId = svc || 'home'; S.nbDir = 'to'; }
       if (v === 'request') { S.svc = svc; S.vals = {}; }
       if (v === 'report') S.rep = { room: '', item: '', desc: '', when: S.p && S.p.state === 'arrival' ? 'arrival' : 'stay', urgent: false, photos: [] };
       if (v === 'checkin') {
@@ -659,6 +676,7 @@
       if (S.busy) return;
       if (S.p && S.p.readOnly) { flash(GERR.read_only, 'bad'); paint(true); return; }
       if (preview) { if (after) after(); flash('Preview only: nothing was sent. In ' + firstName(S.p.booking.guestName) + '\'s own app this goes straight to your team.', 'info'); paint(false); return; }
+      if (S.offline) { S.formErr = GERR.offline; flash(GERR.offline, 'bad'); paint(true); return; }
       S.busy = true; S.formErr = ''; paint(true);
       Promise.resolve().then(function () { return api().act(token, action, args); }).then(function (res) {
         S.busy = false;
@@ -675,18 +693,33 @@
       if (S.err || !p.ok) return errorHTML();
       var tabs = tabsFor(p);
       if (tabs.indexOf(S.tab) < 0) S.tab = 'home';
+      var nb = tabs.indexOf('nearby') >= 0;
+      if (S.view === 'place' && !nb) S.view = null;
       var body = S.view === 'checkin' ? checkinHTML(p) : S.view === 'id' ? idHTML(p) : S.view === 'request' ? requestFormHTML(p) : S.view === 'report' ? reportFormHTML(p)
-        : S.tab === 'stay' ? stayHTML(p) : S.tab === 'explore' ? exploreHTML(p) : S.tab === 'requests' ? requestsHTML(p) : S.tab === 'chat' ? chatHTML(p) : homeHTML(p);
+        : S.view === 'place' ? O.nearby.placeHTML(p, S, { preview: preview })
+        : S.tab === 'stay' ? stayHTML(p) : S.tab === 'explore' ? exploreHTML(p) : S.tab === 'nearby' ? O.nearby.listHTML(p, S, { preview: preview }) : S.tab === 'requests' ? requestsHTML(p) : S.tab === 'chat' ? chatHTML(p) : homeHTML(p);
       return '<div class="gx" style="' + brandVars(p.brand) + '">' + topHTML(p, tabs) +
         '<main class="gx-main">' + (preview ? '<div class="gx-pv-bar">' + ic('eye') + '<span>Preview of what ' + esc(firstName(p.booking.guestName)) + ' sees right now. Buttons here do not send anything.</span></div>' : '') +
         (S.notice ? '<div class="gx-notice ' + S.notice.kind + '" role="status">' + esc(S.notice.text) + '</div>' : '') +
+        (S.offline ? '<div class="gx-notice info gx-offline">' + ic('wifi') + '<span>' + (navigator.onLine === false ? 'You are offline.' : 'We could not reach the server.') + ' This is your stay as saved on ' + esc(fmt.dateTime(offlineAt(S.offline))) + '.' +
+          (nb ? ' Nearby maps and directions still work.' : '') + ' Your door code, Wi-Fi and messages show again when you are back online.</span></div>' : '') +
         (p.readOnly ? '<div class="gx-notice info">' + esc(GERR.read_only) + '</div>' : '') +
-        body + '</main>' + (S.view ? '' : navHTML(tabs, 'gx-nav-bot')) + '</div>';
+        body + '</main>' + (S.view ? '' : navHTML(navTabs(tabs), 'gx-nav-bot')) + '</div>';
     }
-    function tabsFor(p) { return p.state === 'past' || p.state === 'cancelled' ? ['home', 'chat'] : ['home', 'stay', 'explore', 'requests', 'chat']; }
+    function tabsFor(p) {
+      if (p.state === 'past' || p.state === 'cancelled') return ['home', 'chat'];
+      var nb = O.nearby && O.nearby.available(p) ? ['nearby'] : [];
+      /* offline (the copy saved on this phone): no messages or requests, they cannot be sent or read without internet */
+      if (S.offline) return ['home', 'stay', 'explore'].concat(nb);
+      return ['home', 'stay', 'explore'].concat(nb).concat(['requests', 'chat']);
+    }
+    /* the bars keep at most five tabs so the labels fit a phone: Nearby opens from Home and Explore */
+    function navTabs(tabs) { return tabs.filter(function (t) { return t !== 'nearby'; }); }
+    function tabOn(t) { return !S.view && (S.tab === t || (t === 'explore' && S.tab === 'nearby')); }
+    function offlineAt(ms) { var t = new Date(ms + 8 * 3600e3).toISOString(); return t.slice(0, 10) + 'T' + t.slice(11, 16); } /* Malaysia time, like the rest of the app */
     function navHTML(tabs, cls) {
       return '<nav class="gx-nav ' + cls + '" aria-label="Guest app">' + tabs.map(function (t) {
-        return '<button type="button" data-gx-tab="' + t + '" class="' + (S.tab === t && !S.view ? 'on' : '') + '"' + (S.tab === t && !S.view ? ' aria-current="page"' : '') + '>' + ic(TABS[t][0]) + '<span>' + TABS[t][1] + '</span></button>';
+        return '<button type="button" data-gx-tab="' + t + '" class="' + (tabOn(t) ? 'on' : '') + '"' + (tabOn(t) ? ' aria-current="page"' : '') + '>' + ic(TABS[t][0]) + '<span>' + TABS[t][1] + '</span></button>';
       }).join('') + '</nav>';
     }
     function logoHTML(br) {
@@ -695,7 +728,7 @@
     function topHTML(p, tabs) {
       var br = p.brand || {};
       return '<header class="gx-top"><div class="gx-top-in">' + logoHTML(br) + '<div class="gx-top-t"><div class="gx-bn">' + esc(br.name || 'Your host') + '</div><div class="gx-bs">' + esc((p.property && p.property.name) || 'Your stay') + '</div></div>' +
-        (S.view ? '<button type="button" class="btn btn-ghost btn-sm gx-back" data-gx-back>' + ic('left') + 'Back</button>' : navHTML(tabs, 'gx-nav-top')) + '</div></header>';
+        (S.view ? '<button type="button" class="btn btn-ghost btn-sm gx-back" data-gx-back>' + ic('left') + 'Back</button>' : navHTML(navTabs(tabs), 'gx-nav-top')) + '</div></header>';
     }
     function errorHTML() {
       var e = S.err || (S.p && S.p.error) || 'not_found', br = (S.p && S.p.brand) || null;
@@ -721,6 +754,9 @@
     function doorHTML(p) {
       var dr = p.door, w = dr.waitingFor || [], b = p.booking, pr = p.property || {}, app = p.app || {}, ci = p.checkin || {};
       if (w.indexOf('ended') >= 0) return '';
+      /* the copy saved on this phone never holds the code (it may have changed since) */
+      if (w.indexOf('offline') >= 0) return '<section class="gx-door off" aria-label="Door code"><div class="gx-door-l">' + ic('lock') + 'Door code</div><div class="gx-code dim" aria-hidden="true">• • • •</div>' +
+        '<p class="gx-door-msg">Your door code shows here when you are back online. Connect to Wi-Fi or mobile data to see it.</p></section>';
       if (dr.visible) {
         var hidden = !!opts.hideCode;
         return '<section class="gx-door on" aria-label="Door code"><div class="gx-door-l">' + ic('key') + 'Your door code</div>' +
@@ -748,7 +784,7 @@
     }
     function wifiHTML(p, big) {
       var pr = p.property || {}, w = pr.wifi;
-      if (!w) return big ? '<section class="gx-card" id="gx-wifi"><h2>' + ic('wifi') + 'Wi-Fi</h2><p class="gx-p">' + (p.state === 'upcoming' ? 'The Wi-Fi name and password show here on your arrival day.' : 'There are no Wi-Fi details for this stay.') + '</p></section>' : '';
+      if (!w) return big ? '<section class="gx-card" id="gx-wifi"><h2>' + ic('wifi') + 'Wi-Fi</h2><p class="gx-p">' + (S.offline ? 'The Wi-Fi name and password show here when you are back online.' : p.state === 'upcoming' ? 'The Wi-Fi name and password show here 24 hours before check-in.' : 'There are no Wi-Fi details for this stay.') + '</p></section>' : '';
       var pw = opts.hideWifi ? '••••••••' : (w.password || '');
       return '<section class="gx-card gx-wifi" id="gx-wifi"><span class="gx-ico">' + ic('wifi') + '</span><div class="gx-grow"><div class="gx-k">Wi-Fi</div><div class="gx-v">' + esc(w.name || '') + '</div><div class="gx-k2">Password <b>' + esc(pw) + '</b></div></div>' +
         (w.password && !opts.hideWifi ? '<button type="button" class="btn btn-ghost btn-sm gx-copy" data-gx-act="copywifi" aria-label="Copy the Wi-Fi password">' + ic('copy') + 'Copy</button>' : '') + '</section>';
@@ -757,6 +793,8 @@
       var t = [['stay', 'gx-in', 'key', 'How to get in'], ['stay', 'gx-rules', 'rules', 'House rules'], ['stay', 'gx-guide', 'file', 'House guide'], ['stay', 'gx-out', 'clock', 'Check-out'],
         ['requests', null, 'sparkle', 'Requests'], ['explore', null, 'map', 'Things to do'], ['chat', null, 'chat', 'Message us']];
       if (ACTIVE.indexOf(p.state) >= 0) t.splice(5, 0, ['report', null, 'alert', 'Report a problem']);
+      if (O.nearby && O.nearby.available(p)) t.splice(t.length - 2, 0, ['nearby', null, 'pin', 'Nearby places']);
+      if (S.offline) t = t.filter(function (x) { return ['requests', 'chat', 'report'].indexOf(x[0]) < 0; });
       return '<section class="gx-tiles">' + t.map(function (x) {
         return '<button type="button" class="gx-tile" ' + (x[0] === 'report' ? 'data-gx-view="report"' : 'data-gx-tab="' + x[0] + '"' + (x[1] ? ' data-gx-anchor="' + x[1] + '"' : '')) + '><span class="gx-ico">' + ic(x[2]) + '</span><span>' + x[3] + '</span></button>';
       }).join('') + '</section>';
@@ -764,7 +802,7 @@
     function contactHTML(p, title) {
       var c = (p.app && p.app.contact) || {}, br = p.brand || {}, phone = digits(c.phone), wa = digits(c.whatsapp || c.phone).replace(/^\+/, '');
       return '<section class="gx-card"><h2>' + esc(title || 'Need help?') + '</h2><p class="gx-p">' + esc((br.name || 'Our') + ' team' + (c.hours ? ', ' + c.hours : '') + '. Message us here any time.') + '</p>' +
-        '<div class="gx-row2"><button type="button" class="btn btn-primary gx-btn" data-gx-tab="chat">' + ic('chat') + 'Message us</button>' +
+        '<div class="gx-row2">' + (S.offline ? '' : '<button type="button" class="btn btn-primary gx-btn" data-gx-tab="chat">' + ic('chat') + 'Message us</button>') +
         (phone ? '<a class="btn btn-ghost gx-btn" href="tel:' + esc(phone) + '">' + ic('phone') + 'Call</a>' : '') +
         (wa ? '<a class="btn btn-ghost gx-btn" href="https://wa.me/' + esc(wa) + '" target="_blank" rel="noopener">' + ic('whatsapp') + 'WhatsApp</a>' : '') + '</div></section>';
     }
@@ -815,7 +853,8 @@
       var home = cityOf((p.property || {}).area), city = S.exCity || home || 'kl';
       var out = '<h1 class="gx-h1">Explore</h1><div class="gx-seg" role="tablist">' + [['todo', 'Things to do'], ['dont', 'Good to know'], ['videos', 'Videos']].filter(function (t) { return t[0] !== 'videos' || videos.length; }).map(function (t) {
         return '<button type="button" role="tab" aria-selected="' + (S.exTab === t[0]) + '" data-gx-ex="' + t[0] + '" class="' + (S.exTab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+        (O.nearby && O.nearby.available(p) ? '<button type="button" class="gx-nb-home gx-ex-nb" data-gx-tab="nearby">' + O.nearby.catBadge('other') + '<span class="gx-grow"><b>Nearby places</b><span>Food, clinics, money exchange and the way back, with maps that work offline</span></span>' + ic('right') + '</button>' : '');
       if (S.exTab === 'dont') {
         return out + '<p class="gx-p">Laws and customs worth knowing. Most locals are very forgiving of visitors, but some laws are strict.</p><div class="gx-list">' + (dont.length ? dont.map(function (n) {
           return '<div class="gx-item gx-dont ' + esc(n.kind || '') + '"><div class="gx-item-h"><b>' + esc(n.title) + '</b>' + U.pill(n.kind || 'Tip', n.kind === 'Law' ? 'bad' : n.kind === 'Safety' ? 'warn' : 'info') + '</div><p>' + esc(n.text) + '</p></div>';
@@ -961,7 +1000,7 @@
       var t = e.target.closest('button, a'); if (!t || !root.contains(t) || t.disabled) return;
       var ds = t.dataset;
       if (ds.gxTab) { e.preventDefault(); return go(ds.gxTab, ds.gxAnchor); }
-      if (ds.gxView) { e.preventDefault(); return openView(ds.gxView, ds.gxSvc); }
+      if (ds.gxView) { e.preventDefault(); return openView(ds.gxView, ds.gxPlace || ds.gxSvc); }
       if (ds.gxBack != null) { S.view = null; S.formErr = ''; return paint(false); }
       if (ds.gxEx) { S.exTab = ds.gxEx; return paint(true); }
       if (ds.gxEcity) { S.exCity = ds.gxEcity; return paint(true); }
@@ -1408,12 +1447,12 @@
     var c = cfg(), edC = writable() && canCode(), ed = canEdit(), noCode = 'Your access does not include door codes', noEdit = 'Your access does not include editing the guest app';
     var from = fmt.time(addMinutes('2026-01-01T15:00', -UNIT_REVEAL_MIN).slice(11, 16));
     var cond = [on(c, 'requireCheckin') ? 'they have checked in online' : null, on(c, 'requireId') ? 'their ID is verified' : null].filter(Boolean);
-    var rule = 'A guest checking in at ' + fmt.time('15:00') + ' sees the door code from ' + from + ' on the arrival day' + (cond.length ? ', once ' + cond.join(' and ') : '') + '.';
+    var rule = 'A guest checking in at ' + fmt.time('15:00') + ' sees the door code from ' + from + ' the day before arrival' + (cond.length ? ', once ' + cond.join(' and ') : '') + '.';
     var services = Array.isArray(c.services) ? c.services : [];
     return (!writable() ? viewOnly('changes') : '') +
       '<div class="ga-sets">' +
       '<section class="card"><div class="card-head"><h3>Door code</h3>' + (edC ? '' : '<span class="sub">' + esc(noCode) + '</span>') + '</div><div class="card-body">' +
-        '<div class="ga-set"><div class="ga-set-t"><b>When the code shows</b><span>30 minutes before the check-in time, together with the unit number.</span></div></div>' +
+        '<div class="ga-set"><div class="ga-set-t"><b>When the code shows</b><span>24 hours before the check-in time, together with the unit number.</span></div></div>' +
         switchRow('requireCheckin', 'Online check-in first', 'Guests confirm their names and arrival time and accept the house rules.', edC, noCode) +
         switchRow('requireId', 'Verified ID first', 'Guests add a passport or MyKad photo and your team marks it verified.', edC, noCode) +
         '<div class="note brand ga-rule">' + esc(rule) + '</div></div></section>' +
@@ -1438,12 +1477,15 @@
   function openProblems() { return (D.damageReports || []).filter(function (r) { return !r.taskId && !r.noted; }).length; }
   function draw() {
     var w = wrapEl(); if (!w) return;
-    var tabs = [['guests', 'Guests'], ['requests', 'Requests', newRequests()], ['damage', 'Problems', openProblems()], ['info', 'House info'], ['tips', 'Local tips'], ['settings', 'Settings']];
+    var tabs = [['guests', 'Guests'], ['requests', 'Requests', newRequests()], ['damage', 'Problems', openProblems()], ['info', 'House info'], ['tips', 'Local tips']].concat(O.nearbyStaff ? [['places', 'Nearby places']] : []).concat([['settings', 'Settings']]);
     if (!tabs.some(function (t) { return t[0] === st.tab; })) st.tab = 'guests';
-    var body = st.tab === 'requests' ? requestsTabHTML() : st.tab === 'damage' ? problemsTabHTML() : st.tab === 'info' ? infoTabHTML() : st.tab === 'tips' ? tipsTabHTML() : st.tab === 'settings' ? settingsTabHTML() : guestsTabHTML();
+    var body = st.tab === 'requests' ? requestsTabHTML() : st.tab === 'damage' ? problemsTabHTML() : st.tab === 'info' ? infoTabHTML() : st.tab === 'tips' ? tipsTabHTML() : st.tab === 'settings' ? settingsTabHTML()
+      : st.tab === 'places' ? '<div class="ga-places" data-ga-places></div>' : guestsTabHTML();
     w.innerHTML = '<div class="tabs ga-tabs" role="tablist">' + tabs.map(function (t) {
       return '<button type="button" role="tab" aria-selected="' + (st.tab === t[0]) + '" data-ga-tab="' + t[0] + '" class="' + (st.tab === t[0] ? 'on' : '') + '">' + t[1] + (t[2] ? '<span class="ga-tn">' + t[2] + '</span>' : '') + '</button>';
     }).join('') + '</div><div class="ga-body">' + body + '</div>';
+    /* nearby places: app/pages/nearby-staff.js draws and handles its own tab */
+    var np = O.$('[data-ga-places]', w); if (np) O.nearbyStaff.mount(np, { canEdit: canEdit, changed: changed, viewOnly: viewOnly });
     if (st.scrollHl && st.hl) { st.scrollHl = false; var row = O.$('[data-ga-row="' + st.hl + '"]', w); if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center' }); }
   }
   function findItem(sec, id) { var l = ownList(sec); return Array.isArray(l) ? l.filter(function (x) { return isObj(x) && x.id === id; })[0] : null; }

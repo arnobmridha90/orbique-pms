@@ -412,7 +412,7 @@ export async function assignContext(sb, orgId, from, to) {
 }
 
 /** The booking's check-in time the way the guest app and guest messages see it (O.guestmsg.ciTimeOf): its own, the unit's,
- * the building's, else 15:00. The door code and a typed unit's number reach the guest from 30 minutes before it. */
+ * the building's, else 15:00. The door code and a typed unit's number reach the guest from 24 hours before it. */
 export function ciTimeIn(b, ctx) {
   const unit = b.propertyId ? (ctx.units || []).find((u) => u.id === b.propertyId) : null;
   const type = (ctx.types || []).find((t) => t.id === ((unit && unit.unitTypeId) || b.unitTypeId));
@@ -597,7 +597,7 @@ export async function ingestRevision(sb, input, opts = {}) {
     const r = assignOne(b, ctx, nowLocal, fresh);
     if (r.changed) moves.push({ at: nowLocal, by: 'system', cat: 'bookings', text: moveText(b, r.from, r.to, ctx.units) });
     // a new booking's check-in and check-out times follow the unit, else the building (O.guestmsg.ciTimeOf order), so
-    // the door code and unit number reach the guest from 30 minutes before the real check-in time, never the OTA's
+    // the door code and unit number reach the guest from 24 hours before the real check-in time, never the OTA's
     // arrival estimate (kept as arrivalHour). Never changed on a modification: staff may have agreed another time.
     if (!old) {
       const u = b.propertyId ? ctx.units.find((x) => x.id === b.propertyId) : null;

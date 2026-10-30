@@ -81,7 +81,7 @@
     if (!S.org) return Promise.reject(new Error('Open a workspace first.'));
     return A.call('/api/channex', Object.assign({ action: action, orgId: S.org.id }, body || {}));
   };
-  /* POST /api/messages {action, orgId, ...}: the live guest inbox (WhatsApp, booking site messages, translation) */
+  /* POST /api/messages {action, orgId, ...}: the live inbox (WhatsApp, booking site messages, translation) */
   A.inbox = function (action, body) {
     if (!S.org) return Promise.reject(new Error('Open a workspace first.'));
     return A.call('/api/messages', Object.assign({ action: action, orgId: S.org.id }, body || {}));
@@ -565,7 +565,8 @@
         var del = p.eventType === 'DELETE' || row.deleted;
         if (!del && (!row.data || typeof row.data !== 'object')) return;
         if (row.updated_by && S.user && row.updated_by === S.user.id && echo(k(row.coll, row.id), del ? '__deleted__' : canon(row.data))) return;
-        queue('rows', del ? { coll: row.coll, id: row.id, deleted: true } : { coll: row.coll, id: row.id, data: row.data, deleted: false });
+        /* by: who saved it (null: the server, a booking site or a guest), for the new-booking sound (booking-alerts.js) */
+        queue('rows', del ? { coll: row.coll, id: row.id, deleted: true, by: row.updated_by || null } : { coll: row.coll, id: row.id, data: row.data, deleted: false, by: row.updated_by || null });
       }
       function onBlob(p) {
         var row = p.eventType === 'DELETE' ? p.old : p.new; if (!row || !row.key) return;

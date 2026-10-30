@@ -8,10 +8,13 @@
  *   parseWebhook(body)                         {messages: [...], statuses: [...]} from one webhook delivery
  *   graph(cfg, method, path, body, opts)       one Graph API call; resolves the JSON or throws WhatsAppError
  *   sendText(cfg, phoneNumberId, to, text)     -> the WhatsApp message id
- *   fetchMedia(cfg, mediaId, maxBytes)         -> {mime, bytes}
+ *   sendMedia(cfg, phoneNumberId, to, kind, link, caption)  a photo ('image') or video ('video') Meta fetches from link
+ *                                              (a short-lived signed Storage address) -> the WhatsApp message id
+ *   fetchMedia(cfg, mediaId, maxBytes)         -> {mime, bytes}; maxBytes may be (mime) -> limit
  *   phoneNumberInfo(cfg, phoneNumberId)        -> {display_phone_number, verified_name}
  *   Embedded Signup (connecting a number that stays on the WhatsApp Business app, "coexistence"):
  *   exchangeCode(cfg, code)                    the code from the pop-up -> the token for that WhatsApp account
+ *   renewToken(cfg, token)                     that token -> a new one for another 60 days (the nightly job)
  *   signupNumber(cfg, token, {wabaId, phoneNumberId})  -> {wabaId, phoneNumberId, info} (finds what the pop-up left out)
  *   subscribeApp(cfg, token, wabaId, callback) sends that WhatsApp account's webhooks to this site
  *   requestSync(cfg, token, phoneNumberId, type)  'smb_app_state_sync' (contacts) or 'history' (older chats) -> request id
@@ -82,7 +85,7 @@ const str = (v, max = 4096) => (typeof v === 'string' ? v.slice(0, max) : v === 
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
 
-/** One incoming WhatsApp message as the inbox stores it: {type, text, media?} (type is the app's: text, image, voice, file). */
+/** One incoming WhatsApp message as the inbox stores it: {type, text, media?} (type is the app's: text, image, video, voice, file). */
 export function messageContent(m) {
   const t = m.type;
   if (t === 'text') return { type: 'text', text: str(m.text && m.text.body) };
@@ -93,7 +96,7 @@ export function messageContent(m) {
     const caption = str(x.caption, 1024);
     if (t === 'image' || t === 'sticker') return { type: 'image', text: caption || (t === 'sticker' ? 'Sticker' : 'Photo'), caption, media };
     if (t === 'audio') return { type: 'voice', text: 'Voice message', media };
-    if (t === 'video') return { type: 'file', text: caption || 'Video', caption, name: media.name || 'video.mp4', media };
+    if (t === 'video') return { type: 'video', text: caption || 'Video', caption, name: media.name || 'video.mp4', media };
     return { type: 'file', text: media.name || caption || 'Document', caption, name: media.name || 'document', media };
   }
   if (t === 'location' && isObj(m.location)) {
@@ -228,7 +231,7 @@ export function explain(code, fallback) {
   if (code === 131047) return 'The guest last wrote more than 24 hours ago. WhatsApp only lets a business start a conversation with an approved template, so ask them to message you first, or reply through the booking site.';
   if (code === 131026) return 'This number cannot receive WhatsApp messages (it may not be on WhatsApp).';
   if (code === 131030) return 'This number is not on the allowed list of the WhatsApp test number. Add it in Meta, or use your real business number.';
-  if (code === 190) return 'The WhatsApp access token has expired or is wrong. Connect WhatsApp again in Guest inbox, Settings (or update WHATSAPP_TOKEN in Vercel).';
+  if (code === 190) return 'The WhatsApp access token has expired or is wrong. Connect WhatsApp again in Inbox, Settings (or update WHATSAPP_TOKEN in Vercel).';
   if (code === 131056) return 'Too many messages to this guest in a short time. Wait a minute and try again.';
   if (code === 133010) return 'The WhatsApp number is not registered with the Cloud API yet. Finish its setup in Meta.';
   return fallback;
@@ -239,7 +242,7 @@ export function explain(code, fallback) {
  *   opts {timeoutMs = 10000, fetch, raw (resolve the Response itself)}
  */
 export async function graph(cfg, method, path, body, opts = {}) {
-  if (!cfg.token && !opts.noAuth) throw new WhatsAppError('This WhatsApp number has no access token. Connect it again in Guest inbox, Settings (or set WHATSAPP_TOKEN in Vercel).', { code: -1 });
+  if (!cfg.token && !opts.noAuth) throw new WhatsAppError('This WhatsApp number has no access token. Connect it again in Inbox, Settings (or set WHATSAPP_TOKEN in Vercel).', { code: -1 });
   const doFetch = opts.fetch || globalThis.fetch;
   const url = /^https:\/\//.test(path) ? path : cfg.baseUrl + '/' + cfg.version + path;
   const headers = opts.noAuth ? {} : { Authorization: 'Bearer ' + cfg.token };
@@ -282,6 +285,24 @@ export async function sendText(cfg, phoneNumberId, to, text, opts = {}) {
   return String(id);
 }
 
+/**
+ * Send a photo or video by link: {type: 'image' | 'video', image|video: {link, caption}}. Meta downloads the file from the
+ * link, so it must stay readable for a few minutes (the signed address lives an hour). Limits from Meta's Cloud API media
+ * reference (checked before upload, api/_lib/inbox.js MEDIA): images JPEG / PNG up to 5 MB, videos MP4 / 3GPP (H.264
+ * video, AAC audio) up to 16 MB, captions up to 1024 characters. Meta's pages could not be fetched from here when this was
+ * written (2026-10), so these are the documented limits as known; Meta's own answer is passed on if it refuses a file.
+ */
+export async function sendMedia(cfg, phoneNumberId, to, kind, link, caption, opts = {}) {
+  if (kind !== 'image' && kind !== 'video') throw new WhatsAppError('Only photos and videos can be sent here.');
+  const item = { link: String(link) };
+  if (caption) item.caption = String(caption).slice(0, 1024);
+  const body = { messaging_product: 'whatsapp', recipient_type: 'individual', to: String(to).replace(/\D/g, ''), type: kind, [kind]: item };
+  const j = await graph(cfg, 'POST', '/' + encodeURIComponent(phoneNumberId) + '/messages', body, opts);
+  const id = j && Array.isArray(j.messages) && j.messages[0] && j.messages[0].id;
+  if (!id) throw new WhatsAppError('WhatsApp did not confirm the message.', { retryable: true });
+  return String(id);
+}
+
 /** Tell WhatsApp the guest's message was read (blue ticks on their phone). Never throws. */
 export async function markRead(cfg, phoneNumberId, messageId, opts = {}) {
   try {
@@ -292,14 +313,16 @@ export async function markRead(cfg, phoneNumberId, messageId, opts = {}) {
   }
 }
 
-/** A file the guest sent: {mime, bytes}. Refuses files larger than maxBytes. */
+/** A file the guest sent: {mime, bytes}. Refuses files larger than maxBytes (a number, or a function of Meta's type for
+ * the file: (mime) -> the limit for it, checked before anything is downloaded). */
 export async function fetchMedia(cfg, mediaId, maxBytes, opts = {}) {
   const info = await graph(cfg, 'GET', '/' + encodeURIComponent(mediaId), null, opts);
   if (!info || typeof info.url !== 'string' || !/^https:\/\//.test(info.url)) throw new WhatsAppError('WhatsApp no longer has this file (files are kept for 30 days).', { code: 404 });
-  if (Number(info.file_size) > maxBytes) throw new WhatsAppError('This file is too large to open here. Ask the guest to send it by email.', { code: 413 });
+  const max = typeof maxBytes === 'function' ? maxBytes(String(info.mime_type || '')) : maxBytes; // by type: Meta says it first
+  if (Number(info.file_size) > max) throw new WhatsAppError('This file is too large to open here. Ask the guest to send it by email.', { code: 413 });
   const res = await graph(cfg, 'GET', info.url, null, Object.assign({}, opts, { raw: true }));
   const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.length > maxBytes) throw new WhatsAppError('This file is too large to open here. Ask the guest to send it by email.', { code: 413 });
+  if (bytes.length > max) throw new WhatsAppError('This file is too large to open here. Ask the guest to send it by email.', { code: 413 });
   return { mime: String(info.mime_type || res.headers.get('content-type') || 'application/octet-stream'), bytes };
 }
 
@@ -318,6 +341,21 @@ export async function exchangeCode(cfg, code, opts = {}) {
   const t = j && typeof j.access_token === 'string' ? j.access_token : '';
   if (!t) throw new WhatsAppError('Facebook did not give a token for this WhatsApp account. Try connecting again.');
   return t;
+}
+
+/**
+ * A number's Embedded Signup token for a fresh one. The configuration's tokens expire 60 days after they are made or
+ * last renewed, and an expired one cannot be renewed, so the nightly job renews them well before that. The old token
+ * keeps working until it expires. -> {token, expiresIn (seconds, or null)}
+ */
+export async function renewToken(cfg, token, opts = {}) {
+  if (!cfg.appId || !cfg.appSecret) throw new WhatsAppError('Connecting with Facebook is not set up on the server yet (WHATSAPP_APP_ID and WHATSAPP_APP_SECRET).', { code: -1 });
+  const q = new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: cfg.appId, client_secret: cfg.appSecret, set_token_expires_in_60_days: 'true', fb_exchange_token: String(token) });
+  const j = await graph(Object.assign({}, cfg, { secret: cfg.appSecret + ' ' + token }), 'GET', '/oauth/access_token?' + q.toString(), null, Object.assign({ noAuth: true }, opts));
+  const t = j && typeof j.access_token === 'string' ? j.access_token : '';
+  if (!t) throw new WhatsAppError('Facebook did not give a new token for this WhatsApp number.');
+  const n = Number(j.expires_in);
+  return { token: t, expiresIn: Number.isFinite(n) && n > 0 ? n : null };
 }
 
 /**

@@ -1,13 +1,19 @@
 /* Orbique service worker: lets the installed app open quickly and show the last loaded app when offline.
  *
  *   page navigations (/, /guest/<token>) and /config.js  network first; offline -> the cached copy (index.html)
- *   /vendor/* and /icons/*                               cache first, refreshed in the background
- *   /api/*, Supabase and every other site                never touched (always the network, never cached)
+ *   /vendor/*, /icons/* and /sounds/*                    cache first, refreshed in the background
+ *   tiles.openfreemap.org (style, sprites, fonts, tiles)  from a saved guest map ('orbique-maps-<building>') when it is
+ *                                                       there, else the network (never stored here)
+ *   /api/*, /privacy, Supabase and every other site      never touched (always the network, never cached)
  *
- * Bump VERSION when this file's caching rules change; old caches are deleted on activate.
+ * The guest app (app/pages/nearby.js) fills 'orbique-maps-<building>' itself, on the guest's own phone, so the Nearby
+ * maps work without internet. Those caches are kept when VERSION changes (the page refreshes them every 30 days).
+ * Bump VERSION when this file's caching rules change; old app caches are deleted on activate.
  */
-const VERSION = 'orbique-v4-1';
-const PRECACHE = ['/index.html', '/config.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/vendor/supabase.js', '/vendor/jspdf.umd.min.js'];
+const VERSION = 'orbique-v4-4';
+const MAPS = 'orbique-maps-';
+const MAP_HOST = 'tiles.openfreemap.org';
+const PRECACHE = ['/index.html', '/config.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/vendor/supabase.js', '/vendor/jspdf.umd.min.js', '/sounds/orbique_alert.wav'];
 const NETWORK_TIMEOUT = 6000; // on a slow connection, fall back to the cached app after this long
 
 self.addEventListener('install', (event) => {
@@ -27,7 +33,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k.startsWith('orbique-') && k !== VERSION).map((k) => caches.delete(k)));
+    await Promise.all(keys.filter((k) => k.startsWith('orbique-') && !k.startsWith(MAPS) && k !== VERSION).map((k) => caches.delete(k)));
     if (self.registration.navigationPreload) { try { await self.registration.navigationPreload.enable(); } catch (e) { /* not supported */ } }
     await self.clients.claim();
   })());
@@ -37,11 +43,13 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (url.hostname === MAP_HOST) return event.respondWith(savedMap(req)); // the guest's saved Nearby map first
   if (url.origin !== self.location.origin) return; // Supabase, fonts, CDNs: straight to the network
   if (url.pathname.startsWith('/api/')) return;     // the server API is never cached
+  if (url.pathname === '/privacy' || url.pathname === '/privacy.html') return; // the public privacy page is not the app
   if (req.mode === 'navigate') return event.respondWith(page(event));
   if (url.pathname === '/config.js') return event.respondWith(networkFirst(req, '/config.js'));
-  if (url.pathname.startsWith('/vendor/') || url.pathname.startsWith('/icons/')) return event.respondWith(cacheFirst(event, req));
+  if (url.pathname.startsWith('/vendor/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/sounds/')) return event.respondWith(cacheFirst(event, req));
 });
 
 function timeout(promise, ms) {
@@ -92,5 +100,22 @@ async function cacheFirst(event, req) {
   const cached = await cache.match(req, { ignoreSearch: true });
   const refresh = fetch(req).then((res) => { if (cacheable(res)) return cache.put(req, res.clone()).then(() => res); return res; }).catch(() => null);
   if (cached) { event.waitUntil(refresh); return cached; }
-  return (await refresh) || Response.error();
+  // offline and not in the app cache: a saved guest map also holds the map library (/vendor/maplibre-gl.*)
+  return (await refresh) || (await fromMaps(req, true)) || Response.error();
+}
+
+async function fromMaps(req, ignoreSearch) {
+  const keys = (await caches.keys()).filter((k) => k.startsWith(MAPS));
+  for (const k of keys) {
+    const hit = await (await caches.open(k)).match(req, { ignoreSearch: !!ignoreSearch, ignoreVary: true });
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// a saved map answers first (so a saved map stays one consistent set), anything else goes to the network uncached
+async function savedMap(req) {
+  const hit = await fromMaps(req, false);
+  if (hit) return hit;
+  return fetch(req);
 }

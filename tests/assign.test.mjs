@@ -65,10 +65,14 @@ test('locks without a manual pick: guest in-house, door code sent, unit number a
   assert.equal(A.lockReason(bk('a', 'u211', '2026-11-01', '2026-11-03', { status: 'checked_in' }), NOW), 'in_house');
   assert.equal(A.lockReason(bk('b', 'u211', '2026-11-05', '2026-11-07', { codeStatus: 'sent' }), NOW), 'code_sent');
   const c = bk('c', 'u211', '2026-11-01', '2026-11-03', { checkInTime: '15:00' });
-  assert.equal(A.lockReason(c, '2026-11-01T14:29'), null);
+  /* the unit number reaches the guest 24 hours before check-in (owner, 2026-10-29), so the booking locks then */
+  assert.equal(A.REVEAL_MINUTES, 24 * 60);
+  assert.equal(A.lockReason(c, '2026-10-31T14:59'), null);
+  assert.equal(A.lockReason(c, '2026-10-31T15:00'), 'revealed');
   assert.equal(A.lockReason(c, '2026-11-01T14:30'), 'revealed');
-  assert.equal(A.unitRevealAt(c), '2026-11-01T14:30');
-  assert.equal(A.unitRevealAt(bk('d', 'u211', '2026-11-01', '2026-11-03', { checkInTime: '00:10' })), '2026-10-31T23:40');
+  assert.equal(A.unitRevealAt(c), '2026-10-31T15:00');
+  assert.equal(A.unitRevealAt(bk('d', 'u211', '2026-11-01', '2026-11-03', { checkInTime: '00:10' })), '2026-10-31T00:10');
+  assert.equal(A.unitRevealAt(bk('f', 'u211', '2026-03-01', '2026-03-03', { checkInTime: '15:00' })), '2026-02-28T15:00');
   assert.equal(A.lockReason(bk('e', null, '2026-11-01', '2026-11-03'), NOW), null); /* nothing to lock without a unit */
 });
 

@@ -436,7 +436,7 @@
 
   /* ------------------------------------------------------------------ buildings and unit types
      A building groups units at one address. A unit type ("Deluxe") is what the channels sell: Orbique picks the unit for each
-     booking (O.assign). Guests, invoices and the website see "Building · Type", and the unit number only from 30 minutes
+     booking (O.assign). Guests, invoices and the website see "Building · Type", and the unit number only from 24 hours
      before check-in. Units without a type keep working exactly as before. */
   var BT = { sel: {} }; /* ticked unit ids in the tagging lists */
   var CURRENCIES = ['MYR', 'SGD', 'THB', 'IDR', 'PHP', 'VND', 'USD', 'EUR', 'GBP', 'AUD'];
@@ -485,7 +485,7 @@
     var html = '<div class="pg-props">' + tabHTML();
     if (!bds.length) {
       html += '<div class="card pp-empty"><h3>Group your units by building and type</h3>' +
-        '<p>When a building has several units of the same kind, for example three Deluxe two-bedroom flats, list them once as a unit type. Channels sell the type, Orbique picks the unit for each booking, and guests see their unit number from 30 minutes before check-in.</p>' +
+        '<p>When a building has several units of the same kind, for example three Deluxe two-bedroom flats, list them once as a unit type. Channels sell the type, Orbique picks the unit for each booking, and guests see their unit number from 24 hours before check-in.</p>' +
         '<p>Units you leave out keep working exactly as they do now.</p>' +
         (canCreate ? '<button type="button" class="btn btn-primary" data-bt="addbd">' + O.icon('plus') + 'Add a building</button>' : '<p class="small">An account owner or ops manager can add buildings.</p>') + '</div>';
     } else {
@@ -633,6 +633,7 @@
       O.places.html({ country: fCountry, state: f.state, city: f.city }, mf, { prefix: 'bt-', stateOptional: true, countryOpts: { hint: 'With buildings in more than one country, the top bar can show one country at a time.' } }) +
       mf('address', 'Street address', mi('address', f.address, ' maxlength="160" placeholder="e.g. 2 Jalan Saujana Indah, Bukit Jalil"'), { full: true, hint: 'Guests see the building address before they get their unit number.' }) +
       mf('zip', 'Postcode', mi('zip', f.zip, ' maxlength="12" inputmode="numeric" placeholder="57000"'), { opt: true }) +
+      (O.nearbyStaff ? mf('ll', 'Map location', O.nearbyStaff.locFieldHTML('ll', f.lat, f.lng, { id: 'bt-ll' }), { full: true, opt: true, hint: 'Pins the building on the guest app maps, so guests can find nearby places and the way back, also without internet.' }) : '') +
       mf('email', 'Email for booking sites', mi('email', f.email, ' type="email" inputmode="email" maxlength="80" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.email) || 'e.g. stay@example.com') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business email in Brand.' }) +
       mf('phone', 'Phone for booking sites', mi('phone', f.phone, ' type="tel" inputmode="tel" maxlength="24" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.phone) || '+60 3-1234 5678') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business phone in Brand.' }) +
       mf('currency', 'Currency', '<select class="select" id="bt-currency" name="currency"' + (curLocked ? ' disabled' : '') + '>' + cur.map(function (c) { return '<option' + (c === (f.currency || 'MYR') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>', curLocked ? { hint: 'Fixed while this building is connected to channels: booking sites keep the currency it was connected with.' } : null) +
@@ -652,19 +653,27 @@
       if (!/^\d{2}:\d{2}$/.test(v.checkInTime)) E.checkInTime = 'Choose a check-in time.';
       if (!/^\d{2}:\d{2}$/.test(v.checkOutTime)) E.checkOutTime = 'Choose a check-out time.';
       else if (!E.checkInTime && v.checkOutTime >= v.checkInTime) E.checkOutTime = 'Check-out should be earlier than check-in.';
+      var llText = mval(el, 'll'), ll = llText ? O.geo.parseCoords(llText) : null;
+      if (llText && !ll) E.ll = 'Use latitude, longitude like 3.0561, 101.6887, or paste a Google Maps link.';
       if (!mErrors(el, E)) return false;
       var b = bd || { id: O.uid('BD'), createdAt: D.NOW, createdBy: O.state.viewer };
       Object.keys(v).forEach(function (k) { if (v[k]) b[k] = v[k]; else delete b[k]; });
+      /* the map pin for the guest app's Nearby section; the walking routes start here, so they are found again when it moves */
+      var oldLl = O.geo.validLatLng(b.lat, b.lng) ? { lat: +b.lat, lng: +b.lng } : null;
+      if (O.$('[name="ll"]', el)) { if (ll) { b.lat = ll.lat; b.lng = ll.lng; } else { delete b.lat; delete b.lng; } }
+      var llMoved = !isNew && ll && (!oldLl || O.geo.distance(oldLl, ll) > 5); /* a first location counts too: places added before it get routes */
       if (isNew) D.buildings.push(b);
       audit((isNew ? 'Added building ' : 'Updated building ') + b.name);
       O.emit('data');
       U.toast(isNew ? b.name + ' added. Add its unit types next.' : 'Saved ' + b.name);
+      if (llMoved && O.nearbyStaff) O.nearbyStaff.reroute(b);
       if (isNew) setTimeout(function () { typeModal(b, null); }, 60);
     } });
     U.modal({ title: isNew ? 'Add a building' : 'Edit ' + bd.name, sub: isNew ? 'A building holds units that share an address.' : 'Changes show to guests straight away', body: body, actions: actions });
     /* a new country suggests its currency (still changeable) */
     setTimeout(function () {
       var fm = O.$('.bt-form'); if (fm) O.places.wire(fm, null, { prefix: 'bt-' });
+      if (fm && O.nearbyStaff) O.nearbyStaff.wireLocField(fm, { query: function () { var pl = O.places.read(fm); return [mval(fm, 'address'), pl.city, pl.state, O.countryLabel(pl.country || fCountry)].filter(Boolean).join(', '); } });
       var c = document.getElementById('bt-country'), u = document.getElementById('bt-currency'); if (!c || !u || curLocked) return;
       c.onchange = function () { var k = O.defaultCurrencyFor(c.value); if (![].some.call(u.options, function (o) { return o.value === k; })) u.add(new Option(k, k)); u.value = k; };
     }, 0);
@@ -970,7 +979,7 @@
     return '<div class="pp-sec"><h4>Building and unit type</h4><div class="sd">Units of one type share a listing on the channels, and Orbique picks the unit for each booking.</div><div class="form-grid">' +
       fld('buildingId', 'Building', '<select class="select" id="pp-buildingId" name="buildingId"><option value="">Not in a building</option>' + bds.map(function (b) { return '<option value="' + esc(b.id) + '"' + (b.id === f.buildingId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select>', { opt: true }) +
       fld('unitTypeId', 'Unit type', '<select class="select" id="pp-unitTypeId" name="unitTypeId">' + typeOptsHTML(f.buildingId, f.unitTypeId) + '</select>', { opt: true }) +
-      fld('unitNo', 'Unit number', inp('unitNo', f.unitNo, ' maxlength="12" placeholder="e.g. 21-1"'), { hint: 'Only your team sees this. Guests get it 30 minutes before check-in.' }) +
+      fld('unitNo', 'Unit number', inp('unitNo', f.unitNo, ' maxlength="12" placeholder="e.g. 21-1"'), { hint: 'Only your team sees this. Guests get it 24 hours before check-in.' }) +
       fld('assignPriority', 'Fill order', inp('assignPriority', f.assignPriority, ' type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="e.g. 1"'), { opt: true, hint: 'Lower numbers get bookings first when two units fit equally well.' }) +
       '</div></div>';
   }

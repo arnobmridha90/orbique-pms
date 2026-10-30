@@ -24,7 +24,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const list = (dir, ext) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).sort().map((f) => path.join(dir, f)) : []);
 const jsSafe = (code) => code.replace(/<\/(script)/gi, '<\\/$1');
 /* CommonJS files the page and the api/ functions both use: [file, name under O] */
-const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg'], ['api/_lib/shared/rateplan.cjs', 'rateplan'], ['api/_lib/shared/sitecontent.cjs', 'sitecontent']]; /* in this order: guestmsg uses O.assign */
+const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg'], ['api/_lib/shared/greeting.cjs', 'greeting'], ['api/_lib/shared/rateplan.cjs', 'rateplan'], ['api/_lib/shared/sitecontent.cjs', 'sitecontent'], ['api/_lib/shared/geo.cjs', 'geo']]; /* in this order: guestmsg uses O.assign, greeting uses O.guestmsg */
 
 function page() {
   let shell = read(path.join(APP, 'shell.html'));
@@ -72,7 +72,19 @@ const NATIVE_VENDORS = [
   ['node_modules/@capacitor/push-notifications/dist/plugin.js', 'vendor/cap-push.js']
 ];
 
-function copy(from, to) { fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to); }
+/* MapLibre GL JS (BSD-3-Clause, pinned in package.json) for the guest app's Nearby maps; loaded only when a map opens */
+const MAP_VENDORS = [
+  ['node_modules/maplibre-gl/dist/maplibre-gl.js', 'vendor/maplibre-gl.js'],
+  ['node_modules/maplibre-gl/dist/maplibre-gl.css', 'vendor/maplibre-gl.css'],
+  ['node_modules/maplibre-gl/LICENSE.txt', 'vendor/maplibre-gl.LICENSE.txt']
+];
+
+function copy(from, to) {
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  /* the source maps are not shipped, so drop the comment that points browsers at them */
+  if (/\.(js|css)$/.test(from) && /maplibre/.test(from)) fs.writeFileSync(to, read(from).replace(/\n?\/[/*]# sourceMappingURL=\S+(\s*\*\/)?\s*$/, '\n'));
+  else fs.copyFileSync(from, to);
+}
 
 if (local) {
   const out = path.resolve(outArg || path.join(ROOT, 'dist-local', 'orbique.html'));
@@ -94,7 +106,7 @@ if (local) {
   const vendors = [
     ['node_modules/@supabase/supabase-js/dist/umd/supabase.js', 'vendor/supabase.js'],
     ['node_modules/jspdf/dist/jspdf.umd.min.js', 'vendor/jspdf.umd.min.js']
-  ];
+  ].concat(MAP_VENDORS);
   for (const [from, to] of vendors) {
     const src = path.join(ROOT, from);
     if (fs.existsSync(src)) copy(src, path.join(dist, to)); else console.warn('missing ' + from + ' (run npm install)');
@@ -124,14 +136,15 @@ async function buildMobile() {
   fs.rmSync(www, { recursive: true, force: true });
   fs.mkdirSync(www, { recursive: true });
   fs.writeFileSync(path.join(www, 'index.html'), page());
-  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg']) {
+  /* the alert chime (scripts/alert-sound.py) is played by O.alertSound from sounds/ next to index.html */
+  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'sounds/orbique_alert.wav']) {
     const src = path.join(ROOT, 'public', f);
     if (fs.existsSync(src)) copy(src, path.join(www, f));
   }
   const vendors = [
     ['node_modules/@supabase/supabase-js/dist/umd/supabase.js', 'vendor/supabase.js'],
     ['node_modules/jspdf/dist/jspdf.umd.min.js', 'vendor/jspdf.umd.min.js']
-  ].concat(NATIVE_VENDORS);
+  ].concat(NATIVE_VENDORS, MAP_VENDORS);
   for (const [from, to] of vendors) {
     const src = path.join(ROOT, from);
     if (!fs.existsSync(src)) { console.error('missing ' + from + ' (run npm install)'); process.exit(1); }

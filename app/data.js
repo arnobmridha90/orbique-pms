@@ -201,7 +201,7 @@
     { propertyId: 'hv2', guest: 'Daniel Wei', country: 'SG', channel: 'vrbo', checkIn: '2026-10-06', checkOut: '2026-10-11', createdAt: '2026-08-11T09:02', checkInTime: '15:00', idVerified: true, codeStatus: 'sent', guests: 5 },
     /* same-day bookings: confirmed this morning, arriving today */
     { propertyId: 'bf1a', guest: 'Hafiz Aziz', country: 'MY', channel: 'airbnb', checkIn: '2026-10-06', checkOut: '2026-10-07', createdAt: '2026-10-06T09:02', checkInTime: '12:00', idVerified: false, codeStatus: 'held', sameDay: true },
-    { propertyId: 'kls', guest: 'Emma Laurent', country: 'FR', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-08', createdAt: '2026-10-06T09:47', checkInTime: '15:00', idVerified: true, codeStatus: 'scheduled', sameDay: true },
+    { propertyId: 'kls', guest: 'Emma Laurent', country: 'FR', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-08', createdAt: '2026-10-06T09:47', checkInTime: '15:00', idVerified: true, codeStatus: 'sent', sameDay: true },
     /* in-house guests */
     { propertyId: 'mkr', guest: 'Mohammed Al-Farsi', country: 'OM', channel: 'booking', checkIn: '2026-10-03', checkOut: '2026-10-09', createdAt: '2026-08-02T16:40', idVerified: true, codeStatus: 'sent', guests: 6 },
     { propertyId: 'hsg', guest: 'Olivia Chen', country: 'AU', channel: 'airbnb', checkIn: '2026-10-04', checkOut: '2026-10-08', createdAt: '2026-07-19T07:55', idVerified: true, codeStatus: 'sent', guests: 5 },
@@ -375,12 +375,12 @@
   reviews.push({ id: 'RV-904', bookingId: null, guest: 'Yuki Tanaka', country: 'JP', propertyId: 'kls', platform: 'airbnb', stars: 4, date: '2026-10-03', text: 'Amazing view of the towers. The building lift was slow at peak times.', tags: ['Location'], sub: { cleanliness: 5, communication: 5, checkin: 4, accuracy: 4 }, reply: null });
   reviews.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
 
-  /* ---------------- guest inbox ---------------- */
+  /* ---------------- inbox ---------------- */
   /* the story booking for a guest name: the stay nearest today (several generated guests share names) */
   function stayGap(b) { return b.checkIn <= TODAY && TODAY < b.checkOut ? 0 : Math.min(Math.abs(O.d.diff(b.checkIn, TODAY)), Math.abs(O.d.diff(b.checkOut, TODAY))); }
   function bk(name, pid) { return bookings.filter(function (b) { return b.guest.name === name && b.status !== 'cancelled' && (!pid || b.propertyId === pid); }).sort(function (a, c) { return stayGap(a) - stayGap(c); })[0]; }
   var conversations = [
-    { id: 'C-1', bookingId: bk('Hafiz Aziz').id, unread: 2, pinned: true, messages: [
+    { id: 'C-1', bookingId: bk('Hafiz Aziz').id, unread: 2, pinned: true, lists: ['L-vip'], messages: [
       { from: 'system', text: 'New Airbnb booking confirmed at 9:02 AM: today 12:00 to tomorrow 11:00.', time: '2026-10-06T09:02' },
       { from: 'guest', text: 'Hi, I just booked for today. Can I check in at 12?', time: '2026-10-06T09:05' },
       { from: 'guest', text: 'Also is there parking?', time: '2026-10-06T09:06' }
@@ -625,7 +625,7 @@
      Platforms sell the type; Orbique picks the unit (O.assign). Unit numbers are for the team only.
      Generated after everything else, with their own random streams, so the rest of the demo stays exactly as it was. */
   var buildings = [
-    { id: 'BD-saujana', name: 'Seri Saujana Residences', address: '2 Jalan Saujana Indah, Bukit Jalil, 57000 Kuala Lumpur', city: 'Kuala Lumpur', state: 'Wilayah Persekutuan', zip: '57000', country: 'MY', currency: 'MYR', propertyType: 'apartment', email: 'stays@orbique.site', phone: '+60 3-2785 1100', checkInTime: '15:00', checkOutTime: '11:00', createdAt: '2026-07-20T10:00' }
+    { id: 'BD-saujana', name: 'Seri Saujana Residences', address: '2 Jalan Saujana Indah, Bukit Jalil, 57000 Kuala Lumpur', city: 'Kuala Lumpur', state: 'Wilayah Persekutuan', zip: '57000', country: 'MY', currency: 'MYR', lat: 3.0561, lng: 101.6887, propertyType: 'apartment', email: 'stays@orbique.site', phone: '+60 3-2785 1100', checkInTime: '15:00', checkOutTime: '11:00', createdAt: '2026-07-20T10:00' }
   ];
   var unitTypes = [
     { id: 'UT-deluxe', buildingId: 'BD-saujana', name: 'Deluxe', maxGuests: 4, beds: 2, description: 'Two bedrooms, city view, on the middle floors.', order: 1, createdAt: '2026-07-20T10:05' },
@@ -643,6 +643,46 @@
       lockCode: u[4], lockBrand: 'Igloohome', wifi: u[5], parking: 'Basement P2', checkInTime: '15:00', checkOutTime: '11:00',
       buildingId: 'BD-saujana', unitTypeId: u[2], unitNo: u[1], createdAt: '2026-07-20T10:10' };
     properties.push(p); propById[p.id] = p;
+  });
+  /* a greeting message for Seri Saujana Residences (pages/greetings.js, api/_lib/shared/greeting.cjs): fixed wording, the
+     parts that change per booking ({guest_first}, {unit_no}, {door_code} ...) and two fields of its own with a value per unit */
+  var greetings = [
+    { id: 'GR-saujana-arrival', buildingId: 'BD-saujana', name: 'Arrival', updatedAt: '2026-10-01T10:00', updatedBy: 's1',
+      text: 'Hi {guest_first}, welcome to {building}!\n\nYour stay: {checkin_date} {checkin_time} to {checkout_date} {checkout_time} ({nights} nights).\n' +
+        'Your unit is {unit_no}. The lobby code is {f_lobby_code} and the door code is {door_code}.\nParking: {f_parking_bay}. Wi-Fi: {wifi_name}, password {wifi_password}.\n\n' +
+        'Everything for your stay is in your guest app: {guest_app_link}\nSee you soon!',
+      fields: [
+        { key: 'lobby_code', label: 'Lobby code', private: true, values: { ss211: '2101', ss226: '2206', ss229: '2209', ss461: '4601', ss49b: '4902' } },
+        { key: 'parking_bay', label: 'Parking bay', private: false, values: { ss211: 'P2, bay 21', ss226: 'P2, bay 26', ss229: 'P2, bay 29', ss461: 'P3, bay 46', ss49b: 'P3, bay 49' } }
+      ] }
+  ];
+  /* nearby places for the guest app (pages/nearby.js, api/_lib/shared/geo.cjs): demo picks around Seri Saujana Residences.
+     The names are made up for the demo. Walking routes are drawn street-style here (staff get real ones from the routing
+     service when they save a place); the exchange counter has none, so the guest app shows its straight-line fallback. */
+  function demoRoute(from, to, bend) {
+    var mid = from[0] + (to[0] - from[0]) * bend, pts = [from, [mid, from[1]], [mid, to[1]], to];
+    var m = 0, rad = Math.PI / 180;
+    for (var i = 1; i < pts.length; i++) {
+      var a = pts[i - 1], b = pts[i], x = (b[0] - a[0]) * rad * Math.cos((a[1] + b[1]) / 2 * rad), y = (b[1] - a[1]) * rad;
+      m += Math.sqrt(x * x + y * y) * 6371008.8;
+    }
+    return { coords: pts.map(function (c) { return [Math.round(c[0] * 1e6) / 1e6, Math.round(c[1] * 1e6) / 1e6]; }), meters: Math.round(m), minutes: Math.max(1, Math.round(m / 80)), mode: 'foot' };
+  }
+  var HOME_LL = [101.6887, 3.0561];
+  var places = [
+    ['PL-sj-1', 'food', 'Restoran Saujana Corner', 'Nasi lemak and roti canai from 7 AM. Ask for the sambal on the side.', 'Jalan Saujana Indah 3', 3.0574, 101.6896, '7 AM to 11 PM', 0.5],
+    ['PL-sj-2', 'streetfood', 'Tuesday night market', 'Every Tuesday from 5 PM. Try the apam balik and grilled satay.', 'Car park beside Jalan Jalil Perkasa', 3.0598, 101.6862, 'Tuesdays 5 PM to 11 PM', 0.3],
+    ['PL-sj-3', 'cafe', 'Kopi Jalil', 'Local kopi and kaya toast. Quiet in the mornings.', 'Jalan Saujana Indah 7', 3.0552, 101.6905, '8 AM to 6 PM', 0.6],
+    ['PL-sj-4', 'hospital', 'Jalil Specialist Hospital', 'Emergency department open 24 hours. For an ambulance call 999.', 'Jalan Jalil Utama', 3.0622, 101.6958, 'Open 24 hours', 0.4],
+    ['PL-sj-5', 'clinic', 'Klinik Saujana 24 Jam', 'Walk-in doctor for fevers, stomach upsets and small cuts.', 'Jalan Saujana Indah 11', 3.0546, 101.6874, 'Open 24 hours', 0.5],
+    ['PL-sj-6', 'pharmacy', 'Farmasi Indah', 'Plasters, sunscreen, mosquito repellent and medicine.', 'Jalan Saujana Indah 5', 3.0569, 101.6879, '9 AM to 10 PM', 0.5],
+    ['PL-sj-7', 'money', 'Jalil Money Changer', 'Better rates than the airport. Bring your passport.', 'Ground floor, Jalil Square', 3.0531, 101.6921, '10 AM to 8 PM', 0],
+    ['PL-sj-8', 'atm', 'ATM at Saujana Mart', 'Takes foreign cards. Next to the convenience store.', 'Jalan Saujana Indah 2', 3.0565, 101.6891, 'Open 24 hours', 0.5],
+    ['PL-sj-9', 'convenience', 'Saujana Mart', 'Drinks, snacks, SIM top-ups and Touch \'n Go reloads.', 'Jalan Saujana Indah 2', 3.0566, 101.6892, 'Open 24 hours', 0.5],
+    ['PL-sj-10', 'transport', 'Bukit Jalil LRT station', 'Sri Petaling line to the city centre, about 30 minutes to Masjid Jamek.', 'Jalan Jalil Perkasa 1', 3.0583, 101.6923, '6 AM to midnight', 0.7]
+  ].map(function (x, i) {
+    return { id: x[0], buildingId: 'BD-saujana', category: x[1], name: x[2], note: x[3], address: x[4], lat: x[5], lng: x[6], hours: x[7], phone: '', order: i + 1,
+      route: x[8] ? demoRoute(HOME_LL, [x[6], x[5]], x[8]) : null, updatedAt: '2026-10-01T10:00', updatedBy: 's1' };
   });
   var typedFrom = bookings.length;
   function typed(b, typeId) { b.unitTypeId = typeId; b.assignment = { how: 'auto', by: null, at: b.createdAt, locked: false }; return b; }
@@ -662,7 +702,7 @@
   }
   /* the story: one Deluxe guest arrives today (unit number shows at 2:30 PM), a Deluxe Supreme family is in-house, and an
      Agoda booking for Deluxe on 11 to 14 Oct has no unit yet: each night one Deluxe unit is free, but never the same one */
-  saujanaBooking({ propertyId: 'ss211', guest: 'Aiko Suzuki', country: 'JP', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-09', createdAt: '2026-09-18T22:14', checkInTime: '15:00', guests: 2, idVerified: true, codeStatus: 'scheduled' });
+  saujanaBooking({ propertyId: 'ss211', guest: 'Aiko Suzuki', country: 'JP', channel: 'booking', checkIn: '2026-10-06', checkOut: '2026-10-09', createdAt: '2026-09-18T22:14', checkInTime: '15:00', guests: 2, idVerified: true, codeStatus: 'sent' });
   saujanaBooking({ propertyId: 'ss461', guest: 'Wang Fang', country: 'CN', channel: 'agoda', checkIn: '2026-10-04', checkOut: '2026-10-08', createdAt: '2026-09-09T08:31', guests: 5, idVerified: true, codeStatus: 'sent' });
   saujanaBooking({ propertyId: 'ss211', guest: 'Nur Aisyah', country: 'MY', channel: 'airbnb', checkIn: '2026-10-10', checkOut: '2026-10-12', createdAt: '2026-09-27T13:02', guests: 3 });
   saujanaBooking({ propertyId: 'ss226', guest: 'Haruto Sato', country: 'JP', channel: 'booking', checkIn: '2026-10-12', checkOut: '2026-10-15', createdAt: '2026-09-30T19:45', guests: 2 });
@@ -781,8 +821,10 @@
     /* a demo date literal written in page code, moved to match the story date: D.sd('2026-10-05T16:20'). Call it at render time. */
     sd: function (iso) { var D = O.data; if (!iso || !D.SHIFT) return iso; return O.d.add(iso.slice(0, 10), D.SHIFT) + iso.slice(10); },
     invCats: invCats, invItems: invItems, invMoves: invMoves, itemById: itemById, checklists: checklists, capexTypes: CAPEX_TYPES,
-    channels: channels, channelOrder: channelOrder, staff: staff, properties: properties, propById: propById, buildings: buildings, unitTypes: unitTypes,
-    bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies,
+    channels: channels, channelOrder: channelOrder, staff: staff, properties: properties, propById: propById, buildings: buildings, unitTypes: unitTypes, places: places,
+    bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies, greetings: greetings,
+    /* the inbox's named chat lists, shared by the team (conversations[].lists holds their ids) */
+    inboxLists: [{ id: 'L-vip', name: 'VIP guests' }, { id: 'L-follow', name: 'Follow up' }],
     expenses: expenses, expenseTypes: expenseTypes, payMethods: payMethods, events: events,
     rateFor: rateFor, eventFor: eventFor, compSet: compSet, compPrice: compPrice, countryName: COUNTRY,
     staffById: function (id) { return staff.filter(function (s) { return s.id === id; })[0] || null; },

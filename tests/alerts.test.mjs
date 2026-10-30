@@ -1,4 +1,4 @@
-/* Booking alerts (api/_lib/alerts.js): what an alert says, the settings, each sender, the outbox and Firebase sign-in.
+/* Booking alerts (api/_lib/alerts.js): what an alert says, the settings, each sender, the outbox, Firebase sign-in and the alert sound.
  * No network: every request goes to a fake fetch, every query to a fake Supabase client.
  *
  *   node --test tests/alerts.test.mjs
@@ -9,7 +9,7 @@ import { generateKeyPairSync, createVerify } from 'node:crypto';
 import { fakeSb, op } from './inbox/fake-sb.mjs';
 import {
   normalizeSettings, describe, moneyText, shortDate, emailConfig, pushConfig, sendEmail, sendWhatsApp, serviceJwt,
-  googleAccessToken, resetTokenCache, sendPush, sendRow, processOutbox, MAX_ATTEMPTS
+  googleAccessToken, resetTokenCache, sendPush, sendRow, processOutbox, MAX_ATTEMPTS, PUSH_CHANNEL, PUSH_SOUND
 } from '../api/_lib/alerts.js';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
@@ -21,6 +21,20 @@ const ctx = {
   buildings: new Map([['BL1', { id: 'BL1', name: 'Vortex KLCC', currency: 'MYR' }]])
 };
 const reply = (status, body) => ({ status, ok: status >= 200 && status < 300, json: async () => body, text: async () => JSON.stringify(body) });
+
+test('the alert sound files exist and match the push payload names', async () => {
+  const { readFileSync } = await import('node:fs');
+  assert.equal(PUSH_SOUND, 'orbique_alert');
+  const files = ['android/app/src/main/res/raw/', 'ios/App/App/', 'public/sounds/'].map((d) => readFileSync(new URL('../' + d + PUSH_SOUND + '.wav', import.meta.url)));
+  for (const f of files) {
+    assert.equal(f.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(f.toString('ascii', 8, 12), 'WAVE');
+    assert.equal(f.readUInt16LE(22), 1, 'mono');
+    assert.equal(f.readUInt32LE(24), 44100);
+    assert.ok(f.equals(files[0]), 'the three copies are the same file');
+  }
+  assert.match(readFileSync(new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8'), /orbique_alert\.wav in Resources/);
+});
 
 test('settings: everything on by default, bad addresses and numbers dropped', () => {
   assert.deepEqual(normalizeSettings(null), { on: true, kinds: { new: true, cancelled: true, changed: true }, emails: [], whatsapp: [], push: true });
@@ -156,7 +170,14 @@ test('push: signs in once, sends to every phone, forgets phones that were remove
   assert.deepEqual(deleted, ['tok-gone', 'tok-gone']);
   assert.equal(sent[0].notification.title, 'New booking · Trip.com');
   assert.deepEqual(sent[0].data, { bookingId: 'B1', kind: 'new' });
-  assert.equal(sent[0].android.notification.channel_id, 'bookings');
+  // the loud channel and Orbique's own chime on Android and iPhone
+  assert.equal(sent[0].android.priority, 'high');
+  assert.equal(sent[0].android.notification.channel_id, 'alerts_loud');
+  assert.equal(sent[0].android.notification.channel_id, PUSH_CHANNEL);
+  assert.equal(sent[0].android.notification.sound, 'orbique_alert');
+  assert.equal(sent[0].android.notification.notification_priority, 'PRIORITY_MAX');
+  assert.equal(sent[0].apns.payload.aps.sound, 'orbique_alert.wav');
+  assert.equal(sent[0].apns.headers['apns-priority'], '10');
   const none = fakeSb({ handler: () => ({ data: [], error: null }) });
   assert.match(await sendPush(none, cfg, ORG, msg, {}, { fetch }), /^skipped: no phone/);
   assert.match(await sendPush(none, pushConfig({}), ORG, msg, {}, { fetch }), /^skipped: phone alerts are not set up/);

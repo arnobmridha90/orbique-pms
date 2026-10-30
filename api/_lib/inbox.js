@@ -1,4 +1,4 @@
-/* The live guest inbox (server only): messages from WhatsApp and from booking sites through Channex land in the booking's
+/* The live inbox (server only): messages from WhatsApp and from booking sites through Channex land in the booking's
  * `conversations` record (supabase/migrations/0010_inbox.sql), and replies go back out the way the guest wrote.
  * Private module: Vercel does not expose files under api/_lib as endpoints.
  *
@@ -13,15 +13,28 @@
  *                                               accepted / declined reservation, thread assigned
  *   postNotice(sb, orgId, n, opts)              a platform notification: in the booking's chat, else the platform's feed
  *   sendReply(sb, ctx)                          one reply on WhatsApp, the booking site or email, then stored
- *   canInbox(sb, orgId, member, key)            the app's permission rules (O.can) for inbox.send / inbox.notes
+ *                                               (ctx.greeting: the greeting it was filled from, kept on the message)
+ *   sendMediaReply(sb, ctx)                     one photo or video (already in Storage, MEDIA_BUCKET) on WhatsApp, the
+ *                                               booking site (photos only) or email, then stored as an image / video message
+ *   checkMedia(via, mime, size), mediaKind(mime) what each route takes (MEDIA): photos JPEG / PNG up to 5 MB, videos MP4 /
+ *                                               3GPP up to 16 MB (WhatsApp's limits); booking sites take photos only
+ *   markConv(sb, orgId, id, change)             the chat's own flags in one step (0022 inbox_mark): pinned, archived,
+ *                                               unread, lists, favBy, trashedAt / trashedBy
+ *   purgeTrash(sb, orgId, now)                  removes for good what has been in Deleted for TRASH_DAYS, with its files
+ *   removeConvFiles(sb, orgId, id)              the chat's files in Storage (-> false when Storage failed)
+ *   forgetConv(sb, orgId, id, before?)          one chat in Deleted for good: files first, then a tombstone record
+ *   noteUpload / uploadSent / dropStaleUploads  uploads handed out and not sent: their files go after UPLOAD_HOURS
+ *   canInbox(sb, orgId, member, key)            the app's permission rules (O.can) for inbox.send / inbox.notes /
+ *                                               inbox.greetings / reviews.reply / guestapp.doorCodes, and inbox.edit (the
+ *                                               inbox's edit level: pin, archive, lists, delete, assign)
  *
  * Message times are written the way the app writes them: Malaysia time 'YYYY-MM-DDTHH:MM'.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { ApiError, bad } from './http.js';
-import { must, records, blob, tracked, todayMY, addDays } from './channex-db.js';
+import { must, records, record, blob, tracked, todayMY, addDays } from './channex-db.js';
 import { ChannexError } from './channex.js';
-import { waConfig, withToken, sendText, WINDOW_MS, WhatsAppError } from './whatsapp.js';
+import { waConfig, withToken, sendText, sendMedia, WINDOW_MS, WhatsAppError } from './whatsapp.js';
 import { translateConfig, translate, langCode } from './translate.js';
 import { inboundConfig, sendEmail } from './email-in.js';
 
@@ -402,16 +415,20 @@ export async function receiveChannex(sb, prop, event, p, opts = {}) {
 
 const SECTION_DEFAULT = {
   inbox: { ops: 'edit', housekeeping: 'edit', frontdesk: 'edit', maintenance: 'view', accountant: 'none' },
-  reviews: { ops: 'edit', frontdesk: 'edit' }
+  reviews: { ops: 'edit', frontdesk: 'edit' },
+  guestapp: { ops: 'edit', housekeeping: 'edit', frontdesk: 'edit' }
 };
 const ACTION_DEFAULT = {
   'inbox.send': ['ops', 'housekeeping', 'frontdesk'],
   'inbox.notes': ['ops', 'housekeeping', 'frontdesk'],
-  'reviews.reply': ['ops', 'frontdesk']
+  'inbox.greetings': ['ops', 'frontdesk'],
+  'reviews.reply': ['ops', 'frontdesk'],
+  'guestapp.doorCodes': ['ops', 'frontdesk']
 };
 const LV = { none: 0, view: 1, edit: 2 };
 
-/** Whether this member may do key ('inbox' = see the inbox, 'inbox.send', 'inbox.notes', 'reviews.reply'). */
+/** Whether this member may do key ('inbox' = see the inbox, 'inbox.edit' = its edit level, 'inbox.send', 'inbox.notes',
+ *  'inbox.greetings', 'reviews.reply', 'guestapp.doorCodes'). */
 export async function canInbox(sb, orgId, member, key) {
   if (!member || member.status !== 'active') return false;
   if (member.role === 'owner') return true;
@@ -420,10 +437,11 @@ export async function canInbox(sb, orgId, member, key) {
   if (meta && meta.status === 'suspended') return false;
   const ov = meta && isObj(meta.overrides) ? meta.overrides : {};
   const rp = isObj(rolePerms) ? rolePerms[member.role] : null;
-  const sec = key.split('.')[0] === 'reviews' ? 'reviews' : 'inbox';
+  const sec = Object.prototype.hasOwnProperty.call(SECTION_DEFAULT, key.split('.')[0]) ? key.split('.')[0] : 'inbox';
   const section = ('section:' + sec) in ov ? ov['section:' + sec] || 'none'
     : rp && isObj(rp.sections) && sec in rp.sections ? rp.sections[sec] : SECTION_DEFAULT[sec][member.role] || 'none';
   if (key === sec) return LV[section] >= 1;
+  if (key === sec + '.edit') return LV[section] >= 2; // the section's edit level (O.can('inbox', 'edit'))
   if (LV[section] < 2) return false;
   if (key in ov) return !!ov[key];
   if (rp && isObj(rp.actions) && key in rp.actions) return !!rp.actions[key];
@@ -482,49 +500,19 @@ export async function sendReply(sb, ctx) {
   if (ctx.staffId) msg.staffId = ctx.staffId;
   if (ctx.orig && ctx.orig !== text) { msg.orig = clip(ctx.orig, MAX_TEXT); if (langCode(ctx.origLang)) msg.origLang = langCode(ctx.origLang); }
   if (langCode(ctx.lang)) msg.lang = langCode(ctx.lang);
+  if (ctx.greeting) msg.greeting = clip(ctx.greeting, 80); // sent as a greeting message (api/messages.js 'greeting')
   const patch = {};
   if (ctx.via === 'whatsapp') {
-    const base = ctx.waConfig || waConfig();
-    if (!base.configured) throw new ApiError(503, 'not-configured', 'WhatsApp is not set up on the server yet.');
-    const num = await numberOf(sb, ctx.orgId);
-    if (!num) throw bad('no-number', 'Connect your WhatsApp business number first (Guest inbox, WhatsApp settings).');
-    const cfg = withToken(base, await tokenOf(sb, num.phone_number_id));
-    if (!r.whatsapp) throw bad('no-phone', 'This guest has no phone number to message on WhatsApp.');
-    if (!r.whatsapp.open) throw bad('window-closed', 'WhatsApp only allows a reply within 24 hours of the guest\'s last WhatsApp message. Ask the guest to message your WhatsApp number first, or reply through the booking site.');
-    let id;
-    try {
-      id = await sendText(cfg, num.phone_number_id, r.whatsapp.to, text, { fetch: ctx.fetch });
-    } catch (e) {
-      if (e instanceof WhatsAppError) throw new ApiError(e.retryable ? 502 : 400, 'whatsapp', e.message);
-      throw e;
-    }
+    const { cfg, num } = await waRoute(sb, ctx, r);
+    const id = await waCall(() => sendText(cfg, num.phone_number_id, r.whatsapp.to, text, { fetch: ctx.fetch }));
     msg.via = 'whatsapp';
     msg.xid = 'wa:' + id;
     if (!ctx.conv.wa) patch.wa = r.whatsapp.to;
   } else if (ctx.via === 'channex') {
-    if (!r.channex) throw bad('no-thread', 'This conversation did not come from a booking site, so there is nowhere to reply there.');
-    const path = r.channex.thread ? '/message_threads/' + r.channex.thread + '/messages' : '/bookings/' + r.channex.booking + '/messages';
-    let res;
-    try {
-      res = await tracked(sb, ctx.channexConfig, {
-        method: 'POST', path, body: { message: { message: text } }, logPayload: { message: { message: '[' + text.length + ' characters]' } },
-        orgId: ctx.orgId, propertyId: (ctx.booking && ctx.booking.channex && ctx.booking.channex.propertyId) || null, source: 'messages', byUser: ctx.userId, request: ctx.request
-      });
-    } catch (e) {
-      throw channexRefusal(e);
-    }
-    const d = res && res.data;
-    const id = (d && (d.id || (d.attributes && d.attributes.id))) || createHash('sha256').update(path + now + text).digest('hex').slice(0, 32);
-    const tid = d && d.relationships && d.relationships.message_thread && d.relationships.message_thread.data && d.relationships.message_thread.data.id;
-    msg.via = r.channex.via;
-    msg.xid = 'cx:' + id;
-    if (!ctx.conv.cx && isUuid(tid)) patch.cx = tid;
-    if (!ctx.conv.cxBooking && r.channex.booking) patch.cxBooking = r.channex.booking;
+    const res = await channexPost(sb, ctx, r, { message: { message: text } }, { message: { message: '[' + text.length + ' characters]' } });
+    channexSent(ctx, r, res, msg, patch, now, text);
   } else if (ctx.via === 'email') {
-    const to = typeof ctx.conv.em === 'string' && /^[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}$/i.test(ctx.conv.em) ? ctx.conv.em : '';
-    if (!to) throw bad('no-email', 'This conversation did not come by email, so there is no address to answer.');
-    const cfg = ctx.emailConfig || inboundConfig();
-    if (!ctx.fromAddress) throw new ApiError(503, 'not-configured', 'Email is not set up for this workspace yet (Guest inbox, Settings).');
+    const { to, cfg } = emailRoute(ctx);
     const id = await sendEmail(cfg, { fromName: ctx.fromName, from: ctx.fromAddress, to, subject: ctx.conv.emSubject, text, inReplyTo: ctx.conv.emRef }, { fetch: ctx.fetch });
     msg.via = 'email';
     msg.xid = 'em:out:' + (id || createHash('sha256').update(to + now + text).digest('hex').slice(0, 32));
@@ -536,3 +524,295 @@ export async function sendReply(sb, ctx) {
   return v;
 }
 
+/* ---------- the routes, shared by text and media replies ---------- */
+
+/** The workspace's WhatsApp number and settings for a reply inside the 24 hours, or a refusal. -> {cfg, num} */
+async function waRoute(sb, ctx, r) {
+  const base = ctx.waConfig || waConfig();
+  if (!base.configured) throw new ApiError(503, 'not-configured', 'WhatsApp is not set up on the server yet.');
+  const num = await numberOf(sb, ctx.orgId);
+  if (!num) throw bad('no-number', 'Connect your WhatsApp business number first (Inbox, Settings).');
+  const cfg = withToken(base, await tokenOf(sb, num.phone_number_id));
+  if (!r.whatsapp) throw bad('no-phone', 'This guest has no phone number to message on WhatsApp.');
+  if (!r.whatsapp.open) throw bad('window-closed', 'WhatsApp only allows a reply within 24 hours of the guest\'s last WhatsApp message. Ask the guest to message your WhatsApp number first, or reply through the booking site.');
+  return { cfg, num };
+}
+
+async function waCall(fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof WhatsAppError) throw new ApiError(e.retryable ? 502 : 400, 'whatsapp', e.message);
+    throw e;
+  }
+}
+
+/** POST to the chat's Channex thread (or the booking's messages when there is no thread yet). */
+/* byBooking: the booking's own address first when there is a booking (Channex documents attachment_id only on
+ * POST /bookings/:id/messages); otherwise the thread's, as for text */
+async function channexPost(sb, ctx, r, body, logPayload, byBooking = false) {
+  if (!r.channex) throw bad('no-thread', 'This conversation did not come from a booking site, so there is nowhere to reply there.');
+  const viaBooking = r.channex.thread ? byBooking && !!r.channex.booking : true;
+  const path = viaBooking ? '/bookings/' + r.channex.booking + '/messages' : '/message_threads/' + r.channex.thread + '/messages';
+  try {
+    const res = await tracked(sb, ctx.channexConfig, {
+      method: 'POST', path, body, logPayload,
+      orgId: ctx.orgId, propertyId: (ctx.booking && ctx.booking.channex && ctx.booking.channex.propertyId) || null, source: 'messages', byUser: ctx.userId, request: ctx.request
+    });
+    return Object.assign({ path }, res || {});
+  } catch (e) {
+    throw channexRefusal(e);
+  }
+}
+
+/** The message's xid and the thread / booking keys from Channex's answer. */
+function channexSent(ctx, r, res, msg, patch, now, salt) {
+  const d = res && res.data;
+  const id = (d && (d.id || (d.attributes && d.attributes.id))) || createHash('sha256').update(res.path + now + salt).digest('hex').slice(0, 32);
+  const tid = d && d.relationships && d.relationships.message_thread && d.relationships.message_thread.data && d.relationships.message_thread.data.id;
+  msg.via = r.channex.via;
+  msg.xid = 'cx:' + id;
+  if (!ctx.conv.cx && isUuid(tid)) patch.cx = tid;
+  if (!ctx.conv.cxBooking && r.channex.booking) patch.cxBooking = r.channex.booking;
+}
+
+function emailRoute(ctx) {
+  const to = typeof ctx.conv.em === 'string' && /^[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}$/i.test(ctx.conv.em) ? ctx.conv.em : '';
+  if (!to) throw bad('no-email', 'This conversation did not come by email, so there is no address to answer.');
+  if (!ctx.fromAddress) throw new ApiError(503, 'not-configured', 'Email is not set up for this workspace yet (Inbox, Settings).');
+  return { to, cfg: ctx.emailConfig || inboundConfig() };
+}
+
+/* ---------- photos and videos to guests ---------- */
+
+/** The private Storage bucket (0022) for files the team sends and guests' large WhatsApp videos: <org>/<conversation>/<file>. */
+export const MEDIA_BUCKET = 'inbox-media';
+/** What WhatsApp takes (Meta's Cloud API media limits: images JPEG / PNG up to 5 MB, videos MP4 / 3GPP (H.264 and AAC) up to
+ *  16 MB). Email and booking sites get the same files; booking sites through Channex take photos only (POST /attachments). */
+export const MEDIA = {
+  image: { mimes: ['image/jpeg', 'image/png'], max: 5 * 1024 * 1024, ext: { 'image/jpeg': 'jpg', 'image/png': 'png' } },
+  video: { mimes: ['video/mp4', 'video/3gpp'], max: 16 * 1024 * 1024, ext: { 'video/mp4': 'mp4', 'video/3gpp': '3gp' } }
+};
+export const CAPTION_MAX = 1024;
+const MB = (n) => Math.round(n / 1048576) + ' MB';
+
+/** 'image', 'video' or null. */
+export function mediaKind(mime) {
+  const m = String(mime || '').toLowerCase();
+  return MEDIA.image.mimes.includes(m) ? 'image' : MEDIA.video.mimes.includes(m) ? 'video' : null;
+}
+
+/** The kind of file, or a clear refusal: the type, the size, or a route that does not take it. */
+export function checkMedia(via, mime, size, site) {
+  const kind = mediaKind(mime);
+  if (!kind) throw bad('media-type', 'Send photos as JPEG or PNG, and videos as MP4 or 3GP.');
+  const n = Number(size);
+  if (!Number.isFinite(n) || n <= 0) throw bad('media-empty', 'This file is empty.');
+  if (n > MEDIA[kind].max) throw bad('media-too-big', (kind === 'image' ? 'Photos' : 'Videos') + ' can be up to ' + MB(MEDIA[kind].max) + '. This one is ' + (n / 1048576).toFixed(1) + ' MB.');
+  if (via === 'channex' && kind === 'video') throw bad('media-unsupported', 'Videos cannot be sent on ' + (site || 'the booking site') + '. Send it on WhatsApp or by email instead.');
+  if (via !== 'whatsapp' && via !== 'channex' && via !== 'email') throw bad('bad-via', 'Choose how to send it.');
+  return kind;
+}
+
+/** Where a new file for this chat goes: <org>/<conversation>/<time>-<random>.<ext>. */
+export function mediaPath(orgId, convId, mime, now = Date.now()) {
+  const kind = mediaKind(mime);
+  return orgId + '/' + String(convId).replace(/[^A-Za-z0-9_-]/g, '_') + '/' + now.toString(36) + '-' + randomBytes(6).toString('hex') + '.' + MEDIA[kind].ext[String(mime).toLowerCase()];
+}
+
+/** True when path is one of this chat's files (never another workspace's or another chat's). */
+export function ownsPath(orgId, convId, path) {
+  const pre = orgId + '/' + String(convId).replace(/[^A-Za-z0-9_-]/g, '_') + '/';
+  return typeof path === 'string' && path.startsWith(pre) && /^[A-Za-z0-9_.-]{1,80}$/.test(path.slice(pre.length));
+}
+
+const bucket = (sb) => sb.storage.from(MEDIA_BUCKET);
+
+/** A short-lived address to read one file (WhatsApp fetches it; the app shows it). */
+export async function signedUrl(sb, path, seconds = 3600) {
+  const r = await bucket(sb).createSignedUrl(path, seconds);
+  if (r.error || !r.data || !r.data.signedUrl) throw new ApiError(502, 'storage', 'The file could not be opened. Please try again.');
+  return r.data.signedUrl;
+}
+
+/** What Storage holds at path: {size, mime}, or a refusal when nothing was uploaded there. */
+export async function storedFile(sb, path) {
+  const r = await bucket(sb).info(path);
+  const d = r && r.data;
+  if (r.error || !d) throw bad('media-missing', 'The file did not finish uploading. Please try again.');
+  const meta = d.metadata && typeof d.metadata === 'object' ? d.metadata : {};
+  return { size: Number(d.size !== undefined ? d.size : meta.size) || 0, mime: String(d.contentType || d.content_type || meta.mimetype || '').toLowerCase() };
+}
+
+/**
+ * Send one photo or video the browser uploaded to Storage, and store it in the conversation.
+ *   ctx {orgId, conv, booking, via, path, caption, name, staffId, userId, now, channexConfig, request, fetch, waConfig,
+ *        emailConfig, fromAddress, fromName}
+ * The file's type and size are checked again from Storage (never from what the page said).
+ * -> the conversation's data after the message was added
+ */
+export async function sendMediaReply(sb, ctx) {
+  const now = ctx.now || Date.now();
+  if (!ownsPath(ctx.orgId, ctx.conv.id, ctx.path)) throw bad('media-missing', 'The file did not finish uploading. Please try again.');
+  const caption = String(ctx.caption || '').trim();
+  if (caption.length > CAPTION_MAX) throw bad('too-long', 'The caption can be up to ' + CAPTION_MAX + ' characters.');
+  const r = routes(ctx.conv, ctx.booking, now);
+  const site = r.channex ? VIA_NAME[r.channex.via] : null;
+  const f = await storedFile(sb, ctx.path);
+  const kind = checkMedia(ctx.via, f.mime, f.size, site);
+  const name = clip(String(ctx.name || '').replace(/[\\/\r\n"<>]/g, '').trim(), 120) || (kind === 'image' ? 'photo.' : 'video.') + MEDIA[kind].ext[f.mime];
+  const msg = { from: 'staff', type: kind, text: caption || (kind === 'image' ? 'Photo' : 'Video'), name, mime: f.mime, size: f.size, file: { path: ctx.path }, time: myt(now), status: 'sent' };
+  if (caption) msg.caption = caption;
+  if (ctx.staffId) msg.staffId = ctx.staffId;
+  const patch = {};
+  const extra = [];
+  if (ctx.via === 'whatsapp') {
+    const { cfg, num } = await waRoute(sb, ctx, r);
+    const link = await signedUrl(sb, ctx.path, 3600);
+    const id = await waCall(() => sendMedia(cfg, num.phone_number_id, r.whatsapp.to, kind, link, caption, { fetch: ctx.fetch }));
+    msg.via = 'whatsapp';
+    msg.xid = 'wa:' + id;
+    if (!ctx.conv.wa) patch.wa = r.whatsapp.to;
+  } else if (ctx.via === 'channex') {
+    if (!r.channex) throw bad('no-thread', 'This conversation did not come from a booking site, so there is nowhere to reply there.');
+    const dl = await bucket(sb).download(ctx.path);
+    if (dl.error || !dl.data) throw new ApiError(502, 'storage', 'The file could not be read. Please try again.');
+    const b64 = Buffer.from(await dl.data.arrayBuffer()).toString('base64');
+    let up;
+    try {
+      up = await tracked(sb, ctx.channexConfig, {
+        method: 'POST', path: '/attachments', body: { attachment: { file: b64, file_name: name, file_type: f.mime } }, logPayload: { attachment: { file_name: name, file_type: f.mime, bytes: f.size } },
+        orgId: ctx.orgId, propertyId: (ctx.booking && ctx.booking.channex && ctx.booking.channex.propertyId) || null, source: 'messages', byUser: ctx.userId, request: ctx.request
+      });
+    } catch (e) {
+      throw channexRefusal(e);
+    }
+    const att = up && up.data && (up.data.id || (up.data.attributes && up.data.attributes.id));
+    if (!att) throw new ApiError(502, 'channex-refused', 'The booking site did not take the photo. Please try again.');
+    // Channex ignores an attachment sent with text, so a caption goes as its own message after the photo
+    const res = await channexPost(sb, ctx, r, { message: { attachment_id: String(att) } }, { message: { attachment_id: String(att) } }, true);
+    channexSent(ctx, r, res, msg, patch, now, ctx.path);
+    if (caption) {
+      const res2 = await channexPost(sb, ctx, r, { message: { message: caption } }, { message: { message: '[' + caption.length + ' characters]' } });
+      const m2 = { from: 'staff', type: 'text', text: caption, time: myt(now), status: 'sent' };
+      if (ctx.staffId) m2.staffId = ctx.staffId;
+      channexSent(ctx, r, res2, m2, patch, now, caption);
+      delete msg.caption;
+      msg.text = 'Photo';
+      extra.push(m2);
+    }
+  } else if (ctx.via === 'email') {
+    const { to, cfg } = emailRoute(ctx);
+    const link = await signedUrl(sb, ctx.path, 3600);
+    const text = caption || (kind === 'image' ? 'Please see the attached photo.' : 'Please see the attached video.');
+    const id = await sendEmail(cfg, { fromName: ctx.fromName, from: ctx.fromAddress, to, subject: ctx.conv.emSubject, text, inReplyTo: ctx.conv.emRef, attachments: [{ filename: name, path: link }] }, { fetch: ctx.fetch });
+    msg.via = 'email';
+    msg.xid = 'em:out:' + (id || createHash('sha256').update(to + now + ctx.path).digest('hex').slice(0, 32));
+  } else {
+    throw bad('bad-via', 'Choose how to send it.');
+  }
+  let v = await appendMsg(sb, ctx.orgId, ctx.conv.id, msg, 0, patch);
+  for (const m of extra) v = (await appendMsg(sb, ctx.orgId, ctx.conv.id, m, 0, null)) || v;
+  if (!v) throw new ApiError(500, 'server', 'The file was sent, but Orbique could not save it. Refresh to see it.');
+  return v;
+}
+
+/* ---------- organising: pin, archive, lists, favourites, Deleted (0022) ---------- */
+
+/** Days a chat stays in Deleted before it is removed for good. */
+export const TRASH_DAYS = 30;
+
+/**
+ * Change a conversation's own flags in one step. change {set, unset: [keys], add: {key: value}, remove: {key: value},
+ * unreadMin}. -> {id, data} or null when the conversation is gone.
+ */
+export async function markConv(sb, orgId, id, change) {
+  return rpc(sb, 'inbox_mark', {
+    p_org: orgId, p_cid: id, p_set: change.set || {}, p_unset: change.unset || [], p_add: change.add || {}, p_remove: change.remove || {},
+    p_unread_min: Number.isInteger(change.unreadMin) ? change.unreadMin : null
+  }, 'update conversation');
+}
+
+/** Every file this chat has in Storage goes (before a chat is removed for good). Never throws. -> true when the folder
+ * is empty now, false when Storage refused or failed (the chat is then kept, to try again later). */
+export async function removeConvFiles(sb, orgId, convId) {
+  try {
+    const dir = orgId + '/' + String(convId).replace(/[^A-Za-z0-9_-]/g, '_');
+    for (let i = 0; i < 20; i++) {
+      const r = await bucket(sb).list(dir, { limit: 100 });
+      if (!r || r.error) return false;
+      const names = (Array.isArray(r.data) ? r.data : []).map((x) => x && x.name).filter((n) => typeof n === 'string' && n);
+      if (!names.length) return true;
+      const del = await bucket(sb).remove(names.map((n) => dir + '/' + n));
+      if (del && del.error) return false;
+      if (names.length < 100) return true;
+    }
+    return false;
+  } catch (e) {
+    console.error('[inbox] remove files:', e && e.message);
+    return false;
+  }
+}
+
+/** Remove one chat in Deleted for good: its files first, then the record (a tombstone, 0022 inbox_forget). before:
+ * only if it went into Deleted before then (null: any time). -> 'removed', 'kept' (no longer in Deleted) or 'files'
+ * (Storage failed; nothing removed from the records, so a later try finds the folder again). */
+export async function forgetConv(sb, orgId, id, before = null) {
+  if (!(await removeConvFiles(sb, orgId, id))) return 'files';
+  return (await rpc(sb, 'inbox_forget', { p_org: orgId, p_cid: id, p_before: before }, 'remove conversation')) === true ? 'removed' : 'kept';
+}
+
+/** Chats removed per purgeTrash call: one inbox opening or one nightly run (the rest go next time). */
+export const PURGE_BATCH = 50;
+
+/** Remove for good the chats in Deleted for more than TRASH_DAYS (orgId null: every workspace), and uploads never
+ * sent (dropStaleUploads). -> how many chats */
+export async function purgeTrash(sb, orgId, now = Date.now()) {
+  const before = myt(now - TRASH_DAYS * 86400000);
+  const rows = await rpc(sb, 'inbox_purge_due', { p_org: orgId || null, p_before: before, p_limit: PURGE_BATCH }, 'empty Deleted');
+  let n = 0;
+  for (const r of Array.isArray(rows) ? rows : []) if (r && r.org_id && r.id && (await forgetConv(sb, r.org_id, r.id, before)) === 'removed') n++;
+  await dropStaleUploads(sb, orgId, now);
+  return n;
+}
+
+/* ---------- uploads never sent (0022 inbox_uploads) ---------- */
+
+/** An upload address was handed out for path: remembered until the file is sent. */
+export async function noteUpload(sb, orgId, path) {
+  must(await sb.from('inbox_uploads').upsert({ path, org_id: orgId }, { onConflict: 'path' }), 'note upload');
+}
+
+/** The file at path was sent: it is the chat's now. Never throws (a row left behind is checked again before removal). */
+export async function uploadSent(sb, path) {
+  try { must(await sb.from('inbox_uploads').delete().eq('path', path), 'upload sent'); } catch (e) { console.error('[inbox] upload sent:', e && e.message); }
+}
+
+/** Hours an upload may wait to be sent before its file is removed. */
+export const UPLOAD_HOURS = 24;
+
+/** Remove the files of uploads older than UPLOAD_HOURS that no message in their chat refers to (orgId null: every
+ * workspace), at most PURGE_BATCH per call. Never throws. -> how many files went */
+export async function dropStaleUploads(sb, orgId, now = Date.now()) {
+  try {
+    let q = sb.from('inbox_uploads').select('path, org_id').lt('created_at', new Date(now - UPLOAD_HOURS * 3600000).toISOString());
+    if (orgId) q = q.eq('org_id', orgId);
+    const rows = must(await q.order('created_at').limit(PURGE_BATCH), 'load uploads') || [];
+    let n = 0;
+    for (const u of rows) {
+      const conv = String(u.path).split('/')[1] || '';
+      const c = conv ? await record(sb, u.org_id, 'conversations', conv) : null;
+      const used = c && Array.isArray(c.messages) && c.messages.some((m) => m && m.file && m.file.path === u.path);
+      if (!used) {
+        const del = await bucket(sb).remove([u.path]);
+        if (del && del.error) continue;
+        n++;
+      }
+      await uploadSent(sb, u.path);
+    }
+    return n;
+  } catch (e) {
+    console.error('[inbox] old uploads:', e && e.message);
+    return 0;
+  }
+}

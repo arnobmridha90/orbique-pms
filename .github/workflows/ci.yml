@@ -44,12 +44,32 @@ jobs:
           done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort; echo public/sw.js)
           exit $fail
 
-      - name: Unit tests (unit assignment, guest message timing, booking alerts, website bookings, profit planner, live website content, staff sign-in)
-        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs
+      - name: Unit tests (unit assignment, guest message timing, greeting messages, booking alerts, website bookings, profit planner, live website content, staff sign-in, nearby places)
+        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/greeting.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs tests/places.test.mjs
 
       - name: Config files are valid JSON
         run: |
           node -e "for (const f of ['vercel.json', 'public/manifest.webmanifest', 'config/platform-owners.json', 'package.json']) JSON.parse(require('fs').readFileSync(f, 'utf8'))"
+
+      - name: Marketing website (websites/orbique)
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path'), R = 'websites/orbique';
+            for (const f of ['index.html', 'privacy.html', '404.html', 'robots.txt', 'sitemap.xml', 'favicon.svg', 'assets/css/site.css']) if (!fs.statSync(path.join(R, f)).size) throw new Error(R + '/' + f + ' is empty');
+            JSON.parse(fs.readFileSync(path.join(R, 'vercel.json'), 'utf8'));
+            for (const f of ['index.html', 'privacy.html', '404.html']) {
+              const s = fs.readFileSync(path.join(R, f), 'utf8');
+              for (const m of s.matchAll(/<script type=\"application\/ld\+json\">([\s\S]*?)<\/script>/g)) JSON.parse(m[1]);
+              for (const m of s.matchAll(/(?:src|href|srcset|imagesrcset)=\"([^\"]+)\"/g)) for (const u of m[1].split(',').map((x) => x.trim().split(' ')[0])) {
+                if (!u.startsWith('/') || u.startsWith('//') || u === '/' || u === '/privacy') continue;
+                if (!fs.existsSync(path.join(R, u.split('?')[0]))) throw new Error(f + ' points to a missing file: ' + u);
+              }
+              if (/ style=\"/.test(s)) throw new Error(f + ' has an inline style attribute (the CSP blocks it)');
+              if (/<script>/.test(s)) throw new Error(f + ' has an inline script (the CSP blocks it)');
+            }
+            for (const d of fs.readdirSync(path.join(R, 'assets/vendor'))) if (!fs.readdirSync(path.join(R, 'assets/vendor', d)).some((x) => /^LICENSE/.test(x))) throw new Error(R + '/assets/vendor/' + d + ' has no LICENSE file');
+            console.log('websites/orbique ok');"
+          for f in websites/orbique/assets/js/*.js websites/orbique/assets/vendor/*/*.js; do cp "$f" "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; node --check "$RUNNER_TEMP/site-$(basename "$f" .js).cjs"; done
 
       - name: API functions load
         run: |
@@ -58,6 +78,10 @@ jobs:
               const m = await import('./api/' + f + '.js');
               if (typeof m.default !== 'function') throw new Error('api/' + f + '.js has no default export');
             }
+            const G = (await import('./api/_lib/shared/greeting.cjs')).default;
+            if (typeof G.fill !== 'function') throw new Error('api/_lib/shared/greeting.cjs has no fill');
+            const P = (await import('./api/_lib/shared/geo.cjs')).default;
+            if (typeof P.guestPlaces !== 'function') throw new Error('api/_lib/shared/geo.cjs has no guestPlaces');
             console.log('api functions load');"
 
       - name: Channex tests (node --test)
@@ -76,9 +100,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in index.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png vendor/supabase.js vendor/jspdf.umd.min.js; do
+          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png sounds/orbique_alert.wav vendor/supabase.js vendor/jspdf.umd.min.js vendor/maplibre-gl.js vendor/maplibre-gl.css vendor/maplibre-gl.LICENSE.txt; do
             test -s "dist/$f" || { echo "::error::dist/$f is missing"; exit 1; }
           done
+          grep -q 'O.geo' dist/index.html || { echo "::error::api/_lib/shared/geo.cjs missing from the production page"; exit 1; }
           grep -q 'server/pwa.js' dist/index.html || { echo "::error::app/server/*.js missing from the production page"; exit 1; }
 
       - name: No secret key in the build output

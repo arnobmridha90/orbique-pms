@@ -3,6 +3,7 @@
  *
  *   connectWithSignup(sb, req, opts)   the owner finished the pop-up: the number is linked to the workspace
  *   accountUpdate(sb, a)               Meta says the number was disconnected (from the phone) or connected again
+ *   renewTokens(sb, opts)              nightly: tokens 7 days old or more are swapped for new ones (they last 60 days)
  *
  * Steps for a code from the pop-up (it is valid for about 30 seconds, so this runs at once):
  *   1. the code -> a token for the business's WhatsApp account (kept in whatsapp_tokens, never sent to the browser);
@@ -16,7 +17,7 @@
  */
 import { must } from './channex-db.js';
 import { ApiError, bad } from './http.js';
-import { exchangeCode, signupNumber, subscribeApp, requestSync, WhatsAppError } from './whatsapp.js';
+import { exchangeCode, signupNumber, subscribeApp, requestSync, renewToken, WhatsAppError } from './whatsapp.js';
 
 const clip = (v, n) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v)).slice(0, n);
 
@@ -83,4 +84,47 @@ export async function accountUpdate(sb, a) {
     must(await sb.from('whatsapp_numbers').update({ sync }).eq('phone_number_id', r.phone_number_id), 'save WhatsApp number');
   }
   return { status: rows.length ? 'updated' : 'unknown' };
+}
+
+export const RENEW_AFTER_DAYS = 7;
+const RENEW_MAX = 50;
+
+/**
+ * Nightly: renew every Embedded Signup token last saved RENEW_AFTER_DAYS ago or more. The tokens expire 60 days after
+ * they were made or last renewed and an expired one cannot be renewed, so a weekly renewal leaves about seven weeks of
+ * failed nights before a number stops working. A failure keeps the old token, is noted on the number
+ * (sync.renew = {at, error}) and is tried again the next night; a success clears the note.
+ * opts {config, fetch, now} -> {renewed, failed}
+ */
+export async function renewTokens(sb, opts = {}) {
+  const cfg = opts.config;
+  if (!cfg || !cfg.appId || !cfg.appSecret) return { renewed: 0, failed: 0, skipped: 'not-configured' };
+  const nowMs = new Date(opts.now || Date.now()).getTime();
+  const before = new Date(nowMs - RENEW_AFTER_DAYS * 86400000).toISOString();
+  const rows = must(await sb.from('whatsapp_tokens').select('phone_number_id, token').lte('updated_at', before).order('updated_at', { ascending: true }).limit(RENEW_MAX), 'load WhatsApp tokens') || [];
+  const at = new Date(nowMs).toISOString();
+  let renewed = 0, failed = 0;
+  for (const r of rows) {
+    let error = null;
+    try {
+      const fresh = await renewToken(cfg, r.token, { fetch: opts.fetch });
+      must(await sb.from('whatsapp_tokens').update({ token: fresh.token, updated_at: at }).eq('phone_number_id', r.phone_number_id), 'save WhatsApp token');
+      renewed++;
+    } catch (e) {
+      error = clip(e && e.message, 300) || 'refused';
+      console.error('[whatsapp] token renewal ' + r.phone_number_id + ':', error);
+      failed++;
+    }
+    try {
+      const n = must(await sb.from('whatsapp_numbers').select('sync').eq('phone_number_id', r.phone_number_id).maybeSingle(), 'load WhatsApp number');
+      const sync = Object.assign({}, n && n.sync && typeof n.sync === 'object' ? n.sync : {});
+      if (error) sync.renew = { at, error };
+      else if (!sync.renew) continue;
+      else delete sync.renew;
+      must(await sb.from('whatsapp_numbers').update({ sync }).eq('phone_number_id', r.phone_number_id), 'save WhatsApp number');
+    } catch (e) {
+      console.error('[whatsapp] token renewal note:', e && e.message ? e.message : String(e));
+    }
+  }
+  return { renewed, failed };
 }

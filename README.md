@@ -2,13 +2,14 @@
 
 Orbique is a property management platform for short-term rental operators in Malaysia. Orbique owns the platform and
 sells it by subscription; each operator (a company that manages rental units) gets its own private **workspace** with
-its units, bookings, calendar, guest inbox, cleaning tasks, inventory, invoices, expenses, reports, staff and branding.
+its units, bookings, calendar, inbox, cleaning tasks, inventory, invoices, expenses, reports, staff and branding.
 
 One code base, three ways to use it:
 
 - **Desktop**: the full app in a browser.
 - **Phone**: the same app with a phone layout and a bottom tab bar, installable from the browser (it works like an app).
-- **Guest app**: one private link per booking (`/guest/<token>`) with check-in details, door code, Wi-Fi and requests.
+- **Guest app**: one private link per booking (`/guest/<token>`) with check-in details, door code, Wi-Fi and requests,
+  and nearby places per building (food, hospitals, money changers and more) with maps that work offline.
   Guests never sign in.
 
 Orbique staff have a **platform admin** area to add operators, set their plan and pause them. It shows counts only,
@@ -25,7 +26,7 @@ simulated for now: the app records what it would send.
 | `app/server/*.js` | Production only: sign-in, workspaces, the Supabase adapter, platform admin, install support (`pwa.js`). |
 | `api/` | The Vercel serverless functions, one per file (11 of the 12 the Hobby plan allows), for example `GET /api/health`, `POST /api/account` and `POST /api/site` (see `docs/API.md`). Files under `api/_lib/` are shared helpers; Vercel does not turn files or folders whose names start with `_` into endpoints. |
 | `supabase/migrations/` | The database schema, applied in name order by `scripts/migrate.mjs`. |
-| `public/` | Web app manifest, icons and the service worker (copied into `dist/`). |
+| `public/` | Web app manifest, icons, the service worker and the public privacy policy (`privacy.html`, served at `/privacy`), copied into `dist/`. |
 | `vercel.json` | Build command, output folder, rewrites (`/guest/<token>` and other paths serve the app) and cache headers. |
 
 In production the browser talks to **Supabase** (Postgres, Auth, Realtime) with the public key; row level security
@@ -81,6 +82,8 @@ The same app also ships as an Android and iPhone app built with Capacitor (`capa
 projects. The **Phone app** workflow (`.github/workflows/mobile.yml`) builds both on every change, and the newest
 Android test build is always at
 https://github.com/arnobmridha90/orbique-pms/releases/download/android-test/Orbique-test.apk.
+Booking and message alerts ring Orbique's own loud chime (`scripts/alert-sound.py`). To hear it, uninstall the old
+test app first and install the newest build; the phone's notification volume still applies.
 
 Installing, connecting the app to the live site, TestFlight, Google Play and the developer notes:
 **[docs/MOBILE.md](docs/MOBILE.md)**.
