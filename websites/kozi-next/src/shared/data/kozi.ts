@@ -152,4 +152,6 @@ export const GUIDES = [
   { slug: 'halal-food-near-klcc', tag: 'Food', title: 'Eating halal near KLCC', line: 'How to read the signs, and where to start near Vortex KLCC.', photo: 'premium-a/01-dining-and-living' },
   { slug: 'things-to-do-near-klcc-with-kids', tag: 'Family', title: 'KLCC with kids', line: 'The free park, playground and fountains, and the best paid days out nearby.', photo: 'premium-b/01-living-room-day' },
   { slug: 'see-the-petronas-twin-towers-lit-up', tag: 'Night', title: 'The towers after dark', line: 'Where to see and photograph the Petronas Twin Towers lit up.', photo: 'boutique/10-klcc-night-view' },
+  { slug: 'getting-around-kuala-lumpur', tag: 'Getting around', title: 'Getting around KL', line: 'Grab, the monorail, the covered walkway and the city buses: what to use when.', photo: 'premium-a/10-kl-tower-view-night' },
+  { slug: 'rainy-day-kuala-lumpur', tag: 'Rainy day', title: 'A rainy day in KL', line: 'When the storms come, and what to do near KLCC while they pass.', photo: 'boutique/06-tv-klcc-view' },
 ];
