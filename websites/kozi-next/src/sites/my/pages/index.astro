@@ -64,7 +64,7 @@ const DAY = MOMENTS.flatMap((m, i) => {
   return f ? [{ t: m.t, h: m.h(f.s), p: m.p(f.s), photo: f.ph, day: m.day, dusk: m.dusk }] : [];
 });
 
-const title = 'Kozi: Exceptional Spaces. Memorable Stays | Kozi @ Vortex KLCC';
+const title = 'Kozi @ Vortex KLCC';
 const description = 'Kozi suites at Vortex KLCC: two bedrooms, two bathrooms and a full kitchen in the Golden Triangle, between KLCC and Bukit Bintang. See live prices and book direct.';
 const web = { '@context': 'https://schema.org', '@type': 'WebSite', name: 'Kozi Malaysia', url: `${BRAND.my}/`, publisher: { '@id': orgLd['@id'] } };
 const lodgings = site.buildings.map((b) => lodgingLd(b, site.suitesOf(b)));
