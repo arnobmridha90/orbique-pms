@@ -192,4 +192,80 @@ export const GUIDE_PAGES: Guide[] = [
       { name: 'Travel and Destinations: photo spots in Kuala Lumpur', url: 'https://www.travelanddestinations.com/top-instagram-photography-spots-in-kuala-lumpur/' },
     ],
   },
+  {
+    slug: 'getting-around-kuala-lumpur', tag: 'Getting around',
+    title: 'Getting around Kuala Lumpur: Grab, monorail, walkways and buses',
+    h1: 'Getting around <em>KL.</em>',
+    desc: 'How to get around Kuala Lumpur from KLCC and Bukit Bintang: Grab rides, the KL Monorail and Touch \'n Go card, the covered KLCC to Pavilion walkway, the GoKL city bus and Rapid KL passes.',
+    lede: 'Kuala Lumpur is easy to get around once you know which option fits which trip. From Vortex KLCC most visitors use three things: Grab, the monorail and their own feet.',
+    photo: { key: 'premium-a/10-kl-tower-view-night', alt: 'KL Tower lit blue at dusk, seen from a Kozi Premium Suite' },
+    checked: 'October 2026',
+    html: `<h2>At a glance</h2>
+<div class="g-table"><table>
+<thead><tr><th>Option</th><th>Best for</th><th>How you pay</th></tr></thead>
+<tbody>
+<tr><td>Grab</td><td>Door to door, groups, late nights, rain</td><td>In the app, card or cash</td></tr>
+<tr><td>KL Monorail</td><td>Bukit Bintang, KL Sentral, avoiding traffic</td><td>Touch 'n Go card or a token</td></tr>
+<tr><td>KLCC to Pavilion walkway</td><td>Walking between KLCC and Bukit Bintang out of the sun</td><td>Free</td></tr>
+<tr><td>GoKL city bus</td><td>Short hops around the centre</td><td>Free for some riders, see below</td></tr>
+</tbody></table></div>
+<h2>Grab</h2>
+<p>Grab is Southeast Asia's ride-hailing app, and it is how most visitors and locals get around KL. The app shows the price before you book, so there is no haggling, and you can pay by card in the app or in cash. It is the easiest way to reach places off the train lines, and the best choice for a family with bags.</p>
+<div class="g-note"><b>Rush hour and rain cost more.</b> Prices go up and cars get scarce at peak times and in heavy rain. If a storm is coming, book before it starts.</div>
+<h2>The KL Monorail</h2>
+<p>The monorail runs above the streets of the city centre. Raja Chulan station is nearby, and the line runs through Bukit Bintang to KL Sentral, the city's main rail hub, where you change for the airport train and other lines. It is often quicker than a car at rush hour.</p>
+<p>To ride, tap in and out with a Touch 'n Go card, or buy a single-journey token from the station machines. Keep a few ringgit of balance on the card: if it runs too low, the exit gate won't let you out until you top up. In May 2026 Prasarana, which runs Rapid KL, said it is bringing in tap-in with bank cards and phones, but check whether it has reached your station before relying on it.</p>
+<h2>Walking: the KLCC to Pavilion walkway</h2>
+<p>A covered, elevated walkway links the KLCC area with Pavilion Kuala Lumpur in Bukit Bintang, above the traffic. It opened in 2012, and long stretches of it are air-conditioned, which makes it the most comfortable way to walk between the two areas in the heat or the rain. Guides list it as open from early morning to late evening, so check the hours if you plan a late walk back.</p>
+<p>Street-level walking in the city centre is fine for short distances, but pavements can be uneven and crossings long. In the middle of the day, the walkway and the malls are cooler.</p>
+<h2>The GoKL city bus</h2>
+<p>Kuala Lumpur City Hall (DBKL) runs the GoKL city buses on several loops through the centre, including Bukit Bintang. They are free for Malaysians. Since January 2025, non-Malaysians pay a fare on some routes, while children aged 12 and under ride free. The routes and fares have been under review in 2026, so check at the bus stop or on DBKL's site before you count on a free ride.</p>
+<h2>Rapid KL day passes</h2>
+<p>Rapid KL, which runs the monorail, LRT, MRT and city buses, sells unlimited-ride passes. The passes for visitors were renamed and repriced in 2026, and reports disagree on the current names and prices. If you plan several train trips a day, compare the passes on the official myrapid.com.my site with paying per trip.</p>
+<h2>Taxis</h2>
+<p>Metered taxis wait outside the big malls and stations. Agree that the meter will be used before you set off. For most trips Grab is simpler, because you see the price first.</p>
+<h2>From the airport</h2>
+<p>Getting to Kozi @ Vortex KLCC from KLIA has its own guide: <a href="/guides/klia-to-kuala-lumpur-city-centre/">KLIA to the city centre</a>.</p>`,
+    sources: [
+      { name: 'Malay Mail: KL trains and buses to allow credit cards for tap-in, tap-out (May 2026)', url: 'https://www.malaymail.com/news/malaysia/2026/05/22/coming-soon-kls-trains-buses-to-allow-credit-cards-for-tap-in-tap-out-prasarana-says-project-in-award-stage/220862' },
+      { name: 'Rapid KL: tickets and fares', url: 'https://www.mrt.com.my/fare/' },
+      { name: 'Paul Tan: GoKL, non-Malaysians to pay fare on three more routes from January 2025', url: 'https://paultan.org/2024/12/17/gokl-free-bus-service-non-malaysians-to-pay-fare-on-three-more-routes-fr-jan-2025-foc-for-kids-up-to-12yrs/' },
+      { name: 'DBKL: GoKL', url: 'https://klccc.dbkl.gov.my/gokl-2/' },
+      { name: 'Malay Mail: Rapid KL pass prices change from 1 January 2026', url: 'https://malaymail.com/news/malaysia/2025/12/16/rapid-kl-transport-passes-prices-go-up-from-jan-1-but-my50-pass-stays-at-rm50/202162' },
+      { name: 'The Star (via PressReader): air-conditioned KLCC to Bukit Bintang walkway launched (2012)', url: 'https://www.pressreader.com/malaysia/the-star-malaysia/20120220/283716951291883' },
+      { name: 'Backpack and Snorkel: the KLCC to Bukit Bintang walkway', url: 'https://backpackandsnorkel.com/Malaysia/Bukit-Bintang-Pedestrian-Walkway/' },
+    ],
+  },
+  {
+    slug: 'rainy-day-kuala-lumpur', tag: 'Rainy day',
+    title: 'A rainy day in Kuala Lumpur: what to do near KLCC',
+    h1: 'A rainy day <em>in KL.</em>',
+    desc: 'When it rains in Kuala Lumpur and what to do near KLCC while it does: the covered walkway to Pavilion, Suria KLCC, Aquaria KLCC, Petrosains, the Islamic Arts Museum and tips for getting a Grab in the rain.',
+    lede: 'Rain in Kuala Lumpur usually comes as a big afternoon storm that passes within an hour or two. Plan the outdoor parts of your day for the morning, and keep these indoor ideas near KLCC for when the sky opens.',
+    photo: { key: 'boutique/06-tv-klcc-view', alt: 'The living room of a Kozi Boutique Suite with the KLCC skyline outside' },
+    checked: 'October 2026',
+    html: `<h2>When it rains</h2>
+<p>Kuala Lumpur has no true dry season. It can rain in any month, usually as a heavy thunderstorm in the afternoon or evening that clears again after an hour or two. The wettest stretch runs from about October to March. Between late September and early November, the Malaysian Meteorological Department (MetMalaysia) warns of frequent afternoon and late-evening thunderstorms.</p>
+<div class="g-note"><b>Do the outdoor things first.</b> Mornings are usually the driest and coolest part of the day. Save the parks and street walks for then, and keep the afternoon for indoor plans.</div>
+<h2>Stay dry between KLCC and Bukit Bintang</h2>
+<p>The covered, elevated walkway between the KLCC area and Pavilion Kuala Lumpur keeps you out of the rain on the way to Bukit Bintang, and long stretches of it are air-conditioned. Pavilion and Suria KLCC, the mall under the Petronas Twin Towers, are big enough to fill an afternoon with shops, food courts and cinemas.</p>
+<h2>Aquaria KLCC</h2>
+<p>An indoor aquarium under the Kuala Lumpur Convention Centre, with an underwater tunnel where sharks and rays swim overhead. It is a favourite with children on a wet afternoon. Buy tickets on the official site, aquariaklcc.com. Malaysians and visitors pay different prices.</p>
+<h2>Petrosains, The Discovery Centre</h2>
+<p>A hands-on science centre on Level 4 of Suria KLCC, so you can reach it without going outside once you are in the mall. It closes on some days in 2026, so check petrosains.com.my before you go. There is more on both in our guide to <a href="/guides/things-to-do-near-klcc-with-kids/">KLCC with kids</a>.</p>
+<h2>The Islamic Arts Museum Malaysia</h2>
+<p>A quiet, beautiful museum near the Lake Gardens, with collections of manuscripts, textiles, ceramics and architecture models from across the Islamic world under painted domes. It is a short Grab ride from KLCC. Guides list it as open daily with an entrance fee for adults, but they disagree on the exact hours and prices, so check iamm.org.my before you go.</p>
+<h2>Getting a ride in the rain</h2>
+<p>Everyone wants a Grab when the rain starts, so prices go up and waits get longer. Book before the storm if you can see it coming. Otherwise, wait it out over a coffee: most storms ease within an hour or two. Where the monorail or the covered walkway goes where you need to be, it is often the quicker choice in the rain. Our <a href="/guides/getting-around-kuala-lumpur/">getting around KL</a> guide has the details.</p>
+<h2>Or stay in</h2>
+<p>A storm rolling in over the city is quite a sight from indoors. Every Kozi suite has a full kitchen, a smart TV and its own washing machine, so a rainy afternoon in can be a good one: dry the day's clothes, cook something simple, and watch the storm pass.</p>`,
+    sources: [
+      { name: 'New Straits Times: monsoon transition period until early November (MetMalaysia)', url: 'https://nst.com.my/amp/news/nation/2017/10/287886/monsoon-transition-period-until-early-november' },
+      { name: 'Malay Mail: hot mornings, rainy afternoons, why Malaysia keeps getting thunderstorms (2026)', url: 'https://www.malaymail.com/news/malaysia/2026/08/03/hot-mornings-rainy-afternoons-why-malaysia-keeps-getting-thunderstorms-despite-the-dry-season/229721' },
+      { name: 'Islamic Arts Museum Malaysia: visit us', url: 'https://iamm.org.my/visit-us' },
+      { name: 'Petrosains: admission and ticketing (2026 opening days)', url: 'https://petrosains.com.my/visit/admission-and-ticketing/' },
+      { name: 'Wikipedia: Aquaria KLCC', url: 'https://en.wikipedia.org/wiki/Aquaria_KLCC' },
+      { name: 'Backpack and Snorkel: the KLCC to Bukit Bintang walkway', url: 'https://backpackandsnorkel.com/Malaysia/Bukit-Bintang-Pedestrian-Walkway/' },
+    ],
+  },
 ];
