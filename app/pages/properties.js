@@ -10,8 +10,9 @@
      unit types (optional, see core.js): buildingId, unitTypeId, unitNo ('21-1', only the team sees it), assignPriority
    The "Buildings & unit types" tab groups units into buildings and types (D.buildings, D.unitTypes) and tags units.
    A unit's "Unit file" tab (lease, owner's bank details, bills, documents) is app/pages/unitfile.js, for properties.file only;
-   none of it is stored on the property record.
-   Open from anywhere: O.go('properties', {propertyId: 'bf3b'}) shows that unit ({unitTab: 'file'}: its unit file);
+   none of it is stored on the property record. Its "Rooms & beds" tab is app/pages/unitrooms.js (D.unitRooms) and its
+   "Requests" tab app/pages/unitreq.js (D.unitRequests, each with its task in D.tasks).
+   Open from anywhere: O.go('properties', {propertyId: 'bf3b'}) shows that unit ({unitTab: 'file' | 'rooms' | 'requests'}: that tab);
    O.go('properties', {add: true}) opens the new-property form. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, C = O.color, esc = O.esc, fmt = O.fmt;
@@ -767,7 +768,7 @@
       dr.el.classList.add('pp-dr');
       DR = { dr: dr };
       var guard = function () {
-        if (DR && (DR.mode === 'edit' || DR.mode === 'fileedit') && DR.dirty) U.confirm('Discard your changes?', 'Discard', 'danger').then(function (ok) { if (ok) closeDrawer(); });
+        if (DR && (DR.mode === 'edit' || DR.mode === 'fileedit' || DR.mode === 'roomsedit') && DR.dirty) U.confirm('Discard your changes?', 'Discard', 'danger').then(function (ok) { if (ok) closeDrawer(); });
         else closeDrawer();
       };
       var back = dr.el.previousElementSibling; if (back && back.classList.contains('drawer-back')) back.onclick = guard;
@@ -780,20 +781,42 @@
       /* the unit file loads from the server on its own (app/pages/unitfile.js) */
       DR.offFile = O.on('unitfiles', function () { if (DR && DR.mode === 'view' && DR.tab === 'file' && document.body.contains(DR.dr.el)) paintView(); });
       dr.el.addEventListener('click', onDrawerClick);
-      dr.el.addEventListener('input', function (e) { if (DR && DR.mode === 'edit') { DR.dirty = true; onFormInput(e); } else if (DR && DR.mode === 'fileedit') DR.dirty = true; });
+      dr.el.addEventListener('input', function (e) { if (DR && DR.mode === 'edit') { DR.dirty = true; onFormInput(e); } else if (DR && (DR.mode === 'fileedit' || DR.mode === 'roomsedit')) DR.dirty = true; });
       dr.el.addEventListener('change', function (e) {
         if (DR && DR.mode === 'edit') { DR.dirty = true; onFormInput(e); }
         else if (DR && DR.mode === 'fileedit' && e.target.closest('[data-uf-form]')) { DR.dirty = true; var p = D.propById[DR.id]; if (p) O.unitFile.input(e, DR.dr.el, p); }
+        else if (DR && DR.mode === 'roomsedit' && e.target.closest('[data-ur-form]')) { DR.dirty = true; var q = D.propById[DR.id]; if (q && O.unitRooms) O.unitRooms.input(e, DR.dr.el, q); }
       });
     }
-    DR.mode = mode; DR.id = id; DR.dirty = false; DR.pic = 0; DR.busy = 0; DR.tab = unitTab === 'file' && canFile() ? 'file' : 'details';
+    DR.mode = mode; DR.id = id; DR.dirty = false; DR.pic = 0; DR.busy = 0; DR.tab = pickTab(unitTab);
     if (mode === 'view') paintView(); else startEdit();
     O.$('.modal-body', DR.dr.el).scrollTop = 0;
   }
   function closeDrawer() { if (!DR) return; var x = DR; DR = null; if (x.off) x.off(); if (x.offFile) x.offFile(); x.dr.close(); }
   /* the "Unit file" tab (app/pages/unitfile.js): lease, owner's bank details, bills, documents; properties.file only */
   function canFile() { return !!(O.unitFile && O.unitFile.allowed()); }
-  function unitTabsHTML() { return canFile() ? '<div class="uf-tabs">' + U.seg([['details', 'Details'], ['file', 'Unit file']], DR.tab, 'data-utab') + '</div>' : ''; }
+  /* the unit's tabs: Details, Rooms & beds (app/pages/unitrooms.js), Requests (app/pages/unitreq.js), Unit file */
+  function canRooms() { return !!O.unitRooms; }
+  function canReqs() { return !!O.unitReq; }
+  function pickTab(t) { return t === 'file' && canFile() ? 'file' : t === 'rooms' && canRooms() ? 'rooms' : t === 'requests' && canReqs() ? 'requests' : 'details'; }
+  function unitTabsHTML() {
+    var n = canReqs() && DR && DR.id ? O.unitReq.openCount(DR.id) : 0;
+    var tabs = [['details', 'Details']].concat(canRooms() ? [['rooms', 'Rooms & beds']] : [], canReqs() ? [['requests', 'Requests' + (n ? ' ' + n : '')]] : [], canFile() ? [['file', 'Unit file']] : []);
+    return tabs.length > 1 ? '<div class="uf-tabs">' + U.seg(tabs, DR.tab, 'data-utab') + '</div>' : '';
+  }
+  /* rooms & beds and requests: the same host the unit file gets */
+  function tabHost(editMode, editFn) {
+    return {
+      el: DR.dr.el, tabsHTML: unitTabsHTML(),
+      toView: function () { if (!DR) return; DR.mode = 'view'; DR.dirty = false; paintView(); O.$('.modal-body', DR.dr.el).scrollTop = 0; },
+      toEdit: function () { if (!DR) return; DR.mode = editMode; DR.dirty = false; var p = D.propById[DR.id]; if (p) editFn(parts(), p, tabHost(editMode, editFn)); O.$('.modal-body', DR.dr.el).scrollTop = 0; },
+      close: function () { closeDrawer(); },
+      repaint: function () { if (DR && DR.mode === 'view') paintView(); },
+      dirty: function (v) { if (DR) DR.dirty = !!v; },
+      isDirty: function () { return !!(DR && DR.dirty); }
+    };
+  }
+  function roomsHost() { return tabHost('roomsedit', O.unitRooms.edit); }
   function fileHost() {
     return {
       el: DR.dr.el, tabsHTML: unitTabsHTML(),
@@ -819,6 +842,8 @@
     if (!p) { closeDrawer(); return; }
     if (DR.tab === 'file' && !canFile()) DR.tab = 'details';
     if (DR.tab === 'file') { X.h.textContent = p.name; X.sub.textContent = [p.short, p.area].filter(Boolean).join(' · '); O.unitFile.view(X, p, fileHost()); return; }
+    if (DR.tab === 'rooms' && canRooms()) { X.h.textContent = p.name; X.sub.textContent = [p.short, p.area].filter(Boolean).join(' · '); O.unitRooms.view(X, p, roomsHost()); return; }
+    if (DR.tab === 'requests' && canReqs()) { X.h.textContent = p.name; X.sub.textContent = [p.short, p.area].filter(Boolean).join(' · '); O.unitReq.view(X, p, tabHost('view', function () {})); return; }
     var s = statusOf(p), up = upcoming(p.id), hk = p.housekeeper && D.staffById(p.housekeeper), access = canAccess();
     X.h.textContent = p.name;
     X.sub.textContent = [p.short, p.area].filter(Boolean).join(' · ');
@@ -1199,8 +1224,10 @@
     if (!DR) return;
     var p = DR.id ? D.propById[DR.id] : null;
     var ut = e.target.closest('[data-utab]');
-    if (ut && p && DR.mode === 'view') { DR.tab = ut.dataset.utab === 'file' && canFile() ? 'file' : 'details'; if (DR.tab === 'file') O.unitFile.load(true).catch(function () {}); paintView(); O.$('.modal-body', DR.dr.el).scrollTop = 0; return; }
+    if (ut && p && DR.mode === 'view') { DR.tab = pickTab(ut.dataset.utab); if (DR.tab === 'file') O.unitFile.load(true).catch(function () {}); paintView(); O.$('.modal-body', DR.dr.el).scrollTop = 0; return; }
     if (p && canFile() && (DR.mode === 'fileedit' || DR.tab === 'file') && O.unitFile.click(e, p, fileHost())) return;
+    if (p && canRooms() && (DR.mode === 'roomsedit' || (DR.mode === 'view' && DR.tab === 'rooms')) && O.unitRooms.click(e, p, roomsHost())) return;
+    if (p && canReqs() && DR.mode === 'view' && DR.tab === 'requests' && O.unitReq.click(e, p, tabHost('view', function () {}))) return;
     var pic = e.target.closest('[data-pic]'); if (pic) { DR.pic = +pic.dataset.pic; paintView(); return; }
     var v = e.target.closest('[data-dv]');
     if (v && p) {

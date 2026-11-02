@@ -44,8 +44,8 @@ jobs:
           done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort; echo public/sw.js)
           exit $fail
 
-      - name: Unit tests (unit assignment, guest message timing, greeting messages, booking alerts, website bookings, profit planner, live website content, staff sign-in, nearby places, unit files)
-        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/greeting.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs tests/places.test.mjs tests/unitfile.test.mjs
+      - name: Unit tests (unit assignment, guest message timing, greeting messages, booking alerts, website bookings, profit planner, live website content, staff sign-in, nearby places, unit files, rooms and beds, unit requests)
+        run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/greeting.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs tests/places.test.mjs tests/unitfile.test.mjs tests/beds-requests.test.mjs
 
       - name: Config files are valid JSON
         run: |
@@ -84,6 +84,10 @@ jobs:
             if (typeof P.guestPlaces !== 'function') throw new Error('api/_lib/shared/geo.cjs has no guestPlaces');
             const F = (await import('./api/_lib/shared/unitdue.cjs')).default;
             if (typeof F.dueSoon !== 'function') throw new Error('api/_lib/shared/unitdue.cjs has no dueSoon');
+            const B = (await import('./api/_lib/shared/beds.cjs')).default;
+            if (typeof B.linen !== 'function') throw new Error('api/_lib/shared/beds.cjs has no linen');
+            const R = (await import('./api/_lib/shared/unitreq.cjs')).default;
+            if (typeof R.reconcile !== 'function') throw new Error('api/_lib/shared/unitreq.cjs has no reconcile');
             console.log('api functions load');"
 
       - name: Channex tests (node --test)
@@ -107,6 +111,8 @@ jobs:
           done
           grep -q 'O.geo' dist/index.html || { echo "::error::api/_lib/shared/geo.cjs missing from the production page"; exit 1; }
           grep -q 'O.unitdue' dist/index.html || { echo "::error::api/_lib/shared/unitdue.cjs missing from the production page"; exit 1; }
+          grep -q 'O.unitreq' dist/index.html || { echo "::error::api/_lib/shared/unitreq.cjs missing from the production page"; exit 1; }
+          grep -q 'O.beds' dist/index.html || { echo "::error::api/_lib/shared/beds.cjs missing from the production page"; exit 1; }
           grep -q 'server/pwa.js' dist/index.html || { echo "::error::app/server/*.js missing from the production page"; exit 1; }
 
       - name: No secret key in the build output
