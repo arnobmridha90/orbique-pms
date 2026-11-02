@@ -9,7 +9,10 @@
        archived (true), archivedAt, archivedBy, createdAt, createdBy
      unit types (optional, see core.js): buildingId, unitTypeId, unitNo ('21-1', only the team sees it), assignPriority
    The "Buildings & unit types" tab groups units into buildings and types (D.buildings, D.unitTypes) and tags units.
-   Open from anywhere: O.go('properties', {propertyId: 'bf3b'}) shows that unit; O.go('properties', {add: true}) opens the new-property form. */
+   A unit's "Unit file" tab (lease, owner's bank details, bills, documents) is app/pages/unitfile.js, for properties.file only;
+   none of it is stored on the property record.
+   Open from anywhere: O.go('properties', {propertyId: 'bf3b'}) shows that unit ({unitTab: 'file'}: its unit file);
+   O.go('properties', {add: true}) opens the new-property form. */
 (function () {
   var O = window.O, D = O.data, d = O.d, U = O.ui, C = O.color, esc = O.esc, fmt = O.fmt;
   var st = { q: '', show: 'active', city: '', view: O.store.get('properties:view', 'cards'), tab: O.store.get('properties:tab', 'units') };
@@ -427,10 +430,10 @@
 
     deepLinks(ctx, canCreate);
   }
-  /* deep links: {propertyId} opens a unit, {add: true} opens the form, {tab: 'types'} shows buildings and unit types */
+  /* deep links: {propertyId} opens a unit ({unitTab: 'file'}: on its unit file), {add: true} opens the form, {tab: 'types'} shows buildings and unit types */
   function deepLinks(ctx, canCreate) {
     var P = ctx.params || {};
-    if (P.propertyId && D.propById[P.propertyId]) { var pid = P.propertyId; P.propertyId = null; setTimeout(function () { openDrawer('view', pid); }, 0); }
+    if (P.propertyId && D.propById[P.propertyId]) { var pid = P.propertyId, ut = P.unitTab; P.propertyId = null; P.unitTab = null; setTimeout(function () { openDrawer('view', pid, ut); }, 0); }
     else if (P.add) { P.add = false; if (canCreate) setTimeout(function () { openDrawer('edit', null); }, 0); }
   }
 
@@ -757,14 +760,14 @@
   }
 
   /* ------------------------------------------------------------------ drawer */
-  function openDrawer(mode, id) {
+  function openDrawer(mode, id, unitTab) {
     if (DR && !document.body.contains(DR.dr.el)) { if (DR.off) DR.off(); DR = null; }
     if (!DR) {
       var dr = U.drawer({ title: '', body: '', foot: '<span></span>' });
       dr.el.classList.add('pp-dr');
       DR = { dr: dr };
       var guard = function () {
-        if (DR && DR.mode === 'edit' && DR.dirty) U.confirm('Discard your changes?', 'Discard', 'danger').then(function (ok) { if (ok) closeDrawer(); });
+        if (DR && (DR.mode === 'edit' || DR.mode === 'fileedit') && DR.dirty) U.confirm('Discard your changes?', 'Discard', 'danger').then(function (ok) { if (ok) closeDrawer(); });
         else closeDrawer();
       };
       var back = dr.el.previousElementSibling; if (back && back.classList.contains('drawer-back')) back.onclick = guard;
@@ -774,15 +777,34 @@
         if (!document.body.contains(DR.dr.el)) { if (DR.off) DR.off(); DR = null; return; }
         if (DR.mode === 'view') paintView();
       });
+      /* the unit file loads from the server on its own (app/pages/unitfile.js) */
+      DR.offFile = O.on('unitfiles', function () { if (DR && DR.mode === 'view' && DR.tab === 'file' && document.body.contains(DR.dr.el)) paintView(); });
       dr.el.addEventListener('click', onDrawerClick);
-      dr.el.addEventListener('input', function (e) { if (DR && DR.mode === 'edit') { DR.dirty = true; onFormInput(e); } });
-      dr.el.addEventListener('change', function (e) { if (DR && DR.mode === 'edit') { DR.dirty = true; onFormInput(e); } });
+      dr.el.addEventListener('input', function (e) { if (DR && DR.mode === 'edit') { DR.dirty = true; onFormInput(e); } else if (DR && DR.mode === 'fileedit') DR.dirty = true; });
+      dr.el.addEventListener('change', function (e) {
+        if (DR && DR.mode === 'edit') { DR.dirty = true; onFormInput(e); }
+        else if (DR && DR.mode === 'fileedit' && e.target.closest('[data-uf-form]')) { DR.dirty = true; var p = D.propById[DR.id]; if (p) O.unitFile.input(e, DR.dr.el, p); }
+      });
     }
-    DR.mode = mode; DR.id = id; DR.dirty = false; DR.pic = 0; DR.busy = 0;
+    DR.mode = mode; DR.id = id; DR.dirty = false; DR.pic = 0; DR.busy = 0; DR.tab = unitTab === 'file' && canFile() ? 'file' : 'details';
     if (mode === 'view') paintView(); else startEdit();
     O.$('.modal-body', DR.dr.el).scrollTop = 0;
   }
-  function closeDrawer() { if (!DR) return; var x = DR; DR = null; if (x.off) x.off(); x.dr.close(); }
+  function closeDrawer() { if (!DR) return; var x = DR; DR = null; if (x.off) x.off(); if (x.offFile) x.offFile(); x.dr.close(); }
+  /* the "Unit file" tab (app/pages/unitfile.js): lease, owner's bank details, bills, documents; properties.file only */
+  function canFile() { return !!(O.unitFile && O.unitFile.allowed()); }
+  function unitTabsHTML() { return canFile() ? '<div class="uf-tabs">' + U.seg([['details', 'Details'], ['file', 'Unit file']], DR.tab, 'data-utab') + '</div>' : ''; }
+  function fileHost() {
+    return {
+      el: DR.dr.el, tabsHTML: unitTabsHTML(),
+      toView: function () { if (!DR) return; DR.mode = 'view'; DR.dirty = false; paintView(); O.$('.modal-body', DR.dr.el).scrollTop = 0; },
+      toEdit: function () { if (!DR) return; DR.mode = 'fileedit'; DR.dirty = false; var p = D.propById[DR.id]; if (p) O.unitFile.edit(parts(), p, fileHost()); O.$('.modal-body', DR.dr.el).scrollTop = 0; },
+      close: function () { closeDrawer(); },
+      repaint: function () { if (DR && DR.mode === 'view') paintView(); },
+      dirty: function (v) { if (DR) DR.dirty = !!v; },
+      isDirty: function () { return !!(DR && DR.dirty); }
+    };
+  }
   function parts() { var el = DR.dr.el; return { h: O.$('.modal-head h3', el), sub: O.$('.modal-head .sub', el), body: O.$('.modal-body', el), foot: O.$('.modal-foot', el) }; }
 
   /* ---- view ---- */
@@ -795,6 +817,8 @@
   function paintView() {
     var p = D.propById[DR.id], X = parts();
     if (!p) { closeDrawer(); return; }
+    if (DR.tab === 'file' && !canFile()) DR.tab = 'details';
+    if (DR.tab === 'file') { X.h.textContent = p.name; X.sub.textContent = [p.short, p.area].filter(Boolean).join(' · '); O.unitFile.view(X, p, fileHost()); return; }
     var s = statusOf(p), up = upcoming(p.id), hk = p.housekeeper && D.staffById(p.housekeeper), access = canAccess();
     X.h.textContent = p.name;
     X.sub.textContent = [p.short, p.area].filter(Boolean).join(' · ');
@@ -802,7 +826,7 @@
     var others = p.owner ? D.properties.filter(function (x) { return x !== p && x.owner === p.owner && !x.archived; }) : [];
     var miss = canEdit() && !p.archived ? missing(p) : [];
     var typeOfP = O.typeOf(p), bdOfP = O.building(p.buildingId);
-    var html = galleryHTML(p) + '<div class="pp-vbody">' +
+    var html = unitTabsHTML() + galleryHTML(p) + '<div class="pp-vbody">' +
       '<div class="pp-now">' + U.pill(s.t, s.kind) + '<span>' + esc(s.s) + '</span></div>' +
       (miss.length ? '<div class="note warn pp-miss">' + O.icon('alert').replace('<svg ', '<svg style="width:15px;height:15px;flex:none;margin-top:1px" ') + '<span>Add the ' + esc(miss.join(', ')) + ' so cleaning tasks and the guest app have what they need.</span></div>' : '') +
       (canEdit() && !p.archived && !(p.photos && p.photos.length) ? '<div class="note">Add a few photos. The website and the guest app show them.</div>' : '') +
@@ -1174,6 +1198,9 @@
   function onDrawerClick(e) {
     if (!DR) return;
     var p = DR.id ? D.propById[DR.id] : null;
+    var ut = e.target.closest('[data-utab]');
+    if (ut && p && DR.mode === 'view') { DR.tab = ut.dataset.utab === 'file' && canFile() ? 'file' : 'details'; if (DR.tab === 'file') O.unitFile.load(true).catch(function () {}); paintView(); O.$('.modal-body', DR.dr.el).scrollTop = 0; return; }
+    if (p && canFile() && (DR.mode === 'fileedit' || DR.tab === 'file') && O.unitFile.click(e, p, fileHost())) return;
     var pic = e.target.closest('[data-pic]'); if (pic) { DR.pic = +pic.dataset.pic; paintView(); return; }
     var v = e.target.closest('[data-dv]');
     if (v && p) {

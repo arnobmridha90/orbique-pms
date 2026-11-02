@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Database tests on a local Postgres (14+). Creates two throwaway databases, applies a Supabase stand-in and every
-# migration with scripts/migrate.mjs, re-applies 0006, 0007, 0009, 0010, 0011, 0014, 0015, 0016, 0017, 0020, 0021 and 0022 twice (they must be re-runnable), then runs the SQL
+# Database tests on a local Postgres (14+). Creates three throwaway databases (the third with a Storage stand-in), applies a Supabase stand-in and every
+# migration with scripts/migrate.mjs, re-applies 0006, 0007, 0009, 0010, 0011, 0014, 0015, 0016, 0017, 0020, 0021, 0022 and 0023 twice (they must be re-runnable), then runs the SQL
 # tests.
 #
 #   PGURL=postgres://postgres@127.0.0.1:5432/postgres tests/sql/run.sh
 #
-# PGURL must be a superuser on a server you do not mind getting two databases (dropped and re-created each run).
+# PGURL must be a superuser on a server you do not mind getting three databases (dropped and re-created each run).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${PGURL:?set PGURL to a superuser connection on a local test server}"
@@ -27,7 +27,7 @@ migrate_all() { # url
   DATABASE_URL="$url" node scripts/migrate.mjs
   DATABASE_URL="$url" node scripts/migrate.mjs                     # nothing left to apply
   # 0009 and 0014 replace functions from 0006, so they are re-run after it (in production each file runs once, in order)
-  for f in 0006_channex.sql 0007_channex_cron.sql 0009_channex_fixes.sql 0010_inbox.sql 0011_alerts.sql 0014_listing_types.sql 0015_website_booking.sql 0016_planner_owner_only.sql 0017_site_content.sql 0020_reveal_24h.sql 0021_guest_places.sql 0022_inbox_organize.sql; do
+  for f in 0006_channex.sql 0007_channex_cron.sql 0009_channex_fixes.sql 0010_inbox.sql 0011_alerts.sql 0014_listing_types.sql 0015_website_booking.sql 0016_planner_owner_only.sql 0017_site_content.sql 0020_reveal_24h.sql 0021_guest_places.sql 0022_inbox_organize.sql 0023_unit_files.sql; do
     DATABASE_URL="$url" node scripts/migrate.mjs --reapply "$f"   # re-run through the runner
     psqlq "$url" -f "supabase/migrations/$f" >/dev/null 2>&1 || { echo "re-running $f with psql failed"; psqlq "$url" -f "supabase/migrations/$f"; exit 1; }
   done
@@ -75,3 +75,9 @@ psqlq "$URL1" -f tests/sql/coexist.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:
 
 echo "== staff sign-in names (0019)"
 psqlq "$URL1" -f tests/sql/staff_logins.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
+
+echo "== unit files and their documents (0023, with a Storage stand-in)"
+URL3="$(prepare orbique_unit_files_test tests/sql/storage_stub.sql | tail -n 1)"
+DATABASE_URL="$URL3" node scripts/migrate.mjs >/dev/null
+for i in 1 2; do for f in 0022_inbox_organize.sql 0023_unit_files.sql; do psqlq "$URL3" -f "supabase/migrations/$f" >/dev/null 2>&1 || { echo "re-running $f with psql failed"; psqlq "$URL3" -f "supabase/migrations/$f"; exit 1; }; done; done
+psqlq "$URL3" -f tests/sql/unit_files.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
