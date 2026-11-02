@@ -2,7 +2,8 @@
    "A glimpse of the whole scenario, immediately important things only."
    Hero: greeting, date and time, a one-line summary, the "Brief me" read-aloud button, one money line (dashboard.money).
    Cards: same-day bookings, check-ins today (readiness), check-outs today (turnover), in-house guests,
-   today's open and overdue tasks, and "needs attention" (unread messages, reviews to answer, inventory alerts).
+   today's open and overdue tasks, "needs attention" (unread messages, reviews to answer, inventory alerts) and, for
+   people with properties.file, "Due soon" (rent, bills and tenancy ends from the unit files, app/pages/unitfile.js).
    Everything analytical lives in Statistics (O.go('statistics')).
    O.dashboardBrief() returns the spoken brief as an array of sentences, built from the same model the page renders,
    so the brief says exactly what this viewer's dashboard shows. */
@@ -679,13 +680,14 @@
         var mineFirst = p.tasks && !p.others; /* housekeepers and maintenance: their own tasks come first on a phone */
         var cards = {
           sameday: p.stays ? sameDayHTML(m) : '', arrivals: p.stays ? arrivalsHTML(m) : '', departures: p.stays ? departuresHTML(m) : '',
-          inhouse: p.stays ? inHouseHTML(m) : '', tasks: p.tasks ? tasksHTML(m) : '', attention: attentionHTML(m, alerts)
+          inhouse: p.stays ? inHouseHTML(m) : '', tasks: p.tasks ? tasksHTML(m) : '', attention: attentionHTML(m, alerts),
+          duesoon: O.unitFile ? safe(function () { return O.unitFile.dueSoonHTML(head); }, '') : ''
         };
-        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'attention', 'inhouse'] : ['sameday', 'arrivals', 'tasks', 'departures', 'attention', 'inhouse'];
+        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'attention', 'duesoon', 'inhouse'] : ['sameday', 'arrivals', 'tasks', 'departures', 'attention', 'duesoon', 'inhouse'];
         var styled = function (k) { return cards[k] ? cards[k].replace('<section class="card', '<section style="order:' + (order.indexOf(k) + 1) + '" class="card') : ''; };
         var left = ['sameday', 'arrivals', 'departures'].map(styled).join('');
-        var right = ['tasks', 'attention', 'inhouse'].map(styled).join('');
-        if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['attention'].map(styled).join(''); }
+        var right = ['tasks', 'attention', 'duesoon', 'inhouse'].map(styled).join('');
+        if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['attention', 'duesoon'].map(styled).join(''); }
         html = heroHTML(m) + '<div class="dsh-brief-slot">' + (st.brief ? briefPanelHTML() : '') + '</div>' +
           (left || right ? '<div class="dsh-main"><div class="dsh-col">' + left + '</div><div class="dsh-col">' + right + '</div></div>' : '');
         root._dshAlerts = alerts;
@@ -701,6 +703,8 @@
         B.page = null;
       });
       ctx.on('data', function () { if (B.reading) B.dirty = true; });
+      /* unit files load from the server on their own (app/pages/unitfile.js): redraw the "Due soon" card */
+      ctx.on('unitfiles', function () { if (B.reading) { B.dirty = true; return; } var a = document.activeElement; if (a && page.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return; ctx.rerender(); });
       ctx.on('tick', function () { /* keep the clock and greeting current without disturbing the person */
         if (B.reading) return;
         var a = document.activeElement;
@@ -720,6 +724,7 @@
         }
         if ((x = e.target.closest('[data-go]'))) { stopVoice(); O.go(x.dataset.go, x.dataset.add ? { add: true } : undefined); return; }
         if ((x = e.target.closest('[data-more]'))) { st.more[x.dataset.more] = !st.more[x.dataset.more]; if (!B.reading) ctx.rerender(); return; }
+        if (O.unitFile && e.target.closest('.uf-due') && O.unitFile.dueClick(e)) { stopVoice(); return; }
         if ((x = e.target.closest('[data-alert]'))) { var a = (root._dshAlerts || [])[+x.dataset.alert]; if (a) { stopVoice(); O.go(a.go[0], a.go[1]); } return; }
         if ((x = e.target.closest('[data-act]'))) {
           var act = x.dataset.act, b = x.dataset.b ? D.booking(x.dataset.b) : null;

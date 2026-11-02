@@ -655,6 +655,8 @@
     S.meta = Object.assign({}, S.meta, { seedPending: false });
     showSeed();
     setTimeout(function () { O.emit('data'); O.automation.run('seed'); }, 0);
+    /* sample unit files (fake numbers only) go to their own table (0023), not with the synced data */
+    if (O.unitFile) setTimeout(function () { O.unitFile.seedDemo().catch(function (e) { console.error('demo unit files', e); }); }, 0);
   }
   function showSeed() {
     var el = SEED.el = O.html('<div class="srv-seed" role="status" aria-live="polite"><div class="srv-seed-card"><div class="spinner"></div><b>Loading demo data…</b><div class="progress"><i style="width:2%"></i></div><div class="small muted srv-seed-n">Preparing sample units, bookings and guests</div></div></div>');
@@ -781,6 +783,8 @@
     if (S.readOnly) return Promise.reject(new Error('This workspace is paused, so nothing can be changed right now.'));
     return null;
   }
+  /* the unit files' documents (Storage) before reset_org clears the rows; a file that cannot be removed does not stop the reset */
+  function purgeUnitDocs() { return O.unitFile ? O.unitFile.purgeDocs().catch(function (e) { console.error('unit documents', e); }) : Promise.resolve(); }
   /* Brand & Setup "Workspace data": load the demo / start empty / reset (the page reloads afterwards) */
   A.loadDemo = function () {
     var no = needOwner(); if (no) return no;
@@ -789,7 +793,7 @@
       if (!ok) return false;
       O.showLoader('Preparing demo data…');
       S.leaving = true; stopSaving(); if (O.sync._unsub) try { O.sync._unsub(); } catch (e) {}
-      return (started ? rpc('reset_org', { p_org: S.org.id }) : Promise.resolve()).then(function () {
+      return (started ? purgeUnitDocs().then(function () { return rpc('reset_org', { p_org: S.org.id }); }) : Promise.resolve()).then(function () {
         return writeMeta(S.org.id, { storyDate: todayMY(), demo: true, seedPending: true });
       }).then(function () { reload(); return true; }, function (e) { S.leaving = false; U.toast(errMsg(e), 'bad'); O.render(); throw e; });
     });
@@ -801,7 +805,7 @@
       if (!ok) return false;
       O.showLoader('Clearing the workspace…');
       S.leaving = true; stopSaving(); if (O.sync._unsub) try { O.sync._unsub(); } catch (e) {}
-      return (started ? rpc('reset_org', { p_org: S.org.id }) : Promise.resolve()).then(function () {
+      return (started ? purgeUnitDocs().then(function () { return rpc('reset_org', { p_org: S.org.id }); }) : Promise.resolve()).then(function () {
         return writeMeta(S.org.id, { storyDate: todayMY(), demo: false, startedAt: new Date().toISOString() });
       }).then(function () { reload(); return true; }, function (e) { S.leaving = false; U.toast(errMsg(e), 'bad'); O.render(); throw e; });
     });
@@ -812,7 +816,7 @@
       if (!ok) return false;
       O.showLoader('Resetting the workspace…');
       S.leaving = true; stopSaving(); if (O.sync._unsub) try { O.sync._unsub(); } catch (e) {}
-      return rpc('reset_org', { p_org: S.org.id }).then(function () { reload(); return true; }, function (e) { S.leaving = false; U.toast(errMsg(e), 'bad'); O.render(); throw e; });
+      return purgeUnitDocs().then(function () { return rpc('reset_org', { p_org: S.org.id }); }).then(function () { reload(); return true; }, function (e) { S.leaving = false; U.toast(errMsg(e), 'bad'); O.render(); throw e; });
     });
   };
   /* people (Staff Access) */
