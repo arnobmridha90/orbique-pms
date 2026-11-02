@@ -5,6 +5,8 @@
                    checklist ticking, photo note, mark done (all required items ticked, or with a reason).
    Checklists tab: the three templates in D.checklists (view; edit with tasks.checklists) and the switches for
                    automatic tasks (D.taskAutomation, config blob; change with automations.toggle).
+   Requests tab:   unit requests across units (app/pages/unitreq.js); a request's task carries requestId, and marking it
+                   done anywhere ticks the request (O.unitReq.sync, one 'data' listener there).
    Background job O.automation.register('tasks'): check-out turnovers, check-in readiness and daily housekeeping,
                    ids TO-<bookingId>, CI-<bookingId>, DH-<bookingId>-<date>. Runs at boot, each new day and whenever
                    bookings change (a 'data' listener below compares a booking signature). */
@@ -615,6 +617,7 @@
       '<div class="tk-top">' + (pick ? '<input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.title) + '">' : '') +
       (t.priority === 'high' && isOpen(t) ? U.pill('High', 'bad') : '') + '<span class="tk-type">' + esc(t.type) + '</span>' + autoMark(t) +
       (t.photoNote ? '<span class="tk-auto" title="Has a photo note">' + O.icon('camera') + '</span>' : '') +
+      (t.requestId ? '<span class="tk-auto" title="From a unit request">' + O.icon('home') + '</span>' : '') +
       '<span class="due ' + dl.cls + '">' + esc(dl.txt) + '</span></div>' +
       '<button type="button" class="tk-title" data-open="' + esc(t.id) + '">' + esc(t.title) + '</button>' +
       '<div class="tk-where"><span class="prop-dot" style="background:' + (t.propertyId ? U.propColor(t.propertyId) : 'var(--border-strong)') + '"></span><span>' + esc(propShort(t.propertyId)) + '</span></div>' +
@@ -908,6 +911,7 @@
       var b = stayBooking(t), line = stayLine(t, true);
       return '<div class="tk-modal stack">' + headHTML() +
         (b && line ? '<button type="button" class="tk-bk" data-bk="' + esc(b.id) + '">' + O.icon('bookings') + '<span><b>' + esc(line) + '</b></span></button>' : '') +
+        (t.requestId && O.unitReq ? O.unitReq.taskLineHTML(t) : '') +
         (noteShown(t) ? '<div class="note">' + esc(noteShown(t)) + '</div>' : '') +
         '<div data-cl>' + clHTML() + '</div>' +
         (t.status === 'done' ? '<div class="note tk-done">' + esc(dueLabel(t).txt) + (t.doneReason ? '. Reason: ' + t.doneReason : '') + '</div>' : '') +
@@ -1098,6 +1102,9 @@
     });
   }
 
+  /* for unit requests (app/pages/unitreq.js): who a new task goes to, the photo compressor, and the task detail */
+  O.taskHelpers = { suggestFor: suggestFor, compressPhoto: compressPhoto, detail: detail };
+
   /* ===================================================================
      PAGE
      =================================================================== */
@@ -1107,7 +1114,7 @@
       var p = ctx.params || {};
       if (ctx.fresh && (p.assignee || p.due || p.propertyId || p.tab || p.taskId)) {
         /* links from the dashboard or bell: start from clean filters so old ones do not hide the result */
-        st.tab = p.tab === 'checklists' ? 'checklists' : 'tasks';
+        st.tab = p.tab === 'checklists' || p.tab === 'requests' ? p.tab : 'tasks';
         if (p.assignee || p.due || p.propertyId) {
           st.assignee = p.assignee || 'all'; st.due = p.due || 'all'; st.propertyId = p.propertyId || ''; st.type = ''; st.q = ''; st.autoMe = false;
           st.col = p.due === 'overdue' || p.assignee === 'unassigned' ? 'todo' : st.col;
@@ -1125,8 +1132,20 @@
 
       if (!can.see()) { ctx.setActions(''); root.innerHTML = U.locked('Tasks & Cleaning', { reason: 'permission' }); return; }
 
-      var tabs = '<div class="tabs tk-tabs" role="tablist">' + [['tasks', 'Tasks'], ['checklists', 'Checklists']].map(function (x) { return '<button type="button" role="tab" data-tab="' + x[0] + '" aria-selected="' + (st.tab === x[0]) + '" class="' + (st.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>';
+      var tabs = '<div class="tabs tk-tabs" role="tablist">' + [['tasks', 'Tasks'], ['requests', 'Requests' + (O.unitReq && O.unitReq.openCount() ? ' ' + O.unitReq.openCount() : '')], ['checklists', 'Checklists']].map(function (x) { return '<button type="button" role="tab" data-tab="' + x[0] + '" aria-selected="' + (st.tab === x[0]) + '" class="' + (st.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>';
 
+      if (st.tab === 'requests' && O.unitReq) {
+        /* unit requests across units (app/pages/unitreq.js): each one has its task on the Tasks tab */
+        ctx.setActions('');
+        root.innerHTML = '<div class="pg-tasks">' + tabs + O.unitReq.pageHTML(st) + '</div>';
+        var rp = O.$('.pg-tasks', root);
+        rp.addEventListener('click', function (e) {
+          var b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; ctx.rerender(); return; }
+          O.unitReq.pageClick(e, st, ctx.rerender);
+        });
+        rp.addEventListener('change', function (e) { O.unitReq.pageChange(e, st, ctx.rerender); });
+        return;
+      }
       if (st.tab === 'checklists') {
         ctx.setActions('');
         root.innerHTML = '<div class="pg-tasks">' + tabs + checklistsHTML() + '</div>';

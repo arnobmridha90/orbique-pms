@@ -24,7 +24,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const list = (dir, ext) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).sort().map((f) => path.join(dir, f)) : []);
 const jsSafe = (code) => code.replace(/<\/(script)/gi, '<\\/$1');
 /* CommonJS files the page and the api/ functions both use: [file, name under O] */
-const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg'], ['api/_lib/shared/greeting.cjs', 'greeting'], ['api/_lib/shared/rateplan.cjs', 'rateplan'], ['api/_lib/shared/sitecontent.cjs', 'sitecontent'], ['api/_lib/shared/geo.cjs', 'geo'], ['api/_lib/shared/unitdue.cjs', 'unitdue']]; /* in this order: guestmsg uses O.assign, greeting uses O.guestmsg */
+const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg'], ['api/_lib/shared/greeting.cjs', 'greeting'], ['api/_lib/shared/rateplan.cjs', 'rateplan'], ['api/_lib/shared/sitecontent.cjs', 'sitecontent'], ['api/_lib/shared/geo.cjs', 'geo'], ['api/_lib/shared/unitdue.cjs', 'unitdue'], ['api/_lib/shared/beds.cjs', 'beds'], ['api/_lib/shared/unitreq.cjs', 'unitreq']]; /* in this order: guestmsg uses O.assign, greeting uses O.guestmsg */
 
 function page() {
   let shell = read(path.join(APP, 'shell.html'));
