@@ -8,7 +8,8 @@
  * A unit file (table unit_files, supabase/migrations/0023_unit_files.sql; one per unit; docs/notes/unit-file.md):
  *   lease:  {rent, dueDay (1-31), method, start, end ('YYYY-MM-DD'), noticeMonths, deposit, utilityDeposit,
  *            reminderDays (default 60), ref, paidUntil (the last rent due date paid), createdOn}
- *   owner:  {idNo, bank, holder, accountNo}            (name, phone and email stay on the property record)
+ *   owner:  {type ('person'|'company'), contact, phone2, prefers, address, nationality, idNo, taxNo, bank, holder,
+ *            accountNo, swift, payRef}   (name, phone and email are edited here but kept on the property record)
  *   bills:  [{id, type, provider, accountNo, amount, freq, dueDay (monthly), nextDue (other frequencies), paidBy
  *            ('us' | 'owner' | 'rent'), autopay, notes, lastPaid (the last due date paid), createdOn}]
  *   access: {routerUser, routerPass, cards, cardNos, parkingCard, mailbox, mailboxKey, mgmtOffice, guardPhone}
