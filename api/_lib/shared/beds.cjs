@@ -22,7 +22,7 @@ var ROOM_KINDS = [
   { id: 'study', label: 'Study' },
   { id: 'other', label: 'Other' }
 ];
-/* sleeps: guests one bed takes; d: the sizes a new bed of this type starts with (cm, common in Malaysia) */
+/* sleeps: guests one bed takes; mattresses: mattresses on one bed (1 unless given; a bunk has 2, each needs its own sheets); d: the sizes a new bed of this type starts with (cm, common in Malaysia) */
 var BED_TYPES = [
   { id: 'king', label: 'King', sleeps: 2, d: { mattress: '183x190', thick: 25, flat: '240x220', duvet: '240x220', pillow: '48x74', pillows: 4 } },
   { id: 'queen', label: 'Queen', sleeps: 2, d: { mattress: '152x190', thick: 25, flat: '210x210', duvet: '210x210', pillow: '48x74', pillows: 2 } },
@@ -30,7 +30,7 @@ var BED_TYPES = [
   { id: 'single', label: 'Single', sleeps: 1, d: { mattress: '91x190', thick: 20, flat: '140x210', duvet: '140x210', pillow: '48x74', pillows: 1 } },
   { id: 'sofabed', label: 'Sofa bed', sleeps: 2, d: { mattress: '120x190', thick: 12, flat: '160x210', duvet: '160x210', pillow: '48x74', pillows: 2 } },
   { id: 'extra', label: 'Extra bed / foldable', sleeps: 1, d: { mattress: '91x190', thick: 10, flat: '140x210', duvet: '140x210', pillow: '48x74', pillows: 1 } },
-  { id: 'bunk', label: 'Bunk', sleeps: 2, d: { mattress: '91x190', thick: 15, flat: '140x210', duvet: '140x210', pillow: '48x74', pillows: 2 } },
+  { id: 'bunk', label: 'Bunk', sleeps: 2, mattresses: 2, d: { mattress: '91x190', thick: 15, flat: '140x210', duvet: '140x210', pillow: '48x74', pillows: 2 } },
   { id: 'other', label: 'Other', sleeps: 1, d: {} }
 ];
 /* size presets: [value, label] (the value is what is saved; anything else typed is kept as it is) */
@@ -97,7 +97,7 @@ function capacity(rooms) {
 
 /* what one full linen change of the unit needs, by item and size:
  *   [{item, size, n, perChange}]  perChange false = stays on the bed (comforters, duvets), listed so laundry knows the sizes
- * fitted sheet: the fitted size, else the mattress size; pillowcases: pillows x qty of the pillowcase size, else the pillow size;
+ * sheets, protector and comforter: one per mattress (a bunk has 2); fitted sheet: the fitted size, else the mattress size; pillowcases: pillows x qty of the pillowcase size, else the pillow size;
  * mattress protector: the mattress size, beds that have one. Sorted: per change first, then item order, then size. */
 var ITEMS = [['fitted', 'Fitted sheet'], ['flat', 'Flat sheet / duvet cover'], ['pcase', 'Pillowcase'], ['protector', 'Mattress protector'], ['duvet', 'Comforter / duvet'], ['pillow', 'Pillow']];
 function linen(rooms) {
@@ -112,12 +112,12 @@ function linen(rooms) {
   }
   (rooms || []).forEach(function (r) {
     (r.beds || []).forEach(function (b) {
-      var q = int(b.qty, 1, MAX_QTY, 1), p = int(b.pillows, 0, MAX_PILLOWS, 0);
-      add('fitted', b.fitted || b.mattress, q);
-      if (b.flat) add('flat', b.flat, q);
+      var q = int(b.qty, 1, MAX_QTY, 1), p = int(b.pillows, 0, MAX_PILLOWS, 0), m = q * (bedType(b.type).mattresses || 1);
+      add('fitted', b.fitted || b.mattress, m);
+      if (b.flat) add('flat', b.flat, m);
       add('pcase', b.pcase || b.pillow, p * q);
-      if (b.protector) add('protector', b.mattress, q);
-      if (b.duvet) add('duvet', b.duvet, q);
+      if (b.protector) add('protector', b.mattress, m);
+      if (b.duvet) add('duvet', b.duvet, m);
       add('pillow', b.pillow, p * q);
     });
   });

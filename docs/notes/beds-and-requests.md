@@ -56,9 +56,10 @@ Single 140x210; pillows Standard 48x74, Queen 51x76, King 51x91, Euro 65x65, Bol
 typed is kept as typed. Choosing a bed type fills in that type's usual sizes, but only fields still at the old type's
 defaults; sizes someone typed stay.
 
-**Linen per change** (`O.beds.linen(rooms)`): per bed × quantity: one fitted sheet (fitted size, else mattress size),
-one flat sheet / duvet cover (if a size is set), pillows × pillowcases (pillowcase size, else pillow size), one mattress
-protector (mattress size, beds that have one). Comforters and pillows are listed under "On the beds, not changed each
+**Linen per change** (`O.beds.linen(rooms)`): per mattress (bed × quantity; a bunk counts 2 mattresses): one fitted
+sheet (fitted size, else mattress size), one flat sheet / duvet cover (if a size is set), one mattress protector (mattress
+size, beds that have one), one comforter; per bed × quantity: pillows × pillowcases (pillowcase size, else pillow size).
+The pillow field reads "Pillows on each bed" (for a bunk: both levels together). Comforters and pillows are listed under "On the beds, not changed each
 time" so laundry knows the sizes. The tab also shows rooms, beds and "Sleeps" (King/Queen/Sofa bed/Bunk 2, others 1).
 
 ### `D.unitRequests`
@@ -69,7 +70,8 @@ time" so laundry knows the sizes. The tab also shows rooms, beds and "Sleeps" (K
   status: 'open'|'in_progress'|'done'|'cancelled', at, by /* staff id */,
   taskId: 'T-RQ-…',              // while a task is linked
   doneAt, doneBy,                // copied from the task
-  cancelledAt, cancelledBy, taskGone /* true: its task was deleted */ }
+  cancelledAt, cancelledBy, taskGone /* true: its task was deleted */,
+  keptTask /* true: cancelled, and its done task is kept as history */ }
 ```
 
 Shown as a breadcrumb, `Repair › Basin › Master bathroom`. Item suggestions: Basin, Toilet, Shower, Water heater,
@@ -102,7 +104,14 @@ board's move buttons, the list, bulk "Mark done", checklist ticking and the dash
 
 - While a request has its task, the request **follows the task**: `todo → open`, `in_progress → in_progress`,
   `done → done` with `doneAt` / `doneBy` from the task. Reopening the task reopens the request (done fields removed).
-- **Cancelling a request** removes its task if the task is not done; a done task stays as history.
+- **Finding the task**: by `taskId`, else by a task whose `requestId` is the request, else by `'T-' + id`. A request
+  that lost its link (task deleted on one device and done on another; a request row that arrived before its task row)
+  links again on the next run, clears `taskGone` and follows the task.
+- **Cancelling a request** removes its task if the task is not done, including a task row that only arrives after the
+  cancel (the request keeps `taskId` for that). A done task stays as history and the request records `keptTask: true`;
+  if someone later reopens that task, the request is reopened with it (audit "Reopened request … because its task …
+  was reopened") rather than the task being deleted. Each removed task gets the audit line "Removed task "…" because
+  its request … was cancelled".
 - **Deleting the task** leaves the request: it becomes `open` again (unless it was done), `taskId` is cleared and
   `taskGone: true` is set; the request shows "Its task was deleted" and a **Make a task** button. Chosen over
   cancelling the request so a broken basin is not forgotten because a task was tidied away.
@@ -112,8 +121,8 @@ board's move buttons, the list, bulk "Mark done", checklist ticking and the dash
 - **Reopen** on a cancelled request opens it and makes (or reopens) its task.
 
 Everything reconcile writes is derived from the request and its task, so it is idempotent (a second run changes
-nothing) and two devices reach the same record (tested). It writes no audit lines of its own: the task's own
-"Completed …" / "Reopened …" line already records who did it.
+nothing) and two devices reach the same record (tested). Apart from the two lines above it writes no audit lines:
+the task's own "Completed …" / "Reopened …" line already records who did it.
 
 ## Permissions
 
@@ -125,14 +134,16 @@ No new permission keys.
   owners, ops, housekeeping, front desk and maintenance can, so the people who find broken things can report them.
   The task is created for them even without "Assign tasks to others": it goes to the suggested person, as automatic
   tasks do.
-- **Cancel a request**: `properties.edit`, `tasks.delete`, or the person who raised it.
+- **Cancel a request** (`O.unitreq.canCancel`): `properties.edit` or `tasks.delete`; the person who raised it only
+  while its task is still to do and unassigned or assigned to them, so nobody else's started work is removed.
 - **Open task** shows only when the viewer may see that task (`tasks.others` or it is theirs).
 
 ## Audit log
 
 Category `properties`: "Added / Updated the rooms and beds of <unit>: 3 rooms, 4 beds".
 Category `tasks`: "Raised request Repair > Basin > Master bathroom for <unit> and created the task "…" for <person>",
-"Cancelled request …", "Reopened request …", "Made a new task "…" for request …".
+"Cancelled request …", "Removed task "…" because its request … was cancelled", "Reopened request …",
+"Made a new task "…" for request …".
 
 ## Not done / later
 

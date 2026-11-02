@@ -117,6 +117,7 @@ async function run(browser, size, tag) {
   else check(false, tag + ': the board has a done button for the request task');
 
   /* ---- a housekeeper raises one (Request > Internet connection) ---- */
+  const ownerId = await pg.evaluate(() => O.state.viewer);
   await pg.evaluate(() => { O.state.viewer = 's5'; O.emit('viewer'); O.go('tasks', { tab: 'requests' }); });
   await pg.waitForSelector('.pg-tasks .rq-head [data-rq=new]');
   await pg.click('.pg-tasks .rq-head [data-rq=new]');
@@ -131,7 +132,14 @@ async function run(browser, size, tag) {
   check(hk && hk.title === 'Service: Internet connection (Whole unit)', tag + ': a housekeeper raised Service > Internet connection and its task was made');
   check(await overflow() <= 0, tag + ': Tasks > Requests fits the width');
   await shot('7-housekeeper-requests');
-  /* cancelling (the person who raised it may): its open task is removed */
+  /* the raiser may cancel only while the task is to do and unassigned or theirs; here it went to maintenance */
+  await pg.click('.pg-tasks [data-rqshow=open]');
+  const asg = await pg.evaluate(() => { const r = O.data.unitRequests.filter((x) => x.item === 'Internet connection' && x.by === 's5').pop(); const t = O.data.tasks.find((x) => x.id === r.taskId); return t.assigneeId; });
+  const hkCancel = await pg.locator('.pg-tasks .rq-row:has-text("Internet connection") [data-rq=cancel]').count();
+  check(asg && asg !== 's5' ? hkCancel === 0 : hkCancel > 0, tag + ': the housekeeper can cancel only while nobody else has the task');
+  /* cancelling (an owner may): its open task is removed, with an audit line */
+  await pg.evaluate((v) => { O.state.viewer = v; O.emit('viewer'); O.go('tasks', { tab: 'requests' }); }, ownerId);
+  await pg.waitForSelector('.pg-tasks .rq-head');
   await pg.click('.pg-tasks [data-rqshow=open]');
   const row = pg.locator('.pg-tasks .rq-row:has-text("Internet connection") [data-rq=cancel]').first();
   await row.click();
@@ -139,6 +147,7 @@ async function run(browser, size, tag) {
   await wait(300);
   const gone = await pg.evaluate(() => { const r = O.data.unitRequests.filter((x) => x.item === 'Internet connection' && x.by === 's5').pop(); return { status: r.status, task: O.data.tasks.some((t) => t.requestId === r.id) }; });
   check(gone.status === 'cancelled' && !gone.task, tag + ': cancelling the request removed its open task');
+  check(await pg.evaluate(() => (O.data.auditLog || []).some((a) => /^Removed task "Service: Internet connection/.test(a.text))), tag + ': the removed task has an audit line');
 
   check(!errors.length, tag + ': no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await ctx.close();

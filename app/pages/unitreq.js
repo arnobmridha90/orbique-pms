@@ -14,7 +14,8 @@
    its open task, and a deleted task leaves the request open with no task ("Make a task" puts one back).
 
    Who: raising a request needs "Create tasks" (tasks.create) or "Edit property details" (properties.edit), so housekeeping
-   and maintenance staff can report what they find. Cancelling: properties.edit, tasks.delete, or the person who raised it.
+   and maintenance staff can report what they find. Cancelling: properties.edit, tasks.delete, or the person who
+   raised it while its task is still to do and unassigned or theirs (R.canCancel).
    The task goes to the person the Tasks page would suggest (maintenance staff for repairs, replacements and services,
    the unit's housekeeper for cleaning and new items), otherwise unassigned so it shows on the dashboard.
 
@@ -93,7 +94,8 @@
   function audit(text) { if (!Array.isArray(D.auditLog)) D.auditLog = []; D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'tasks', text: text }); }
   function noAccess() { return 'Your access does not include raising requests. It needs "' + O.permLabel('tasks.create') + '" or "' + O.permLabel('properties.edit') + '".'; }
   UQ.canCreate = function () { return O.can('tasks.create') || O.can('properties.edit'); };
-  function canCancel(r) { return O.can('properties.edit') || O.can('tasks.delete') || (!!r.by && r.by === O.state.viewer && UQ.canCreate()); }
+  /* the rule is R.canCancel: the raiser alone may cancel only while the task is to do and unassigned or theirs */
+  function canCancel(r) { return R.canCancel(r, taskOf(r), { viewer: O.state.viewer, propsEdit: O.can('properties.edit'), tasksDelete: O.can('tasks.delete'), canCreate: UQ.canCreate() }); }
   function canSeeTask(t) { return !!t && O.can('tasks') && (O.can('tasks.others') || t.assigneeId === O.state.viewer); }
   UQ.forUnit = function (pid) { return R.sort(reqs().filter(function (r) { return r && r.propertyId === pid; })); };
   UQ.openCount = function (pid) { return reqs().filter(function (r) { return r && (!pid || r.propertyId === pid) && R.isOpen(r); }).length; };
@@ -105,6 +107,10 @@
     return O.unscoped(function () {
       var out = R.reconcile(D.unitRequests, D.tasks, { now: D.NOW, seen: function (id) { return !!SEEN[id]; } });
       D.tasks.forEach(function (t) { if (t && t.requestId) SEEN[t.id] = 1; });
+      out.events.forEach(function (ev) {
+        if (ev.type === 'task-removed') audit('Removed task "' + ev.task.title + '" because its request ' + R.trail(ev.request) + ' (' + propShort(ev.request.propertyId) + ') was cancelled');
+        if (ev.type === 'uncancelled') audit('Reopened request ' + R.trail(ev.request) + ' (' + propShort(ev.request.propertyId) + ') because its task "' + ev.task.title + '" was reopened');
+      });
       return out.changed.length + out.removed.length;
     });
   };
@@ -207,15 +213,18 @@
     var t = taskOf(r);
     U.confirm(R.trail(r) + ' is cancelled' + (t && t.status !== 'done' ? ' and its open task "' + t.title + '" is removed from Tasks' : '') + '.', 'Cancel request', 'danger', 'Cancel this request?').then(function (ok) {
       if (!ok || r.status === 'cancelled') return;
+      if (!canCancel(r)) { U.toast('Your access does not include cancelling this request any more: its task has been started or taken.', 'bad'); return; }
+      var cur = taskOf(r);
       r.status = 'cancelled'; r.cancelledAt = D.NOW; r.cancelledBy = O.state.viewer;
-      UQ.sync();
+      if (cur && cur.status === 'done') r.keptTask = true; else delete r.keptTask;
       audit('Cancelled request ' + R.trail(r) + ' for ' + propShort(r.propertyId));
+      UQ.sync();
       O.emit('data', { type: 'request-cancel', id: r.id });
       U.toast('Request cancelled');
     });
   }
   function reopenReq(r) {
-    delete r.cancelledAt; delete r.cancelledBy; r.status = 'open';
+    delete r.cancelledAt; delete r.cancelledBy; delete r.keptTask; r.status = 'open';
     var t = taskOf(r);
     if (!t) t = addTask(r); else if (t.status === 'done') { t.status = 'todo'; delete t.doneAt; delete t.doneBy; delete t.doneReason; }
     UQ.sync();

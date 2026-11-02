@@ -140,13 +140,104 @@ test('sync: cancelling a request removes its open task, keeps a done one', () =>
   let out = R.reconcile(reqs, tasks, { now: NOW });
   assert.equal(tasks.length, 0);
   assert.equal(out.removed.length, 1);
-  assert.equal(r.taskId, undefined);
+  assert.equal(out.events[0].type, 'task-removed');
   assert.equal(r.status, 'cancelled');
   const p = pair();
   p.t.status = 'done'; p.r.status = 'cancelled';
   out = R.reconcile(p.reqs, p.tasks, { now: NOW });
   assert.equal(p.tasks.length, 1, 'a finished task stays as history');
   assert.equal(p.r.status, 'cancelled', 'the request stays cancelled');
+  assert.equal(p.r.keptTask, true);
+});
+
+const AT = '2026-11-02T10:00';
+test('sync: a request that lost its taskId links back to its task and follows it', () => {
+  /* task deleted on device A (request: taskGone), done on device B and synced back */
+  const reqs = [{ id: 'RQ-1', status: 'open', taskGone: true, at: AT }];
+  const tasks = [{ id: 'T-RQ-1', requestId: 'RQ-1', status: 'done', doneAt: '2026-11-02T12:00', doneBy: 's6' }];
+  const out = R.reconcile(reqs, tasks, { now: NOW, seen: () => true });
+  assert.equal(reqs[0].status, 'done');
+  assert.equal(reqs[0].taskId, 'T-RQ-1');
+  assert.equal(reqs[0].taskGone, undefined);
+  assert.equal(out.events[0].type, 'done');
+  /* unlinked because seen and missing, then the done task arrives */
+  const q = [{ id: 'RQ-2', status: 'open', taskId: 'T-RQ-2', at: AT }], qt = [];
+  R.reconcile(q, qt, { now: NOW, seen: () => true });
+  assert.equal(q[0].taskGone, true);
+  qt.push({ id: 'T-RQ-2', requestId: 'RQ-2', status: 'done', doneAt: '2026-11-02T12:00' });
+  R.reconcile(q, qt, { now: NOW, seen: () => true });
+  assert.equal(q[0].status, 'done');
+  assert.equal(q[0].taskId, 'T-RQ-2');
+  assert.equal(q[0].taskGone, undefined);
+  /* found by requestId even when the task id is not the usual one */
+  const z = [{ id: 'RQ-5', status: 'open', at: AT }];
+  R.reconcile(z, [{ id: 'T-other', requestId: 'RQ-5', status: 'in_progress' }], { now: NOW });
+  assert.equal(z[0].status, 'in_progress');
+  assert.equal(z[0].taskId, 'T-other');
+});
+
+test('sync: a task that arrives after its request was cancelled is removed', () => {
+  const reqs = [{ id: 'RQ-9', status: 'cancelled', taskId: 'T-RQ-9', at: AT }], tasks = [];
+  let out = R.reconcile(reqs, tasks, { now: NOW, seen: () => true });
+  assert.equal(reqs[0].taskId, 'T-RQ-9', 'taskId is kept for the task that has not arrived');
+  tasks.push({ id: 'T-RQ-9', requestId: 'RQ-9', status: 'todo' });
+  out = R.reconcile(reqs, tasks, { now: NOW, seen: () => true });
+  assert.equal(out.removed.length, 1);
+  assert.equal(tasks.length, 0);
+  assert.equal(reqs[0].status, 'cancelled');
+  /* also when the request had lost its taskId */
+  const r2 = [{ id: 'RQ-8', status: 'cancelled', at: AT }], t2 = [{ id: 'T-RQ-8', requestId: 'RQ-8', status: 'in_progress' }];
+  out = R.reconcile(r2, t2, { now: NOW });
+  assert.equal(t2.length, 0);
+});
+
+test('sync: reopening the kept done task of a cancelled request reopens the request, the task stays', () => {
+  const reqs = [{ id: 'RQ-3', status: 'cancelled', taskId: 'T-RQ-3', at: AT, cancelledAt: '2026-11-02T11:00', cancelledBy: 's1' }];
+  const tasks = [{ id: 'T-RQ-3', requestId: 'RQ-3', status: 'done', doneAt: '2026-11-02T10:30' }];
+  R.reconcile(reqs, tasks, { now: NOW });
+  assert.equal(reqs[0].keptTask, true);
+  assert.equal(tasks.length, 1);
+  tasks[0].status = 'todo'; delete tasks[0].doneAt;
+  const out = R.reconcile(reqs, tasks, { now: NOW });
+  assert.equal(out.removed.length, 0);
+  assert.equal(tasks.length, 1);
+  assert.equal(reqs[0].status, 'open');
+  assert.equal(reqs[0].keptTask, undefined);
+  assert.equal(reqs[0].cancelledAt, undefined);
+  assert.equal(out.events[0].type, 'uncancelled');
+  assert.equal(R.reconcile(reqs, tasks, { now: NOW }).changed.length, 0, 'idempotent');
+});
+
+test('requests: who may cancel', () => {
+  const r = { id: 'RQ-4', status: 'open', by: 'hk1' };
+  const raiser = { viewer: 'hk1', canCreate: true };
+  assert.equal(R.canCancel(r, { status: 'todo', assigneeId: null }, raiser), true);
+  assert.equal(R.canCancel(r, { status: 'todo', assigneeId: 'hk1' }, raiser), true);
+  assert.equal(R.canCancel(r, null, raiser), true);
+  assert.equal(R.canCancel(r, { status: 'todo', assigneeId: 'mt1' }, raiser), false, 'taken by someone else');
+  assert.equal(R.canCancel(r, { status: 'in_progress', assigneeId: 'hk1' }, raiser), false, 'already started');
+  assert.equal(R.canCancel(r, { status: 'in_progress', assigneeId: 'mt1' }, { viewer: 'x', tasksDelete: true }), true);
+  assert.equal(R.canCancel(r, { status: 'in_progress', assigneeId: 'mt1' }, { viewer: 'x', propsEdit: true }), true);
+  assert.equal(R.canCancel(r, { status: 'todo' }, { viewer: 'x', canCreate: true }), false, 'not the raiser');
+  assert.equal(R.canCancel({ id: 'a', status: 'done', by: 'hk1' }, null, { viewer: 'hk1', propsEdit: true }), false, 'only open requests');
+});
+
+test('requests: a Cleaning request with no item', () => {
+  assert.equal(R.taskTitle({ kind: 'cleaning', item: '' }), 'Cleaning: Whole unit');
+  assert.equal(R.taskTitle({ kind: 'cleaning', item: '', location: 'Kitchen' }), 'Cleaning: Kitchen');
+});
+
+test('beds: a bunk needs bottom linen for both mattresses', () => {
+  const rooms = [{ beds: [B.newBed('bunk', 'B1')] }];
+  const L = B.linen(rooms), n = (k) => L.filter((x) => x.key === k).reduce((a, x) => a + x.n, 0);
+  assert.equal(B.capacity(rooms).sleeps, 2);
+  assert.equal(n('fitted'), 2);
+  assert.equal(n('flat'), 2);
+  assert.equal(n('protector'), 2);
+  assert.equal(n('duvet'), 2);
+  assert.equal(n('pcase'), 2);
+  const two = B.newBed('bunk', 'B2'); two.qty = 2;
+  assert.equal(B.linen([{ beds: [two] }]).filter((x) => x.key === 'fitted')[0].n, 4);
 });
 
 test('sync: a deleted task leaves the request open without a task; a task not arrived yet does not', () => {

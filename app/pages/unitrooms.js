@@ -148,7 +148,7 @@
       fld(n + 'flat', 'Flat sheet / duvet cover size', inp(n + 'flat', b.flat, ' list="ur-dl-cover" maxlength="60"')) +
       fld(n + 'duvet', 'Comforter / duvet size', inp(n + 'duvet', b.duvet, ' list="ur-dl-cover" maxlength="60"')) +
       '<div class="ur-group">Pillows</div>' +
-      fld(n + 'pillows', 'Pillows on this bed', inp(n + 'pillows', b.pillows, ' type="number" min="0" max="' + B.MAX_PILLOWS + '" step="1" inputmode="numeric"'), { hint: b.qty > 1 ? 'For each bed' : '' }) +
+      fld(n + 'pillows', 'Pillows on each bed', inp(n + 'pillows', b.pillows, ' type="number" min="0" max="' + B.MAX_PILLOWS + '" step="1" inputmode="numeric"'), { hint: b.type === 'bunk' ? 'Both levels together' : '' }) +
       fld(n + 'pillow', 'Pillow size', inp(n + 'pillow', b.pillow, ' list="ur-dl-pil" maxlength="60" placeholder="e.g. 48x74"')) +
       fld(n + 'pcase', 'Pillowcase size', inp(n + 'pcase', b.pcase, ' list="ur-dl-pil" maxlength="60" placeholder="Same as the pillow"')) +
       fld(n + 'notes', 'Notes', inp(n + 'notes', b.notes, ' maxlength="200" placeholder="e.g. Foldable, kept in the store room"'), { full: true }) +

@@ -8,13 +8,17 @@
  * A request (synced records collection 'unitRequests', app/pages/unitreq.js; docs/notes/beds-and-requests.md):
  *   {id: 'RQ-…', propertyId, kind (KINDS id), item, location, priority ('high'|'medium'|'low'), notes, photo (JPEG data URL),
  *    status ('open'|'in_progress'|'done'|'cancelled'), at, by (staff id), taskId ('T-' + id while a task is linked),
- *    doneAt, doneBy (copied from the task), cancelledAt, cancelledBy, taskGone (true: its task was deleted)}
+ *    doneAt, doneBy (copied from the task), cancelledAt, cancelledBy, taskGone (true: its task was deleted),
+ *    keptTask (true: cancelled, and its done task is kept as history)}
  * Its task in D.tasks carries requestId.
  *
  * THE SYNC RULE (reconcile, run by app/pages/unitreq.js after every change, on every device):
  *   - while a request has a task, the request's status follows the task: todo -> open, in_progress -> in_progress,
  *     done -> done (doneAt / doneBy from the task). Reopening the task reopens the request.
- *   - a cancelled request removes its task if the task is not done (a done task stays as history).
+ *   - a cancelled request removes its task if the task is not done, also a task row that arrives after the cancel (the
+ *     request keeps its taskId for that). A done task stays as history (keptTask); if that task is reopened later, the
+ *     request is reopened with it rather than the task being deleted.
+ *   - a request finds its task by taskId, else by the task's requestId, so a lost link heals on the next run.
  *   - a task that was deleted: the request stays (open again if it was not done), its taskId is cleared and taskGone set,
  *     so someone can make a new task from it. "Deleted" = the device saw the task and it is gone now, or the task is
  *     still missing GRACE_MIN minutes after the request was made (a task row that has not arrived yet is not "deleted").
@@ -47,7 +51,12 @@ function isOpen(r) { return !!r && (r.status === 'open' || r.status === 'in_prog
 /* 'Repair > Basin > Master bathroom' */
 function trail(r) { return [kind(r.kind).label, str(r.item), str(r.location)].filter(Boolean).join(' > '); }
 /* 'Repair: Basin (Master bathroom)' */
-function taskTitle(r) { var it = str(r.item) || kind(r.kind).label; return (kind(r.kind).short + ': ' + it + (str(r.location) ? ' (' + str(r.location) + ')' : '')).slice(0, 120); }
+function taskTitle(r) {
+  var k = kind(r.kind).short, it = str(r.item), loc = str(r.location);
+  /* no item (a Cleaning request): 'Cleaning: Kitchen', or 'Cleaning: Whole unit' */
+  if (!it) return (k + ': ' + (loc || 'Whole unit')).slice(0, 120);
+  return (k + ': ' + it + (loc ? ' (' + loc + ')' : '')).slice(0, 120);
+}
 function taskType(r) { return kind(r.kind).task; }
 function taskId(r) { return 'T-' + r.id; }
 
@@ -113,30 +122,55 @@ function setStatus(r, s, t) {
 }
 
 /* apply the sync rule to requests and tasks in place.
+ * A request finds its task by r.taskId, else by a task whose requestId is r.id, else by taskId(r): so a request that lost
+ * its link (task deleted on one device, done on another; a request row that came before its task row) links again.
  * opts: {now, seen(taskId) -> true when this device has seen that task before, graceMin}
- * returns {changed: [request], removed: [task], events: [{type: 'done'|'reopened'|'started'|'unlinked'|'task-removed', request, task}]} */
+ * returns {changed: [request], removed: [task], events: [{type: 'done'|'reopened'|'started'|'unlinked'|'task-removed'|
+ *   'uncancelled', request, task}]} */
 function reconcile(requests, tasks, opts) {
   opts = opts || {};
   var grace = opts.graceMin == null ? GRACE_MIN : opts.graceMin;
-  var byId = {}, out = { changed: [], removed: [], events: [] };
-  (tasks || []).forEach(function (t) { if (t && t.id) byId[t.id] = t; });
+  var byId = {}, byReq = {}, out = { changed: [], removed: [], events: [] };
+  (tasks || []).forEach(function (t) {
+    if (!t || !t.id) return;
+    byId[t.id] = t;
+    if (t.requestId && (!byReq[t.requestId] || t.id === 'T-' + t.requestId)) byReq[t.requestId] = t;
+  });
+  function find(r) { return (r.taskId && byId[r.taskId]) || byReq[r.id] || byId[taskId(r)] || null; }
+  function follow(r, t) {
+    var want = FROM_TASK[t.status] || 'open', was = r.status;
+    if (setStatus(r, want, t)) {
+      out.events.push({ type: want === 'done' ? 'done' : was === 'done' ? 'reopened' : want === 'in_progress' ? 'started' : 'reopened', request: r, task: t });
+      return true;
+    }
+    return false;
+  }
   (requests || []).forEach(function (r) {
     if (!r || !r.id) return;
-    var t = r.taskId ? byId[r.taskId] : null, ch = false;
+    var t = find(r), ch = false;
+    if (t && r.taskId !== t.id) { r.taskId = t.id; ch = true; }
+    if (t && r.taskGone) { delete r.taskGone; ch = true; }
+    if (t && t.requestId !== r.id) t.requestId = r.id;
     if (r.status === 'cancelled') {
-      if (t && t.status !== 'done') {
+      if (!t) {
+        /* keep taskId: when the task row arrives later it is still found and removed */
+      } else if (t.status === 'done') {
+        /* a finished task stays as history; remember that, so reopening it later reopens the request */
+        if (!r.keptTask) { r.keptTask = true; ch = true; }
+      } else if (r.keptTask) {
+        /* someone reopened the finished task of a cancelled request: the request is wanted again */
+        delete r.keptTask; delete r.cancelledAt; delete r.cancelledBy;
+        setStatus(r, FROM_TASK[t.status] || 'open', t); ch = true;
+        out.events.push({ type: 'uncancelled', request: r, task: t });
+      } else {
+        /* the request was cancelled while its task was open (or before its task arrived here): the task goes */
         var i = tasks.indexOf(t); if (i >= 0) tasks.splice(i, 1);
-        delete byId[t.id]; out.removed.push(t); out.events.push({ type: 'task-removed', request: r, task: t });
+        delete byId[t.id]; if (byReq[r.id] === t) delete byReq[r.id];
+        out.removed.push(t); out.events.push({ type: 'task-removed', request: r, task: t });
       }
-      if (r.taskId && !byId[r.taskId]) { delete r.taskId; ch = true; }
     } else if (t) {
-      if (t.requestId !== r.id) t.requestId = r.id;
-      var want = FROM_TASK[t.status] || 'open', was = r.status;
-      if (r.taskGone) { delete r.taskGone; ch = true; }
-      if (setStatus(r, want, t)) {
-        ch = true;
-        out.events.push({ type: want === 'done' ? 'done' : was === 'done' ? 'reopened' : want === 'in_progress' ? 'started' : 'reopened', request: r, task: t });
-      }
+      if (r.keptTask) { delete r.keptTask; ch = true; }
+      if (follow(r, t)) ch = true;
     } else if (r.taskId) {
       var gone = (opts.seen && opts.seen(r.taskId)) || (opts.now && minutesBetween(r.at, opts.now) >= grace);
       if (gone) {
@@ -148,6 +182,16 @@ function reconcile(requests, tasks, opts) {
     if (ch) out.changed.push(r);
   });
   return out;
+}
+
+/* may this viewer cancel the request (which removes its open task)? v: {viewer, propsEdit, tasksDelete, canCreate}.
+ * properties.edit or tasks.delete: always. The person who raised it: only while its task is still to do and unassigned
+ * or theirs, so nobody else's started work disappears. */
+function canCancel(r, t, v) {
+  if (!r || !isOpen(r)) return false;
+  if (v.propsEdit || v.tasksDelete) return true;
+  if (!r.by || r.by !== v.viewer || !v.canCreate) return false;
+  return !t || t.status === 'done' || (t.status === 'todo' && (!t.assigneeId || t.assigneeId === v.viewer));
 }
 
 /* open requests first (high priority, oldest first), then the rest newest first */
@@ -172,5 +216,5 @@ function locations(roomNames) {
 module.exports = {
   KINDS: KINDS, ITEMS: ITEMS, LOCATIONS: LOCATIONS, STATUSES: STATUSES, PRIORITIES: PRIORITIES, GRACE_MIN: GRACE_MIN,
   kind: kind, label: label, isOpen: isOpen, trail: trail, taskTitle: taskTitle, taskType: taskType, taskId: taskId,
-  addMin: addMin, dueFor: dueFor, taskFor: taskFor, make: make, errors: errors, reconcile: reconcile, sort: sort, locations: locations
+  addMin: addMin, dueFor: dueFor, taskFor: taskFor, make: make, errors: errors, reconcile: reconcile, canCancel: canCancel, sort: sort, locations: locations
 };
