@@ -21,6 +21,23 @@
   var BUCKET = 'unit-docs', SIGNED_SECONDS = 60, STALE_MS = 5 * 60e3, RETRY_MS = 60e3;
   var UF = O.unitFile = {};
   var S = fresh();
+  var OWNER_TYPES = [{ id: 'person', label: 'A person' }, { id: 'company', label: 'A company' }];
+  var CONTACT_WAYS = ['WhatsApp', 'Phone call', 'Email', 'WeChat'];
+  var OWNER_KEYS = ['name', 'type', 'contact', 'phone', 'phone2', 'email', 'prefers', 'address', 'nationality', 'idNo', 'taxNo', 'bank', 'holder', 'accountNo', 'swift', 'payRef'];
+  /* a unit owned by the business itself carries the workspace name as its owner (properties.js "company owned") */
+  function companyOwned(p) { var ws = O.ws && O.ws(); return !!(p.owner && ws && p.owner === ws.name); }
+  /* the owner's name, phone and email from the unit file onto the property record, so Details and owner statements match */
+  function setOwner(p, who) {
+    if (!who || !who.name) return;
+    var ch = p.owner !== who.name || (p.ownerPhone || '') !== (who.phone || '') || (p.ownerEmail || '') !== (who.email || '');
+    if (!ch) return;
+    p.owner = who.name;
+    if (who.phone) p.ownerPhone = who.phone; else delete p.ownerPhone;
+    if (who.email) p.ownerEmail = who.email; else delete p.ownerEmail;
+    if (!Array.isArray(D.auditLog)) D.auditLog = [];
+    D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'properties', text: 'Set the owner of ' + p.name + ' to ' + who.name + ' (unit file)' });
+    O.emit('data');
+  }
   function fresh() { return { org: null, files: {}, loaded: false, loading: null, error: null, at: 0, reveal: {}, busy: 0, queue: {} }; }
 
   O.css('unitfile', `
@@ -320,14 +337,22 @@
       ['Agreement ref.', v(L.ref)]
     ]) + '</section>';
     h += '<section class="pp-vs"><h4>Owner and payment</h4>' + kv([
-      ['Owner', p.owner ? esc(p.owner) : faint()],
+      ['Owner', p.owner ? esc(p.owner) + (o.type ? ' <span class="xs muted">' + esc(F.label(OWNER_TYPES, o.type)) + '</span>' : '') : faint()],
+      o.type === 'company' ? ['Contact person', v(o.contact)] : null,
       ['Phone', p.ownerPhone ? esc(p.ownerPhone) : faint()],
+      ['WhatsApp / other phone', v(o.phone2)],
       ['Email', p.ownerEmail ? esc(p.ownerEmail) : faint()],
+      ['Prefers', v(o.prefers)],
+      ['Address', o.address ? '<span class="uf-note">' + esc(o.address) + '</span>' : faint()],
+      ['Nationality', v(o.nationality)],
       ['IC / passport / reg. no.', secret(p.id, 'idNo', o.idNo)],
+      ['Tax no.', v(o.taxNo)],
       ['Bank', v(o.bank)],
       ['Account holder', v(o.holder)],
-      ['Account number', secret(p.id, 'accountNo', o.accountNo, true)]
-    ]) + '<div class="xs muted" style="margin-top:6px">The owner\'s name, phone and email are the unit\'s own, in Details.</div></section>';
+      ['Account number', secret(p.id, 'accountNo', o.accountNo, true)],
+      o.swift ? ['SWIFT code', v(o.swift)] : null,
+      ['Payment reference', v(o.payRef)]
+    ]) + '</section>';
     var bills = Array.isArray(f.bills) ? f.bills : [];
     h += '<section class="pp-vs"><h4>Bills</h4>' + (bills.length ? bills.map(function (b) {
       var n = F.nextBill(b, T), ours = (b.paidBy || 'us') === 'us';
@@ -382,6 +407,9 @@
     var f = clone(UF.get(p.id)) || {};
     ED = { pid: p.id, draft: { lease: f.lease || {}, owner: f.owner || {}, bills: Array.isArray(f.bills) ? f.bills : [], access: f.access || {}, notes: f.notes || '' } };
     if (!ED.draft.lease.reminderDays && ED.draft.lease.reminderDays !== 0) ED.draft.lease.reminderDays = F.REMINDER_DAYS;
+    /* the owner's name, phone and email live on the property record (Details, owner statements): start from those */
+    var ow = ED.draft.owner = Object.assign({}, ED.draft.owner);
+    ow.name = companyOwned(p) ? '' : p.owner || ''; ow.phone = p.ownerPhone || ''; ow.email = p.ownerEmail || '';
     X.h.textContent = 'Unit file · ' + (p.short || p.name);
     X.sub.textContent = 'Only people allowed to see unit files see this';
     X.body.innerHTML = formHTML(p, ED.draft);
@@ -426,11 +454,25 @@
       fld('lease.deposit', 'Security deposit', moneyIn('lease.deposit', L.deposit, p)) +
       fld('lease.utilityDeposit', 'Utility deposit', moneyIn('lease.utilityDeposit', L.utilityDeposit, p)) +
       '</div></div>' +
-      '<div class="pp-sec"><h4>Owner\'s payment details</h4><div class="sd">Where the rent goes. The owner\'s name, phone and email are in Details' + (p.owner ? ' (' + esc(p.owner) + ')' : '') + '.</div><div class="form-grid">' +
-      fld('owner.idNo', 'IC, passport or company reg. no.', inp('owner.idNo', o.idNo, ' maxlength="40"'), { full: true }) +
+      '<div class="pp-sec"><h4>Owner</h4><div class="sd">Who owns ' + esc(p.short || p.name) + '. The name, phone and email are also the unit\'s owner in Details and on owner statements.</div><div class="form-grid">' +
+      fld('owner.name', 'Owner\'s name', inp('owner.name', o.name, ' maxlength="60" placeholder="e.g. Rajan Pillai"'), { full: true, opt: false }) +
+      fld('owner.type', 'Owner is', sel('owner.type', o.type || 'person', OWNER_TYPES.map(function (x) { return [x.id, x.label]; })), { opt: false }) +
+      fld('owner.contact', 'Contact person', inp('owner.contact', o.contact, ' maxlength="60"'), { hint: 'For a company owner' }) +
+      fld('owner.phone', 'Phone', inp('owner.phone', o.phone, ' type="tel" inputmode="tel" maxlength="24" placeholder="+60 12-345 6789"')) +
+      fld('owner.phone2', 'WhatsApp or other phone', inp('owner.phone2', o.phone2, ' type="tel" inputmode="tel" maxlength="24"')) +
+      fld('owner.email', 'Email', inp('owner.email', o.email, ' type="email" inputmode="email" maxlength="80"')) +
+      fld('owner.prefers', 'Prefers to be contacted by', sel('owner.prefers', o.prefers || '', [['', 'Choose']].concat(CONTACT_WAYS.map(function (x) { return [x, x]; })))) +
+      fld('owner.address', 'Address', '<textarea class="textarea" id="uf-owner-address" name="owner.address" rows="2" maxlength="200">' + esc(o.address || '') + '</textarea>', { full: true }) +
+      fld('owner.nationality', 'Nationality', inp('owner.nationality', o.nationality, ' maxlength="40"')) +
+      fld('owner.idNo', 'IC, passport or company reg. no.', inp('owner.idNo', o.idNo, ' maxlength="40"')) +
+      fld('owner.taxNo', 'Tax no.', inp('owner.taxNo', o.taxNo, ' maxlength="40"'), { hint: 'LHDN income tax number, if you need it for the tenancy' }) +
+      '</div></div>' +
+      '<div class="pp-sec"><h4>Owner\'s payment details</h4><div class="sd">Where the rent goes.</div><div class="form-grid">' +
       fld('owner.bank', 'Bank', inp('owner.bank', o.bank, ' maxlength="60" list="uf-banks" placeholder="e.g. Maybank"') + '<datalist id="uf-banks">' + ['Maybank', 'CIMB Bank', 'Public Bank', 'RHB Bank', 'Hong Leong Bank', 'AmBank', 'Bank Islam', 'UOB Malaysia', 'OCBC Malaysia', 'HSBC Malaysia', 'Alliance Bank', 'Affin Bank', 'Bank Rakyat', 'BSN'].map(function (b) { return '<option value="' + esc(b) + '"></option>'; }).join('') + '</datalist>') +
       fld('owner.holder', 'Account holder name', inp('owner.holder', o.holder, ' maxlength="80"')) +
-      fld('owner.accountNo', 'Account number', inp('owner.accountNo', o.accountNo, ' maxlength="40" inputmode="numeric" autocomplete="off"'), { full: true }) +
+      fld('owner.accountNo', 'Account number', inp('owner.accountNo', o.accountNo, ' maxlength="40" inputmode="numeric" autocomplete="off"')) +
+      fld('owner.swift', 'SWIFT code', inp('owner.swift', o.swift, ' maxlength="11" autocomplete="off"'), { hint: 'Only for a bank outside Malaysia' }) +
+      fld('owner.payRef', 'Payment reference', inp('owner.payRef', o.payRef, ' maxlength="60" placeholder="e.g. Rent 43-6"'), { full: true }) +
       '</div></div>' +
       '<div class="pp-sec"><h4>Bills</h4><div class="sd">Internet, electricity, water, maintenance and the rest. Bills you pay show on the Dashboard when they are due.</div><div data-uf-bills>' +
       f.bills.map(function (b, i) { return billHTML(b, i, p); }).join('') + '</div>' +
@@ -456,7 +498,7 @@
     var get = function (n) { var x = fm.elements[n]; return x ? (x.type === 'checkbox' ? x.checked : String(x.value).trim()) : undefined; };
     var L = ED.draft.lease, o = ED.draft.owner, a = ED.draft.access;
     ['rent', 'dueDay', 'method', 'ref', 'start', 'end', 'noticeMonths', 'reminderDays', 'deposit', 'utilityDeposit'].forEach(function (k) { var x = get('lease.' + k); if (x !== undefined) L[k] = x; });
-    ['idNo', 'bank', 'holder', 'accountNo'].forEach(function (k) { var x = get('owner.' + k); if (x !== undefined) o[k] = x; });
+    OWNER_KEYS.forEach(function (k) { var x = get('owner.' + k); if (x !== undefined) o[k] = x; });
     ['routerUser', 'routerPass', 'cards', 'cardNos', 'parkingCard', 'mailbox', 'mailboxKey', 'mgmtOffice', 'guardPhone'].forEach(function (k) { var x = get('access.' + k); if (x !== undefined) a[k] = x; });
     ED.draft.notes = get('notes') || '';
     ED.draft.bills.forEach(function (b, i) {
@@ -508,16 +550,28 @@
       if (out.type === 'other' && !out.provider) E[k + 'provider'] = 'Say what the bill is for.';
       return out;
     });
+    var fo = f.owner || {};
+    var who = { name: txt(fo.name, 60), phone: txt(fo.phone, 24), email: txt(fo.email, 80) };
+    if (!who.name) E['owner.name'] = 'Type the owner\'s name.';
+    if (who.phone && !/^\+?[\d\s()-]{7,20}$/.test(who.phone)) E['owner.phone'] = 'Check the phone number. Use digits, spaces and +.';
+    if (fo.phone2 && !/^\+?[\d\s()-]{7,20}$/.test(String(fo.phone2).trim())) E['owner.phone2'] = 'Check the phone number. Use digits, spaces and +.';
+    if (who.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(who.email)) E['owner.email'] = 'Check the email address.';
+    if (fo.swift && !/^[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$/.test(String(fo.swift).trim())) E['owner.swift'] = 'A SWIFT code has 8 or 11 letters and digits.';
     var a = f.access, cards = n(a.cards, 'access.cards', { max: 50, int: true, msg: '0 to 50.' });
     var data = {
       lease: lease,
-      owner: { idNo: txt(f.owner.idNo, 40), bank: txt(f.owner.bank, 60), holder: txt(f.owner.holder, 80), accountNo: txt(f.owner.accountNo, 40) },
+      owner: {
+        type: F.label(OWNER_TYPES, fo.type) ? fo.type : 'person', contact: fo.type === 'company' ? txt(fo.contact, 60) : undefined,
+        phone2: txt(fo.phone2, 24), prefers: CONTACT_WAYS.indexOf(fo.prefers) >= 0 ? fo.prefers : undefined, address: txt(fo.address, 200),
+        nationality: txt(fo.nationality, 40), idNo: txt(fo.idNo, 40), taxNo: txt(fo.taxNo, 40),
+        bank: txt(fo.bank, 60), holder: txt(fo.holder, 80), accountNo: txt(fo.accountNo, 40), swift: txt(fo.swift, 11), payRef: txt(fo.payRef, 60)
+      },
       bills: bills,
       access: { routerUser: txt(a.routerUser, 40), routerPass: txt(a.routerPass, 63), cards: cards, cardNos: txt(a.cardNos, 120), parkingCard: txt(a.parkingCard, 40), mailbox: txt(a.mailbox, 20), mailboxKey: txt(a.mailboxKey, 80), mgmtOffice: txt(a.mgmtOffice, 160), guardPhone: txt(a.guardPhone, 24) },
       docs: Array.isArray(cur.docs) ? cur.docs : [],
       notes: txt(f.notes, 2000)
     };
-    return { data: JSON.parse(JSON.stringify(data)), errors: E };
+    return { data: JSON.parse(JSON.stringify(data)), who: who, errors: E };
   }
   function showErrors(el, E) {
     O.$$('.pp-err', el).forEach(function (x) { x.textContent = ''; });
@@ -553,7 +607,7 @@
       var r = finish(p);
       if (Object.keys(r.errors).length) { showErrors(host.el, r.errors); return true; }
       b.disabled = true;
-      UF.save(p.id, r.data).then(function () { ED = null; host.dirty(false); host.toView(); U.toast('Unit file saved for ' + (p.short || p.name)); },
+      UF.save(p.id, r.data).then(function () { setOwner(p, r.who); ED = null; host.dirty(false); host.toView(); U.toast('Unit file saved for ' + (p.short || p.name)); },
         function (err) { b.disabled = false; U.toast(errText(err, 'The unit file could not be saved. Please try again.'), 'bad'); if (err && err.code === 'conflict') { ED = null; host.dirty(false); host.toView(); } });
     }
     else if (a === 'addbill') { readForm(host.el); ED.draft.bills.push({ type: 'internet', freq: 'monthly', paidBy: 'us' }); paintBills(host.el, p); host.dirty(true); var rows = O.$$('[data-bill-row]', host.el), last = rows[rows.length - 1]; if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' }); }

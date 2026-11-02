@@ -18,7 +18,7 @@ the rules, `O.unitdue` in the page), `supabase/migrations/0023_unit_files.sql`, 
   (bank transfer, DuitNow, standing instruction, cheque, cash, other), tenancy start and end, notice period in months,
   security and utility deposits, renewal reminder (days before the end, 60 by default), agreement reference. "Mark
   paid" records the rent due date paid (`paidUntil`).
-- **Owner and payment**: the owner's name, phone and email are shown from the property record (edited in Details, not
+- **Owner and payment**: the owner's name, phone and email are kept on the property record but edited here too (see "Owner details" below; not
   copied), plus IC / passport / company registration number, bank, account holder and account number. The account
   number, IC number and router password show masked (`•••• 1234`) until "Show"; the account number can be copied.
 - **Bills**: as many rows as needed (up to 30). Types: Internet, Electricity (TNB), Water (Air Selangor), Sewerage
@@ -44,7 +44,7 @@ Table `public.unit_files (org_id, property_id, data jsonb, updated_at, updated_b
 ```
 { v: 1,
   lease:  {rent, dueDay, method, start, end, noticeMonths, deposit, utilityDeposit, reminderDays, ref, paidUntil, createdOn},
-  owner:  {idNo, bank, holder, accountNo},
+  owner:  {type, contact, phone2, prefers, address, nationality, idNo, taxNo, bank, holder, accountNo, swift, payRef},
   bills:  [{id, type, provider, accountNo, amount, freq, dueDay | nextDue, paidBy: 'us'|'owner'|'rent', autopay, notes, lastPaid, createdOn}],
   access: {routerUser, routerPass, cards, cardNos, parkingCard, mailbox, mailboxKey, mgmtOffice, guardPhone},
   docs:   [{id, path, name, cat, size, mime, at, by}],
@@ -105,3 +105,13 @@ Documents are in the private Storage bucket `unit-docs` at `<org id>/<property i
 
 The bucket and its policies on the real Supabase project, and the signed-in page paths (upload, open, remove, the
 `updated_at` check), were not run against a live Supabase here; the local test copy was driven in a browser.
+
+## Owner details (2026-11-02)
+
+Arnob: "Why does it say kozi is the owner? ... This should match owner details inside the unit file. Add necessary
+fields in the unit file". The Unit file's **Owner** section now edits the owner's name, phone and email (required name),
+and saving writes them onto the property record (`p.owner`, `p.ownerPhone`, `p.ownerEmail`), so Details, the property
+list and owner statements show the same owner. A unit still owned by the business (owner = the workspace name) starts
+with an empty name. Extra owner fields kept only in the unit file (owner-only): person or company, contact person,
+WhatsApp/other phone, preferred contact, address, nationality, IC/passport/reg. no., tax no., SWIFT code, payment
+reference.
