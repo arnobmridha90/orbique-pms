@@ -359,7 +359,7 @@
       out.push({ at: l.at, by: l.by, cat: 'door', text: w + (l.propertyId ? ' at ' + propName(l.propertyId) : '') });
     });
     (D.sentLog || []).forEach(function (l) { if (!l || !l.at) return; var b = l.bookingId && D.booking(l.bookingId); out.push({ at: l.at, by: l.by, cat: 'documents', text: 'Sent ' + (l.kind || 'a document') + ' to ' + (b ? b.guest.name : 'a guest') + (l.via ? ' by ' + l.via : '') }); });
-    D.tasks.forEach(function (t) { if (t.status === 'done' && t.doneAt && d.diff(t.doneAt.slice(0, 10), D.TODAY) <= 7) out.push({ at: t.doneAt, by: t.assigneeId || 'system', cat: 'tasks', text: 'Completed "' + t.title + '"' + (t.propertyId && D.propById[t.propertyId] ? ' at ' + D.propById[t.propertyId].short : '') }); });
+    D.tasks.forEach(function (t) { if (t.status === 'done' && t.doneAt && d.diff(t.doneAt.slice(0, 10), D.TODAY) <= 7) out.push({ at: t.doneAt, by: t.doneBy || O.taskwho.ids(t)[0] || 'system', cat: 'tasks', text: 'Completed "' + t.title + '"' + (t.propertyId && D.propById[t.propertyId] ? ' at ' + D.propById[t.propertyId].short : '') }); });
     D.reviews.forEach(function (r) { if (r.reply && r.reply.date && d.diff(r.reply.date.slice(0, 10), D.TODAY) <= 7 && d.diff(r.reply.date.slice(0, 10), D.TODAY) >= 0) out.push({ at: r.reply.date.length > 10 ? r.reply.date : r.reply.date + 'T11:00', by: r.reply.by, cat: 'reviews', text: 'Replied to ' + r.guest + '\'s ' + r.stars + '-star ' + U.platName(r.platform) + ' review' }); });
     return out.filter(function (e) { return String(e.at).slice(0, 16) <= D.NOW; }).sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
   }
@@ -578,13 +578,14 @@
     O.emit('data', { type: 'staff' });
   }
   function removePerson(s, done) {
-    var open = D.tasks.filter(function (t) { return t.assigneeId === s.id && t.status !== 'done'; }).length;
-    U.confirm('Remove ' + s.name + ' from the team? They lose access straight away' + (open ? ' and their ' + fmt.plural(open, 'open task') + ' become unassigned' : '') + '. Their history stays in the activity log.', 'Remove', 'danger', 'Remove ' + first(s.name) + '?').then(function (ok) {
+    var theirs = D.tasks.filter(function (t) { return O.taskwho.has(t, s.id) && t.status !== 'done'; }), open = theirs.length;
+    var alone = theirs.filter(function (t) { return O.taskwho.count(t) === 1; }).length; /* tasks shared with others keep the others */
+    U.confirm('Remove ' + s.name + ' from the team? They lose access straight away' + (open ? ' and come off their ' + fmt.plural(open, 'open task') + (alone ? ' (' + (alone === open ? (open === 1 ? 'it becomes' : 'they become') : alone + ' of them become') + ' unassigned)' : '') : '') + '. Their history stays in the activity log.', 'Remove', 'danger', 'Remove ' + first(s.name) + '?').then(function (ok) {
       if (!ok) return;
-      D.tasks.forEach(function (t) { if (t.assigneeId === s.id && t.status !== 'done') t.assigneeId = null; });
+      theirs.forEach(function (t) { O.taskwho.remove(t, s.id); });
       var me = metaEdit(s.id); me.status = 'suspended'; me.removed = true; s.status = 'left';
       (D.staffInvites || []).forEach(function (v) { if (v.staffId === s.id) v.status = 'withdrawn'; });
-      audit('Removed ' + s.name + ' from the team' + (open ? '; ' + fmt.plural(open, 'open task') + ' unassigned' : ''), { staffId: s.id });
+      audit('Removed ' + s.name + ' from the team' + (open ? '; taken off ' + fmt.plural(open, 'open task') + (alone ? ', ' + alone + ' now unassigned' : '') : ''), { staffId: s.id });
       callAuth('setMemberStatus', [s.id, 'suspended']);
       U.toast(s.name + ' no longer has access', 'bad');
       O.emit('data', { type: 'staff' });

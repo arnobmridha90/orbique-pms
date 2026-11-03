@@ -5,13 +5,17 @@
                    checklist ticking, photo note, mark done (all required items ticked, or with a reason).
    Checklists tab: the three templates in D.checklists (view; edit with tasks.checklists) and the switches for
                    automatic tasks (D.taskAutomation, config blob; change with automations.toggle).
+   People:         a task can have several assignees (Arnob: "in new task, need to be able to assign multiple staff at the
+                   same time"): assigneeIds + assigneeId (= the first), read and written only through O.taskwho
+                   (api/_lib/shared/taskwho.cjs). One of them marking it done completes it for everyone.
+   For:            a task is for one booking (bookingId, the same field automatic tasks carry) or General (no bookingId).
    Requests tab:   unit requests across units (app/pages/unitreq.js); a request's task carries requestId, and marking it
                    done anywhere ticks the request (O.unitReq.sync, one 'data' listener there).
    Background job O.automation.register('tasks'): check-out turnovers, check-in readiness and daily housekeeping,
                    ids TO-<bookingId>, CI-<bookingId>, DH-<bookingId>-<date>. Runs at boot, each new day and whenever
                    bookings change (a 'data' listener below compares a booking signature). */
 (function () {
-  var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
+  var O = window.O, D = O.data, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt, W = O.taskwho;
 
   var TYPES = ['Turnover', 'Housekeeping', 'Inspection', 'Maintenance', 'Restock'];
   var STATUS = [['todo', 'To do'], ['in_progress', 'In progress'], ['done', 'Done']];
@@ -58,6 +62,17 @@
   function staffName(id) { var s = staff(id); return s ? s.name : id ? 'Former team member' : 'Unassigned'; }
   function first(name) { var w = String(name || '').split(' '); return w.length >= 3 && w[0].length <= 3 ? w[0] + ' ' + w[1] : w[0]; }
   function prop(id) { return id ? D.propById[id] : null; }
+  /* everyone on a task: names for one line ("Aisha Rahman", "Aisha, Ben"), and a row of small avatars */
+  function people(t) { return W.ids(t); }
+  function peopleNames(t, o) { return O.taskPeople(t, o); }
+  function namesOf(ids) { return ids.map(function (id) { return first(staffName(id)); }).join(', '); }
+  function avatars(ids, max) {
+    max = max || 3;
+    return '<span class="tk-avs">' + ids.slice(0, max).map(function (id) { return U.avatar(staffName(id), 'sm'); }).join('') + (ids.length > max ? '<span class="tk-avn">+' + (ids.length - max) + '</span>' : '') + '</span>';
+  }
+  /* the booking a task is for (bookingId), or null for General */
+  function forBooking(t) { return t && t.bookingId ? D.booking(t.bookingId) || null : null; }
+  function bookingLine(b, noUnit) { return b.guest.name + (noUnit ? '' : ' · ' + propShort(b.propertyId)) + ' · ' + d.fmtRange(b.checkIn, b.checkOut); }
   function propShort(id) { var p = prop(id); return p ? p.short || p.name : id ? 'Removed property' : 'General'; }
   function taskById(id) { return D.tasks.filter(function (x) { return x.id === id; })[0] || null; }
   function isOpen(t) { return t.status !== 'done'; }
@@ -149,9 +164,9 @@
     } else {
       due = toMin(cfg.dailyTime); pri = 'low';
     }
-    var dueStr = day + 'T' + toHM(due);
+    var dueStr = day + 'T' + toHM(due), hk = housekeeperOf(p);
     return {
-      id: autoId(kind, b, day), title: k.title, type: k.type, propertyId: b.propertyId, assigneeId: housekeeperOf(p),
+      id: autoId(kind, b, day), title: k.title, type: k.type, propertyId: b.propertyId, assigneeId: hk, assigneeIds: hk ? [hk] : [],
       due: dueStr, priority: pri, status: 'todo', checklistId: tpl ? tpl.id : null, checks: [],
       bookingId: b.id, auto: kind, autoDue: dueStr
     };
@@ -389,6 +404,29 @@
 .tk-modal .sugg{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; background:var(--brand-soft); border-radius:8px; padding:7px 10px; margin-top:6px;}
 .tk-modal .tk-reasons{display:flex; gap:6px; flex-wrap:wrap;}
 .tk-modal .tk-miss{margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--text-2); line-height:1.5;}
+/* people picker (several assignees) and the booking a task is for */
+.tk-modal .tk-ppl{display:flex; flex-wrap:wrap; gap:6px; margin-top:2px;}
+.tk-modal .tk-pp{position:relative; display:inline-flex; align-items:center; gap:6px; min-height:36px; max-width:100%; padding:4px 11px 4px 5px; border:1px solid var(--border); border-radius:999px; background:var(--surface); font-size:12.5px; font-weight:700; color:var(--text-2); cursor:pointer; user-select:none;}
+.tk-modal .tk-pp:hover{border-color:var(--border-strong);}
+.tk-modal .tk-pp input{position:absolute; opacity:0; width:1px; height:1px; margin:0; pointer-events:none;}
+.tk-modal .tk-pp:has(input:focus-visible), .tk-modal .tk-pp.none:focus-visible{outline:2px solid var(--brand-strong); outline-offset:2px;}
+.tk-modal .tk-pp .n{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text);}
+.tk-modal .tk-pp .l{font-size:11px; font-weight:600; color:var(--muted); white-space:nowrap;}
+.tk-modal .tk-pp.on{border-color:var(--brand-strong); background:var(--brand-soft);}
+.tk-modal .tk-pp.on .avatar{box-shadow:0 0 0 2px var(--brand-strong);}
+.tk-modal .tk-pp.none{padding-left:12px; border-style:dashed; color:var(--muted);}
+.tk-modal .tk-pp.none.on{border-style:solid; border-color:var(--warn); background:var(--warn-soft); color:var(--warn);}
+.tk-modal .tk-pp.ro, .tk-modal .tk-pp[disabled]{cursor:not-allowed; opacity:0.7;}
+.tk-modal .tk-bkpick{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.tk-modal .tk-bkpick .search{flex:0 1 220px; min-width:150px;}
+.tk-modal .tk-bkpick .select{flex:1 1 260px; min-width:0;}
+.tk-modal .tk-team{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; font-weight:700; color:var(--text-2);}
+.tk-avs{display:inline-flex; align-items:center; flex-shrink:0;}
+.tk-avs .avatar + .avatar{margin-left:-5px; box-shadow:0 0 0 2px var(--surface);}
+.tk-avs .tk-avn{margin-left:3px; font-size:11px; font-weight:800; color:var(--muted);}
+.pg-tasks .tk-whobtn{background:var(--surface); border:1px solid var(--border); border-radius:8px; height:32px; padding:0 8px 0 4px; text-align:left; cursor:pointer; font:inherit; font-size:12px; font-weight:700; color:var(--text-2);}
+.pg-tasks .tk-whobtn:hover{border-color:var(--border-strong); color:var(--text);}
+.pg-tasks .tk-table .tk-whobtn{max-width:220px;}
 /* checklist editor */
 .tk-ed .tk-ed-list{display:flex; flex-direction:column; gap:6px;}
 .tk-ed .tk-ed-row{display:flex; align-items:center; gap:6px;}
@@ -442,6 +480,9 @@
   .tk-modal .tk-cl{grid-template-columns:minmax(0,1fr);}
   .tk-modal .tk-ci{min-height:52px; font-size:14px; padding:10px 12px;}
   .tk-modal .tk-ci input{width:24px; height:24px;}
+  .tk-modal .tk-pp{min-height:40px;}
+  .tk-modal .tk-bkpick .search, .tk-modal .tk-bkpick .select{flex:1 1 100%; height:40px;}
+  .pg-tasks .tk-whobtn{height:40px;}
   .tk-ed .icon-btn, .tk-ed .tk-opt-btn{height:40px;} .tk-ed .icon-btn{width:40px;}
   .tk-ed .tk-ed-row{flex-wrap:wrap;}
   .tk-ed .tk-ed-row .input{flex:1 1 calc(100% - 30px); height:42px;}
@@ -458,7 +499,7 @@
     if (!t.due) return { cls: 'norm', txt: 'No due date' };
     var day = dayOf(t), tm = fmt.time(t.due);
     if (t.status === 'done') {
-      var by = t.doneBy || t.assigneeId;
+      var by = t.doneBy || people(t)[0];
       return { cls: 'norm', txt: (t.doneAt ? 'Done ' + (t.doneAt.slice(0, 10) === D.TODAY ? fmt.time(t.doneAt) : d.fmt(t.doneAt.slice(0, 10))) : 'Done') + (by && staff(by) ? ' by ' + first(staff(by).name) : '') };
     }
     if (t.due < D.NOW) {
@@ -506,14 +547,14 @@
 
   function visible() {
     var v = O.state.viewer, all = can.others();
-    return D.tasks.filter(function (t) { return t && (all || t.assigneeId === v); });
+    return D.tasks.filter(function (t) { return t && (all || W.has(t, v)); });
   }
   function filtered() {
     var v = O.state.viewer, wk = weekBounds(), q = st.q.trim().toLowerCase();
     return visible().filter(function (t) {
-      if (st.assignee === 'me' && t.assigneeId !== v) return false;
-      if (st.assignee === 'unassigned' && t.assigneeId) return false;
-      if (/^(?!all$|me$|unassigned$)/.test(st.assignee) && t.assigneeId !== st.assignee) return false;
+      if (st.assignee === 'me' && !W.has(t, v)) return false;
+      if (st.assignee === 'unassigned' && !W.none(t)) return false;
+      if (/^(?!all$|me$|unassigned$)/.test(st.assignee) && !W.has(t, st.assignee)) return false;
       if (st.propertyId && t.propertyId !== st.propertyId) return false;
       if (st.type && t.type !== st.type) return false;
       var day = dayOf(t);
@@ -521,8 +562,9 @@
       if (st.due === 'today' && !(day === D.TODAY || isOverdue(t))) return false;
       if (st.due === 'week' && (day < wk[0] || day > wk[1])) return false;
       if (q) {
-        var p = prop(t.propertyId), s = staff(t.assigneeId);
-        var hay = [t.id, t.title, t.type, t.note || '', p ? p.name + ' ' + (p.short || '') : 'general', s ? s.name : 'unassigned', stayLine(t, true)].join(' ').toLowerCase();
+        var p = prop(t.propertyId), fb = forBooking(t);
+        var who = people(t).map(function (id) { return staffName(id); }).join(' ') || 'unassigned';
+        var hay = [t.id, t.title, t.type, t.note || '', p ? p.name + ' ' + (p.short || '') : 'general', who, stayLine(t, true), fb ? fb.guest.name + ' ' + fb.id : ''].join(' ').toLowerCase();
         if (hay.indexOf(q) < 0) return false;
       }
       return true;
@@ -532,7 +574,7 @@
 
   function todayLine() {
     var vis = visible(), due = vis.filter(isToday), done = due.filter(function (t) { return t.status === 'done'; }).length;
-    var od = vis.filter(isOverdue).length, un = can.others() ? vis.filter(function (t) { return isOpen(t) && !t.assigneeId; }).length : 0;
+    var od = vis.filter(isOverdue).length, un = can.others() ? vis.filter(function (t) { return isOpen(t) && W.none(t); }).length : 0;
     var auto = vis.filter(function (t) { return t.auto && isToday(t); }).length;
     var parts = ['<span><b>Today</b> ' + fmt.plural(due.length, 'task') + (due.length ? ', ' + done + ' done' : '') + '</span>'];
     if (od) parts.push('<button type="button" class="tk-q bad" data-quick="overdue">' + od + ' overdue</button>');
@@ -544,15 +586,15 @@
 
   function peopleChips() {
     if (!can.others()) return '';
-    var people = assignable().filter(function (s) { return s.role !== 'accountant'; });
+    var crew = assignable().filter(function (s) { return s.role !== 'accountant'; });
     var open = visible().filter(isOpen);
-    if (people.length < 2 && !open.length) return '';
-    var un = open.filter(function (t) { return !t.assigneeId; }).length;
+    if (crew.length < 2 && !open.length) return '';
+    var un = open.filter(function (t) { return W.none(t); }).length;
     function chip(id, inner, cls, title) { return '<button type="button" class="chip ' + (cls || '') + (st.assignee === id ? ' on' : '') + '" data-who="' + id + '" aria-pressed="' + (st.assignee === id) + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + inner + '</button>'; }
     return '<div class="tk-people" role="group" aria-label="Filter by person">' +
       chip('all', 'Everyone <span class="n">' + open.length + '</span>', 'all', open.length + ' open tasks') +
-      people.map(function (s) {
-        var mine = open.filter(function (t) { return t.assigneeId === s.id; }), now = mine.filter(function (t) { return dayOf(t) <= D.TODAY; }).length;
+      crew.map(function (s) {
+        var mine = open.filter(function (t) { return W.has(t, s.id); }), now = mine.filter(function (t) { return dayOf(t) <= D.TODAY; }).length;
         return chip(s.id, U.avatar(s.name, 'sm') + esc(s.id === O.state.viewer ? 'You' : first(s.name)) + ' <span class="n">' + mine.length + '</span>', '',
           s.name + ', ' + s.roleLabel + ': ' + fmt.plural(mine.length, 'open task') + ', ' + now + ' due today or overdue');
       }).join('') +
@@ -578,24 +620,29 @@
     var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
     if (!ids.length) return '';
     return '<div class="tk-bulk" role="region" aria-label="Bulk actions"><b>' + fmt.plural(ids.length, 'task') + ' selected</b>' +
-      (can.assign() ? '<select class="select" data-bulk-who aria-label="Assign selected to">' + assigneeOptions('', { noneLabel: 'Assign to…' }) + '</select><button type="button" class="btn btn-primary btn-sm" data-act="bulk-assign">Assign</button>' : '') +
+      (can.assign() ? '<select class="select" data-bulk-who aria-label="Add a person to the selected tasks">' + assigneeOptions('', { noneLabel: 'Add a person…' }) + '</select><button type="button" class="btn btn-primary btn-sm" data-act="bulk-assign" title="Adds them to each task; people already on a task stay on it">Add</button>' : '') +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="bulk-move" data-to="in_progress">' + O.icon('play') + 'Start</button>' +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="bulk-move" data-to="done">' + O.icon('check') + 'Mark done</button>' +
       '<button type="button" class="btn btn-quiet btn-sm" data-act="bulk-clear">Clear selection</button></div>';
   }
 
-  function load(id) { return D.tasks.filter(function (t) { return isOpen(t) && t.assigneeId === id; }).length; }
+  function load(id) { return D.tasks.filter(function (t) { return isOpen(t) && W.has(t, id); }).length; }
   function assigneeOptions(selId, opts) {
     opts = opts || {};
     return '<option value=""' + (!selId ? ' selected' : '') + '>' + esc(opts.noneLabel || 'Unassigned') + '</option>' + assignable(selId).map(function (s) {
       var l = load(s.id);
       return '<option value="' + s.id + '"' + (s.id === selId ? ' selected' : '') + '>' + esc(opts.short ? first(s.name) : s.name) + (opts.short ? '' : ' · ' + esc(s.roleLabel)) + ' · ' + (l ? l + ' open' : 'free') + '</option>';
-    }).join('');
+    }).join('') + (opts.many ? '<option value="__many">Several people…</option>' : '');
   }
+  /* who is on a task, on a card or list row: one person (or nobody) is a select to change it, with "Several people…";
+     several people are a button that opens the people picker */
   function whoHTML(t) {
-    if (can.edit() && can.assign()) return '<select class="select' + (!t.assigneeId ? ' unassigned' : '') + '" data-assign="' + esc(t.id) + '" aria-label="Assigned to, ' + esc(t.title) + '">' + assigneeOptions(t.assigneeId, { noneLabel: 'Assign someone', short: true }) + '</select>';
-    var s = staff(t.assigneeId);
-    return '<span class="tk-who" title="' + esc(can.assign() ? 'View only' : noAccess('tasks.assign')) + '">' + (s ? U.avatar(s.name, 'sm') + '<span>' + esc(s.id === O.state.viewer ? 'You' : s.name) + '</span>' : '<span style="color:var(--warn)">Unassigned</span>') + '</span>';
+    var ids = people(t);
+    if (can.edit() && can.assign()) {
+      if (ids.length > 1) return '<button type="button" class="tk-who tk-whobtn" data-people="' + esc(t.id) + '" aria-label="' + esc(ids.length + ' people on ' + t.title + ': ' + ids.map(staffName).join(', ') + '. Change') + '">' + avatars(ids) + '<span>' + esc(peopleNames(t, { you: true })) + '</span></button>';
+      return '<select class="select' + (!ids.length ? ' unassigned' : '') + '" data-assign="' + esc(t.id) + '" aria-label="Assigned to, ' + esc(t.title) + '">' + assigneeOptions(ids[0] || '', { noneLabel: 'Assign someone', short: true, many: true }) + '</select>';
+    }
+    return '<span class="tk-who" title="' + esc(can.assign() ? 'View only' : noAccess('tasks.assign')) + '">' + (ids.length ? avatars(ids) + '<span>' + esc(peopleNames(t, { you: true })) + '</span>' : '<span style="color:var(--warn)">Unassigned</span>') + '</span>';
   }
   function moveButtons(t, size) {
     if (!can.edit()) return '';
@@ -611,7 +658,7 @@
   function autoMark(t) { return t.auto ? '<span class="tk-auto" title="Created automatically from booking ' + esc(t.bookingId || '') + '">' + O.icon('automations') + '</span>' : ''; }
 
   function card(t) {
-    var dl = dueLabel(t), od = isOverdue(t), un = isOpen(t) && !t.assigneeId, ctxLine = noteShown(t) || stayLine(t);
+    var dl = dueLabel(t), od = isOverdue(t), un = isOpen(t) && W.none(t), ctxLine = noteShown(t) || stayLine(t), fb = !t.auto && forBooking(t);
     var pick = can.edit() && can.others();
     return '<article class="tk-card' + (od ? ' od' : un ? ' un' : '') + (t.status === 'done' ? ' done' : '') + (st.sel[t.id] ? ' sel' : '') + '">' +
       '<div class="tk-top">' + (pick ? '<input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.title) + '">' : '') +
@@ -620,7 +667,7 @@
       (t.requestId ? '<span class="tk-auto" title="From a unit request">' + O.icon('home') + '</span>' : '') +
       '<span class="due ' + dl.cls + '">' + esc(dl.txt) + '</span></div>' +
       '<button type="button" class="tk-title" data-open="' + esc(t.id) + '">' + esc(t.title) + '</button>' +
-      '<div class="tk-where"><span class="prop-dot" style="background:' + (t.propertyId ? U.propColor(t.propertyId) : 'var(--border-strong)') + '"></span><span>' + esc(propShort(t.propertyId)) + '</span></div>' +
+      '<div class="tk-where"><span class="prop-dot" style="background:' + (t.propertyId ? U.propColor(t.propertyId) : 'var(--border-strong)') + '"></span><span>' + esc(propShort(t.propertyId)) + (fb ? ' · ' + esc(bookingLine(fb, true)) : '') + '</span></div>' +
       (ctxLine ? '<div class="tk-ctx">' + esc(ctxLine) + '</div>' : '') +
       progHTML(t) +
       '<div class="tk-foot">' + whoHTML(t) + moveButtons(t) + '</div></article>';
@@ -654,7 +701,7 @@
     var key = st.sort, dir = st.dir;
     var val = {
       due: function (t) { return t.due || ''; }, title: function (t) { return t.title; },
-      property: function (t) { return t.propertyId ? propShort(t.propertyId) : 'zz'; }, assignee: function (t) { return t.assigneeId ? staffName(t.assigneeId) : 'zz'; },
+      property: function (t) { return t.propertyId ? propShort(t.propertyId) : 'zz'; }, assignee: function (t) { return W.none(t) ? 'zz' : peopleNames(t); },
       status: function (t) { return ['todo', 'in_progress', 'done'].indexOf(t.status) * 2 - progress(t).pct; }
     }[key] || function (t) { return t.due || ''; };
     list = list.slice().sort(function (a, b) { var x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : byDue(a, b)) * dir; });
@@ -666,8 +713,8 @@
       list.map(function (t) {
         var dl = dueLabel(t), pg = progress(t);
         var stCell = t.status === 'done' ? U.pill('Done', 'ok') : (pg.total ? '<div class="progress"><i style="width:' + Math.round(pg.pct * 100) + '%"></i></div><span class="xs muted">' + pg.done + '/' + pg.total + '</span>' : '') + (t.status === 'in_progress' ? U.pill('In progress', 'info') : pg.total ? '' : U.pill('To do', 'neutral'));
-        return '<tr class="' + (isOverdue(t) ? 'od' : isOpen(t) && !t.assigneeId ? 'un' : '') + '">' + (pick ? '<td><input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.title) + '"></td>' : '') +
-          '<td><button type="button" class="tt" data-open="' + esc(t.id) + '">' + esc(t.title) + '</button> ' + (t.priority === 'high' && isOpen(t) ? U.pill('High', 'bad') : '') + '<div class="xs muted">' + esc(t.type) + (t.auto ? ' · automatic' : '') + '</div></td>' +
+        return '<tr class="' + (isOverdue(t) ? 'od' : isOpen(t) && W.none(t) ? 'un' : '') + '">' + (pick ? '<td><input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.title) + '"></td>' : '') +
+          '<td><button type="button" class="tt" data-open="' + esc(t.id) + '">' + esc(t.title) + '</button> ' + (t.priority === 'high' && isOpen(t) ? U.pill('High', 'bad') : '') + '<div class="xs muted">' + esc(t.type) + (t.auto ? ' · automatic' : '') + (!t.auto && forBooking(t) ? ' · for ' + esc(bookingLine(forBooking(t), true)) : '') + '</div></td>' +
           '<td><span class="pc"><span class="prop-dot" style="background:' + (t.propertyId ? U.propColor(t.propertyId) : 'var(--border-strong)') + '"></span>' + esc(propShort(t.propertyId)) + '</span></td>' +
           '<td class="nowrap"><span class="due ' + dl.cls + '" style="margin:0">' + esc(dl.txt) + '</span></td>' +
           '<td>' + whoHTML(t) + '</td>' +
@@ -679,17 +726,24 @@
   /* ===================================================================
      ACTIONS
      =================================================================== */
-  function assign(t, who, quiet) {
-    var prev = t.assigneeId; t.assigneeId = who || null;
-    var where = propShort(t.propertyId);
-    if (who) {
-      audit('Assigned "' + t.title + '" (' + where + ') to ' + staffName(who) + (prev ? ', was ' + staffName(prev) : ''));
-      if (!quiet) U.toast(t.title + ' at ' + where + ' assigned to ' + staffName(who) + '. ' + first(staffName(who)) + ' was notified on WhatsApp.');
-    } else {
-      audit('Unassigned "' + t.title + '" (' + where + ')');
-      if (!quiet) U.toast(t.title + ' at ' + where + ' is now unassigned', 'bad');
-    }
+  /* put exactly these people on a task (O.taskwho.set). Only people who were not on it before get a WhatsApp message,
+     once each; with notify false nobody does. quiet: no toast. Returns {added, removed, changed} */
+  function setPeople(t, list, opts) {
+    opts = opts || {};
+    var before = people(t), r = W.set(t, list), now = people(t), where = propShort(t.propertyId);
+    if (!r.changed) return r;
+    var names = function (ids) { return ids.map(staffName).join(', '); };
+    if (!now.length) audit('Unassigned "' + t.title + '" (' + where + ')' + (before.length ? ', was ' + names(before) : ''));
+    else if (!before.length) audit('Assigned "' + t.title + '" (' + where + ') to ' + names(now));
+    else audit('Changed who is on "' + t.title + '" (' + where + ')' + (r.added.length ? ': added ' + names(r.added) : '') + (r.removed.length ? (r.added.length ? '; ' : ': ') + 'took off ' + names(r.removed) : '') + '. Now ' + names(now));
+    if (opts.quiet) return r;
+    if (!now.length) { U.toast(t.title + ' at ' + where + ' is now unassigned', 'bad'); return r; }
+    var told = opts.notify === false ? [] : r.added.filter(function (id) { return id !== O.state.viewer; });
+    U.toast(t.title + ' at ' + where + ' assigned to ' + peopleNames(t) + '.' + (told.length ? ' ' + namesOf(told) + (told.length > 1 ? ' were' : ' was') + ' notified on WhatsApp.' : ''));
+    return r;
   }
+  /* one person instead of whoever is on it ('' = nobody): the select on a card */
+  function assign(t, who, quiet) { return setPeople(t, who ? [who] : [], { quiet: quiet }); }
   function move(t, to, reason) {
     t.status = to;
     if (to === 'done') { t.doneAt = D.NOW; t.doneBy = O.state.viewer; if (reason) t.doneReason = reason; else delete t.doneReason; }
@@ -751,34 +805,96 @@
       D.checklists.map(function (c) { return '<option value="' + esc(c.id) + '"' + (cur === c.id ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.items.length + ' items)</option>'; }).join('') +
       (t.customChecklist ? '<option value="__own" selected>Its own list (' + t.customChecklist.length + ' items)</option>' : '') + '</select>';
   }
+  /* the people picker: one chip per person who can be given tasks (tick as many as needed) and "Unassigned" (nobody).
+     sel: ids ticked now; ro: shown but not changeable (no tasks.assign) */
+  function peoplePickHTML(sel, ro) {
+    var list = assignable().filter(function (s) { return s.role !== 'accountant' || sel.indexOf(s.id) >= 0; });
+    sel.forEach(function (id) { if (!list.some(function (s) { return s.id === id; })) list.push(staff(id) || { id: id, name: staffName(id), roleLabel: '' }); });
+    return '<div class="tk-ppl" role="group" aria-labelledby="tk-who-l">' +
+      '<button type="button" class="tk-pp none' + (sel.length ? '' : ' on') + '" data-none aria-pressed="' + !sel.length + '"' + (ro ? ' disabled' : '') + '>Unassigned</button>' +
+      list.map(function (s) {
+        var on = sel.indexOf(s.id) >= 0, l = load(s.id);
+        return '<label class="tk-pp' + (on ? ' on' : '') + (ro ? ' ro' : '') + '" title="' + esc(s.name + (s.roleLabel ? ', ' + s.roleLabel : '') + ': ' + (l ? l + ' open' : 'free')) + '"><input type="checkbox" name="who" value="' + esc(s.id) + '"' + (on ? ' checked' : '') + (ro ? ' disabled' : '') + ' aria-label="' + esc(s.name + (s.roleLabel ? ', ' + s.roleLabel : '')) + '">' +
+          U.avatar(s.name, 'sm') + '<span class="n">' + esc(s.id === O.state.viewer ? 'You' : first(s.name)) + '</span><span class="l">' + (l ? l + ' open' : 'free') + '</span></label>';
+      }).join('') + '</div>';
+  }
+  function pickedPeople(el) { return O.$$('[name=who]:checked', el).map(function (x) { return x.value; }); }
+  function paintPicker(el) {
+    var sel = pickedPeople(el);
+    O.$$('.tk-pp', el).forEach(function (c) { var i = O.$('input', c); if (i) c.classList.toggle('on', i.checked); });
+    var n = O.$('[data-none]', el); if (n) { n.classList.toggle('on', !sel.length); n.setAttribute('aria-pressed', String(!sel.length)); }
+  }
+  /* bookings a task can be for: upcoming and in-house (and the one it already has), the chosen unit's only when a unit
+     is picked, matching the search words */
+  function bookingChoices(pid, keepId, q) {
+    q = String(q || '').trim().toLowerCase();
+    return D.bookings.filter(function (b) {
+      if (!b || !b.id) return false;
+      if (b.id === keepId) return true;
+      if (!liveBooking(b) || !(b.checkOut >= D.TODAY)) return false;
+      if (pid && b.propertyId !== pid) return false;
+      if (q && [b.guest && b.guest.name, b.id, propShort(b.propertyId), b.reservationCode || ''].join(' ').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : a.id < b.id ? -1 : 1; });
+  }
+  function bookingOptions(pid, selId, q) {
+    var list = bookingChoices(pid, selId, q), shown = list.slice(0, 80);
+    if (selId && shown.every(function (b) { return b.id !== selId; })) { var keep = list.filter(function (b) { return b.id === selId; })[0]; if (keep) shown.unshift(keep); }
+    return '<option value=""' + (!selId ? ' selected' : '') + '>General, no booking</option>' + shown.map(function (b) {
+      var inHouse = b.checkIn <= D.TODAY && D.TODAY < b.checkOut;
+      return '<option value="' + esc(b.id) + '"' + (b.id === selId ? ' selected' : '') + '>' + esc(bookingLine(b, !!pid) + (b.status === 'cancelled' ? ' (cancelled)' : inHouse ? ' (in-house)' : '')) + '</option>';
+    }).join('') + (list.length > shown.length ? '<option value="" disabled>' + (list.length - shown.length) + ' more: type to search</option>' : '') +
+      (!list.length && (pid || q) ? '<option value="" disabled>' + (q ? 'No booking matches "' + esc(q) + '"' : 'No upcoming bookings for this unit') + '</option>' : '');
+  }
   function formHTML(t) {
-    var mine = !can.assign();
+    var mine = !can.assign(), sel = people(t);
     var date = dayOf(t) || D.TODAY, time = (t.due || '').slice(11, 16) || '16:00';
+    var fb = t.bookingId ? D.booking(t.bookingId) : null;
+    var forField = t.auto
+      ? '<div class="field full"><span class="label">For</span><div class="small">' + (fb ? esc(bookingLine(fb)) : esc(t.bookingId || 'General')) + '</div><span class="hint">Automatic tasks stay with the booking they were made for.</span></div>'
+      : '<div class="field full"><label for="tk-bk">For</label><div class="tk-bkpick">' +
+        '<label class="search"><span class="sr-only">Search bookings</span>' + O.icon('search') + '<input type="search" data-bkq placeholder="Search guest or booking" autocomplete="off"></label>' +
+        '<select class="select" id="tk-bk" name="bookingId">' + bookingOptions(t.propertyId || '', t.bookingId || '', '') + '</select></div>' +
+        '<span class="hint">A booking the task is for, or General. Picking a unit lists that unit\'s bookings.</span></div>';
     return '<div class="tk-modal stack"><div class="form-grid">' +
       '<div class="field full"><label for="tk-title">Task</label><input class="input" id="tk-title" name="title" value="' + esc(t.title) + '" placeholder="For example: Turnover clean, Fix shower head" maxlength="120" required></div>' +
       '<div class="field"><label for="tk-type">Type</label><select class="select" id="tk-type" name="type">' + TYPES.concat(TYPES.indexOf(t.type) < 0 && t.type ? [t.type] : []).map(function (x) { return '<option' + (x === t.type ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></div>' +
       '<div class="field"><label for="tk-prop">Property</label><select class="select" id="tk-prop" name="propertyId"><option value="">General, no property</option>' + U.propOptions(t.propertyId) + '</select></div>' +
-      '<div class="field full"><label for="tk-who">Assign to</label><select class="select" id="tk-who" name="assigneeId"' + (mine ? ' disabled title="' + esc(noAccess('tasks.assign')) + '"' : '') + '>' + assigneeOptions(t.assigneeId, { noneLabel: 'Unassigned (decide later)' }) + '</select>' +
-      '<div class="load" data-load></div><div data-sugg></div>' + (mine ? '<div class="hint">Giving tasks to other people needs the "' + esc(O.permLabel('tasks.assign')) + '" permission, so this one stays with ' + (t.assigneeId && t.assigneeId !== O.state.viewer ? esc(staffName(t.assigneeId)) : 'you') + '.</div>' : '') + '</div>' +
+      forField +
+      '<div class="field full"><span class="label" id="tk-who-l">Assign to <span class="faint" style="font-weight:600">· one or more people</span></span>' + peoplePickHTML(sel, mine) +
+      '<div class="load" data-load></div><div data-sugg></div>' + (mine ? '<div class="hint">Giving tasks to other people needs the "' + esc(O.permLabel('tasks.assign')) + '" permission, so ' + (sel.length && !(sel.length === 1 && sel[0] === O.state.viewer) ? 'the people on it stay: ' + esc(sel.map(staffName).join(', ')) : 'this one stays with you') + '.</div>' : '') + '</div>' +
       '<div class="field"><label for="tk-date">Due date</label><input class="input" type="date" id="tk-date" name="date" value="' + esc(date) + '" required></div>' +
       '<div class="field"><label for="tk-time">Due time</label><input class="input" type="time" id="tk-time" name="time" value="' + esc(time) + '" required></div>' +
       '<div class="field full"><span class="label">Priority</span><div class="pseg" role="radiogroup" aria-label="Priority">' + ['high', 'medium', 'low'].map(function (p) { return '<label><input type="radio" name="priority" value="' + p + '"' + ((t.priority || 'medium') === p ? ' checked' : '') + '>' + PRI[p][0] + '</label>'; }).join('') + '</div></div>' +
       '<div class="field full"><label for="tk-cl">Checklist</label>' + checklistSelect(t) + '<span class="hint">Templates are edited in the Checklists tab. Changing the list clears ticks on this task.</span></div>' +
       '<div class="field full"><label for="tk-note">Notes</label><textarea class="textarea" id="tk-note" name="note" maxlength="600" placeholder="Anything the person needs to know: arrival time, access, parts to bring">' + esc(t.note || '') + '</textarea></div>' +
-      (mine ? '' : '<label class="check full"><input type="checkbox" name="notify" checked> Send the assignee a WhatsApp message</label>') +
+      (mine ? '' : '<label class="check full"><input type="checkbox" name="notify" checked> Send each newly added person a WhatsApp message</label>') +
       '</div></div>';
   }
   function wireForm(el, t, isNew) {
     var f = function (n) { return O.$('[name=' + n + ']', el); };
+    var ro = !can.assign();
+    function setPicked(ids) { O.$$('[name=who]', el).forEach(function (x) { x.checked = ids.indexOf(x.value) >= 0; }); paintPicker(el); }
     function paint() {
-      var who = f('assigneeId').value, box = O.$('[data-load]', el), sg = O.$('[data-sugg]', el);
-      if (who && staff(who)) {
-        var s = staff(who), day = f('date').value;
-        var same = D.tasks.filter(function (x) { return isOpen(x) && x.assigneeId === who && dayOf(x) === day && x.id !== t.id; });
-        box.innerHTML = (who === O.state.viewer ? '<b>You</b> have ' : '<b>' + esc(first(s.name)) + '</b> has ') + fmt.plural(load(who) - (t.assigneeId === who && isOpen(t) && !isNew ? 1 : 0), 'other open task') + (day ? ', ' + same.length + ' due ' + (day === D.TODAY ? 'today' : d.fmt(day)) : '') + (same.length ? ': ' + esc(same.slice(0, 3).map(function (x) { return x.title + ' ' + fmt.time(x.due); }).join(', ')) : '') + '.';
+      var who = pickedPeople(el), box = O.$('[data-load]', el), sg = O.$('[data-sugg]', el), day = f('date').value;
+      var others = function (id) { return load(id) - (W.has(t, id) && isOpen(t) && !isNew ? 1 : 0); };
+      var dueSame = function (id) { return D.tasks.filter(function (x) { return isOpen(x) && W.has(x, id) && dayOf(x) === day && x.id !== t.id; }); };
+      if (who.length === 1 && staff(who[0])) {
+        var s = staff(who[0]), same = dueSame(s.id);
+        box.innerHTML = (s.id === O.state.viewer ? '<b>You</b> have ' : '<b>' + esc(first(s.name)) + '</b> has ') + fmt.plural(others(s.id), 'other open task') + (day ? ', ' + same.length + ' due ' + (day === D.TODAY ? 'today' : d.fmt(day)) : '') + (same.length ? ': ' + esc(same.slice(0, 3).map(function (x) { return x.title + ' ' + fmt.time(x.due); }).join(', ')) : '') + '.';
+      } else if (who.length > 1) {
+        box.innerHTML = who.length + ' people on it, and any of them can mark it done. ' + who.map(function (id) { return '<b>' + esc(id === O.state.viewer ? 'You' : first(staffName(id))) + '</b> ' + others(id) + ' other open' + (day ? ', ' + dueSame(id).length + ' due ' + (day === D.TODAY ? 'today' : d.fmt(day)) : ''); }).join(' · ') + '.';
       } else box.innerHTML = can.assign() ? 'Unassigned tasks show on the dashboard until someone takes them.' : '';
       var sug = can.assign() ? suggestFor(f('type').value, f('propertyId').value) : null;
-      sg.innerHTML = sug && sug[0] !== who && staff(sug[0]) ? '<div class="sugg">' + U.avatar(staff(sug[0]).name, 'sm') + '<span>Suggested: <b>' + esc(staff(sug[0]).name) + '</b> ' + esc(sug[1]) + '</span><button type="button" class="btn btn-quiet btn-xs" data-use="' + sug[0] + '">Assign</button></div>' : '';
+      sg.innerHTML = sug && who.indexOf(sug[0]) < 0 && staff(sug[0]) ? '<div class="sugg">' + U.avatar(staff(sug[0]).name, 'sm') + '<span>Suggested: <b>' + esc(staff(sug[0]).name) + '</b> ' + esc(sug[1]) + '</span><button type="button" class="btn btn-quiet btn-xs" data-use="' + sug[0] + '">' + (who.length ? 'Add' : 'Assign') + '</button></div>' : '';
+    }
+    function paintBookings() {
+      var s = f('bookingId'); if (!s) return;
+      var q = O.$('[data-bkq]', el), cur = s.value, pid = f('propertyId').value;
+      /* the chosen booking stays while it fits the unit */
+      var b = cur && D.booking(cur); if (b && pid && b.propertyId !== pid) cur = '';
+      s.innerHTML = bookingOptions(pid, cur, q ? q.value : '');
+      if (!O.$$('option', s).some(function (o) { return o.value === cur; })) s.value = '';
     }
     el.addEventListener('change', function (e) {
       if (e.target.name === 'type' && isNew) {
@@ -786,11 +902,33 @@
         if (!f('title').dataset.touched) f('title').value = { Turnover: 'Turnover clean', Housekeeping: 'Daily housekeeping', Inspection: 'Check-in readiness', Restock: 'Restock welcome kit', Maintenance: '' }[ty] || '';
         var cid = defaultChecklistId(ty, f('title').value); f('checklistId').value = cid || '';
       }
-      if (e.target.name === 'propertyId' && isNew && can.assign() && !f('assigneeId').value) { var sg = suggestFor(f('type').value, f('propertyId').value); if (sg) f('assigneeId').value = sg[0]; }
+      if (e.target.name === 'propertyId') {
+        if (isNew && can.assign() && !pickedPeople(el).length) { var sg = suggestFor(f('type').value, f('propertyId').value); if (sg) setPicked([sg[0]]); }
+        paintBookings();
+      }
+      if (e.target.name === 'bookingId' && e.target.value) {
+        /* a booking picked while no unit is chosen: the task is at that booking's unit */
+        var bk = D.booking(e.target.value);
+        if (bk && !f('propertyId').value && bk.propertyId && prop(bk.propertyId)) { f('propertyId').value = bk.propertyId; paintBookings(); }
+      }
+      if (e.target.name === 'who') paintPicker(el);
       paint();
     });
-    el.addEventListener('input', function (e) { if (e.target.name === 'title') e.target.dataset.touched = '1'; });
-    el.addEventListener('click', function (e) { var u = e.target.closest('[data-use]'); if (u) { f('assigneeId').value = u.dataset.use; paint(); } });
+    el.addEventListener('input', function (e) {
+      if (e.target.name === 'title') e.target.dataset.touched = '1';
+      if (e.target.matches('[data-bkq]')) paintBookings();
+    });
+    el.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || !e.target.matches('[data-bkq]')) return;
+      e.preventDefault();
+      var s = f('bookingId'), o = s && O.$$('option', s).filter(function (x) { return x.value && !x.disabled; })[0];
+      if (o) { s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    el.addEventListener('click', function (e) {
+      if (ro) return;
+      var u = e.target.closest('[data-use]'); if (u) { setPicked(pickedPeople(el).concat([u.dataset.use])); paint(); return; }
+      if (e.target.closest('[data-none]')) { setPicked([]); paint(); }
+    });
     paint();
   }
   function readForm(el, t) {
@@ -798,10 +936,12 @@
     var title = f('title').value.trim(), date = f('date').value, time = f('time').value;
     if (!title) { U.toast('Give the task a name', 'bad'); f('title').focus(); return null; }
     if (!date || !time) { U.toast('Choose a due date and time', 'bad'); return null; }
-    var pr = O.$('[name=priority]:checked', el);
+    var pr = O.$('[name=priority]:checked', el), bk = f('bookingId');
+    var ro = !can.assign(), cur = people(t);
     return {
       title: title, type: f('type').value, propertyId: f('propertyId').value || null,
-      assigneeId: f('assigneeId').disabled ? (t.assigneeId || O.state.viewer) : (f('assigneeId').value || null),
+      assigneeIds: ro ? (cur.length ? cur : [O.state.viewer]) : pickedPeople(el),
+      bookingId: t.auto || !bk ? (t.bookingId || null) : (bk.value || null),
       priority: pr ? pr.value : 'medium', due: date + 'T' + time, checklistId: f('checklistId').value, note: f('note').value.trim(), notify: !!(f('notify') && f('notify').checked)
     };
   }
@@ -809,21 +949,27 @@
   function newTask(preset) {
     if (!can.create()) { U.toast(noAccess('tasks.create'), 'bad'); return; }
     preset = preset || {};
-    var base = { id: '', title: 'Turnover clean', type: 'Turnover', propertyId: preset.propertyId || '', assigneeId: can.assign() ? (preset.assigneeId || '') : O.state.viewer, priority: 'medium', due: D.TODAY + 'T' + toHM(Math.min(23 * 60, Math.ceil((toMin(D.NOW_TIME) + 120) / 30) * 30)), checklistId: defaultChecklistId('Turnover', 'Turnover clean'), note: '' };
-    if (base.propertyId && can.assign() && !base.assigneeId) { var sg = suggestFor(base.type, base.propertyId); if (sg) base.assigneeId = sg[0]; }
+    var pb = preset.bookingId ? D.booking(preset.bookingId) : null;
+    var start = can.assign() ? (preset.assigneeIds || (preset.assigneeId ? [preset.assigneeId] : [])) : [O.state.viewer];
+    var base = { id: '', title: 'Turnover clean', type: 'Turnover', propertyId: preset.propertyId || (pb && prop(pb.propertyId) ? pb.propertyId : ''), bookingId: pb ? pb.id : null, priority: 'medium', due: D.TODAY + 'T' + toHM(Math.min(23 * 60, Math.ceil((toMin(D.NOW_TIME) + 120) / 30) * 30)), checklistId: defaultChecklistId('Turnover', 'Turnover clean'), note: '' };
+    W.set(base, start);
+    if (base.propertyId && can.assign() && W.none(base)) { var sg = suggestFor(base.type, base.propertyId); if (sg) W.set(base, [sg[0]]); }
     U.modal({
-      title: 'New task', sub: can.assign() ? 'Pick who does it now, or leave it unassigned and assign later' : 'It will be on your list', body: formHTML(base), size: 'wide',
+      title: 'New task', sub: can.assign() ? 'Pick one or more people now, or leave it unassigned and assign later' : 'It will be on your list', body: formHTML(base), size: 'wide',
       onOpen: function (el) { wireForm(el, base, true); O.$('[name=title]', el).select(); },
       actions: [{ label: 'Cancel', kind: 'ghost' }, {
         label: 'Create task', kind: 'primary', onClick: function (close, el) {
           var v = readForm(el, base); if (!v) return false;
-          var t = { id: O.uid('T'), title: v.title, type: v.type, propertyId: v.propertyId, assigneeId: v.assigneeId, due: v.due, priority: v.priority, status: 'todo', createdAt: D.NOW, createdBy: O.state.viewer };
+          var t = { id: O.uid('T'), title: v.title, type: v.type, propertyId: v.propertyId, due: v.due, priority: v.priority, status: 'todo', createdAt: D.NOW, createdBy: O.state.viewer };
+          W.set(t, v.assigneeIds);
+          if (v.bookingId) t.bookingId = v.bookingId;
           if (v.checklistId && v.checklistId !== '__own') { t.checklistId = v.checklistId; t.checks = []; }
           if (v.note) t.note = v.note;
           D.tasks.push(t);
           if (st.due !== 'all' && filtered().indexOf(t) < 0) st.due = 'all'; /* keep the new task in view */
-          audit('Created "' + t.title + '"' + (t.propertyId ? ' (' + propShort(t.propertyId) + ')' : '') + (t.assigneeId ? ' for ' + staffName(t.assigneeId) : ', unassigned'));
-          U.toast(t.assigneeId ? t.title + ' created' + (t.assigneeId !== O.state.viewer ? ' and assigned to ' + staffName(t.assigneeId) + (v.notify ? '. ' + first(staffName(t.assigneeId)) + ' was notified on WhatsApp.' : '.') : '.') : t.title + ' created. It is unassigned, so it shows on the dashboard until someone takes it.', t.assigneeId ? 'ok' : 'bad');
+          var ids = people(t), told = v.notify ? ids.filter(function (id) { return id !== O.state.viewer; }) : [], fb = forBooking(t);
+          audit('Created "' + t.title + '"' + (t.propertyId ? ' (' + propShort(t.propertyId) + ')' : '') + (fb ? ' for the booking of ' + fb.guest.name + ' (' + fb.id + ')' : '') + (ids.length ? ', assigned to ' + ids.map(staffName).join(', ') : ', unassigned'));
+          U.toast(ids.length ? t.title + ' created' + (ids.length > 1 || ids[0] !== O.state.viewer ? ' and assigned to ' + peopleNames(t) + (told.length ? '. ' + namesOf(told) + (told.length > 1 ? ' were' : ' was') + ' notified on WhatsApp.' : '.') : '.') : t.title + ' created. It is unassigned, so it shows on the dashboard until someone takes it.', ids.length ? 'ok' : 'bad');
           changed('task-new');
         }
       }]
@@ -838,14 +984,37 @@
         label: 'Save changes', kind: 'primary', onClick: function (close, el) {
           var v = readForm(el, t); if (!v) return false;
           t.title = v.title; t.type = v.type; t.propertyId = v.propertyId; t.priority = v.priority; t.due = v.due;
+          if (!t.auto) { if (v.bookingId) t.bookingId = v.bookingId; else delete t.bookingId; }
           if (v.note) t.note = v.note; else delete t.note;
           if (v.checklistId !== '__own') {
             var was = t.customChecklist ? '__own' : t.checklistId || '';
             if (was !== v.checklistId) { delete t.customChecklist; if (v.checklistId) { t.checklistId = v.checklistId; t.checks = []; } else { delete t.checklistId; delete t.checks; } }
           }
-          if ((v.assigneeId || null) !== (t.assigneeId || null)) assign(t, v.assigneeId, !v.notify); else U.toast('Task saved');
+          var r = setPeople(t, v.assigneeIds, { notify: v.notify });
+          if (!r.changed) U.toast('Task saved');
           changed('task-edit');
           if (after) after();
+        }
+      }]
+    });
+  }
+
+  /* change who is on a task from a card or list row */
+  function peopleModal(t) {
+    if (!can.assign()) { U.toast(noAccess('tasks.assign'), 'bad'); return; }
+    U.modal({
+      title: 'Who is on this task', sub: t.title + (t.propertyId ? ' · ' + propShort(t.propertyId) : ''), size: 'sm', autofocus: false,
+      body: '<div class="tk-modal stack"><span class="label" id="tk-who-l">Assign to <span class="faint" style="font-weight:600">· one or more people</span></span>' + peoplePickHTML(people(t), false) +
+        '<div class="xs muted">Any of them can mark it done, and that completes it for everyone.</div><label class="check"><input type="checkbox" name="notify" checked> Send each newly added person a WhatsApp message</label></div>',
+      onOpen: function (el) {
+        el.addEventListener('change', function (e) { if (e.target.name === 'who') paintPicker(el); });
+        el.addEventListener('click', function (e) { if (e.target.closest('[data-none]')) { O.$$('[name=who]', el).forEach(function (x) { x.checked = false; }); paintPicker(el); } });
+      },
+      actions: [{ label: 'Cancel', kind: 'ghost' }, {
+        label: 'Save', kind: 'primary', onClick: function (close, el) {
+          var n = O.$('[name=notify]', el);
+          var r = setPeople(t, pickedPeople(el), { notify: !!(n && n.checked) });
+          if (r.changed) changed('task-assign');
         }
       }]
     });
@@ -876,7 +1045,7 @@
   function detail(id) {
     var t = taskById(id);
     if (!t) { U.toast('That task no longer exists. Someone may have deleted it.', 'bad'); return; }
-    if (!can.others() && t.assigneeId !== O.state.viewer) { U.toast('That task belongs to someone else. Your access shows only your own tasks.', 'bad'); return; }
+    if (!can.others() && !W.has(t, O.state.viewer)) { U.toast('That task belongs to someone else. Your access shows only your own tasks.', 'bad'); return; }
     normalize(t);
     var p = prop(t.propertyId), ed = can.edit(), m = null;
     function clHTML() {
@@ -908,9 +1077,12 @@
         (t.status !== 'done' ? '<span class="due ' + dl.cls + '">' + esc(dl.txt) + '</span>' : '') + '</div>';
     }
     function bodyHTML() {
-      var b = stayBooking(t), line = stayLine(t, true);
-      return '<div class="tk-modal stack">' + headHTML() +
-        (b && line ? '<button type="button" class="tk-bk" data-bk="' + esc(b.id) + '">' + O.icon('bookings') + '<span><b>' + esc(line) + '</b></span></button>' : '') +
+      var b = stayBooking(t), line = stayLine(t, true), fb = !t.auto && forBooking(t), ids = people(t);
+      var bk = fb ? '<button type="button" class="tk-bk" data-bk="' + esc(fb.id) + '" aria-label="Open the booking of ' + esc(fb.guest.name) + '">' + O.icon('bookings') + '<span>For <b>' + esc(bookingLine(fb)) + '</b>' + (line ? '<br>' + esc(line) : '') + '</span></button>'
+        : !t.auto && t.bookingId ? '<div class="xs muted">For booking ' + esc(t.bookingId) + ', which is no longer in the workspace.</div>'
+        : b && line ? '<button type="button" class="tk-bk" data-bk="' + esc(b.id) + '">' + O.icon('bookings') + '<span><b>' + esc(line) + '</b></span></button>' : '';
+      return '<div class="tk-modal stack">' + headHTML() + bk +
+        (ids.length > 1 ? '<div class="tk-team">' + avatars(ids, 6) + '<span>' + esc(ids.map(function (id) { return id === O.state.viewer ? 'You' : staffName(id); }).join(', ')) + '</span><span class="xs muted">Any of them can mark it done.</span></div>' : '') +
         (t.requestId && O.unitReq ? O.unitReq.taskLineHTML(t) : '') +
         (noteShown(t) ? '<div class="note">' + esc(noteShown(t)) + '</div>' : '') +
         '<div data-cl>' + clHTML() + '</div>' +
@@ -934,7 +1106,7 @@
       actions.push({ label: 'Mark done', kind: 'primary', onClick: function (close) { finish([t], function () { close(); }); return false; } });
     }
     m = U.modal({
-      title: t.title, sub: [t.type, p ? p.name : t.propertyId ? 'Removed property' : 'General', t.assigneeId ? staffName(t.assigneeId) : 'Unassigned'].join(' · '), body: bodyHTML(), size: 'wide', autofocus: false, actions: actions,
+      title: t.title, sub: [t.type, p ? p.name : t.propertyId ? 'Removed property' : 'General', peopleNames(t)].join(' · '), body: bodyHTML(), size: 'wide', autofocus: false, actions: actions,
       onOpen: function (el, close) {
         el.addEventListener('change', function (e) {
           var c = e.target.closest('[data-ck]');
@@ -1102,8 +1274,9 @@
     });
   }
 
-  /* for unit requests (app/pages/unitreq.js): who a new task goes to, the photo compressor, and the task detail */
-  O.taskHelpers = { suggestFor: suggestFor, compressPhoto: compressPhoto, detail: detail };
+  /* for unit requests (app/pages/unitreq.js) and the booking drawer (core.js): who a new task goes to, the photo
+     compressor, the task detail and the new-task form (preset: {propertyId, bookingId, assigneeIds}) */
+  O.taskHelpers = { suggestFor: suggestFor, compressPhoto: compressPhoto, detail: detail, newTask: newTask };
 
   /* ===================================================================
      PAGE
@@ -1168,11 +1341,11 @@
         (edit && can.create() && visible().length ? '<button type="button" class="btn btn-primary" data-act="new">' + O.icon('plus') + 'New task</button>' : ''));
       ctx.actionsEl.onclick = function (e) {
         var b = e.target.closest('[data-act]'); if (!b) return;
-        if (b.dataset.act === 'new') newTask({ propertyId: st.propertyId, assigneeId: /^(all|me|unassigned)$/.test(st.assignee) ? '' : st.assignee });
+        if (b.dataset.act === 'new') newTask({ propertyId: st.propertyId, assigneeIds: /^(all|me|unassigned)$/.test(st.assignee) ? [] : [st.assignee] });
         if (b.dataset.act === 'csv') {
           var rows = [['Task ID', 'Task', 'Type', 'Property', 'Due', 'Priority', 'Status', 'Assigned to', 'Checklist done', 'Checklist items', 'Automatic', 'Booking', 'Done at', 'Reason', 'Note']].concat(filtered().sort(byDue).map(function (t) {
             var pg = progress(t);
-            return [t.id, t.title, t.type, prop(t.propertyId) ? prop(t.propertyId).name : 'General', (t.due || '').replace('T', ' '), PRI[t.priority] ? PRI[t.priority][0] : '', { todo: 'To do', in_progress: 'In progress', done: 'Done' }[t.status] || t.status, t.assigneeId ? staffName(t.assigneeId) : 'Unassigned',
+            return [t.id, t.title, t.type, prop(t.propertyId) ? prop(t.propertyId).name : 'General', (t.due || '').replace('T', ' '), PRI[t.priority] ? PRI[t.priority][0] : '', { todo: 'To do', in_progress: 'In progress', done: 'Done' }[t.status] || t.status, people(t).map(staffName).join(', ') || 'Unassigned',
               pg.total ? pg.done : '', pg.total || '', t.auto ? 'Yes' : 'No', t.bookingId || '', (t.doneAt || '').replace('T', ' '), t.doneReason || '', t.note || ''];
           }));
           O.downloadCSV('tasks-' + D.TODAY + '.csv', rows);
@@ -1211,6 +1384,7 @@
         if ((b = e.target.closest('[data-quick]'))) { if (b.dataset.quick === 'overdue') { st.due = 'overdue'; st.assignee = can.others() ? 'all' : st.assignee; } else { st.assignee = 'unassigned'; st.due = 'all'; } st.col = 'todo'; st.autoMe = false; ctx.rerender(); return; }
         if ((b = e.target.closest('[data-who]'))) { st.assignee = st.assignee === b.dataset.who && b.dataset.who !== 'all' ? 'all' : b.dataset.who; st.autoMe = false; ctx.rerender(); return; }
         if ((b = e.target.closest('[data-open]'))) { detail(b.dataset.open); return; }
+        if ((b = e.target.closest('[data-people]'))) { var pt = taskById(b.dataset.people); if (pt) peopleModal(pt); return; }
         if ((b = e.target.closest('[data-sort]'))) { if (st.sort === b.dataset.sort) st.dir = -st.dir; else { st.sort = b.dataset.sort; st.dir = 1; } ctx.rerender(); return; }
         if ((b = e.target.closest('[data-move]'))) {
           var t = taskById(b.dataset.move); if (!t) return;
@@ -1227,9 +1401,10 @@
           if (a === 'bulk-assign') {
             var who = O.$('[data-bulk-who]', pg).value;
             if (!who) { U.toast('Choose who to assign them to', 'bad'); return; }
-            var moved = sel.filter(function (t) { return t.assigneeId !== who; });
-            moved.forEach(function (t) { assign(t, who, true); });
-            U.toast(moved.length ? fmt.plural(moved.length, 'task') + ' assigned to ' + staffName(who) + '. ' + first(staffName(who)) + ' got one WhatsApp message with the list.' : 'Those tasks are already with ' + staffName(who) + '.');
+            /* adds the person; people already on a task stay on it */
+            var moved = sel.filter(function (t) { return !W.has(t, who); });
+            moved.forEach(function (t) { setPeople(t, people(t).concat([who]), { quiet: true }); });
+            U.toast(moved.length ? staffName(who) + ' added to ' + fmt.plural(moved.length, 'task') + '. ' + first(staffName(who)) + ' got one WhatsApp message with the list.' : 'Those tasks already have ' + staffName(who) + '.');
             st.sel = {}; changed('task-assign');
           }
           if (a === 'bulk-move') {
@@ -1244,7 +1419,11 @@
       });
       pg.addEventListener('change', function (e) {
         var el = e.target;
-        if (el.matches('[data-assign]')) { var t = taskById(el.dataset.assign); if (t && can.assign()) { assign(t, el.value); changed('task-assign'); } return; }
+        if (el.matches('[data-assign]')) {
+          var t = taskById(el.dataset.assign); if (!t || !can.assign()) return;
+          if (el.value === '__many') { el.value = people(t)[0] || ''; peopleModal(t); return; }
+          assign(t, el.value); changed('task-assign'); return;
+        }
         if (el.matches('[data-pick]')) { st.sel[el.dataset.pick] = el.checked; ctx.rerender(); return; }
         if (el.matches('[data-pick-all]')) { list.forEach(function (t) { st.sel[t.id] = el.checked; }); ctx.rerender(); return; }
         if (el.matches('[data-f]') && el.dataset.f !== 'q') { st[el.dataset.f] = el.value; ctx.rerender(); }

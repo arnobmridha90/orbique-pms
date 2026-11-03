@@ -256,7 +256,7 @@
   function feedHTML() {
     var A = AU(), out = [], sameRule = A.rules.filter(function (r) { return r.id === 'r-same'; })[0], ops = sameRule && sameRule.notify ? D.staffById(sameRule.notify) : null;
     D.bookings.filter(function (b) { return live(b) && b.sameDay && b.checkIn === D.TODAY; }).forEach(function (b) {
-      var t = taskFor(b), who = t && t.assigneeId ? D.staffById(t.assigneeId) : null;
+      var t = taskFor(b), who = t && !O.taskwho.none(t) ? { name: O.taskPeople(t) } : null;
       out.push({ at: b.createdAt, tone: 'var(--warn)', t: 'Same-day booking: ' + b.guest.name + ' at ' + shortOf(b.propertyId) + ', arriving ' + fmt.time(b.checkInTime),
         s: (ops ? 'Alerted ' + ops.name : 'Alert sent') + (t ? ' · ' + t.title.toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }) + ' ' + t.id + ' marked urgent for ' + (who ? who.name : 'nobody yet') + (t.due ? ', due ' + fmt.time(t.due) : '') : ''), bk: b.id, task: t ? t.id : null });
     });
@@ -268,7 +268,7 @@
     pendingClaims().filter(function (e) { return d.diff(e.date, D.TODAY) <= 1; }).slice(0, 2).forEach(function (e) { var w = D.staffById(e.paidBy) || {}; out.push({ at: e.date + 'T' + (e.date === D.TODAY ? '08:30' : '18:00'), tone: 'var(--info)', t: 'Claim from ' + (w.name || 'a team member') + ': ' + fmt.money(e.amount, { cur: e }) + ' ' + (e.type === 'Others' ? e.otherType || 'other' : e.type).toLowerCase(), s: 'Sent to ' + ((D.staffById('s1') || {}).name || 'the owner') + ' for approval', go: 'expenses' }); });
     D.bookings.filter(function (b) { return live(b) && b.checkOut === D.TODAY; }).forEach(function (b) {
       var t = D.tasks.filter(function (x) { return x.type === 'Turnover' && x.propertyId === b.propertyId && String(x.due || '').slice(0, 10) === D.TODAY; })[0];
-      var as = t && t.assigneeId ? D.staffById(t.assigneeId) : null;
+      var as = t && !O.taskwho.none(t) ? { name: O.taskPeople(t) } : null;
       if (t) out.push({ at: D.TODAY + 'T07:30', tone: 'var(--ok)', t: 'Turnover created for ' + shortOf(t.propertyId) + ' after ' + b.guest.name + ' checks out', s: 'Assigned to ' + (as ? as.name : 'nobody yet'), task: t.id });
     });
     damageReports30().filter(function (r) { return String(r.at).slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (r) { out.push({ at: r.at, tone: 'var(--bad)', t: 'Damage reported' + (r.item ? ': ' + r.item : '') + (D.propById[r.propertyId] ? ' at ' + D.propById[r.propertyId].short : ''), s: (r.taskId ? 'Maintenance task ' + r.taskId + ' created with ' : 'Logged with ') + fmt.plural((r.photos || []).length || 1, 'photo'), task: r.taskId || null, go: r.taskId ? null : 'guestapp' }); });

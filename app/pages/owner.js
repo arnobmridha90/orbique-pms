@@ -385,7 +385,7 @@
     var log = [];
     D.tasks.forEach(function (tk) {
       if ((tk.type === 'Maintenance' || tk.type === 'Inspection') && unitIds[tk.propertyId]) {
-        var who = tk.assigneeId ? D.staffById(tk.assigneeId) : null, due = tk.due || '';
+        var who = O.taskwho.none(tk) ? null : { name: O.taskPeople(tk) }, due = tk.due || '';
         log.push({ date: (tk.doneAt || due).slice(0, 10), ic: tk.type === 'Inspection' ? 'check' : 'tasks', unit: D.propById[tk.propertyId], what: tk.title + (tk.note && tk.note !== 'Unassigned' ? ' · ' + tk.note : ''), who: who ? who.name : 'Not assigned yet', cost: null, status: tk.status === 'done' ? U.pill('Done', 'ok') : tk.status === 'in_progress' ? U.pill('In progress', 'info') : (due < D.NOW ? U.pill('Overdue', 'bad') : U.pill('Scheduled', 'neutral')) });
       }
     });

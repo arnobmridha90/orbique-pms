@@ -755,7 +755,8 @@
     var depsIn = function (a, b) { return bks(S.pid).filter(function (x) { return live(x) && x.checkOut >= a && x.checkOut <= b; }).length; };
     /* tasks by team member (tasks due in the range) */
     var people = {};
-    o0.tasks.forEach(function (t) { var k = t.assigneeId || ''; var p = people[k] || (people[k] = { id: k, done: 0, timed: 0, onTime: 0, open: 0, late: 0 }); if (t.status === 'done') { p.done++; if (t.doneAt && t.due) { p.timed++; if (t.doneAt <= t.due) p.onTime++; } } else if (t.due < D.NOW) p.late++; else p.open++; });
+    /* a task with several people counts once for each of them */
+    o0.tasks.forEach(function (t) { var ks = O.taskwho.ids(t); (ks.length ? ks : ['']).forEach(function (k) { var p = people[k] || (people[k] = { id: k, done: 0, timed: 0, onTime: 0, open: 0, late: 0 }); if (t.status === 'done') { p.done++; if (t.doneAt && t.due) { p.timed++; if (t.doneAt <= t.due) p.onTime++; } } else if (t.due < D.NOW) p.late++; else p.open++; }); });
     var pList = Object.keys(people).map(function (k) { var p = people[k]; p.n = p.done + p.open + p.late; return p; }).sort(function (a, b) { return b.n - a.n || b.done - a.done; }).slice(0, 8);
     var pMax = Math.max.apply(null, pList.map(function (p) { return p.n; }).concat([1]));
     var pRows = pList.map(function (p) {

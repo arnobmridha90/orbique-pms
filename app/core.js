@@ -1399,6 +1399,7 @@
         (extra.length ? '<div class="row-flex wrap">' + extra.map(function (x, i) { var why = x.disabled ? x.disabled(b) : ''; return '<button class="btn btn-' + (x.kind || 'ghost') + ' btn-sm" data-extra="' + i + '"' + (why ? ' disabled title="' + O.esc(why) + '"' : '') + '>' + (x.icon ? O.icon(x.icon) : '') + O.esc(x.label) + '</button>'; }).join('') + '</div>' : '') +
         '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(p.area || p.location || p.city ? O.propLabel(p) : p.name) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +
         (b.status !== 'cancelled' && b.checkOut > D.TODAY ? '<div><div class="section-title" style="margin-top:0">Arrival readiness</div>' + O.readinessHTML(b) + '<div class="row-flex wrap" style="margin-top:8px">' + (!b.idVerified && canEdit ? '<button class="btn btn-ghost btn-sm" data-act="verify">Mark ID verified</button>' : '') + (canCodes ? '<button class="btn btn-ghost btn-sm" data-act="lock">' + O.icon('key') + 'Change door code</button><span class="small muted">Guest code <span class="kbd">' + O.esc(b.doorCode || '') + '</span></span>' : '') + '</div></div>' : '') +
+        bookingTasksHTML(b) +
         '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (conv && O.can('inbox') ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
         (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly, { cur: b }) + '</dt><dd>' + O.fmt.money(b.accommodation, { cur: b }) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee, { cur: b }) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax, { cur: b }) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total, { cur: b }) + '</dd>' +
         (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee, { cur: b }) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout, { cur: b }) + '</dd>' : '') + '</dl></div>' : '') +
@@ -1408,17 +1409,34 @@
           (canSend ? '<button class="btn btn-primary btn-sm" data-act="sendboth" style="margin-top:8px">' + O.icon('send') + 'Send invoice' + (b.paidAt ? ' and receipt' : '') + ' to guest</button>' : '') + '</div>' : '') +
         '</div>';
     }
+    /* the tasks for this booking (task.bookingId: automatic turnovers and checks, and tasks made "For" it), the ones
+       this person may see; tap one to open it, or add one for the booking */
+    function bookingTasksHTML(b) {
+      if (!O.can('tasks') || !Array.isArray(D.tasks)) return '';
+      var all = O.can('tasks.others'), list = D.tasks.filter(function (t) { return t && t.bookingId === b.id && (all || O.taskwho.has(t, O.state.viewer)); })
+        .sort(function (x, y) { return (x.status === 'done' ? 1 : 0) - (y.status === 'done' ? 1 : 0) || (String(x.due) < String(y.due) ? -1 : 1); });
+      var add = O.can('tasks', 'edit') && O.can('tasks.create') && O.taskHelpers && O.taskHelpers.newTask && b.status !== 'cancelled';
+      if (!list.length && !add) return '';
+      return '<div class="bk-tasks"><div class="section-title" style="margin-top:0">Tasks</div>' +
+        (list.length ? list.map(function (t) {
+          var st = t.status === 'done' ? U.pill('Done', 'ok') : t.status === 'in_progress' ? U.pill('In progress', 'info') : U.pill('To do', 'neutral');
+          return '<button type="button" class="list-row bk-task" data-task="' + O.esc(t.id) + '"><div class="lr-main"><div class="lr-title">' + O.esc(t.title) + '</div><div class="lr-sub">' + O.esc(O.taskPeople(t)) + (t.due ? ' · due ' + O.esc(O.fmt.dateTime(t.due)) : '') + '</div></div>' + st + '</button>';
+        }).join('') : '<div class="small muted">No tasks for this booking yet.</div>') +
+        (add ? '<button type="button" class="btn btn-ghost btn-sm" data-act="addtask" style="margin-top:8px">' + O.icon('plus') + 'Add a task for this booking</button>' : '') + '</div>';
+    }
     var dr = U.drawer({ titleHTML: O.esc(b.guest.name), subHTML: O.esc(b.id) + ' · ' + O.esc(p.name), body: render() });
     function wire() {
       O.$$('[data-extra]', dr.el).forEach(function (x) {
         x.onclick = function () { var list = O.booking.actions.filter(function (y) { try { return !y.show || y.show(b); } catch (e) { return false; } }), act = list[+x.dataset.extra]; if (act && !(act.disabled && act.disabled(b))) act.run(b, dr.close); };
       });
+      O.$$('[data-task]', dr.el).forEach(function (x) { x.onclick = function () { if (!O.taskHelpers) return; dr.close(); O.taskHelpers.detail(x.dataset.task); }; });
       O.$$('[data-act]', dr.el).forEach(function (x) {
         x.onclick = function () {
           var a = x.dataset.act;
           if (a === 'lock') O.lock.change({ bookingId: b.id });
           if (a === 'verify') { b.idVerified = true; if (b.codeStatus === 'held' && b.rulesAccepted) b.codeStatus = 'scheduled'; U.toast('ID verified for ' + b.guest.name + '. ' + (b.rulesAccepted ? 'The door code will be sent on schedule.' : 'The door code shows once they accept the house rules in the guest app.')); O.emit('data', { type: 'id' }); }
           if (a === 'chat') { dr.close(); O.go('inbox', { bookingId: b.id }); }
+          if (a === 'addtask' && O.taskHelpers) { dr.close(); O.taskHelpers.newTask({ bookingId: b.id }); }
           if (a === 'inv') O.invoice.preview(b, 'invoice');
           if (a === 'rcp') O.invoice.preview(b, 'receipt');
           if (a === 'sendboth') O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']);
@@ -2027,7 +2045,7 @@
     if (!O.allowed(id)) return '<span class="nav-lock">🔒</span>';
     if (id === 'inbox') { var n = D.conversations.reduce(function (s, c) { return s + (c.archived || c.trashedAt ? 0 : c.unread || 0); }, 0); /* Archived and Deleted chats do not count */ return n ? '<span class="nav-badge">' + n + '</span>' : ''; }
     if (id === 'reviews') { var r = D.reviews.filter(function (x) { return !x.reply; }).length; return r ? '<span class="nav-badge">' + r + '</span>' : ''; }
-    if (id === 'tasks') { var t = D.tasks.filter(function (x) { return x.status !== 'done' && x.due.slice(0, 10) <= D.TODAY && (O.can('tasks.others') || x.assigneeId === O.state.viewer); }).length; return t ? '<span class="nav-badge">' + t + '</span>' : ''; }
+    if (id === 'tasks') { var t = D.tasks.filter(function (x) { return x.status !== 'done' && x.due.slice(0, 10) <= D.TODAY && (O.can('tasks.others') || O.taskwho.has(x, O.state.viewer)); }).length; return t ? '<span class="nav-badge">' + t + '</span>' : ''; }
     return '';
   }
   function paintBadges() { O.$$('.nav-item').forEach(function (n) { var b = O.$('.nav-badge, .nav-lock', n); if (b) b.remove(); n.insertAdjacentHTML('beforeend', navBadge(n.dataset.page)); }); }
@@ -2058,13 +2076,29 @@
     D.bookings.filter(function (b) { return b.sameDay && b.checkIn === D.TODAY && b.status !== 'cancelled'; }).forEach(function (b) { out.push({ icon: '⚡', tone: 'warn', t: 'Same-day booking: ' + b.guest.name, s: P(b.propertyId) + ' · confirmed ' + O.fmt.time(b.createdAt) + ', arrives ' + O.fmt.time(b.checkInTime), go: ['dashboard'] }); });
     var nr = D.reviews.filter(function (r) { return !r.reply; });
     if (nr.length && O.can('reviews')) out.push({ icon: '★', tone: 'bad', t: nr.length + ' reviews need a reply', s: nr.filter(function (r) { return r.stars <= 3; }).length + ' of them are 3 stars or lower', go: ['reviews', { needsReply: true }] });
-    var mine = function (t) { return O.can('tasks.others') || t.assigneeId === O.state.viewer; };
+    var mine = function (t) { return O.can('tasks.others') || O.taskwho.has(t, O.state.viewer); };
     D.tasks.filter(function (t) { return t.status !== 'done' && t.due.slice(0, 10) < D.TODAY && mine(t); }).forEach(function (t) { out.push({ icon: '⏰', tone: 'bad', t: 'Overdue: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
-    if (O.can('tasks.assign')) D.tasks.filter(function (t) { return t.status !== 'done' && !t.assigneeId; }).forEach(function (t) { out.push({ icon: '👤', tone: 'warn', t: 'Unassigned task: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
+    if (O.can('tasks.assign')) D.tasks.filter(function (t) { return t.status !== 'done' && O.taskwho.none(t); }).forEach(function (t) { out.push({ icon: '👤', tone: 'warn', t: 'Unassigned task: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
     if (O.can('invoices')) D.bookings.filter(function (b) { return b.status !== 'cancelled' && !b.invoiceSent && b.invoiceNo && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (b) { out.push({ icon: '🧾', tone: '', t: 'Invoice not sent: ' + b.guest.name, s: b.invoiceNo + ' · ' + O.fmt.money(b.total, { cur: b }), go: ['invoices'] }); });
     if (O.can('bookings')) D.bookings.filter(function (b) { return b.status === 'pending'; }).slice(0, 2).forEach(function (b) { out.push({ icon: '⏳', tone: 'warn', t: 'Pending booking: ' + b.guest.name, s: P(b.propertyId) + ' · ' + d.fmtRange(b.checkIn, b.checkOut), go: ['bookings'] }); });
     (O.notifiers || []).forEach(function (fn) { try { out.push.apply(out, fn() || []); } catch (e) { console.error(e); } });
     return out;
+  };
+  /* the names of everyone on a task (api/_lib/shared/taskwho.cjs), for one line of text: "Aisha Rahman" for one person,
+     "Aisha, Ben" for several (first names; more than o.max people end in "+N"). o: {none: text when nobody (default
+     'Unassigned'), short: first names even for one person, max (default 3), you: say "You" for the viewer} */
+  O.taskPeople = function (t, o) {
+    o = o || {};
+    var ids = O.taskwho.ids(t), max = o.max || 3;
+    if (!ids.length) return o.none == null ? 'Unassigned' : o.none;
+    function nm(id, short) {
+      if (o.you && id === O.state.viewer) return 'You';
+      var s = D.staffById(id); if (!s) return 'Former team member';
+      if (!short) return s.name;
+      var w = String(s.name).split(' '); return w.length >= 3 && w[0].length <= 3 ? w[0] + ' ' + w[1] : w[0];
+    }
+    if (ids.length === 1) return nm(ids[0], o.short);
+    return ids.slice(0, max).map(function (id) { return nm(id, true); }).join(', ') + (ids.length > max ? ' +' + (ids.length - max) : '');
   };
   /* pages add their own bell items: O.notifiers.push(function () { return [{icon, tone, t, s, go:[page, params]}]; }) */
   O.notifiers = O.notifiers || [];
