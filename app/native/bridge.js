@@ -1,7 +1,9 @@
 /* ===================================================================
-   Phone app bridge (mobile builds only: node scripts/build.mjs --mobile; see docs/MOBILE.md).
-   The phone app is the same Orbique page running inside Capacitor. This file swaps the few browser features
-   a phone's app view lacks for native ones, and does nothing in a normal browser:
+   Phone app bridge (see docs/MOBILE.md). The phone app is the same Orbique page running inside Capacitor: the live
+   site itself when the build has a site address (capacitor.config.json server.url; the website then loads this file
+   from vendor/native.js, only inside the app), otherwise the bundled copy (node scripts/build.mjs --mobile).
+   This file swaps the few browser features a phone's app view lacks for native ones, and does nothing in a normal
+   browser:
    - downloads (PDF, CSV, photos): saved to the app's cache, then the phone's share sheet (Save to Files, Drive, WhatsApp...)
    - read aloud: the phone's own text-to-speech (Android's app view has no speech synthesis)
    - links that leave Orbique: the in-app browser; tel:, mailto: and WhatsApp hand over to the phone
@@ -10,7 +12,8 @@
    - status bar (and Android navigation bar) icons follow the colour under them; the splash screen stays until the first
      screen is drawn
    tests/native_sim.py runs these files in Chromium with Capacitor's native side simulated.
-   - guest and invite links point at the live site (window.ORBIQUE_CONFIG.appUrl), not at the app's own files
+   - guest and invite links point at the live site (window.ORBIQUE_CONFIG.appUrl, or the page's own address when the
+     screens come from the live site), not at the app's own files
    - booking alerts (Firebase Cloud Messaging): owners and ops managers are asked once to allow notifications; the
      phone's token goes to /api/alerts (register-device); tapping an alert opens the booking; signing out removes it
      alerts ring Orbique's own chime (res/raw/orbique_alert.wav on Android, orbique_alert.wav in the iPhone app); with the

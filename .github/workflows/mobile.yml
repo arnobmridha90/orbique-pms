@@ -117,7 +117,10 @@ jobs:
           # empty variable is fine: the build then uses config/mobile.json
           ORBIQUE_SITE_URL: ${{ github.ref != 'refs/heads/main' && 'none' || vars.ORBIQUE_SITE_URL }}
         run: |
+          # with a site address this also sets server.url in capacitor.config.json: the app then shows the live site's
+          # screens (updated with each deploy), and mobile/www is only its offline page and fallback (docs/MOBILE.md)
           npm run mobile:build
+          node -e "const s = require('./capacitor.config.json').server || {}; console.log('Screens: ' + (s.url ? 'the live site ' + s.url : 'bundled in the app (local test copy)'))"
           site=$(node -e "const vm = require('vm'), fs = require('fs'); const w = {}; vm.runInNewContext(fs.readFileSync('mobile/www/config.js', 'utf8'), { window: w }); process.stdout.write(String((w.ORBIQUE_CONFIG || {}).appUrl || ''))")
           echo "site=$site" >> "$GITHUB_OUTPUT"
           echo "The app connects to: ${site:-nothing (local test copy, data stays on the phone)}"
@@ -417,9 +420,11 @@ jobs:
           fi
           # Capacitor's SystemBars plugin sets the safe-area CSS on every insets change, including before the page has a
           # document ("Cannot read properties of null (reading 'style')"), and sets it again once the page is visible
-          # (onPageCommitVisible). Those early attempts are not page errors
+          # (onPageCommitVisible). Those early attempts are not page errors. The update check (app/native/updates.js)
+          # asks GitHub's API, which can answer the shared runner's address with a rate limit: that is handled quietly
           errors=$(grep -E ' E Capacitor/Console *: ' "$log" \
-            | grep -vE "Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null \(reading 'style'\)" || true)
+            | grep -vE "Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null \(reading 'style'\)" \
+            | grep -vE "File: https://api\.github\.com/[^ ]* - Line [0-9]+ - Msg: Failed to load resource" || true)
           if [ -n "$errors" ]; then
             echo "::error::The page logged $(printf '%s\n' "$errors" | wc -l | tr -d ' ') JavaScript error(s); the first ones follow."
             printf '%s\n' "$errors" | sed -E 's/^.* E Capacitor\/Console *: //' | head -20 | while IFS= read -r line; do echo "::error::$line"; done
@@ -498,7 +503,7 @@ jobs:
             printf -- '- Build number: %s (version %s)\n' "$BUILD_NUMBER" "$ORBIQUE_VERSION_NAME"
             printf -- '- Built: %s\n' "$(date -u '+%Y-%m-%d %H:%M UTC')"
             if [ -n "$SITE" ]; then
-              printf -- '- Connects to: %s\n' "$SITE"
+              printf -- '- Connects to: %s (its screens come from there, so they update with each deploy without a new install)\n' "$SITE"
             else
               printf -- '- Connects to: nothing, this is a local test copy (data stays on the phone)\n'
             fi
@@ -511,6 +516,7 @@ jobs:
             fi
             printf 'Only install Orbique from this page, never from a file someone sends you. Guide: https://github.com/%s/blob/main/docs/MOBILE.md\n' "$GITHUB_REPOSITORY"
           } > "$RUNNER_TEMP/notes.md"
+          # The app reads this title to offer an update (app/native/updates.js: "Android test build <N>", N = versionCode)
           title="Android test build $BUILD_NUMBER"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release edit "$tag" --title "$title" --notes-file "$RUNNER_TEMP/notes.md" --prerelease

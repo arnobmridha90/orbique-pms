@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the phone app's files (mobile/www) in Chromium while playing Capacitor's native side, and check app/native/bridge.js.
 
-    node scripts/build.mjs --mobile
+    node scripts/build.mjs --mobile && node scripts/build.mjs
     python3 tests/native_sim.py --out /tmp/native
     python3 tests/native_sim.py --out /tmp/native --only android,insets
 
@@ -36,6 +36,12 @@ Set-ups (--only picks some):
               tab bar). Screenshots with the inset bands drawn in red + checks that bars and buttons clear them.
     ios       390x844 iOS: boot, a download, read aloud, a second read-aloud, no back-button listener
     browser   the same files with no native shell: the bridge stays off (no html.native) and the app still boots
+    live      the website build (dist/, as the app shows it from the live site with capacitor.config.json server.url):
+              with the Android shell, vendor/native.js (Capacitor plugins + app/native/*.js) loads before O.boot() and
+              the bridge works; the update notice (app/native/updates.js) against a stand-in for GitHub's release API:
+              newer / same / older build, API errors, offline, Later remembered per build; new screens after 30
+              minutes in the background reload the page; iOS asks GitHub nothing
+    website   dist/ in a plain browser: no Capacitor file is requested and the page boots as before
 
 Screenshots go to <out>/<set-up>/*.png. Prints PASS/FAIL per check and writes <out>/results.json;
 exit code 1 when any check fails.
@@ -46,6 +52,10 @@ from playwright.sync_api import sync_playwright
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 WWW = os.path.join(ROOT, 'mobile', 'www')
+DIST = os.path.join(ROOT, 'dist')
+RELEASE_API = 'https://api.github.com/repos/arnobmridha90/orbique-pms/releases/tags/android-test'
+APK_URL = 'https://github.com/arnobmridha90/orbique-pms/releases/download/android-test/Orbique-test.apk'
+BASES = {}  # set-up name -> the local address that serves its files (main())
 CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'
 BRIDGE_JS = {
     'android': os.path.join(ROOT, 'node_modules/@capacitor/android/capacitor/src/main/assets/native-bridge.js'),
@@ -122,7 +132,7 @@ NATIVE_SHELL_JS = r"""
   var H = {
     'App.minimizeApp': ok, 'App.exitApp': ok, 'App.toggleBackButtonHandler': ok,
     'App.getState': function (c) { ok(c, { isActive: true }); },
-    'App.getInfo': function (c) { ok(c, { name: 'Orbique', id: 'com.orbique.app', build: '1', version: '1.0.0' }); },
+    'App.getInfo': function (c) { ok(c, { name: 'Orbique', id: 'com.orbique.app', build: String(SIM.appBuild || '1'), version: '1.0.0' }); },
     'App.getLaunchUrl': function (c) { ok(c, {}); },
     'App.getAppLanguage': function (c) { ok(c, { value: 'en' }); },
     'Browser.open': function (c) { if (SIM.browserError) return err(c, SIM.browserError); if (!(c.options || {}).url) return err(c, 'Must provide a URL to open'); ok(c); },
@@ -277,6 +287,8 @@ class Run:
             self.ctx.add_init_script(native_init_script(platform, **cfg))
         self.pg = self.ctx.new_page()
         self.errors, self.allow, self.results, self.handed, self.popups = [], [], [], [], []
+        # GitHub's release API (app/native/updates.js): None aborts like no internet, else (status, json body)
+        self.github, self.github_hits, self.requests = None, [], []
         vendor = os.path.join(HERE, 'vendor', 'jspdf.umd.min.js')
         self.pg.route('https://cdnjs.cloudflare.com/**', lambda r: r.fulfill(path=vendor, content_type='application/javascript') if os.path.exists(vendor) else r.abort())
         self.pg.route('https://fonts.googleapis.com/**', lambda r: r.abort())
@@ -291,10 +303,18 @@ class Run:
         self.pg.on('console', lambda m: self._error('console.error: ' + m.text[:300]) if m.type == 'error' and not re.search(r"net::ERR|Failed to load resource|(Not allowed|Failed) to launch '", m.text) else None)
 
     def _request(self, req):
+        self.requests.append(req.url)
         if req.is_navigation_request() and re.match(r'^(tel|mailto|sms|whatsapp|geo):', req.url):
             self.handed.append(req.url)  # Capacitor hands these to the phone (dialer, mail, WhatsApp)
 
     def _outside(self, route):
+        if route.request.url == RELEASE_API:
+            self.github_hits.append(route.request.url)
+            if self.github is None:
+                return route.abort('internetdisconnected')
+            status, body = self.github
+            return route.fulfill(status=status, content_type='application/json', body=json.dumps(body),
+                                 headers={'Access-Control-Allow-Origin': '*'})
         if route.request.is_navigation_request():
             self.handed.append(route.request.url)
         route.abort('aborted')
@@ -954,14 +974,172 @@ def browser_only(browser, base, out):
     r.close()
     return r.results
 
+# ------------------------------------------------------------------ the website as the app's screens
+def release(build, apk=APK_URL):
+    """GitHub's answer for the android-test release (the fields app/native/updates.js reads)"""
+    return {'tag_name': 'android-test', 'name': 'Android test build %d' % build, 'draft': False, 'prerelease': True,
+            'body': '- Build number: %d (version 0.5.0)' % build, 'assets': [{'name': 'Orbique-test.apk', 'browser_download_url': apk}]}
 
-SETUPS = {'android': android, 'insets': insets, 'ios': ios, 'browser': browser_only}
+
+def mark_boot(route):
+    """index.html with a note of what had loaded when O.boot() started"""
+    res = route.fetch()
+    body = res.text().replace('<script>O.boot();</script>', '<script>window.__atBoot = { capacitorApp: !!window.capacitorApp, '
+                              'bridge: !!(window.O && O.native && O.native.platform), updates: !!(window.O && O.appUpdate), '
+                              'scripts: [...document.scripts].map(s => s.src).filter(Boolean) };O.boot();</script>', 1)
+    route.fulfill(response=res, body=body)
+
+
+def live(browser, base, out):
+    base = BASES.get('live') or base
+    print('live (the website build inside the Android app, 390x844)')
+    r = Run(browser, base, 'live', out, 'android', ttsMs=60, appBuild='5701')
+    pg = r.pg
+    r.github = (200, release(5701))
+    pg.route(re.compile(r'.*/index\.html(\?.*)?$'), mark_boot)
+    booted = r.boot()
+    r.check('boots (O._started)', booted)
+    r.shot('dashboard')
+    at = r.js('() => window.__atBoot || null') or {}
+    nat = [u for u in r.requests if '/vendor/native.js' in u]
+    r.check('vendor/native.js requested once, with its version (?v=)', len(nat) == 1 and re.search(r'\?v=[0-9a-f]{12}$', nat[0]), nat)
+    r.check('Capacitor plugins, bridge.js and updates.js ran before O.boot()', at.get('capacitorApp') and at.get('bridge') and at.get('updates'), at)
+    r.check('vendor/native.js is the only extra script (no separate cap-*.js files)', [u for u in at.get('scripts', []) if 'native.js' in u or 'cap-' in u or 'capacitor' in u] == nat, at.get('scripts'))
+    info = r.js("() => ({ cls: document.documentElement.className, platform: O.native && O.native.platform, isNative: Capacitor.isNativePlatform() })")
+    r.check('html.native-android, O.native.platform android', 'native-android' in info['cls'].split() and info['platform'] == 'android', info)
+    lis = r.js('() => __nativeListeners.App || {}')
+    r.check('App backButton listener registered (bridge.js)', len(lis.get('backButton', [])) == 1, lis)
+    r.check('appStateChange listeners: bridge.js and updates.js', len(lis.get('appStateChange', [])) == 2, lis)
+    r.check('SplashScreen.hide and SystemBars.setStyle called', r.calls('SplashScreen', 'hide') and r.calls('SystemBars', 'setStyle'))
+    r.check('no service worker inside the app (screens always come fresh from the site)', r.js('() => __swRegs') == [], r.js('() => __swRegs'))
+    r.check('guest and invite links use the page\'s own address', r.js("() => (O.APP_URL || location.origin) === location.origin"), r.js('() => O.APP_URL'))
+    r.clear_calls()
+    res = r.js("() => O.downloadCSV('live.csv', [['a'],[1]])")
+    r.wait(100)
+    r.check('download -> Filesystem.writeFile + Share.share', res is True and r.calls('Filesystem', 'writeFile') and r.calls('Share', 'share'), res)
+    r.js("() => window.open('https://example.com/live')")
+    r.wait(100)
+    r.check('window.open -> Browser.open', r.calls('Browser', 'open'))
+
+    # ---- the update notice
+    print('  -- update notice')
+    r.until('() => __nativeCalls.some(c => c.plugin === "App" && c.method === "getInfo")', timeout=8000)
+    r.wait(400)
+    r.check('on start: asks GitHub once for the newest test build', len(r.github_hits) == 1, r.github_hits)
+    r.check('same build as installed: no notice', not r.js("() => !!document.querySelector('.app-update')"))
+    r.js('() => { __simAppState(false); __simAppState(true); }')
+    r.wait(400)
+    r.check('back to the front within 6 hours: GitHub is not asked again', len(r.github_hits) == 1, r.github_hits)
+
+    def ask(answer, build='5701'):
+        r.github = answer
+        n = len(r.github_hits)
+        r.js("(b) => { __sim.appBuild = b; document.querySelectorAll('.app-update').forEach(x => x.remove()); O.native.checkForUpdate(); }", build)
+        r.wait(500)
+        return len(r.github_hits) > n and r.js("() => document.querySelector('.app-update') ? document.querySelector('.app-update').textContent : null")
+
+    r.check('older published build: no notice', ask((200, release(5601))) is None)
+    shown = ask((200, release(5801)))
+    r.check('newer published build: "A new version of the app is ready" with Update and Later', shown and 'A new version of the app is ready' in shown and 'Update' in shown and 'Later' in shown, shown)
+    r.shot('update-notice')
+    vis = r.js("() => { const b = document.querySelector('.app-update').getBoundingClientRect(); return b.width > 0 && b.left >= 0 && b.right <= innerWidth && b.bottom <= innerHeight; }")
+    r.check('the notice fits on the phone screen', vis)
+    del r.handed[:]
+    r.clear_calls()
+    pg.click('.app-update [data-upd=go]')
+    r.wait(300)
+    r.check('Update hands the APK address to the phone (its browser downloads it), not the in-app browser', APK_URL in r.handed and not r.calls('Browser', 'open'), (r.handed, r.calls('Browser', 'open')))
+    r.check('Update: the notice goes and a toast explains the next step', not r.js("() => !!document.querySelector('.app-update')") and any('Install' in t['text'] for t in r.toasts()), r.toasts())
+    r.check('the app is still loaded after the hand-over', r.js('() => !!(window.O && O._started)'))
+    r.clear_ui()
+    ask((200, release(5801)))
+    pg.click('.app-update [data-upd=later]')
+    r.wait(200)
+    r.check('Later: the notice goes', not r.js("() => !!document.querySelector('.app-update')"))
+    r.check('Later is remembered for that build', ask((200, release(5801))) is None, r.js("() => localStorage.getItem('orbique4:appUpdate:later')"))
+    r.check('an even newer build is offered again after Later', bool(ask((200, release(5901)))))
+    r.js("() => document.querySelectorAll('.app-update').forEach(x => x.remove())")
+    ask((200, release(6001, 'https://example.com/other.apk')))
+    del r.handed[:]
+    pg.click('.app-update [data-upd=go]')
+    r.wait(300)
+    r.check('a download address outside github.com is not used: the fixed test build address instead', r.handed == [APK_URL], r.handed)
+    r.clear_ui()
+    r.check('GitHub rate limit (403): no notice, no error', ask((403, {'message': 'API rate limit exceeded'}), '5701') is None and not r.errors, r.errors)
+    r.check('GitHub answers something else (no build in the title): no notice', ask((200, {'name': 'Something', 'assets': []})) is None)
+    r.check('offline (GitHub unreachable): no notice, no error', ask(None) is None and not r.errors, r.errors)
+    r.check('a local build (version code 1): GitHub is not asked', ask((200, release(9999)), '1') is False)
+
+    # ---- new screens after a long time in the background
+    print('  -- new screens on the live site')
+
+    def away(minutes):
+        """the app goes to the background, and comes back that many minutes later (Date.now moved on meanwhile;
+        the native side's events arrive asynchronously)"""
+        r.js("""(m) => new Promise((done) => { const now = Date.now; __simAppState(false);
+            setTimeout(() => { Date.now = () => now() + m * 60000; __simAppState(true); setTimeout(() => { Date.now = now; done(); }, 150); }, 100); })""", minutes)
+        r.wait(700)
+    r.js('() => { window.__stay = 1; }')
+    away(31)
+    r.check('back after 31 minutes, same build on the site: no reload', r.js('() => window.__stay === 1'))
+    cfg_hits = []
+
+    def new_config(route):
+        cfg_hits.append(route.request.url)
+        res = route.fetch()
+        route.fulfill(response=res, body=res.text().replace('"builtAt": "', '"builtAt": "2099-'))
+    pg.route(re.compile(r'.*/config\.js(\?.*)?$'), new_config)
+    away(2)
+    r.check('back after a moment, new build on the site: no reload yet (not 30 minutes)', r.js('() => window.__stay === 1') and not cfg_hits, cfg_hits)
+    r.js("() => { const s = document.createElement('input'); s.id = 'sim-typing'; document.body.appendChild(s); s.focus(); }")
+    away(31)
+    r.check('new build but someone is typing: no reload', r.js('() => window.__stay === 1') and cfg_hits, cfg_hits)
+    r.js("() => document.getElementById('sim-typing').remove()")
+    away(45)
+    reloaded = r.until('() => window.__stay === undefined && window.O && O._started', timeout=15000)
+    r.check('back after 31 minutes, new build on the site: the page reloads with the new screens', reloaded)
+    r.check('no JS errors in the whole run', not r.errors, r.errors)
+    r.close()
+    results = r.results
+
+    print('live-ios (the website build inside the iPhone app)')
+    r = Run(browser, base, 'live-ios', out, 'ios', appBuild='5701')
+    r.github = (200, release(9999))
+    booted = r.boot()
+    r.check('boots, html.native-ios', booted and 'native-ios' in r.js('() => document.documentElement.className').split())
+    r.wait(4500)
+    r.check('iOS: GitHub is not asked (Android test builds only)', not r.github_hits and not r.js("() => !!document.querySelector('.app-update')"), r.github_hits)
+    r.check('no JS errors', not r.errors, r.errors)
+    r.close()
+    return results + r.results
+
+
+def website(browser, base, out):
+    base = BASES.get('live') or base
+    print('website (the website build in a plain browser)')
+    r = Run(browser, base, 'website', out, None)
+    booted = r.boot()
+    r.check('boots (O._started)', booted)
+    r.wait(4500)
+    cap = [u for u in r.requests if re.search(r'/vendor/(native|capacitor|cap-)', u)]
+    r.check('no Capacitor file requested', not cap, cap)
+    info = r.js("() => ({ cap: typeof window.Capacitor, native: !!O.native, cls: document.documentElement.className, upd: !!O.appUpdate })")
+    r.check('no window.Capacitor, no O.native, no html.native, no update check', info['cap'] == 'undefined' and not info['native'] and 'native' not in info['cls'].split() and not info['upd'], info)
+    r.check('the page still has the loader (for the app)', r.js("() => [...document.scripts].some(s => /vendor\\/native\\.js\\?v=/.test(s.textContent))"))
+    r.check('GitHub is never asked', not r.github_hits, r.github_hits)
+    r.check('no JS errors', not r.errors, r.errors)
+    r.close()
+    return r.results
+
+
+SETUPS = {'android': android, 'insets': insets, 'ios': ios, 'browser': browser_only, 'live': live, 'website': website}
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
     ap.add_argument('--www', default=WWW)
+    ap.add_argument('--dist', default=DIST, help='the website build (node scripts/build.mjs) for the live and website set-ups')
     ap.add_argument('--only', default='')
     a = ap.parse_args()
     if not os.path.exists(os.path.join(a.www, 'index.html')):
@@ -969,6 +1147,11 @@ def main():
     names = [n for n in (a.only.split(',') if a.only else SETUPS.keys()) if n]
     os.makedirs(a.out, exist_ok=True)
     srv, base = serve(a.www)
+    dist_srv = None
+    if any(n in ('live', 'website') for n in names):
+        if not os.path.exists(os.path.join(a.dist, 'vendor', 'native.js')):
+            sys.exit('No %s/vendor/native.js: run node scripts/build.mjs first' % a.dist)
+        dist_srv, BASES['live'] = serve(a.dist)
     results = []
     try:
         with sync_playwright() as p:
@@ -982,6 +1165,8 @@ def main():
             b.close()
     finally:
         srv.shutdown()
+        if dist_srv:
+            dist_srv.shutdown()
     json.dump(results, open(os.path.join(a.out, 'results.json'), 'w'), indent=1)
     bad = [x for x in results if not x['ok']]
     known = [x for x in results if x.get('status') == 'KNOWN']

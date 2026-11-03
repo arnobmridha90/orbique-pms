@@ -22,6 +22,10 @@ button, look for the closest match.
   - The Android back button closes the open window or menu first, then goes back through the pages.
   - Taking a photo (receipts, task photos) opens the phone's camera. Choosing a photo opens the photo picker.
   - Voice notes in the inbox use the microphone; the phone asks for permission the first time.
+- **Updates arrive by themselves.** When the app is connected to the live site (see below), its screens come from the
+  website. Each change to the website shows up in the app the next time it is opened, with nothing to install. Only
+  changes to the phone side of the app (rare: for example a new phone feature or a new icon) need a new install, and
+  the app then says so itself (see "Updating" below).
 - **Guests do not install anything.** The guest app stays a web link (`/guest/<token>`) that you send to the guest.
   Guest links and staff invite links made in the phone app point to the live site, so they work for everyone.
 - Today: Android test builds are made automatically. The iPhone app needs an Apple Developer account first. Neither
@@ -47,8 +51,19 @@ way).
    expected for a test build that does not come from Google Play.
 5. Open **Orbique** from the home screen and sign in as usual.
 
-**Updating:** open the same address again and install. A new test build installs over the old one and keeps you
-signed in, as long as both were signed with the same key (a digital signature that tells Android the update comes
+**Updating:** most updates need nothing from you. The app shows the live website's screens, so a change to Orbique
+appears the next time you open the app (if it was left open in the background for half an hour or more, it refreshes
+when you come back to it, unless you are in the middle of typing something).
+
+A few changes are in the phone side of the app and need a new install. When one is ready, the Android app shows **A
+new version of the app is ready** at the bottom of the screen (it checks when it opens, at most every few hours):
+
+- Tap **Update**. The phone's browser downloads `Orbique-test.apk`. Open the download and tap **Install** (as in steps
+  2 to 4 above). It installs over the app you have and keeps you signed in.
+- Tap **Later** to hide it. It does not ask again for that version, only when an even newer one is ready.
+
+You can also update by hand at any time: open the same address again and install. A new test build installs over the
+old one and keeps you signed in, as long as both were signed with the same key (a digital signature that tells Android the update comes
 from the same place). If the phone says the app was not installed, for example because it "conflicts with an existing
 package", the key has changed: uninstall Orbique, install the new build and sign in again. The release page says so
 in bold when a build needs this. To stop it happening, see "Same key for every test build" below.
@@ -97,8 +112,13 @@ again without a code change:
 Only builds from `main` replace the download link (and go to TestFlight, once that is set up). Builds for pull
 requests (proposed changes) and builds from other branches never do.
 
+The connected app opens the live site itself, so from then on every website deploy reaches the app without a new
+build. A test build that is not connected (pull requests, or no address set) shows the screens that were built into it.
+The first time a phone moves from an older test build (screens inside the app) to a connected one, people sign in once
+more.
+
 If the site address changes later (for example a new domain), update it here and build again. Phones keep using the
-old address until they install the new build.
+old address until they install the new build (the app offers it with its **Update** button).
 
 ---
 
@@ -294,9 +314,11 @@ of `capacitor.config.json` under `android/app/src/main/assets/` and `ios/App/App
   asks for an account deletion link in the Data safety form.
 - **A demo sign-in for the reviewers.** Apple and Google reviewers must be able to sign in. Prepare a test workspace
   with sample data and give its email and password in the review notes.
-- **More than a website.** Apple sometimes rejects apps that are only a website in a frame (guideline 4.2). Orbique's
-  screens are inside the app and it uses phone features (camera, share sheet, voice, microphone); say so in the review
-  notes.
+- **More than a website.** Apple sometimes rejects apps that are only a website in a frame (guideline 4.2). A connected
+  build now shows its screens from the live site (so updates need no new install). It still uses phone features
+  (push alerts, camera, share sheet, voice, microphone, back button); say so in the review notes. If Apple objects,
+  the iPhone build can keep the screens inside the app: build it with `ORBIQUE_SITE_URL` set as today but remove
+  `server.url` before `npx cap sync ios` (see "How the app works").
 - **Privacy.** Both stores need a privacy policy address. Apple also asks for the "App Privacy" answers in App Store
   Connect.
 - **Push notifications.** Booking alerts reach the Android app through Firebase (docs/DEPLOY.md, "Booking alerts"). The
@@ -323,8 +345,16 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
 `mobile/www`.
 
 - `mobile/www` is git-ignored. `scripts/build.mjs --mobile` writes `index.html` (the same page as the website plus
-  `app/native/bridge.js`), Capacitor's runtime and plugins as plain scripts in `vendor/`, and `config.js`
-  (`native: true`, `apiBase` and `appUrl` set to the site address).
+  `app/native/*.js`), Capacitor's runtime and plugins as plain scripts in `vendor/`, `config.js` (`native: true`,
+  `apiBase` and `appUrl` set to the site address) and `offline.html` (the page shown when the live site cannot be
+  reached).
+- It also sets `server` in `capacitor.config.json`: with a site address `server.url` is the address and
+  `server.errorPath` is `offline.html`; with none (`ORBIQUE_SITE_URL=none`) both are removed. The file is committed with
+  the default site's values, so a `none` build leaves it changed: do not commit that. A build with `--out` leaves the
+  file alone.
+- To try screen changes on a phone before they are live, build with `ORBIQUE_SITE_URL=none` (the screens in
+  `mobile/www`, demo data only), or open your local build in the phone's browser. A connected build always shows the
+  live site.
 - The alert sound `orbique_alert.wav` is made by `python3 scripts/alert-sound.py`, which writes it to
   `android/app/src/main/res/raw/` (the notification channel `alerts_loud` in `app/native/bridge.js` and the FCM
   payload in `api/_lib/alerts.js` name it `orbique_alert`), `ios/App/App/` (in the Xcode project's resources; APNs
@@ -348,8 +378,39 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
 
 ### How the app works
 
-- The screens ship inside the app. Data comes from Supabase and from `/api` on the live site, exactly as in the
-  browser. Android serves the files from `https://localhost`, iOS from `capacitor://localhost`.
+- **Where the screens come from.** With a site address (builds of `main`), `capacitor.config.json` `server.url` makes
+  the app view open the live site itself (`https://orbique-pms.vercel.app`), so each deploy reaches phones the next
+  time the app opens. Capacitor's native side still puts its runtime into that page (on Android at document start for
+  the `server.url` origin; the transport `androidBridge`, on iOS `webkit.messageHandlers.bridge`), so the plugins work
+  as before. Addresses on the site's host stay in the app; any other address that the page navigates to goes to the
+  phone (the bridge already sends outside links to the in-app browser). When the site cannot be reached, Capacitor shows
+  `server.errorPath` from the app's own files (`https://localhost/offline.html` on Android, all inline), whose **Try
+  again** button and the phone coming back online reopen the site. Without a site address the screens ship inside the
+  app: Android serves the files from `https://localhost`, iOS from `capacitor://localhost`. Data comes from Supabase
+  and from `/api` on the live site in both cases, exactly as in the browser. Moving from the bundled copy to the live
+  site changes the app's origin, so its saved sign-in does not carry over: people sign in once.
+- **The website as the app's screens.** The website build (`node scripts/build.mjs`) also writes
+  `dist/vendor/native.js`: Capacitor's runtime and plugins (the same list as `mobile/www/vendor/`) followed by
+  `app/native/*.js`, each in its own `try`. A small inline script right before `O.boot()` writes
+  `<script src="/vendor/native.js?v=<hash>">` with `document.write` only when the native side's `window.Capacitor` and
+  transport are there, so it runs after `app/server/*.js` and before `O.boot()`. A browser has neither and requests no
+  Capacitor file. The `?v=` hash changes with the file, so the 7-day cache on `/vendor/` never serves an old copy. In
+  that page `config.js` is the live site's own (`apiBase` empty, so `/api` is same-origin, and `appUrl` or the page's
+  own address for links).
+- **Service worker:** `app/server/pwa.js` does not register `/sw.js` inside the app (it checks
+  `Capacitor.isNativePlatform()`, which the native side sets before the page's scripts), so the app always asks the site
+  for the page (`index.html` and `config.js` are `no-cache` in `vercel.json`) and never keeps old screens.
+- `app/native/updates.js` (`O.appUpdate`): coming back to the app after 30 minutes or more in the background, it reads
+  the live `/config.js` and reloads when the site runs a newer build (`builtAt`, `commit`), unless a window, drawer or
+  text box is open. On Android it also compares `App.getInfo().build` (the `versionCode`, which CI sets to the build
+  number) with the newest test build, read from the title of the `android-test` release ("Android test build N") through
+  `https://api.github.com/repos/arnobmridha90/orbique-pms/releases/tags/android-test` (it answers with CORS; 60 requests
+  an hour per address without a token, and the app asks at most every 6 hours, when it opens or comes to the front).
+  Newer: the **Update** / **Later** notice. **Update** sets `location.href` to the APK address on github.com, which
+  Capacitor hands to the phone's browser; **Later** is kept per build (`orbique4:appUpdate:later`). Any failure shows
+  nothing. Local builds (version code 1) never ask. Release asset downloads are not used for the check: github.com answers
+  them with a redirect that has no CORS headers, so a page cannot read them. When the app is on Google Play, Play updates it: limit this
+  check to the test builds then (the Play build has another signing key, so a test APK would not install over it).
 - `app/native/bridge.js` is loaded after `app/server/*.js` and before `O.boot()`, and does nothing in a normal browser
   (it checks `Capacitor.isNativePlatform()`). It replaces `O.download` (file written to the app cache with the
   Filesystem plugin, then the Share plugin), `O.voice` (the Text-to-Speech plugin), `window.open` and clicks on links to
@@ -359,8 +420,9 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
   the splash screen after the first screen is drawn, catches the clock up when the app comes back to the front, and
   sets `O.APP_URL` from `config.appUrl` so guest and invite links point at the live site.
   `tests/native_sim.py` checks it in Chromium with a simulated native side (see its notes).
-- **Cross-origin calls:** `api/_lib/http.js` (`cors()`) answers the app origins `https://localhost` and
-  `capacitor://localhost`. Sign-in travels as a bearer token, never a cookie. If the app's origin ever changes (for
+- **Cross-origin calls:** with the screens from the live site, calls are same-origin. `api/_lib/http.js` (`cors()`)
+  still answers the bundled copy's origins `https://localhost` and `capacitor://localhost` (pull request builds and apps
+  installed before the change). Sign-in travels as a bearer token, never a cookie. If the app's origin ever changes (for
   example `server.hostname` or `server.androidScheme` in `capacitor.config.json`), add the new origin there.
 - **Page console on Android:** Capacitor forwards the page console to logcat (tag `Capacitor/Console`) only in
   debuggable builds by default. The workflow sets `android.loggingBehavior` to `production` in the synced copy
@@ -414,9 +476,9 @@ the run before it from publishing.
 
 | Job | What it does | Output (Actions, the run, Artifacts) |
 |---|---|---|
-| Android build | Node 22, `npm ci`; the build number and the app ID (read from `capacitor.config.json` and passed to the emulator check); Java 21; the runner's Android SDK (`ANDROID_HOME`, written to `android/local.properties`); `npm run mobile:build` (prints the site address the app connects to); `npx cap sync android`; the test signing key (below); `./gradlew assembleBeta`; checks the APK's signer matches the test key; `bundleRelease` when the four upload key secrets exist (and checks the bundle is signed) | `orbique-android-test` (`Orbique-test.apk`), `orbique-android-play-bundle` |
-| Android emulator check | On `main`, first waits (up to 10 minutes) until the live site's `/api/health` reports this commit or a newer one, since Vercel deploys it in parallel. Boots an Android 15 emulator (API 35, x86_64, KVM), installs the APK, launches `<app ID>/.MainActivity`, screenshots at 15 and 30 seconds. Fails if the app is not running at 30 seconds, if logcat has a crash or "not responding" for the app, or if the page logged any error (Capacitor forwards the page console to logcat with the tag `Capacitor/Console`; errors and uncaught exceptions are level E; see "Page console on Android" above) | `orbique-android-smoke` (screenshots, `logcat.txt`, `crash.txt`) |
-| Publish the Android test build | On `main` only (a push or **Run workflow**, never a pull request), after both jobs above pass: moves the tag `android-test` to the commit, writes the release notes (commit, build number, date, site address, build log, and whether the build installs over the old one or testers must uninstall first) and replaces `Orbique-test.apk` on that pre-release (only this job may write to the repository; it cannot replace the file if "immutable releases" is turned on in the repository settings) | https://github.com/arnobmridha90/orbique-pms/releases/tag/android-test |
+| Android build | Node 22, `npm ci`; the build number and the app ID (read from `capacitor.config.json` and passed to the emulator check); Java 21; the runner's Android SDK (`ANDROID_HOME`, written to `android/local.properties`); `npm run mobile:build` (prints the site address the app connects to); `npx cap sync android` (on `main` the copied `capacitor.config.json` has `server.url`, so the app shows the live site; pull requests keep the screens inside the app); the test signing key (below); `./gradlew assembleBeta`; checks the APK's signer matches the test key; `bundleRelease` when the four upload key secrets exist (and checks the bundle is signed) | `orbique-android-test` (`Orbique-test.apk`), `orbique-android-play-bundle` |
+| Android emulator check | On `main` the app shows the live site, so it first waits (up to 10 minutes) until the live site's `/api/health` reports this commit or a newer one, since Vercel deploys it in parallel. Boots an Android 15 emulator (API 35, x86_64, KVM), installs the APK, launches `<app ID>/.MainActivity`, screenshots at 15 and 30 seconds. Fails if the app is not running at 30 seconds, if logcat has a crash or "not responding" for the app, or if the page logged any error (Capacitor forwards the page console to logcat with the tag `Capacitor/Console`; errors and uncaught exceptions are level E; see "Page console on Android" above) | `orbique-android-smoke` (screenshots, `logcat.txt`, `crash.txt`) |
+| Publish the Android test build | On `main` only (a push or **Run workflow**, never a pull request), after both jobs above pass: moves the tag `android-test` to the commit, writes the release notes (commit, build number, date, site address, build log, and whether the build installs over the old one or testers must uninstall first) and replaces `Orbique-test.apk` on that pre-release. Its title "Android test build N" is what the app's **Update** notice reads (only this job may write to the repository; it cannot replace the file if "immutable releases" is turned on in the repository settings) | https://github.com/arnobmridha90/orbique-pms/releases/tag/android-test |
 | iPhone build | Picks the newest Xcode on `macos-latest`, stops early if it is older than Capacitor needs (read from `node_modules/@capacitor/ios`: Xcode 26, iOS 15), builds for the simulator without signing; on `main` (a push or **Run workflow**) with the four Apple secrets, archives and uploads to TestFlight | `orbique-ios-simulator` (unzip and drag `App.app` onto a running iOS Simulator) |
 
 Settings it reads: the repository variable `ORBIQUE_SITE_URL`, and the secrets `ANDROID_TEST_KEY_SEED`,

@@ -32,9 +32,10 @@ export function send(res, status, payload, headers) {
   res.end(body);
 }
 
-/* The phone app (docs/MOBILE.md) runs from its own local address and calls these functions across origins:
- * Android https://localhost, iOS capacitor://localhost. Sign-in travels as a bearer token, never a cookie,
- * so answering these origins gives them nothing a bearer token would not already give. */
+/* The phone app (docs/MOBILE.md) now opens the live site itself, so its calls are same-origin. Its bundled copy
+ * (test builds for pull requests, and apps installed before that change) runs from its own local address and calls
+ * these functions across origins: Android https://localhost, iOS capacitor://localhost. Sign-in travels as a bearer
+ * token, never a cookie, so answering these origins gives them nothing a bearer token would not already give. */
 const APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost']);
 
 /** Cross-origin headers for the phone app. Returns true when it answered a preflight (OPTIONS) request. */
