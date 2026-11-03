@@ -1077,7 +1077,7 @@
     var taskMsg = '';
     if (b.sameDay) {
       var tk = D.tasks.filter(function (t) { return t.bookingId === b.id && String(t.due).slice(0, 10) === T; })[0];
-      var hk = tk && tk.assigneeId && D.staffById(tk.assigneeId);
+      var hk = tk && !O.taskwho.none(tk) && { name: O.taskPeople(tk) };
       if (tk) taskMsg = ' ' + (tk.title || 'Unit check') + ' assigned to ' + (hk ? hk.name : 'housekeeping') + '.';
     }
     if (onCreated) onCreated(b);

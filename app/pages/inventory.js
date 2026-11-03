@@ -591,13 +591,13 @@
   }
   function myTask() {
     var meId = O.state.viewer, T = D.TODAY;
-    var ts = (D.tasks || []).filter(function (t) { return t && t.assigneeId === meId && t.propertyId && prop(t.propertyId) && t.status !== 'done' && t.due && (t.due.slice(0, 10) === T || t.status === 'in_progress'); });
+    var ts = (D.tasks || []).filter(function (t) { return t && O.taskwho.has(t, meId) && t.propertyId && prop(t.propertyId) && t.status !== 'done' && t.due && (t.due.slice(0, 10) === T || t.status === 'in_progress'); });
     ts.sort(function (a, b) { return ((a.status === 'in_progress' ? 0 : 1) - (b.status === 'in_progress' ? 0 : 1)) || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0); });
     return ts[0] || null;
   }
   function unitOptions(sel) {
     var meId = O.state.viewer, T = D.TODAY, mine = {};
-    (D.tasks || []).forEach(function (t) { if (t && t.assigneeId === meId && t.propertyId && t.due && t.due.slice(0, 10) === T && t.status !== 'done') mine[t.propertyId] = 1; });
+    (D.tasks || []).forEach(function (t) { if (t && O.taskwho.has(t, meId) && t.propertyId && t.due && t.due.slice(0, 10) === T && t.status !== 'done') mine[t.propertyId] = 1; });
     (D.properties || []).forEach(function (p) { if (p.housekeeper === meId) mine[p.id] = 1; });
     var opt = function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>'; };
     var a = (D.properties || []).filter(function (p) { return mine[p.id]; }), b = (D.properties || []).filter(function (p) { return !mine[p.id]; });

@@ -28,6 +28,10 @@
  */
 'use strict';
 
+/* who a task is assigned to (one or several people): api/_lib/shared/taskwho.cjs */
+var W = (typeof window !== 'undefined' && window.O && window.O.taskwho) ? window.O.taskwho
+  : (typeof require === 'function' ? require('./taskwho.cjs') : null);
+
 /* task: the task type it makes (pages/tasks.js TYPES); short: the start of the task title */
 var KINDS = [
   { id: 'repair', label: 'Repair', short: 'Repair', task: 'Maintenance' },
@@ -78,12 +82,13 @@ function dueFor(priority, now) {
   return day + 'T17:00';
 }
 
-/* the task a new request makes. opts: {assigneeId, by, now} */
+/* the task a new request makes. opts: {assigneeIds (or assigneeId), by, now} */
 function taskFor(r, opts) {
   opts = opts || {};
   var note = [str(r.notes, 600), 'From unit request ' + r.id + ': ' + trail(r) + '.'].filter(Boolean).join('\n');
+  var who = W.fields(opts.assigneeIds || (opts.assigneeId ? [opts.assigneeId] : []));
   return {
-    id: taskId(r), title: taskTitle(r), type: taskType(r), propertyId: r.propertyId || null, assigneeId: opts.assigneeId || null,
+    id: taskId(r), title: taskTitle(r), type: taskType(r), propertyId: r.propertyId || null, assigneeId: who.assigneeId, assigneeIds: who.assigneeIds,
     due: dueFor(r.priority, opts.now || r.at), priority: r.priority || 'medium', status: 'todo', createdAt: opts.now || r.at, createdBy: opts.by || r.by || null,
     requestId: r.id, note: note
   };
@@ -186,12 +191,13 @@ function reconcile(requests, tasks, opts) {
 
 /* may this viewer cancel the request (which removes its open task)? v: {viewer, propsEdit, tasksDelete, canCreate}.
  * properties.edit or tasks.delete: always. The person who raised it: only while its task is still to do and unassigned
- * or theirs, so nobody else's started work disappears. */
+ * or theirs alone (the raiser is the only assignee: once anyone else is on it, it is their work too), so nobody else's
+ * work disappears. */
 function canCancel(r, t, v) {
   if (!r || !isOpen(r)) return false;
   if (v.propsEdit || v.tasksDelete) return true;
   if (!r.by || r.by !== v.viewer || !v.canCreate) return false;
-  return !t || t.status === 'done' || (t.status === 'todo' && (!t.assigneeId || t.assigneeId === v.viewer));
+  return !t || t.status === 'done' || (t.status === 'todo' && W.soleOrNone(t, v.viewer));
 }
 
 /* open requests first (high priority, oldest first), then the rest newest first */

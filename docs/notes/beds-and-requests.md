@@ -89,6 +89,7 @@ Saving a request pushes its task into `D.tasks` at once:
   due: /* high: now + 4 h; medium: tomorrow 17:00; low: in 3 days 17:00 */,
   assigneeId: /* the Tasks page's own suggestion: maintenance staff for Maintenance, the unit's housekeeper for
                  Housekeeping / Restock; otherwise unassigned, so it shows on the dashboard */,
+  assigneeIds: [assigneeId] /* or [] (api/_lib/shared/taskwho.cjs: a task can have several people) */,
   status: 'todo', createdAt, createdBy, note: '<notes>\nFrom unit request RQ-…: Repair > Basin > Master bathroom.' }
 ```
 
@@ -135,8 +136,9 @@ No new permission keys.
   The task is created for them even without "Assign tasks to others": it goes to the suggested person, as automatic
   tasks do.
 - **Cancel a request** (`O.unitreq.canCancel`): `properties.edit` or `tasks.delete`; the person who raised it only
-  while its task is still to do and unassigned or assigned to them, so nobody else's started work is removed.
-- **Open task** shows only when the viewer may see that task (`tasks.others` or it is theirs).
+  while its task is still to do and unassigned or assigned to them alone (once anyone else is on it too, it is their
+  work as well), so nobody else's work is removed.
+- **Open task** shows only when the viewer may see that task (`tasks.others` or they are one of its people).
 
 ## Audit log
 
