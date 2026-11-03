@@ -86,7 +86,7 @@ export const GUIDE_PAGES: Guide[] = [
     h1: 'Eating halal <em>near KLCC.</em>',
     desc: 'How to tell halal-certified food in Malaysia (the JAKIM logo, not "pork-free"), and halal and Muslim-run places to start with near KLCC and Vortex KLCC.',
     lede: 'Malaysia is one of the easiest places in the world to eat halal. The one thing to know is how to read the signs, and where to start near Vortex KLCC.',
-    photo: { key: 'premium-a/01-dining-and-living', alt: 'Dining table under rattan lamps in a Kozi Premium Suite' },
+    photo: { key: 'premium-a/01-dining-and-living', alt: 'Dining table under rattan lamps in a Kozi Premier Suite' },
     checked: 'October 2026',
     html: `<h2>Look for the JAKIM logo, not "pork-free"</h2>
 <p>Halal certification in Malaysia comes from JAKIM, the Department of Islamic Development. Certified restaurants display the JAKIM halal logo. A "pork-free" or "no pork" sign is not the same thing, and JAKIM has warned that such signs can mislead Muslim diners. When it matters to you, look for the logo at the counter.</p>
@@ -118,7 +118,7 @@ export const GUIDE_PAGES: Guide[] = [
     h1: 'KLCC with <em>kids.</em>',
     desc: 'Family days around the Petronas Twin Towers: KLCC Park and its free playground and wading pool, Aquaria KLCC, Petrosains science centre, the Skybridge and the evening fountain show.',
     lede: 'The streets around the Petronas Twin Towers pack a lot for children into a small area, and some of the best parts are free. Here is where to start, and what to check before you go.',
-    photo: { key: 'premium-b/01-living-room-day', alt: 'A Kozi Premium Suite living room in daylight' },
+    photo: { key: 'premium-b/01-living-room-day', alt: 'A Kozi Premier Suite living room in daylight' },
     checked: 'October 2026',
     html: `<h2>At a glance</h2>
 <div class="g-table"><table>
@@ -160,7 +160,7 @@ export const GUIDE_PAGES: Guide[] = [
     h1: 'The towers <em>after dark.</em>',
     desc: 'The best free and paid places to see and photograph the Petronas Twin Towers lit up at night: KLCC Park and Lake Symphony, Saloma Link bridge, KL Tower and rooftop bars, plus photo tips.',
     lede: 'The Petronas Twin Towers are at their best after dark, when the steel lights up silver over the city. These are the places to see them, from free spots on the ground to high ones.',
-    photo: { key: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk, seen from a Kozi Boutique Suite' },
+    photo: { key: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk, seen from a Kozi Deluxe Suite' },
     checked: 'October 2026',
     html: `<h2>When to go</h2>
 <p>Blue hour, the half hour or so just after sunset, is the best time for photos: the sky still has colour and the towers are already lit. Being close to the equator, Kuala Lumpur sees the sun set between about 7pm and 7:30pm all year. Several travel sites say the tower lights go off around midnight, so don't leave it too late.</p>
@@ -176,7 +176,7 @@ export const GUIDE_PAGES: Guide[] = [
 <li><b>The Skybridge tour.</b> The tour inside the towers runs in the evening too, but you won't see the towers lit from inside them. For the view of them, stay outside.</li>
 </ul>
 <h2>From your window</h2>
-<p>From the Boutique Suite and some Premium suites at Kozi @ Vortex KLCC, you can see a Petronas tower lit up without leaving the suite. Each suite page on this site shows what its windows look out on, with real photos. If the view matters to you, choose your suite by its photos, or ask us before you book.</p>
+<p>From the Deluxe Suite and some Premier suites at Kozi @ Vortex KLCC, you can see a Petronas tower lit up without leaving the suite. Each suite page on this site shows what its windows look out on, with real photos. If the view matters to you, choose your suite by its photos, or ask us before you book.</p>
 <h2>Photo tips</h2>
 <ul>
 <li>Use night mode on your phone and rest it on a wall or railing to keep it still.</li>
@@ -198,7 +198,7 @@ export const GUIDE_PAGES: Guide[] = [
     h1: 'Getting around <em>KL.</em>',
     desc: 'How to get around Kuala Lumpur from KLCC and Bukit Bintang: Grab rides, the KL Monorail and Touch \'n Go card, the covered KLCC to Pavilion walkway, the GoKL city bus and Rapid KL passes.',
     lede: 'Kuala Lumpur is easy to get around once you know which option fits which trip. From Vortex KLCC most visitors use three things: Grab, the monorail and their own feet.',
-    photo: { key: 'premium-a/10-kl-tower-view-night', alt: 'KL Tower lit blue at dusk, seen from a Kozi Premium Suite' },
+    photo: { key: 'premium-a/10-kl-tower-view-night', alt: 'KL Tower lit blue at dusk, seen from a Kozi Premier Suite' },
     checked: 'October 2026',
     html: `<h2>At a glance</h2>
 <div class="g-table"><table>
@@ -242,7 +242,7 @@ export const GUIDE_PAGES: Guide[] = [
     h1: 'A rainy day <em>in KL.</em>',
     desc: 'When it rains in Kuala Lumpur and what to do near KLCC while it does: the covered walkway to Pavilion, Suria KLCC, Aquaria KLCC, Petrosains, the Islamic Arts Museum and tips for getting a Grab in the rain.',
     lede: 'Rain in Kuala Lumpur usually comes as a big afternoon storm that passes within an hour or two. Plan the outdoor parts of your day for the morning, and keep these indoor ideas near KLCC for when the sky opens.',
-    photo: { key: 'boutique/06-tv-klcc-view', alt: 'The living room of a Kozi Boutique Suite with the KLCC skyline outside' },
+    photo: { key: 'boutique/06-tv-klcc-view', alt: 'The living room of a Kozi Deluxe Suite with the KLCC skyline outside' },
     checked: 'October 2026',
     html: `<h2>When it rains</h2>
 <p>Kuala Lumpur has no true dry season. It can rain in any month, usually as a heavy thunderstorm in the afternoon or evening that clears again after an hour or two. The wettest stretch runs from about October to March. Between late September and early November, the Malaysian Meteorological Department (MetMalaysia) warns of frequent afternoon and late-evening thunderstorms.</p>
