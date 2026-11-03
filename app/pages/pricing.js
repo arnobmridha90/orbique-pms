@@ -282,8 +282,8 @@
     var mOcc = avg(used.map(function (c) { return c.occ; })) / 100;
     var cy = city(P);
     var group = D.properties.filter(function (q) { return city(q) === cy; });
-    var groupName = cy + ' units';
-    if (group.length < 3) { group = D.properties.slice(); groupName = group.length === 1 ? 'this unit' : 'all ' + group.length + ' units'; }
+    var groupName = O.tpl('{city} units', { city: cy });
+    if (group.length < 3) { group = D.properties.slice(); groupName = group.length === 1 ? O.tr('this unit') : O.tpl('all {n} units', { n: group.length }); }
     var hFrom = d.add(T, -90), hTo = d.add(T, -1);
     var hSold = sum(group.map(function (q) { return M.nightsSold(hFrom, hTo, { propertyId: q.id }); }));
     var hAvail = sum(group.map(function (q) { return M.availableNights(hFrom, hTo, q.id); }));
@@ -337,22 +337,23 @@
     var iso = n.iso, mon = d.monthName ? d.monthName(iso, true) : d.MONTHS_LONG[d.month(iso) - 1];
     add('base', 'Base rate', 'Base', R.base, 'Set in pricing rules for ' + (P.short || P.name), true);
     var sf = seasonFactor(iso);
-    add('season', 'Season', 'Season', R.base * (sf - 1), mon + ' is ' + seasonName(sf) + ' (demand index ' + sf.toFixed(2) + ')', true);
-    add('weekend', 'Weekend', 'Weekend', n.wk ? run * R.weekendPct / 100 : 0, n.wk ? d.dowName(iso) + ' night: weekend uplift ' + R.weekendPct + '%' : d.dowName(iso) + ' night: no weekend uplift', true);
-    add('event', 'Local event', n.ev ? n.ev.name : 'Event', n.ev ? run * n.ev.lift : 0, n.ev ? n.ev.name + ': +' + Math.round(n.ev.lift * 100) + '% demand lift' : 'No local event on this date', true);
+    add('season', 'Season', 'Season', R.base * (sf - 1), O.tpl('{month} is {season} (demand index {index})', { month: mon, season: seasonName(sf), index: sf.toFixed(2) }), true);
+    add('weekend', 'Weekend', 'Weekend', n.wk ? run * R.weekendPct / 100 : 0, O.tpl(n.wk ? '{day} night: weekend uplift {n}%' : '{day} night: no weekend uplift', { day: d.dowName(iso), n: R.weekendPct }), true);
+    add('event', 'Local event', n.ev ? n.ev.name : 'Event', n.ev ? run * n.ev.lift : 0, n.ev ? O.tpl('{event}: +{n}% demand lift', { event: n.ev.name, n: Math.round(n.ev.lift * 100) }) : 'No local event on this date', true);
     var gap = n.cAvg - run, cap = run * 0.15;
     var compAmt = clamp(gap * R.compWeight / 100, -cap, cap);
     add('comp', 'Competitor gap', 'Market', compAmt,
-      'Comp avg ' + fmt.money(n.cAvg, { cur: P }) + ' is ' + (Math.abs(gap) < 1 ? 'level with' : fmt.money(Math.abs(gap), { cur: P }) + (gap > 0 ? ' above' : ' below')) + ' the price so far; move ' + R.compWeight + '% of the way' + (Math.abs(gap * R.compWeight / 100) > cap ? ' (capped at 15%)' : ''), true);
+      O.tpl(COMP_TXT[(Math.abs(gap) < 1 ? 0 : gap > 0 ? 1 : 2) + (Math.abs(gap * R.compWeight / 100) > cap ? 3 : 0)], { avg: fmt.money(n.cAvg, { cur: P }), gap: fmt.money(Math.abs(gap), { cur: P }), n: R.compWeight }), true);
     var diff = n.grpOTB - n.usualOTB, pacePct = clamp(diff * 0.25, -0.06, 0.08);
     add('pace', 'Booking pace', 'Pace', run * pacePct,
-      groupName.charAt(0).toUpperCase() + groupName.slice(1) + ' ' + fmt.pct(n.grpOTB) + ' booked vs ' + fmt.pct(n.usualOTB) + ' usual at ' + fmt.plural(Math.max(0, n.lead), 'day') + ' out' + (Math.abs(diff) < 0.03 ? ' (on pace)' : diff > 0 ? ' (ahead)' : ' (behind)'), true);
+      O.tpl(Math.abs(diff) < 0.03 ? '{group} {booked} booked vs {usual} usual at {days} out (on pace)' : diff > 0 ? '{group} {booked} booked vs {usual} usual at {days} out (ahead)' : '{group} {booked} booked vs {usual} usual at {days} out (behind)', { group: O.state.lang === 'en' ? groupName.charAt(0).toUpperCase() + groupName.slice(1) : groupName, booked: fmt.pct(n.grpOTB), usual: fmt.pct(n.usualOTB), days: fmt.plural(Math.max(0, n.lead), 'day') }), true);
     var leadPct = 0, leadTxt;
     var strong = diff > 0.15, orphan = n.run <= R.orphanMax;
-    if (orphan && n.lead <= 7) leadTxt = fmt.plural(n.lead, 'day') + ' to arrival: covered by the orphan-night discount below (they do not stack)';
-    else if (n.lead <= R.lastMinDays) { leadPct = strong ? 0 : R.lastMinPct; leadTxt = (n.lead === 0 ? 'Tonight' : fmt.plural(n.lead, 'day') + ' to arrival') + (strong ? ', but demand is strong: last-minute discount waived' : ' and still open: last-minute discount ' + R.lastMinPct + '%'); }
-    else if (n.lead <= 7) { leadPct = strong ? 0 : R.lastMinPct / 2; leadTxt = fmt.plural(n.lead, 'day') + ' to arrival' + (strong ? ', demand strong: no discount' : ': half the last-minute discount (' + (R.lastMinPct / 2) + '%)'); }
-    else leadTxt = fmt.plural(n.lead, 'day') + ' to arrival: no lead-time adjustment';
+    var lv = { days: fmt.plural(n.lead, 'day'), n: R.lastMinPct };
+    if (orphan && n.lead <= 7) leadTxt = O.tpl('{days} to arrival: covered by the orphan-night discount below (they do not stack)', lv);
+    else if (n.lead <= R.lastMinDays) { leadPct = strong ? 0 : R.lastMinPct; leadTxt = O.tpl(n.lead === 0 ? (strong ? 'Tonight, but demand is strong: last-minute discount waived' : 'Tonight and still open: last-minute discount {n}%') : strong ? '{days} to arrival, but demand is strong: last-minute discount waived' : '{days} to arrival and still open: last-minute discount {n}%', lv); }
+    else if (n.lead <= 7) { leadPct = strong ? 0 : R.lastMinPct / 2; lv.n = R.lastMinPct / 2; leadTxt = O.tpl(strong ? '{days} to arrival, demand strong: no discount' : '{days} to arrival: half the last-minute discount ({n}%)', lv); }
+    else leadTxt = O.tpl('{days} to arrival: no lead-time adjustment', lv);
     add('lead', 'Days until arrival', 'Last-minute', -run * leadPct / 100, leadTxt, true);
     if (orphan) add('orphan', 'Orphan night', 'Orphan night', -run * R.orphanPct / 100, 'Single open night between stays: orphan-night discount ' + R.orphanPct + '%');
     if (run < R.min) add('rule', 'Minimum price rule', 'Floor', R.min - run, 'Raised to your floor of ' + fmt.money(R.min, { cur: P }));
@@ -392,7 +393,7 @@
   function mainPlanOf(P) { return P && P.unitTypeId && O.channel ? O.channel.mainPlan(P.unitTypeId) : null; }
   function typeNote(P) {
     var t = P && P.unitTypeId && O.unitType(P.unitTypeId), n = t ? O.unitsOfType(t.id).length : 0;
-    return t && n > 1 && mainPlanOf(P) ? 'Prices apply to all ' + n + ' ' + t.name + ' units' : '';
+    return t && n > 1 && mainPlanOf(P) ? O.tpl('Prices apply to all {n} {type} units', { n: n, type: t.name }) : '';
   }
   function channelNote(P) {
     if (O.channel) return O.channel.notice('price', P && P.unitTypeId ? [P.unitTypeId] : []);
@@ -438,9 +439,9 @@
     var otbPts = Math.round((s.otb - s.mkt) * 100);
     return U.kpis([
       { label: 'Our average price', value: none ? '–' : fmt.money(s.ourAvg, { cur: m.P }), delta: none ? null : fmt.change(s.ourAvg, s.lyAvg), sub: none ? 'every night is blocked' : 'vs last year', title: 'Booked nights at the booked rate, open nights at the current listed rate' },
-      { label: 'Competitor average', value: none ? '–' : fmt.money(s.compAvg, { cur: m.P }), sub: idxDelta == null ? fmt.plural(m.used.length, 'listing') : Math.abs(idxDelta) < 0.01 ? 'we are level with them' : 'we are ' + fmt.pct(Math.abs(idxDelta)) + (idxDelta > 0 ? ' above' : ' below'), title: 'Average of the ' + m.used.length + ' listings in the competitor set' },
-      { label: 'On the books', value: s.avail ? fmt.pct(s.otb) : '–', sub: s.avail ? (Math.abs(otbPts) < 1 ? 'on pace with the market' : Math.abs(otbPts) + ' pts ' + (otbPts > 0 ? 'ahead of' : 'behind') + ' the market') : 'no nights to sell', title: s.avail ? s.sold + ' of ' + fmt.plural(s.avail, 'night') + ' booked; the market usually has ' + fmt.pct(s.mkt) + ' booked by now' : '' },
-      { label: 'Impact if applied', value: s.changes.length ? moneySigned(s.impact, m.P) : '–', sub: !s.open.length ? 'no open nights in range' : !s.changes.length ? 'all suggestions applied' : 'expected · ' + moneySigned(s.upside, m.P) + ' if all sell', hl: true, title: 'Expected: the sum of price changes on open nights, each weighted by its chance to sell. If all sell: the full sum.' }
+      { label: 'Competitor average', value: none ? '–' : fmt.money(s.compAvg, { cur: m.P }), sub: idxDelta == null ? fmt.plural(m.used.length, 'listing') : Math.abs(idxDelta) < 0.01 ? 'we are level with them' : O.tpl(idxDelta > 0 ? 'we are {pct} above' : 'we are {pct} below', { pct: fmt.pct(Math.abs(idxDelta)) }), title: O.tpl('Average of the {n} listings in the competitor set', { n: m.used.length }) },
+      { label: 'On the books', value: s.avail ? fmt.pct(s.otb) : '–', sub: s.avail ? (Math.abs(otbPts) < 1 ? 'on pace with the market' : O.tpl(otbPts > 0 ? '{n} pts ahead of the market' : '{n} pts behind the market', { n: Math.abs(otbPts) })) : 'no nights to sell', title: s.avail ? O.tpl('{sold} of {nights} booked; the market usually has {pct} booked by now', { sold: s.sold, nights: fmt.plural(s.avail, 'night'), pct: fmt.pct(s.mkt) }) : '' },
+      { label: 'Impact if applied', value: s.changes.length ? moneySigned(s.impact, m.P) : '–', sub: !s.open.length ? 'no open nights in range' : !s.changes.length ? 'all suggestions applied' : O.tpl('expected · {amount} if all sell', { amount: moneySigned(s.upside, m.P) }), hl: true, title: 'Expected: the sum of price changes on open nights, each weighted by its chance to sell. If all sell: the full sum.' }
     ]);
   }
 
@@ -454,35 +455,39 @@
         : O.chart.legend([{ name: 'This year', tone: 'brand' }, { name: 'Last year', tone: 'prev1' }, { name: 'Two years ago', tone: 'prev2' }])) +
       '<span>' + (st.chart === 'market' ? 'Gaps in the suggested line are nights already booked or blocked.' : 'Hover for the exact dates compared.') + '</span></div>') + insights(m) + '</div></div>';
   }
+  /* the competitor line of the reasoning panel: level / above / below, then the same with the 15% cap */
+  var COMP_TXT = ['Comp avg {avg} is level with the price so far; move {n}% of the way', 'Comp avg {avg} is {gap} above the price so far; move {n}% of the way', 'Comp avg {avg} is {gap} below the price so far; move {n}% of the way',
+    'Comp avg {avg} is level with the price so far; move {n}% of the way (capped at 15%)', 'Comp avg {avg} is {gap} above the price so far; move {n}% of the way (capped at 15%)', 'Comp avg {avg} is {gap} below the price so far; move {n}% of the way (capped at 15%)'];
   function insights(m) {
     var open = m.days.filter(function (n) { return n.status.kind === 'open'; }), out = [];
     function link(n) { return '<button type="button" class="btn btn-quiet btn-xs" data-pick="' + n.iso + '">' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '</button>'; }
     var up = open.filter(function (n) { return n.change > 0; }).sort(function (a, b) { return b.change - a.change; });
     var dn = open.filter(function (n) { return n.change < 0; }).sort(function (a, b) { return a.change - b.change; });
-    if (up.length) out.push(['up', '<b>' + fmt.plural(up.length, 'open night') + '</b> priced below the suggestion, worth ' + signed(sum(up.map(function (n) { return n.change; })), m.P) + ' if they sell. Largest gap ' + signed(up[0].change, m.P) + ' on', up[0]]);
-    if (dn.length) out.push(['down', '<b>' + fmt.plural(dn.length, 'open night') + '</b> look expensive for current demand. Largest cut ' + signed(dn[0].change, m.P) + ' on', dn[0]]);
+        function bold(x) { return { raw: '<b>' + esc(x) + '</b>' }; }
+    if (up.length) out.push(['up', O.tpl('{count} priced below the suggestion, worth {worth} if they sell. Largest gap {gap} on {date}', { count: bold(fmt.plural(up.length, 'open night')), worth: signed(sum(up.map(function (n) { return n.change; })), m.P), gap: signed(up[0].change, m.P), date: { raw: link(up[0]) } })]);
+    if (dn.length) out.push(['down', O.tpl('{count} look expensive for current demand. Largest cut {cut} on {date}', { count: bold(fmt.plural(dn.length, 'open night')), cut: signed(dn[0].change, m.P), date: { raw: link(dn[0]) } })]);
     var under = open.filter(function (n) { return n.our < n.cAvg * 0.9; });
     if (under.length) {
       /* say why: the biggest discount among those nights (orphan night, last-minute, pace) */
       var why = {}; under.forEach(function (n) { var f = n.factors.filter(function (x) { return x.amt < 0 && x.key !== 'round'; }).sort(function (a, b) { return a.amt - b.amt; })[0]; if (f) why[f.label] = (why[f.label] || 0) + 1; });
       var main = Object.keys(why).sort(function (a, b) { return why[b] - why[a]; })[0];
       var atSugg = under.every(function (n) { return !n.change; });
-      out.push(['comp', '<b>' + fmt.plural(under.length, 'open night') + '</b> ' + (under.length === 1 ? 'sits' : 'sit') + ' more than 10% under the competitor average' + (main ? (atSugg ? ' on purpose (mainly ' : ' (mainly ') + esc(main.toLowerCase()) + ')' : '') + ', first on', under[0]]);
+      out.push(['comp', O.tpl(!main ? (under.length === 1 ? '{count} sits more than 10% under the competitor average, first on {date}' : '{count} sit more than 10% under the competitor average, first on {date}') : atSugg ? (under.length === 1 ? '{count} sits more than 10% under the competitor average on purpose (mainly {why}), first on {date}' : '{count} sit more than 10% under the competitor average on purpose (mainly {why}), first on {date}') : under.length === 1 ? '{count} sits more than 10% under the competitor average (mainly {why}), first on {date}' : '{count} sit more than 10% under the competitor average (mainly {why}), first on {date}', { count: bold(fmt.plural(under.length, 'open night')), why: { raw: esc(main ? (O.state.lang === 'en' ? main.toLowerCase() : O.tr(main)) : '') }, date: { raw: link(under[0]) } })]);
     }
     var evs = {}; m.days.forEach(function (n) { if (n.ev) (evs[n.ev.name] = evs[n.ev.name] || []).push(n); });
     Object.keys(evs).forEach(function (k) {
       var ns = evs[k], o = ns.filter(function (n) { return n.status.kind === 'open'; }), b = ns.filter(function (n) { return n.status.kind === 'booked'; });
       var mk = avg(ns.map(function (n) { return n.cAvg; })), parts = [];
-      if (b.length) parts.push(fmt.plural(b.length, 'night') + ' booked at ' + fmt.money(avg(b.map(function (n) { return n.our; })), { cur: m.P }));
-      if (o.length) parts.push(fmt.plural(o.length, 'night') + ' open, suggested ' + fmt.money(avg(o.map(function (n) { return n.sugg; })), { cur: m.P }));
-      if (ns.length > b.length + o.length) parts.push(fmt.plural(ns.length - b.length - o.length, 'night') + ' blocked');
-      out.push(['event', '<b>' + esc(k) + '</b>: ' + parts.join(', ') + '; market ' + fmt.money(mk, { cur: m.P }) + '. See', o[0] || ns[0]]);
+      if (b.length) parts.push(O.tpl('{nights} booked at {price}', { nights: fmt.plural(b.length, 'night'), price: fmt.money(avg(b.map(function (n) { return n.our; })), { cur: m.P }) }));
+      if (o.length) parts.push(O.tpl('{nights} open, suggested {price}', { nights: fmt.plural(o.length, 'night'), price: fmt.money(avg(o.map(function (n) { return n.sugg; })), { cur: m.P }) }));
+      if (ns.length > b.length + o.length) parts.push(O.tpl('{nights} blocked', { nights: fmt.plural(ns.length - b.length - o.length, 'night') }));
+      out.push(['event', O.tpl('{event}: {parts}; market {price}. See {date}', { event: bold(k), parts: { raw: esc(O.i18nKeep(parts.join(O.state.lang === 'zh' ? '，' : ', '))) }, price: fmt.money(mk, { cur: m.P }), date: { raw: link(o[0] || ns[0]) } })]);
     });
     var orph = open.filter(function (n) { return n.run <= m.R.orphanMax; });
-    if (orph.length) out.push(['orphan', '<b>' + fmt.plural(orph.length, 'orphan night') + '</b> between stays, discounted to help them sell, first on', orph[0]]);
+    if (orph.length) out.push(['orphan', O.tpl('{count} between stays, discounted to help them sell, first on {date}', { count: bold(fmt.plural(orph.length, 'orphan night')), date: { raw: link(orph[0]) } })]);
     if (!out.length) return '';
     return '<div class="pr-ins"><div class="label">What stands out in this range</div>' + out.slice(0, 5).map(function (x) {
-      return '<div class="pi"><span class="pi-ic ' + x[0] + '" aria-hidden="true">' + O.icon(x[0] === 'up' ? 'up' : x[0] === 'down' ? 'down' : x[0] === 'event' ? 'calendar' : x[0] === 'comp' ? 'pricing' : 'alert') + '</span><span>' + x[1] + ' ' + link(x[2]) + '</span></div>';
+      return '<div class="pi"><span class="pi-ic ' + x[0] + '" aria-hidden="true">' + O.icon(x[0] === 'up' ? 'up' : x[0] === 'down' ? 'down' : x[0] === 'event' ? 'calendar' : x[0] === 'comp' ? 'pricing' : 'alert') + '</span><span>' + x[1] + '</span></div>';
     }).join('') + '</div>';
   }
   function drawChart(root, m) {
@@ -551,25 +556,26 @@
     var sMin = Math.min.apply(null, pts), sMax = Math.max.apply(null, pts);
     var pad = (sMax - sMin) * 0.08 || 10, a0 = sMin - pad, a1 = sMax + pad;
     function sp(v) { return ((v - a0) / (a1 - a0) * 100).toFixed(1); }
-    return '<div><div class="strip" role="img" aria-label="Competitor prices from ' + fmt.money(n.cMin, { cur: m.P }) + ' to ' + fmt.money(n.cMax, { cur: m.P }) + ', average ' + fmt.money(n.cAvg, { cur: m.P }) + '; ' + priceLabel.toLowerCase() + ' ' + fmt.money(price, { cur: m.P }) + (sugg != null ? '; suggested ' + fmt.money(sugg, { cur: m.P }) : '') + '">' +
+    return '<div><div class="strip" role="img" aria-label="' + esc(O.tpl(sugg != null ? 'Competitor prices from {min} to {max}, average {avg}; {label} {price}; suggested {sugg}' : 'Competitor prices from {min} to {max}, average {avg}; {label} {price}', { min: fmt.money(n.cMin, { cur: m.P }), max: fmt.money(n.cMax, { cur: m.P }), avg: fmt.money(n.cAvg, { cur: m.P }), label: O.state.lang === 'en' ? priceLabel.toLowerCase() : priceLabel, price: fmt.money(price, { cur: m.P }), sugg: sugg != null ? fmt.money(sugg, { cur: m.P }) : '' })) + '">' +
       '<div class="ln"></div><div class="rg" style="left:' + sp(n.cMin) + '%;width:' + (sp(n.cMax) - sp(n.cMin)).toFixed(1) + '%"></div>' +
       n.cps.map(function (v, i) { return '<span class="cp" style="left:' + sp(v) + '%" title="' + esc(m.used[i].name) + ': ' + fmt.money(v, { cur: m.P }) + '"></span>'; }).join('') +
       '<span class="av" style="left:' + sp(n.cAvg) + '%" title="Competitor average ' + fmt.money(n.cAvg, { cur: m.P }) + '"></span>' +
       '<span class="mk us" style="left:' + sp(price) + '%">' + esc(priceLabel) + '<i></i></span>' +
       (sugg != null ? '<span class="mk sg" style="left:' + sp(sugg) + '%"><i></i>' + fmt.money(sugg, { cur: m.P }) + '</span>' : '') + '</div>' +
-      '<div class="strip-key"><span><i class="k-cp"></i>Competitors ' + fmt.money(n.cMin, { cur: m.P }) + '–' + fmt.money(n.cMax, { bare: true }) + '</span><span><i class="k-av"></i>Average ' + fmt.money(n.cAvg, { cur: m.P }) + '</span>' +
-      '<span><i class="k-us"></i>' + esc(priceLabel) + ' ' + fmt.money(price, { cur: m.P }) + '</span>' + (sugg != null ? '<span><i class="k-sg"></i>Suggested ' + fmt.money(sugg, { cur: m.P }) + '</span>' : '') + '</div></div>';
+      '<div class="strip-key"><span><i class="k-cp"></i>' + esc(O.tpl('Competitors {range}', { range: fmt.money(n.cMin, { cur: m.P }) + '–' + fmt.money(n.cMax, { bare: true }) })) + '</span><span><i class="k-av"></i>' + esc(O.tpl('Average {price}', { price: fmt.money(n.cAvg, { cur: m.P }) })) + '</span>' +
+      '<span><i class="k-us"></i>' + esc(O.tpl('{label} {price}', { label: priceLabel, price: fmt.money(price, { cur: m.P }) })) + '</span>' + (sugg != null ? '<span><i class="k-sg"></i>' + esc(O.tpl('Suggested {price}', { price: fmt.money(sugg, { cur: m.P }) })) + '</span>' : '') + '</div></div>';
   }
   /* the selected night against the competitor set (sits under the chart) */
   function mktCard(m, n) {
     var k = n.status.kind, price = k === 'booked' ? n.status.b.nightly : k === 'open' ? n.our : n.modelRate;
     var lbl = k === 'booked' ? 'Booked' : k === 'open' ? 'Now' : 'Model rate';
     var sugg = k === 'open' && n.change ? n.sugg : null;
-    function place(v) { var below = n.cps.filter(function (c) { return c < v; }).length; return below === 0 ? 'the cheapest of the ' + (n.cps.length + 1) + ' listings' : below === n.cps.length ? 'the most expensive of the ' + (n.cps.length + 1) + ' listings' : 'cheaper than ' + (n.cps.length - below) + ' of ' + n.cps.length + ' competitors'; }
-    function gap(v) { var g = v / n.cAvg - 1; return Math.abs(g) < 0.01 ? 'level with the average' : fmt.pct(Math.abs(g)) + (g > 0 ? ' above' : ' under') + ' the average'; }
-    var line = (k === 'booked' ? 'Booked at ' : k === 'open' ? 'Listed at ' : 'Blocked; the model rate would be ') + fmt.money(price, { cur: m.P }) + ': ' + gap(price) + ', ' + place(price) + '.' +
-      (sugg != null ? ' The suggestion of ' + fmt.money(sugg, { cur: m.P }) + ' would be ' + gap(sugg) + ' and ' + place(sugg) + '.' : '');
-    return '<div class="card pr-mkt"><div class="card-head"><div class="hd"><h3>Market on ' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '</h3><div class="sub">' + fmt.plural(m.used.length, 'competitor') + ' in the average · hover a dot for the listing</div></div></div>' +
+    function place(v) { var below = n.cps.filter(function (c) { return c < v; }).length; return below === 0 ? O.tpl('the cheapest of the {n} listings', { n: n.cps.length + 1 }) : below === n.cps.length ? O.tpl('the most expensive of the {n} listings', { n: n.cps.length + 1 }) : O.tpl('cheaper than {n} of {total} competitors', { n: n.cps.length - below, total: n.cps.length }); }
+    function gap(v) { var g = v / n.cAvg - 1; return Math.abs(g) < 0.01 ? O.tr('level with the average') : O.tpl(g > 0 ? '{pct} above the average' : '{pct} under the average', { pct: fmt.pct(Math.abs(g)) }); }
+    var line = O.tpl(k === 'booked' ? 'Booked at {price}: {gap}, {place}.' : k === 'open' ? 'Listed at {price}: {gap}, {place}.' : 'Blocked; the model rate would be {price}: {gap}, {place}.', { price: fmt.money(price, { cur: m.P }), gap: gap(price), place: place(price) }) +
+      (sugg != null ? (O.state.lang === 'zh' ? '' : ' ') + O.tpl('The suggestion of {price} would be {gap} and {place}.', { price: fmt.money(sugg, { cur: m.P }), gap: gap(sugg), place: place(sugg) }) : '');
+    line = esc(O.i18nKeep(line));
+    return '<div class="card pr-mkt"><div class="card-head"><div class="hd"><h3>' + esc(O.tpl('Market on {day} {date}', { day: d.dowName(n.iso), date: d.fmt(n.iso) })) + '</h3><div class="sub">' + esc(O.tpl('{count} in the average · hover a dot for the listing', { count: fmt.plural(m.used.length, 'competitor') })) + '</div></div></div>' +
       '<div class="card-body stack">' + marketStrip(m, n, price, lbl, sugg) + '<div class="small" style="color:var(--text-2)">' + line + '</div></div></div>';
   }
   function whyCard(m, n) {
@@ -618,7 +624,7 @@
         '<div class="wa">' + (f.key === 'base' ? fmt.money(f.amt, { cur: P }) : f.amt ? '<span class="' + (f.amt > 0 ? 'pos' : 'neg') + '">' + signed(f.amt, P) + '</span>' : fmt.money(0, { cur: P })) +
         (f.key !== 'base' && f.amt && f.pct != null ? '<small>' + signedPct(f.pct, 1) + '</small>' : '') + '</div></div>';
     }).join('');
-    rows += '<div class="wf-row tot"><div class="wl">Suggested price<div class="wd">Sum of the ' + fs.length + ' lines above</div></div><div class="wf-track" aria-hidden="true"><i class="tot" style="left:0;width:' + pos2(n.sugg).toFixed(1) + '%"></i></div><div class="wa">' + fmt.money(n.sugg, { cur: P }) + '</div></div>';
+    rows += '<div class="wf-row tot"><div class="wl">Suggested price<div class="wd">' + esc(O.tpl('Sum of the {n} lines above', { n: fs.length })) + '</div></div><div class="wf-track" aria-hidden="true"><i class="tot" style="left:0;width:' + pos2(n.sugg).toFixed(1) + '%"></i></div><div class="wa">' + fmt.money(n.sugg, { cur: P }) + '</div></div>';
     var axis = '<div class="wf-row wf-axis" aria-hidden="true"><div></div><div class="ax" title="Bar scale in ' + esc(fmt.cur(P)) + '"><span>' + fmt.money(lo, { bare: true }) + '</span><span>' + fmt.money(hi, { bare: true }) + '</span></div><div></div></div>';
     var chg = n.change, chgPct = n.our ? chg / n.our : 0;
     var top = '<div class="pr-head3"><div><div class="l">Current price</div><div class="v">' + fmt.money(n.our, { cur: P }) + '</div><div class="small muted">' + (n.how === 'suggestion' ? 'Suggestion applied' : n.how === 'manual' ? 'Set by you' : n.how === 'planner' ? 'Set by the profit planner' : 'Model rate') + '</div></div>' +
@@ -676,12 +682,12 @@
           : '<span class="pill ' + (n.manual ? 'brand' : 'ok') + '">' + (n.how === 'suggestion' ? 'Open · applied' : n.how === 'manual' ? 'Open · set by you' : n.how === 'planner' ? 'Open · profit planner' : 'Open') + '</span>' + (n.run <= m.R.orphanMax ? ' Orphan night' : '');
       var paceW = Math.round(n.grpOTB * 100), expW = Math.round(n.usualOTB * 100);
       return '<tr data-iso="' + n.iso + '" class="' + (n.iso === sel ? 'sel ' : '') + (k !== 'open' ? 'bk ' : '') + (st.picked[n.iso] && open ? 'picked ' : '') + (n.wk ? 'wk' : '') + '">' +
-        '<td>' + (open && edit ? '<input type="checkbox" data-pick-row="' + n.iso + '" aria-label="Select ' + d.fmt(n.iso) + '"' + (st.picked[n.iso] ? ' checked' : '') + (n.change ? '' : ' disabled title="Already at the suggestion"') + '>' : '') + '</td>' +
+        '<td>' + (open && edit ? '<input type="checkbox" data-pick-row="' + n.iso + '" aria-label="' + esc(O.tpl('Select {name}', { name: d.fmt(n.iso) })) + '"' + (st.picked[n.iso] ? ' checked' : '') + (n.change ? '' : ' disabled title="Already at the suggestion"') + '>' : '') + '</td>' +
         '<td class="dt" title="' + (n.lead === 0 ? 'Tonight' : 'In ' + fmt.plural(n.lead, 'day')) + '"><button type="button" class="dt-btn" data-pick="' + n.iso + '" aria-label="Show the reasoning for ' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '">' + d.dowName(n.iso) + ' ' + d.fmt(n.iso) + '</button>' + (n.wk ? '<span class="wkd">Weekend</span>' : '') + '<span class="stl">' + stCell + '</span></td>' +
         '<td class="num"><b>' + (k === 'blocked' ? '–' : fmt.money(n.our, { cur: m.P })) + '</b></td>' +
-        '<td class="num" title="Competitors ' + fmt.money(n.cMin, { cur: m.P }) + ' to ' + fmt.money(n.cMax, { cur: m.P }) + '">' + fmt.money(n.cAvg, { cur: m.P }) + '</td>' +
+        '<td class="num" title="' + esc(O.tpl('Competitors {min} to {max}', { min: fmt.money(n.cMin, { cur: m.P }), max: fmt.money(n.cMax, { cur: m.P }) })) + '">' + fmt.money(n.cAvg, { cur: m.P }) + '</td>' +
         '<td class="num" title="' + d.dowName(n.iso) + ' ' + d.fmtY(d.sameWeekdayYearsAgo(n.iso, 1)) + '">' + fmt.money(n.ly, { cur: m.P }) + '</td>' +
-        '<td class="pace" title="' + esc(m.groupName) + ': ' + n.grpBooked + ' of ' + n.grpAvail + ' booked; usually ' + expW + '% at this lead time (last 90 days)"><i><b style="width:' + paceW + '%"></b><em style="left:' + expW + '%"></em></i>' + paceW + '% <span class="faint">/ ' + expW + '%</span></td>' +
+        '<td class="pace" title="' + esc(O.tpl('{group}: {booked} of {n} booked; usually {usual}% at this lead time (last 90 days)', { group: m.groupName, booked: n.grpBooked, n: n.grpAvail, usual: expW })) + '"><i><b style="width:' + paceW + '%"></b><em style="left:' + expW + '%"></em></i>' + paceW + '% <span class="faint">/ ' + expW + '%</span></td>' +
         '<td class="evt small">' + (n.ev ? '<span class="pill accent">' + esc(n.ev.name) + '</span>' : '<span class="faint">–</span>') + '</td>' +
         '<td class="num sg">' + (open ? fmt.money(n.sugg, { cur: m.P }) : '<span class="faint">' + (k === 'booked' ? 'Locked' : '–') + '</span>') + '</td>' +
         '<td class="num">' + (open ? (n.change ? '<b class="' + (n.change > 0 ? 'pos' : 'neg') + '" title="' + signedPct(n.change / n.our, 1) + '">' + signed(n.change, m.P) + '</b>' : '<span class="faint">' + (n.how === 'suggestion' ? 'Applied' : 'At suggestion') + '</span>') : '') + '</td>' +
@@ -691,13 +697,13 @@
     var bulk = !edit ? '<span class="pill neutral">' + O.icon('lock') + 'View only</span>'
       : (pickedNights.length ? '<span class="small"><b>' + fmt.plural(pickedNights.length, 'night') + '</b> selected · ' + signed(pickedChg, m.P) + ' in total</span><button type="button" class="btn btn-ghost btn-sm" data-clear-pick>Clear</button>' : '') +
         '<button type="button" class="btn btn-primary btn-sm" data-apply-picked' + (pickedNights.length ? '' : ' disabled') + '>' + O.icon('check') + 'Apply to selected' + (pickedNights.length ? ' (' + pickedNights.length + ')' : '') + '</button>';
-    return '<div class="card pr-tablecard"><div class="card-head"><div class="hd"><h3>Night by night</h3><div class="sub">' + (edit ? 'Tick nights and apply their suggestions, or click a night to see its reasoning.' : 'Click a night to see its reasoning.') + ' Pace: share of ' + esc(m.groupName) + ' booked for that night; the marker shows the usual share at the same lead time.' + (typeNote(m.P) ? ' <b>' + esc(typeNote(m.P)) + '.</b>' : '') + '</div></div>' +
+    return '<div class="card pr-tablecard"><div class="card-head"><div class="hd"><h3>Night by night</h3><div class="sub">' + esc(O.i18nKeep(O.tr(edit ? 'Tick nights and apply their suggestions, or click a night to see its reasoning.' : 'Click a night to see its reasoning.') + (O.state.lang === 'zh' ? '' : ' ') + O.tpl('Pace: share of {group} booked for that night; the marker shows the usual share at the same lead time.', { group: m.groupName }))) + (typeNote(m.P) ? ' <b>' + esc(typeNote(m.P)) + '.</b>' : '') + '</div></div>' +
       '<div class="pr-bulk">' + bulk + '</div></div>' +
       '<div class="card-body" style="padding-bottom:10px"><div class="row-flex wrap">' +
-      U.seg([['all', 'All nights ' + cnt.all], ['open', 'Open ' + cnt.open], ['booked', 'Booked ' + cnt.booked], ['changes', 'Change ≥ 5% ' + cnt.changes], ['manual', 'Changed by you ' + cnt.manual]], st.view, 'data-view') + '</div></div>' +
+      U.seg([['all', O.tpl('All nights {n}', { n: cnt.all })], ['open', O.tpl('Open {n}', { n: cnt.open })], ['booked', O.tpl('Booked {n}', { n: cnt.booked })], ['changes', O.tpl('Change ≥ 5% {n}', { n: cnt.changes })], ['manual', O.tpl('Changed by you {n}', { n: cnt.manual })]], st.view, 'data-view') + '</div></div>' +
       (rows.length ? '<div class="table-wrap pr-scroll"><table class="table pr-tbl"><thead><tr>' +
         '<th>' + (edit ? '<input type="checkbox" data-pick-all aria-label="Select all nights with a suggested change"' + (allOn ? ' checked' : '') + (pickable.length ? '' : ' disabled') + '>' : '') + '</th>' +
-        '<th>Night · status</th><th class="num">Our price</th><th class="num" title="Average of the competitor set">Comp avg</th><th class="num" title="Same weekday last year">Last year</th><th title="Share of ' + esc(m.groupName) + ' booked for the night / usual share at this lead time">Pace (now / usual)</th><th>Event</th><th class="num">Suggested</th><th class="num">Change</th><th>Main reasons (' + esc(fmt.cur(m.P)) + ')</th>' +
+        '<th>Night · status</th><th class="num">Our price</th><th class="num" title="Average of the competitor set">Comp avg</th><th class="num" title="Same weekday last year">Last year</th><th title="' + esc(O.tpl('Share of {group} booked for the night / usual share at this lead time', { group: m.groupName })) + '">Pace (now / usual)</th><th>Event</th><th class="num">Suggested</th><th class="num">Change</th><th>Main reasons (' + esc(fmt.cur(m.P)) + ')</th>' +
         '</tr></thead><tbody>' + body + '</tbody></table></div>'
         : U.empty(st.view === 'manual' ? 'No prices in this range have been changed by hand or by applying a suggestion.' : st.view === 'changes' ? 'Every open night is within 5% of its suggestion.' : st.view === 'booked' ? 'No booked nights in this range.' : 'No open nights in this range.')) +
       '</div>';
@@ -722,13 +728,13 @@
     var body = '<tr class="us"><td></td><td><div class="cmp-nm">' + U.platIcon('direct', 'Your listing') + esc(m.P.name) + ' <span class="pill brand">You</span></div></td><td class="nowrap">' + bedsLabel(m.P.beds) + '</td><td class="num">–</td><td class="num nowrap">' + (ourRating ? '<span class="stars">★</span> ' + ourRating.toFixed(2) + ' <span class="faint">(' + revs.length + ')</span>' : '–') + '</td><td class="num nowrap">' + (s.avail ? fmt.pct(s.otb) + '<span class="faint"> booked</span>' : '–') + '</td><td class="num">' + (none ? '–' : fmt.money(s.ourAvg, { cur: m.P })) + '</td>' + (n ? '<td class="num">' + (ourOn != null ? fmt.money(ourOn, { cur: m.P }) : '–') + '</td>' : '') + '<td class="num">–</td></tr>' +
       rows.map(function (r) {
         var off = !!ex[r.c.id];
-        return '<tr class="' + (off ? 'off' : '') + '"><td><input type="checkbox" data-comp="' + esc(r.c.id) + '" aria-label="Use ' + esc(r.c.name) + ' in the average"' + (off ? '' : ' checked') + '></td>' +
+        return '<tr class="' + (off ? 'off' : '') + '"><td><input type="checkbox" data-comp="' + esc(r.c.id) + '" aria-label="' + esc(O.tpl('Use {name} in the average', { name: r.c.name })) + '"' + (off ? '' : ' checked') + '></td>' +
           '<td><div class="cmp-nm">' + U.platIcon(r.c.channel) + '<span data-no-i18n>' + esc(r.c.name) + '</span>' + (off ? ' <span class="faint small">left out</span>' : '') + '</div></td><td class="nowrap">' + bedsLabel(r.c.beds) + '</td><td class="num nowrap">' + r.c.distanceKm.toFixed(1) + ' km</td>' +
           '<td class="num nowrap"><span class="stars">★</span> ' + r.c.rating.toFixed(2) + ' <span class="faint">(' + r.c.reviews + ')</span></td><td class="num">' + r.c.occ + '%</td>' +
           '<td class="num"><b>' + (none ? '–' : fmt.money(r.avg, { cur: m.P })) + '</b></td>' + (n ? '<td class="num">' + fmt.money(r.on, { cur: m.P }) + '</td>' : '') +
           '<td class="num">' + (none ? '–' : '<span class="' + (r.vs > 0.02 ? 'pos' : r.vs < -0.02 ? 'neg' : '') + '">' + signedPct(r.vs) + '</span>') + '</td></tr>';
       }).join('');
-    return '<div class="card"><div class="card-head"><div class="hd"><h3>Competitor set</h3><div class="sub">' + m.used.length + ' of ' + m.comps.length + ' similar listings within 2.5 km are in the average. Untick a listing to leave it out (at least 3 stay in).</div></div></div>' +
+    return '<div class="card"><div class="card-head"><div class="hd"><h3>Competitor set</h3><div class="sub">' + esc(O.tpl('{n} of {total} similar listings within 2.5 km are in the average. Untick a listing to leave it out (at least 3 stay in).', { n: m.used.length, total: m.comps.length })) + '</div></div></div>' +
       '<div class="table-wrap"><table class="table pr-tbl"><thead><tr><th><span class="sr-only">Use in average</span></th><th>Listing</th><th>Beds</th>' + th('dist', 'Distance') + th('rating', 'Rating') + th('occ', 'Occupancy', 'Competitors: typical occupancy from the market feed. Your listing: nights booked in this range.') + th('avg', 'Avg price', 'Average nightly price over the booked and open nights in this range') + (n ? '<th class="num" title="Price on the night selected above">' + onLabel + '</th>' : '') + th('vs', 'vs ours', 'Their average compared with ours for the same nights') + '</tr></thead><tbody>' + body + '</tbody>' +
       '<tfoot><tr><td></td><td>Competitor average</td><td></td><td></td><td class="num">' + avg(m.used.map(function (c) { return c.rating; })).toFixed(2) + '</td><td class="num">' + Math.round(m.mOcc * 100) + '%</td><td class="num">' + (none ? '–' : fmt.money(s.compAvg, { cur: m.P })) + '</td>' + (n ? '<td class="num">' + fmt.money(n.cAvg, { cur: m.P }) + '</td>' : '') + '<td class="num">' + (none ? '–' : signedPct(s.compAvg / s.ourAvg - 1)) + '</td></tr></tfoot></table></div>' +
       '<div class="card-foot">Competitor prices and occupancy here are sample figures until a market data feed is connected for listings near each property.</div></div>';
@@ -741,7 +747,7 @@
     var cur = sel.status.kind === 'blocked' ? null : sel.our;
     function since(prev) { return cur ? ' · ' + U.delta(fmt.change(cur, prev), { suffix: 'since then' }) : ''; }
     var boxes = '<div class="hist">' +
-      '<div class="cur"><div class="l"><i class="key k0"></i>This year</div><div class="v">' + (cur ? fmt.money(cur, { cur: m.P }) : '–') + '</div><div class="s">' + d.dowName(sel.iso) + ' ' + d.fmtY(sel.iso) + (sel.status.kind === 'booked' ? ' · booked' : sel.status.kind === 'blocked' ? ' · blocked' : sel.change ? ' · suggested ' + fmt.money(sel.sugg, { cur: m.P }) : '') + '</div></div>' +
+      '<div class="cur"><div class="l"><i class="key k0"></i>This year</div><div class="v">' + (cur ? fmt.money(cur, { cur: m.P }) : '–') + '</div><div class="s">' + d.dowName(sel.iso) + ' ' + d.fmtY(sel.iso) + esc(sel.status.kind === 'booked' ? ' · ' + O.tr('booked') : sel.status.kind === 'blocked' ? ' · ' + O.tr('blocked') : sel.change ? ' · ' + O.tpl('suggested {price}', { price: fmt.money(sel.sugg, { cur: m.P }) }) : '') + '</div></div>' +
       '<div><div class="l"><i class="key k1"></i>Last year</div><div class="v">' + fmt.money(sel.ly, { cur: m.P }) + '</div><div class="s">' + d.dowName(a1) + ' ' + d.fmtY(a1) + since(sel.ly) + '</div></div>' +
       '<div><div class="l"><i class="key k2"></i>Two years ago</div><div class="v">' + fmt.money(sel.y2, { cur: m.P }) + '</div><div class="s">' + d.dowName(a2) + ' ' + d.fmtY(a2) + since(sel.y2) + '</div></div></div>';
     var withSugg = avg(m.days.filter(function (x) { return x.status.kind !== 'blocked'; }).map(function (x) { return x.sugg != null ? x.sugg : x.our; }));
@@ -801,7 +807,7 @@
       return { p: p, s: s };
     });
     var tot = { impact: sum(rows.filter(function (r) { return O.inCur(r.p); }).map(function (r) { return r.s.impact; })), review: sum(rows.map(function (r) { return r.s.review.length; })) };
-    return '<div class="card"><div class="card-head"><div class="hd"><h3>All properties</h3><div class="sub">Same range, same model. Click a property to analyse it.</div></div><div class="row-flex wrap">' + O.curSwitchHTML() + '<span class="pill accent">' + fmt.plural(tot.review, 'night') + ' to review · ' + moneySigned(tot.impact) + ' expected</span></div></div>' +
+    return '<div class="card"><div class="card-head"><div class="hd"><h3>All properties</h3><div class="sub">Same range, same model. Click a property to analyse it.</div></div><div class="row-flex wrap">' + O.curSwitchHTML() + '<span class="pill accent">' + esc(O.tpl('{nights} to review · {amount} expected', { nights: fmt.plural(tot.review, 'night'), amount: moneySigned(tot.impact) })) + '</span></div></div>' +
       '<div class="table-wrap"><table class="table pr-tbl"><thead><tr><th>Property</th><th class="num">Our avg</th><th class="num">Comp avg</th><th class="num" title="Share of nights booked; the market usually has this share booked by now">On the books</th><th class="num">Avg suggested</th><th class="num" title="Open nights where the suggestion differs by 5% or more">To review</th><th class="num">Expected impact</th></tr></thead><tbody>' +
       rows.map(function (r) {
         var s = r.s, none = !s.priced.length;
@@ -863,7 +869,7 @@
         (O.allowed('planner') ? '<button type="button" class="btn btn-ghost btn-sm pr-plan" data-pr-plan aria-label="Profit Planner" title="Work out the prices that cover your costs and reach your profit target">' + O.icon('planner') + '<span class="pr-plan-l">Profit Planner</span></button>' : '') +
         '<span data-slot="range"></span><span class="spacer"></span>' +
         '<span class="pr-auto"' + (editRules ? '' : ' title="' + esc(WHY_RULES) + '"') + '>Auto-apply <button type="button" class="switch' + (m.R.auto ? ' on' : '') + '" data-auto role="switch" aria-checked="' + (m.R.auto ? 'true' : 'false') + '" aria-label="Auto-apply suggestions daily"' + (editRules ? '' : ' disabled') + '></button></span></div>' +
-        '<div class="pr-ctx"><b>' + esc(P.type || '') + '</b>' + (P.area ? '<span class="dot"></span>' + esc(P.area) : '') + '<span class="dot"></span>Base price ' + fmt.money(m.R.base, { cur: P }) + '<span class="dot"></span>' + s.open.length + ' of ' + fmt.plural(m.days.length, 'night') + ' open</div>' +
+        '<div class="pr-ctx"><b>' + esc(P.type || '') + '</b>' + (P.area ? '<span class="dot"></span>' + esc(P.area) : '') + '<span class="dot"></span>' + esc(O.tpl('Base price {price}', { price: fmt.money(m.R.base, { cur: P }) })) + '<span class="dot"></span>' + esc(O.tpl('{n} of {count} open', { n: s.open.length, count: fmt.plural(m.days.length, 'night') })) + '</div>' +
         kpiStrip(m, s) +
         '<div class="grid g-3-2 pr-top"><div class="pr-left">' + chartCard(m) + mktCard(m, n) + '</div>' + whyCard(m, n) + '</div>' +
         tableCard(m, s) +
@@ -907,8 +913,8 @@
           '<div><div class="label" style="margin-bottom:4px">Biggest changes</div>' + big.map(function (x) { return '<div class="row-flex small" style="justify-content:space-between"><span>' + d.dowName(x.iso) + ' ' + d.fmt(x.iso) + '</span><span>' + fmt.money(x.our, { cur: P }) + ' → <b>' + fmt.money(x.sugg, { cur: P }) + '</b> <span class="' + (x.change > 0 ? 'pos' : 'neg') + '">' + signed(x.change, P) + '</span></span></div>'; }).join('') + '</div>' +
           '<div class="small muted">Booked and blocked nights do not change.' + (typeNote(P) ? ' ' + esc(typeNote(P)) + '.' : '') + ' ' + esc(channelNote(P)) + '</div></div>';
         U.modal({
-          title: 'Apply ' + fmt.plural(openChanges.length, 'suggested price') + ' to ' + (P.short || P.name) + '?', sub: U.rangeLabel(st.from, st.to) + ' · ' + fmt.plural(s.open.length, 'open night'), body: body,
-          actions: [{ label: 'Cancel' }, { label: 'Apply ' + fmt.plural(openChanges.length, 'price'), kind: 'primary', onClick: function () { applyPrices(pid, openChanges.map(function (x) { return { iso: x.iso, price: x.sugg }; }), 'Suggestions applied'); } }]
+          title: O.tpl('Apply {count} to {unit}?', { count: fmt.plural(openChanges.length, 'suggested price'), unit: P.short || P.name }), sub: U.rangeLabel(st.from, st.to) + ' · ' + fmt.plural(s.open.length, 'open night'), body: body,
+          actions: [{ label: 'Cancel' }, { label: O.tpl('Apply {count}', { count: fmt.plural(openChanges.length, 'price') }), kind: 'primary', onClick: function () { applyPrices(pid, openChanges.map(function (x) { return { iso: x.iso, price: x.sugg }; }), 'Suggestions applied'); } }]
         });
       };
 

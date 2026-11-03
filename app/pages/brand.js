@@ -91,7 +91,7 @@
   }
   function ratioRow(label, bg, fg, target, note) {
     var r = C.contrast(bg, fg), ok = r >= target;
-    return '<tr><td><b>' + esc(label) + '</b><div class="xs muted">' + esc(note) + '</div></td><td><span class="smp" style="background:' + bg + ';color:' + fg + '">' + (fg.toUpperCase() === C.WHITE ? 'White text' : C.contrast(fg, C.BLACK) < 1.3 ? 'Black text' : 'Aa text') + '</span></td><td class="num">' + r.toFixed(1) + ':1</td><td>' + (ok ? '<span class="pill ok">Passes ' + (target >= 4.5 ? 'AA text' : 'graphics') + '</span>' : '<span class="pill warn">Low</span>') + '</td></tr>';
+    return '<tr><td><b>' + esc(label) + '</b><div class="xs muted">' + esc(note) + '</div></td><td><span class="smp" style="background:' + bg + ';color:' + fg + '">' + (fg.toUpperCase() === C.WHITE ? 'White text' : C.contrast(fg, C.BLACK) < 1.3 ? 'Black text' : 'Aa text') + '</span></td><td class="num">' + r.toFixed(1) + ':1</td><td>' + (ok ? '<span class="pill ok">' + (target >= 4.5 ? 'Passes AA text' : 'Passes graphics') + '</span>' : '<span class="pill warn">Low</span>') + '</td></tr>';
   }
   function miniPreview(tokens, ws, label) {
     var style = Object.keys(tokens).map(function (k) { return k + ':' + tokens[k]; }).join(';');
@@ -240,7 +240,7 @@
       info.textContent = b.source === 'manual' ? 'Adjusted by hand. "Pick again from logo" resets to the automatic choice.' : 'Picked automatically: the most prominent colour is the main colour, the next distinct one is the second colour.';
       O.$$('.pickrow', root).forEach(function (row) {
         var role = row.dataset.role, cur = (brandOf()[role] || brandOf().primary).toUpperCase();
-        row.insertAdjacentHTML('afterbegin', r.swatches.map(function (s) { return '<button type="button" title="' + s.hex + '" data-pick="' + s.hex + '" class="' + (s.hex.toUpperCase() === cur ? 'on' : '') + '" style="background:' + s.hex + '" aria-label="Use ' + s.hex + '"></button>'; }).join(''));
+        row.insertAdjacentHTML('afterbegin', r.swatches.map(function (s) { return '<button type="button" title="' + s.hex + '" data-pick="' + s.hex + '" class="' + (s.hex.toUpperCase() === cur ? 'on' : '') + '" style="background:' + s.hex + '" aria-label="' + esc(O.tpl('Use {colour}', { colour: s.hex })) + '"></button>'; }).join(''));
       });
     });
 
@@ -307,7 +307,7 @@
   }
   function roleCard(role, label, desc, hex, edit) {
     return '<div class="role"><div class="chip-swatch" style="background:' + hex + ';color:' + C.ink(hex) + '">' + hex.toUpperCase() + '</div><div><div class="lbl">' + esc(label) + '</div><div class="desc">' + esc(desc) + '</div></div>' +
-      (edit ? '<div class="pickrow" data-role="' + role + '"><input type="color" data-role="' + role + '" value="' + hex + '" aria-label="Custom ' + esc(label.toLowerCase()) + '"></div>' : '') + '</div>';
+      (edit ? '<div class="pickrow" data-role="' + role + '"><input type="color" data-role="' + role + '" value="' + hex + '" aria-label="' + esc(O.tpl('Custom colour: {name}', { name: label })) + '"></div>' : '') + '</div>';
   }
   function setRole(role, hex) {
     var nb = Object.assign({}, brandOf()); nb[role] = hex; nb.source = 'manual';

@@ -32,12 +32,12 @@ const check = (cond, what) => { if (cond) console.log('ok  ' + what); else { con
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* words that are the same in every language: brands, units, codes */
-const KEEP = ['Orbique', 'Kozi', 'Airbnb', 'Booking.com', 'Agoda', 'Trip.com', 'Expedia', 'Vrbo', 'Channex', 'WhatsApp', 'Google', 'Gmail', 'Facebook', 'Instagram', 'TikTok', 'YouTube', 'OpenStreetMap', 'OpenFreeMap', 'MapLibre', 'Supabase', 'Vercel', 'Stripe', 'PayPal', 'Wi-Fi', 'WiFi', 'PDF', 'CSV', 'URL', 'SST', 'GST', 'MyInvois', 'LHDN', 'TTLock', 'Tuya', 'Yale', 'Samsung', 'Schlage', 'Igloohome', 'iPhone', 'Android', 'iOS', 'Apple', 'Chrome', 'Safari', 'Telegram', 'WeChat', 'Line', 'SMS', 'OTP', 'QR', 'API', 'ID', 'OK', 'AM', 'PM', 'Hokkien', 'English', 'Bangla', 'Bahasa', 'Malaysia', 'MS', 'EN', 'Sdn', 'Bhd', 'Grab', 'Touch', 'Shopee', 'Lazada', 'iCal', 'Excel', 'Zoom', 'Waze', 'Maps', 'DuitNow', 'FPX', 'GrabPay', 'Boost', 'TNG', 'eWallet', 'Visa', 'Mastercard', 'AMEX', 'JPG', 'PNG', 'MB', 'KB', 'GB', 'km', 'cm', 'kg', 'AC', 'TV', 'ADR', 'RevPAR', 'KPI', 'OTA', 'iCloud', 'Dropbox', 'Bluetooth', 'NFC', 'USB', 'HDMI', 'Netflix', 'Ngrok', 'Unifi', 'Maxis', 'Celcom', 'Digi', 'TIME', 'TNB', 'SAJ', 'IWK', 'Astro', 'Penang', 'Melaka', 'Kuala', 'Lumpur', 'Langkawi', 'Cameron', 'Highlands', 'Johor', 'Bahru', 'Selangor', 'Sabah', 'Sarawak', 'Ipoh', 'Bangsar', 'KLCC', 'Bukit', 'Bintang', 'Mont', 'Kiara', 'Petaling', 'Jaya', 'Singapore', 'Thailand', 'Indonesia', 'Bangkok', 'Bali', 'Gemini', 'Claude', 'OpenAI', 'Anthropic', 'Capacitor', 'Lim', 'Tan', 'Mei', 'Fen', 'Wei', 'Ling', 'WebP', 'SVG', 'Word', 'Didot', 'serif', 'sans', 'mono'];
+const KEEP = ['Orbique', 'Kozi', 'Airbnb', 'Booking.com', 'Agoda', 'Trip.com', 'Expedia', 'Vrbo', 'Channex', 'WhatsApp', 'Google', 'Gmail', 'Facebook', 'Instagram', 'TikTok', 'YouTube', 'OpenStreetMap', 'OpenFreeMap', 'MapLibre', 'Supabase', 'Vercel', 'Stripe', 'PayPal', 'Wi-Fi', 'WiFi', 'PDF', 'CSV', 'URL', 'SST', 'GST', 'MyInvois', 'LHDN', 'TTLock', 'Tuya', 'Yale', 'Samsung', 'Schlage', 'Igloohome', 'iPhone', 'Android', 'iOS', 'Apple', 'Chrome', 'Safari', 'Telegram', 'WeChat', 'Line', 'SMS', 'OTP', 'QR', 'API', 'ID', 'OK', 'AM', 'PM', 'Hokkien', 'English', 'Bangla', 'Bahasa', 'Malaysia', 'MS', 'EN', 'Sdn', 'Bhd', 'Grab', 'Touch', 'Shopee', 'Lazada', 'iCal', 'Excel', 'Zoom', 'Waze', 'Maps', 'DuitNow', 'FPX', 'GrabPay', 'Boost', 'TNG', 'eWallet', 'Visa', 'Mastercard', 'AMEX', 'JPG', 'PNG', 'MB', 'KB', 'GB', 'km', 'cm', 'kg', 'AC', 'TV', 'ADR', 'RevPAR', 'KPI', 'OTA', 'iCloud', 'Dropbox', 'Bluetooth', 'NFC', 'USB', 'HDMI', 'Netflix', 'Ngrok', 'Unifi', 'Maxis', 'Celcom', 'Digi', 'TIME', 'TNB', 'SAJ', 'IWK', 'Astro', 'Penang', 'Melaka', 'Kuala', 'Lumpur', 'Langkawi', 'Cameron', 'Highlands', 'Johor', 'Bahru', 'Selangor', 'Sabah', 'Sarawak', 'Ipoh', 'Bangsar', 'KLCC', 'Bukit', 'Bintang', 'Mont', 'Kiara', 'Petaling', 'Jaya', 'Singapore', 'Thailand', 'Indonesia', 'Bangkok', 'Bali', 'Gemini', 'Claude', 'OpenAI', 'Anthropic', 'Capacitor', 'Lim', 'Tan', 'Mei', 'Fen', 'Wei', 'Ling', 'WebP', 'SVG', 'Word', 'Didot', 'serif', 'sans', 'mono', 'AirDNA', 'Airbtics', 'AirROI', 'Nurul', 'Huda'];
 
 async function run(browser, size, tag, harvestSet) {
   const phone = size.width <= 600;
   const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: 1, hasTouch: phone, isMobile: phone });
-  await ctx.addInitScript('window.ORBIQUE_NOW = "2026-10-06T10:15";');
+  await ctx.addInitScript('window.ORBIQUE_NOW = "2026-10-06T10:15"; window.ORBIQUE_I18N_DEBUG = true;');
   const pg = await ctx.newPage();
   const errors = [];
   pg.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -54,8 +54,12 @@ async function run(browser, size, tag, harvestSet) {
     const add = (s) => { s = String(s).trim(); if (s.length > 1 && s.length < 400) out.add(s); };
     const walk = (v, depth) => { if (v == null || depth > 7) return; if (typeof v === 'string') return add(v); if (typeof v !== 'object' || seen.has(v)) return; seen.add(v); if (Array.isArray(v)) v.forEach((x) => walk(x, depth + 1)); else Object.keys(v).forEach((k) => walk(v[k], depth + 1)); };
     walk(O.data, 0); walk(O.workspaces, 0); walk(O.placeData, 0);
+    try { (function keys(v, depth) { if (!v || typeof v !== 'object' || depth > 3) return; for (const k of Object.keys(v)) { if (!Array.isArray(v)) add(k); keys(v[k], depth + 1); } })(O.placeData, 0); } catch (e) {} /* the states and regions are its keys */
     for (const x of [...out]) if (x.includes(', ')) for (const p of x.split(', ')) add(p); /* "Gurney Drive, Penang" */
+    for (const x of [...out]) if (/\n/.test(x)) { add(x.replace(/\s+/g, ' ')); for (const p of x.split(/\n+/)) add(p); } /* a note of several lines */
     try { walk(O.teamChat && O.teamChat.state(), 0); } catch (e) {}
+    /* the pricing competitor sets are made on demand: their listing names are data too */
+    try { (O.data.properties || []).forEach((p) => walk(O.data.compSet(p.id), 0)); } catch (e) {}
     return [...out];
   });
 
@@ -74,13 +78,18 @@ async function run(browser, size, tag, harvestSet) {
     out.push(document.title);
     return out;
   });
-  const leftovers = {}; let screens = 0;
+  const leftovers = {}, pieced = {}; let screens = 0;
   const step = async (name, { shotIt = true } = {}) => {
     await wait(120);
     const texts = await collect();
     screens++;
     if (harvestSet) { for (const t of texts) harvestSet.set(t, harvestSet.get(t) || name); }
-    else for (const t of texts) { const bad = english(t, lang, dataWords); if (bad) (leftovers[t] = leftovers[t] || { at: name, words: bad }); }
+    else {
+      for (const t of texts) { const bad = english(t, lang, dataWords); if (bad) (leftovers[t] = leftovers[t] || { at: name, words: bad }); }
+      /* texts on this screen that the catalog only had in pieces (O.tr's last resort): reported, not failed */
+      const pc = await pg.evaluate((ts) => { const m = O.i18nPieced; if (!m) return []; const on = new Set(ts); const out = []; m.forEach((v, k) => { if (on.has(v.replace(/\s+/g, ' ').trim())) out.push([k, v]); }); return out; }, texts);
+      for (const [en, out] of pc) if (!pieced[en]) pieced[en] = { at: name, out };
+    }
     if (shotIt && !harvestSet) await pg.screenshot({ path: path.join(outDir, tag + '-' + name.replace(/[^a-z0-9-]+/gi, '_') + '.png') }).catch(() => {});
   };
   const overflow = () => pg.evaluate(() => Math.max(document.documentElement.scrollWidth - window.innerWidth, ...[...document.querySelectorAll('.drawer, .modal')].map((d) => d.scrollWidth - d.clientWidth)));
@@ -180,6 +189,9 @@ async function run(browser, size, tag, harvestSet) {
   const left = Object.keys(leftovers);
   if (!harvestSet) {
     check(left.length === 0, tag + ': no English UI text left on ' + screens + ' screens' + (left.length ? ' (' + left.length + ' texts)' : ''));
+    fs.writeFileSync(path.join(outDir, tag + '-pieced.json'), JSON.stringify(pieced, null, 1));
+    console.log('info ' + tag + ': ' + Object.keys(pieced).length + ' texts translated piece by piece (' + tag + '-pieced.json)');
+    fs.rmSync(path.join(outDir, tag + '-leftovers.json'), { force: true });
     if (left.length) { fs.writeFileSync(path.join(outDir, tag + '-leftovers.json'), JSON.stringify(leftovers, null, 1)); for (const t of left.slice(0, 40)) console.log('     ' + JSON.stringify(t).slice(0, 140) + '  [' + leftovers[t].words.join(' ') + '] @' + leftovers[t].at); }
   }
   await ctx.close();
@@ -196,18 +208,20 @@ function english(t, lang, data) {
     for (const k of Object.keys(tr)) { for (const w of k.match(/[A-Za-z]{3,}/g) || []) EN_WORDS.add(w.toLowerCase()); for (const w of tr[k].match(/[A-Za-z]{3,}/g) || []) MS_WORDS.add(w.toLowerCase()); }
   }
   let s = ' ' + t + ' ';
-  /* data first, longest first, so "Highland Villa 2" goes before "Villa" */
-  if (!english.sorted) english.sorted = data.filter((x) => /[A-Za-z]/.test(x)).sort((a, b) => b.length - a.length);
-  for (const x of english.sorted) if (x.length >= 3 && s.toLowerCase().includes(x.toLowerCase())) s = s.replace(new RegExp(x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
   s = s.replace(/\{[A-Za-z0-9_]+\}/g, ' ').replace(/#[0-9A-Fa-f]{3,8}\b/g, ' '); /* {guest_first} in a greeting, #FFFFFF */
   s = s.replace(/https?:\/\/\S+|\S+@\S+|\b[\w-]+\.(?:com|site|my|app|io|org|net)\b\S*/g, ' ');
+  /* data first, longest first, so "Highland Villa 2" goes before "Villa" */
+  if (!english.sorted) english.sorted = data.filter((x) => /[A-Za-z]/.test(x)).sort((a, b) => b.length - a.length);
+  for (const x of english.sorted) if (x.length >= 3 && s.toLowerCase().includes(x.toLowerCase())) s = s.replace(new RegExp('(^|[^A-Za-z])' + x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z])', 'gi'), '$1 '); /* whole words only, so a short data value does not eat the middle of a word */
   for (const k of KEEP) s = s.split(k).join(' ');
   s = s.replace(/\b[A-Z]{2,5}\b/g, ' ').replace(/\b[A-Z]*\d[\w-]*\b/g, ' ');
   /* the parts of people's names in the data ("Noah" of "Noah Williams", shown alone on a calendar bar) */
   if (!english.names) { english.names = new Set(); for (const x of data) if (/^[A-Z][a-z'’-]+(?: [A-Z][A-Za-z'’.-]*){1,3}$/.test(x)) for (const w of x.split(' ')) english.names.add(w.replace(/[.]$/, '')); }
-  const words = (s.match(/[A-Za-z]{3,}/g) || []).filter((w) => !(w[0] === w[0].toUpperCase() && (english.names.has(w) || data.some((x) => x === w))));
+  /* the short English words that glue a sentence together ("0 of 3", "at Saujana", "in 1.5h", "e.g.") count too */
+  const small = (s.match(/(?:^|[^A-Za-z])(of|at|to|by|on|in|or|vs|is|it|an|as|if|up|e\.g)(?=[^A-Za-z]|$)/gi) || []).map((w) => w.replace(/^[^A-Za-z]/, ''));
+  const words = small.concat(s.match(/[A-Za-z]{3,}/g) || []).filter((w) => !(w[0] === w[0].toUpperCase() && (english.names.has(w) || data.some((x) => x === w))));
   if (!words.length) return null;
-  if (lang === 'ms') { const en = words.filter((w) => EN_WORDS.has(w.toLowerCase()) && !MS_WORDS.has(w.toLowerCase())); return en.length ? en : null; }
+  if (lang === 'ms') { const en = words.filter((w) => w.length < 3 || EN_WORDS.has(w.toLowerCase()) && !MS_WORDS.has(w.toLowerCase())); return en.length ? en : null; }
   return words;
 }
 

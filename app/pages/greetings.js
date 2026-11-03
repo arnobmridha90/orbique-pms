@@ -211,11 +211,11 @@
             (on ? '<label class="sr-only" for="gm-fl' + i + '">Field name</label><input id="gm-fl' + i + '" class="input" data-fl="' + i + '" maxlength="40" value="' + esc(f.label) + '">' : '<b>' + esc(f.label) + '</b>') +
             '<code>{f_' + esc(f.key) + '}</code>' +
             '<label class="check" title="Like a door code: only people who can see door codes see the values on screen. The guest always gets the real value."><input type="checkbox" data-fp="' + i + '"' + (f.private ? ' checked' : '') + (on ? '' : ' disabled') + '><span>Private, like a door code</span></label>' +
-            (on ? '<button type="button" class="btn btn-ghost btn-xs" data-fdel="' + i + '" aria-label="Remove ' + esc(f.label) + '">' + O.icon('trash') + '</button>' : '') + '</div>' +
+            (on ? '<button type="button" class="btn btn-ghost btn-xs" data-fdel="' + i + '" aria-label="' + esc(O.tpl('Remove {name}', { name: f.label })) + '">' + O.icon('trash') + '</button>' : '') + '</div>' +
             (units.length ? '<div class="gm-vals">' + units.map(function (p) {
               var v = f.values[p.id] || '';
-              return '<label><span title="' + esc(p.name) + '">' + esc(unitName(p)) + '</span>' + (hide ? '<input class="input" disabled value="' + (v ? 'Hidden' : '') + '" placeholder="No value" aria-label="' + esc(f.label) + ' for ' + esc(p.name) + ' (hidden)">'
-                : '<input class="input" data-fv="' + i + '" data-unit="' + esc(p.id) + '" maxlength="200" value="' + esc(v) + '" placeholder="No value"' + (on ? '' : ' readonly') + ' aria-label="' + esc(f.label) + ' for ' + esc(p.name) + '">') + '</label>';
+              return '<label><span title="' + esc(p.name) + '">' + esc(unitName(p)) + '</span>' + (hide ? '<input class="input" disabled value="' + (v ? 'Hidden' : '') + '" placeholder="No value" aria-label="' + esc(O.tpl('{field} for {unit} (hidden)', { field: f.label, unit: p.name })) + '">'
+                : '<input class="input" data-fv="' + i + '" data-unit="' + esc(p.id) + '" maxlength="200" value="' + esc(v) + '" placeholder="No value"' + (on ? '' : ' readonly') + ' aria-label="' + esc(O.tpl('{field} for {unit}', { field: f.label, unit: p.name })) + '">') + '</label>';
             }).join('') + '</div>' : '<div class="small muted">This building has no units yet.</div>') +
             (hide ? '<div class="small muted">' + O.icon('lock') + ' The values are hidden: door codes are not part of your access.</div>' : '') + '</div>';
         }).join('');

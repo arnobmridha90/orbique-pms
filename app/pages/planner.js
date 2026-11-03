@@ -482,9 +482,9 @@
   /* live totals and the cost maths at the usual occupancy, straight from the inputs */
   function totalsHTML(dr) {
     var c = R.monthlyCosts(costsOf(dr), { paybackMonths: payback(dr) }), target = numOf(dr.target);
-    var bits = [money(c.fixedMonthly) + ' fixed a month', money(c.perStay) + ' per stay', money(c.perNight) + ' per night'];
-    var out = '<b>' + bits.join(', ') + '</b>' + (c.pct ? ', and ' + fmt.num(c.pct * 100, Math.round(c.pct * 1000) % 10 ? 1 : 0) + '% of revenue' : '') + '.';
-    if (c.capexMonthly) out += ' The fixed amount includes ' + money(c.capexMonthly) + ' a month to pay back furnishing over ' + fmt.plural(c.paybackMonths, 'month') + '.';
+    var costs = { raw: '<b>' + esc(O.tpl('{fixed} fixed a month, {stay} per stay, {night} per night', { fixed: money(c.fixedMonthly), stay: money(c.perStay), night: money(c.perNight) })) + '</b>' };
+    var out = c.pct ? O.tpl('{costs}, and {n}% of revenue.', { costs: costs, n: fmt.num(c.pct * 100, Math.round(c.pct * 1000) % 10 ? 1 : 0) }) : O.tpl('{costs}.', { costs: costs });
+    if (c.capexMonthly) out += (O.state.lang === 'zh' ? '' : ' ') + esc(O.tpl('The fixed amount includes {amount} a month to pay back furnishing over {months}.', { amount: money(c.capexMonthly), months: fmt.plural(c.paybackMonths, 'month') }));
     if (c.pct >= 1) return out + ' <span class="bad">The shares of revenue add up to 100% or more, so no price can cover them.</span>';
     var a = R.DEFAULTS, occ = dr.asm.baseOcc > 0 ? Math.round(dr.asm.baseOcc * 20) / 20 : a.baseOcc;
     var req = R.requiredRates(costsOf(dr), target, { avgStay: dr.asm.avgStay || a.avgStay, discountLeak: dr.asm.discountLeak != null ? dr.asm.discountLeak : a.discountLeak, paybackMonths: payback(dr) });
@@ -500,9 +500,10 @@
     if (!list.length) return '';
     var op = 0, cap = 0, types = {};
     list.forEach(function (e) { var a = Number(e.amount) || 0; if (e.costClass === 'capex') cap += a; else { op += a; types[e.type] = (types[e.type] || 0) + a; } });
-    var top = Object.keys(types).sort(function (a, b) { return types[b] - types[a]; }).slice(0, 3).map(function (t) { return t.toLowerCase(); });
-    return '<div class="note pp-exp">' + O.icon('expenses') + '<span>Expenses recorded for ' + esc(P.short || P.name) + ' from ' + d.monthName(from, true) + ' to ' + d.monthName(to, true) + ' come to about <b>' + money(op / 3) + ' a month</b> in running costs' +
-      (top.length ? ' (mostly ' + esc(joinWords(top)) + ')' : '') + (cap ? ', plus ' + money(cap) + ' of one-off purchases' : '') + '. Check that the costs above cover them.</span></div>';
+    var top = Object.keys(types).sort(function (a, b) { return types[b] - types[a]; }).slice(0, 3).map(function (t) { return O.state.lang === 'en' ? t.toLowerCase() : O.tr(t); });
+    var key = top.length ? (cap ? 'Expenses recorded for {unit} from {from} to {to} come to about {amount} in running costs (mostly {types}), plus {capex} of one-off purchases. Check that the costs above cover them.' : 'Expenses recorded for {unit} from {from} to {to} come to about {amount} in running costs (mostly {types}). Check that the costs above cover them.')
+      : cap ? 'Expenses recorded for {unit} from {from} to {to} come to about {amount} in running costs, plus {capex} of one-off purchases. Check that the costs above cover them.' : 'Expenses recorded for {unit} from {from} to {to} come to about {amount} in running costs. Check that the costs above cover them.';
+    return '<div class="note pp-exp">' + O.icon('expenses') + '<span>' + O.tpl(key, { unit: { raw: esc(P.short || P.name) }, from: d.monthName(from, true), to: d.monthName(to, true), amount: { raw: '<b>' + esc(O.tpl('{amount} a month', { amount: money(op / 3) })) + '</b>' }, types: { raw: esc(fmt.andList(top)) }, capex: money(cap) }) + '</span></div>';
   }
 
   /* ------------------------------------------------------------------ results: headline */
@@ -888,7 +889,7 @@
       return '<div class="pp-hrow' + (x.undoneAt ? ' undone' : '') + '"><div class="main"><div class="t">' + esc(name) + ' · ' + fmt.plural(x.n || isos.length, 'night') + (isos.length ? ' (' + esc(rangeText(isos)) + ')' : '') + '</div>' +
         '<div class="s">' + esc(fmt.dateTime(x.at)) + ' by ' + esc(staffName(x.by)) + (u && !x.planId && t && histUnits(t) > 1 ? ' for ' + esc(u.short || u.name) + ' only' : u && u.id !== P.id ? ' from ' + esc(u.short || u.name) : '') + (x.undoneAt && x.undoneBy ? ' · undone by ' + esc(staffName(x.undoneBy)) : '') + '</div></div>' + undo + '</div>';
     }).join('');
-    return '<div class="card pp-hist"><div class="card-head"><div class="hd"><h3>Push history</h3><div class="sub">' + (t && histUnits(t) > 1 ? 'Pushes for ' + esc(t.name) + ' units' : 'Pushes for ' + esc(P.short || P.name)) + '. Undo puts back the prices from before a push.</div></div></div>' +
+    return '<div class="card pp-hist"><div class="card-head"><div class="hd"><h3>Push history</h3><div class="sub">' + esc(O.tpl(t && histUnits(t) > 1 ? 'Pushes for {type} units. Undo puts back the prices from before a push.' : 'Pushes for {unit}. Undo puts back the prices from before a push.', { type: t ? t.name : '', unit: P.short || P.name })) + '</div></div></div>' +
       (rows || '<div class="card-body">' + U.empty('Nothing pushed yet. When you push a plan, it shows here with a way to undo it.') + '</div>') + '</div>';
   }
   function isPctUnit(a) { return a.unit === 'share' || (a.unit === 'list' && a.min >= 0); }
@@ -911,7 +912,7 @@
       var input = a.unit === 'list' ? '<div class="pp-list">' + a.items.map(function (lab, i) { return '<label>' + esc(lab) + asmInput(a, v[i], i) + '</label>'; }).join('') + '</div>' : asmInput(a, v);
       return '<div class="pp-arow' + (a.unit === 'list' ? ' wide' : '') + '" data-arow="' + a.key + '"><div class="al">' + (a.unit === 'list' ? '<span>' + esc(a.label) + '</span>' : '<label for="pp-a-' + a.key + '">' + esc(a.label) + '</label>') +
         (ch ? '<span class="row-flex"><span class="pill accent">Changed</span><button type="button" class="btn btn-quiet btn-xs" data-asm-reset="' + a.key + '">Reset</button></span>' : '') + '</div>' +
-        input + '<div class="help">' + esc(a.help) + '</div><div class="src">Source: ' + esc(a.source) + '</div></div>';
+        input + '<div class="help">' + esc(a.help) + '</div><div class="src">' + esc(O.tpl('Source: {text}', { text: a.source })) + '</div></div>';
     }).join('');
     return '<div class="card"><details class="pp-asm"' + (st.asmOpen ? ' open' : '') + '><summary><div><h3>Assumptions behind the forecast</h3><div class="sub">' + esc(asmSub(changed)) + '</div></div>' + O.icon('chevron') + '</summary>' +
       '<div class="pp-asm-body"><div class="pp-calib" data-calib></div><div class="pp-arows">' + rows + '</div>' +
@@ -1317,7 +1318,7 @@
         (isUntil ? '<input type="date" class="input pp-until" data-until aria-label="Last night to plan" min="' + d.add(T, 1) + '" max="' + d.add(T, MAX_DAYS - 1) + '" value="' + end + '">' : '') +
         '<span class="pp-saved" data-saved></span></div>' +
         '<div class="pp-ctx">' + (t ? '<b>' + esc(t.name) + '</b><span class="dot" aria-hidden="true"></span> ' + esc(sc.many ? sc.ctx : sc.line) + (bd ? '<span class="dot" aria-hidden="true"></span> ' + esc(bd.name) : '') : '<b>' + esc(P.type || P.name) + '</b>' + (P.area ? '<span class="dot" aria-hidden="true"></span> ' + esc(P.area) : '')) +
-        '<span class="dot" aria-hidden="true"></span> ' + esc(U.rangeLabel(T, end)) + ': ' + fmt.plural(nN, 'night') + ', ' + (nN - nB - nK) + ' open, ' + nB + ' booked' + (nK ? ', ' + nK + ' blocked' : '') + '</div>' +
+        '<span class="dot" aria-hidden="true"></span> ' + esc(O.tpl(nK ? '{range}: {count}, {n} open, {b} booked, {k} blocked' : '{range}: {count}, {n} open, {b} booked', { range: U.rangeLabel(T, end), count: fmt.plural(nN, 'night'), n: nN - nB - nK, b: nB, k: nK })) + '</div>' +
         '<div class="pp-results"><div class="pp-top">' + costsCard(P, dr) + '<div class="pp-right"></div></div><div class="pp-body stack"></div></div>' +
         '<div class="pp-bottom">' + historyCard(P) + asmCard(dr) + '</div>' +
         '</div>';

@@ -133,7 +133,7 @@
     var out = [], m = firstMonth();
     while (m <= D.TODAY) {
       var to = d.monthEnd(m) < D.TODAY ? d.monthEnd(m) : D.TODAY, p = pnl(m, to);
-      out.push({ from: m, to: to, label: d.MONTHS[d.month(m) - 1] + (m.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ' + m.slice(0, 4) : '') + (to !== d.monthEnd(m) ? ' (1–' + d.day(to) + ')' : ''), short: d.MONTHS[d.month(m) - 1] + (m.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ’' + m.slice(2, 4) : ''), p: p, partial: to !== d.monthEnd(m) });
+      out.push({ from: m, to: to, label: d.monthName(m) + (m.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ' + m.slice(0, 4) : '') + (to !== d.monthEnd(m) ? ' (1–' + d.day(to) + ')' : ''), short: d.monthName(m) + (m.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ’' + m.slice(2, 4) : ''), p: p, partial: to !== d.monthEnd(m) });
       m = d.addMonths(m, 1);
     }
     return out;
@@ -174,7 +174,7 @@
   }
   function pnlCard(a, b, r, c) {
     var rows = pnlRows(a, b);
-    return '<div class="card"><div class="card-head"><div><h3>Profit and loss</h3><div class="sub">' + esc(U.rangeLabel(r.from, r.to)) + ' vs ' + esc(U.rangeLabel(c.from, c.to)) + '</div></div></div>' +
+    return '<div class="card"><div class="card-head"><div><h3>Profit and loss</h3><div class="sub">' + esc(O.tpl('{a} vs {b}', { a: U.rangeLabel(r.from, r.to), b: U.rangeLabel(c.from, c.to) })) + '</div></div></div>' +
       '<div class="table-wrap"><table class="table pl"><thead><tr><th>Line</th><th class="num">This period</th><th class="num">Comparison</th><th class="num">Change</th></tr></thead><tbody>' +
       rows.map(function (x) {
         if (x[3].indexOf('sec') === 0) return '<tr class="' + x[3] + '"><td colspan="4">' + esc(x[0]) + '</td></tr>';
@@ -184,11 +184,15 @@
       }).join('') + '</tbody></table></div>' +
       '<div class="card-foot"><div class="fin-cap"><span class="cc-dot" aria-hidden="true"></span><span>' + CAP_HELP + '</span></div><div style="margin-top:6px">Revenue counts the nights stayed in the period (accommodation and cleaning, excluding tourism tax). Expenses count by the date paid; rejected claims are left out.</div></div></div>';
   }
-  function monthSpan(ms) { var a = ms[0], z = ms[ms.length - 1]; return d.MONTHS_LONG[d.month(a.from) - 1] + (a.from.slice(0, 4) !== z.from.slice(0, 4) ? ' ' + a.from.slice(0, 4) : '') + ' to ' + d.MONTHS_LONG[d.month(z.from) - 1] + ' ' + z.from.slice(0, 4); }
+  function monthSpan(ms) {
+    var a = ms[0], z = ms[ms.length - 1], y2 = a.from.slice(0, 4) !== z.from.slice(0, 4);
+    if (O.state.lang !== 'en') return O.tpl('{from} to {to}', { from: O.fmtDate(a.from, y2 ? { month: 'long', year: 'numeric' } : { month: 'long' }), to: O.fmtDate(z.from, { month: 'long', year: 'numeric' }) });
+    return d.MONTHS_LONG[d.month(a.from) - 1] + (y2 ? ' ' + a.from.slice(0, 4) : '') + ' to ' + d.MONTHS_LONG[d.month(z.from) - 1] + ' ' + z.from.slice(0, 4);
+  }
   function signed(n) { return n < 0 ? neg(-n) : money(n); }
   function chartCard(ms, r) {
     var z = ms[ms.length - 1];
-    return '<div class="card"><div class="card-head"><div><h3>Cash flow by month</h3><div class="sub">' + esc(monthSpan(ms)) + (z.partial ? ' · * ' + d.MONTHS[d.month(z.from) - 1] + ' is month to date (1 to ' + d.day(z.to) + ')' : '') + '</div></div></div><div class="card-body">' +
+    return '<div class="card"><div class="card-head"><div><h3>Cash flow by month</h3><div class="sub">' + esc(monthSpan(ms)) + (z.partial ? ' · * ' + esc(O.tpl('{month} is month to date (1 to {n})', { month: d.monthName(z.from), n: d.day(z.to) })) : '') + '</div></div></div><div class="card-body">' +
       '<div class="chart-legend">' + O.chart.legend([{ name: 'Revenue', tone: 'brand', square: true }, { name: 'Platform fees', tone: 'prev2', square: true }, { name: 'Operating expenses', tone: 'prev1', square: true }, { name: 'Capital spending', tone: 'accent', square: true }]) + '</div>' +
       '<div class="fin-chart"></div></div>' +
       '<div class="table-wrap"><table class="table mon"><thead><tr><th>Month</th><th class="num">Revenue</th><th class="num">Fees</th><th class="num">Operating</th><th class="num" title="Operating profit">Profit</th><th class="num">Capital</th><th class="num">Net cash</th></tr></thead><tbody>' +
@@ -205,7 +209,7 @@
     return '<div class="card"><div class="card-head"><div><h3>Tourism tax collected</h3><div class="sub">Passed through to the government, not counted as revenue</div></div></div><div class="card-body">' +
       '<div class="tt"><div><div class="k">Collected</div><div class="v">' + money(a.tax) + '</div></div><div><div class="k">Foreign guest nights</div><div class="v">' + fmt.num(a.taxNights) + '</div></div><div><div class="k">Stays</div><div class="v">' + fmt.num(foreign.length) + '</div></div></div>' +
       (top.length ? O.chart.hbars(top.slice(0, 6).map(function (pid) { return { label: '<span class="prop-dot" style="background:' + U.propColor(pid) + '"></span>' + esc(prop(pid).short), value: byP[pid], display: money(byP[pid]) }; })) : U.empty('No foreign guests stayed in this period.')) +
-      '</div><div class="card-foot">' + fmt.money(10, { cur: 'MYR' }) + ' per room per night for foreign guests. Malaysians are exempt. Declare and pay it with your monthly tourism tax return.</div></div>';
+      '</div><div class="card-foot">' + esc(O.tpl('{amount} per room per night for foreign guests. Malaysians are exempt. Declare and pay it with your monthly tourism tax return.', { amount: fmt.money(10, { cur: 'MYR' }) })) + '</div></div>';
   }
   function propRows(r) {
     var out = D.properties.filter(O.inCur).map(function (p) {
@@ -253,11 +257,11 @@
       '<div class="table-wrap"><table class="table ppl"><thead><tr><th>Person</th><th class="num">Total</th><th class="num">Expenses</th><th>Share</th><th>Top types</th><th class="num">Paid personally</th><th>Claims open now</th></tr></thead><tbody>' +
       rows.map(function (x) {
         return '<tr class="click" data-person="' + x.s.id + '" tabindex="0"><td><div class="pn">' + U.avatar(x.s.name, 'sm') + '<span>' + esc(x.s.name) + '<small>' + esc(x.s.roleLabel) + '</small></span></div></td>' +
-          '<td class="num b">' + money(x.total) + (x.cap ? '<div class="small muted" style="font-weight:500">' + money(x.cap) + ' capital</div>' : '') + '</td><td class="num">' + x.n + '</td>' +
+          '<td class="num b">' + money(x.total) + (x.cap ? '<div class="small muted" style="font-weight:500">' + esc(O.tpl('{amount} capital', { amount: money(x.cap) })) + '</div>' : '') + '</td><td class="num">' + x.n + '</td>' +
           '<td><div class="share"><div class="progress" aria-hidden="true"><i style="width:' + (x.share * 100).toFixed(1) + '%"></i></div><span class="small nowrap">' + fmt.pct(x.share) + '</span></div></td>' +
           '<td class="small">' + (x.top.length ? x.top.map(function (t) { return esc(t) + ' <span class="muted">' + money(x.types[t]) + '</span>'; }).join('<br>') : '<span class="faint">Nothing in this period</span>') + '</td>' +
           '<td class="num">' + (x.claimed ? money(x.claimed) : '–') + '</td>' +
-          '<td>' + (x.pend.length ? U.pill(x.pend.length + ' to approve · ' + money(sum(x.pend)), 'warn') + ' ' : '') + (x.appr.length ? U.pill(money(sum(x.appr)) + ' to pay back', 'info') : '') + (!x.pend.length && !x.appr.length ? '<span class="faint small">None</span>' : '') + '</td></tr>';
+          '<td>' + (x.pend.length ? U.pill(O.tpl('{n} to approve · {amount}', { n: x.pend.length, amount: money(sum(x.pend)) }), 'warn') + ' ' : '') + (x.appr.length ? U.pill(O.tpl('{amount} to pay back', { amount: money(sum(x.appr)) }), 'info') : '') + (!x.pend.length && !x.appr.length ? '<span class="faint small">None</span>' : '') + '</td></tr>';
       }).join('') + '</tbody><tfoot><tr><td>Everyone</td><td class="num">' + money(sum(rows, function (x) { return x.total; })) + '</td><td class="num">' + sum(rows, function (x) { return x.n; }) + '</td><td></td><td></td><td class="num">' + money(sum(rows, function (x) { return x.claimed; })) + '</td><td></td></tr></tfoot></table></div></div>';
   }
 
@@ -332,16 +336,16 @@
       var r = range(), c = cmpRange(r), a = pnl(r.from, r.to), b = pnl(c.from, c.to), ms = months();
       var span = monthSpan(ms);
       function perDay(k) { return ms.map(function (m) { return m.p[k] / (d.diff(m.from, m.to) + 1); }); }
-      var vs = '<span class="lg">vs ' + esc(U.rangeLabel(c.from, c.to)) + '</span><span class="sm">vs ' + esc(c.from === c.to ? d.fmt(c.from) : d.fmtRange(c.from, c.to)) + '</span>';
+      var vs = '<span class="lg">' + esc(O.tpl('vs {x}', { x: U.rangeLabel(c.from, c.to) })) + '</span><span class="sm">' + esc(O.tpl('vs {x}', { x: c.from === c.to ? d.fmt(c.from) : d.fmtRange(c.from, c.to) })) + '</span>';
       ctx.setActions('<button type="button" class="btn btn-ghost" data-top="csv">' + O.icon('download') + 'Export CSV</button><button type="button" class="btn btn-primary" data-top="pdf">' + O.icon('file') + 'Export PDF</button>');
       root.innerHTML = '<div class="pg-financials">' +
         '<div class="fin-bar"><span data-slot="range"></span>' +
         '<span class="small muted">Compare with</span>' + U.seg([['auto', 'Auto'], ['prev', 'Previous period'], ['month', 'Same days last month']], st.cmp, 'data-cmp') +
         O.curSwitchHTML() + '<span class="grow"></span><span class="fin-lock">' + O.icon('lock') + 'Only account owners can open Financials. Staff Access cannot grant it.</span></div>' +
         U.kpis([
-          { label: 'Revenue', value: money(a.revenue), delta: fmt.change(a.revenue, b.revenue), sub: vs, spark: perDay('revenue'), hl: true, title: 'Spark line: revenue per day, ' + span },
-          { label: 'Operating expenses', value: money(a.expTotal), delta: fmt.change(a.expTotal, b.expTotal), deltaOpts: { invert: true }, sub: vs, spark: perDay('expTotal'), title: 'The running costs of the month. Spark line: per day, ' + span },
-          { label: 'Operating profit', value: signed(a.net) + ' <span class="small muted" style="font-weight:700">' + pctTxt(a.margin) + '</span>', delta: fmt.change(a.net, b.net), sub: vs, spark: perDay('net'), title: 'Revenue minus platform fees and operating expenses. Spark line: per day, ' + span },
+          { label: 'Revenue', value: money(a.revenue), delta: fmt.change(a.revenue, b.revenue), sub: vs, spark: perDay('revenue'), hl: true, title: O.tpl('Spark line: revenue per day, {span}', { span: span }) },
+          { label: 'Operating expenses', value: money(a.expTotal), delta: fmt.change(a.expTotal, b.expTotal), deltaOpts: { invert: true }, sub: vs, spark: perDay('expTotal'), title: O.tpl('The running costs of the month. Spark line: per day, {span}', { span: span }) },
+          { label: 'Operating profit', value: signed(a.net) + ' <span class="small muted" style="font-weight:700">' + pctTxt(a.margin) + '</span>', delta: fmt.change(a.net, b.net), sub: vs, spark: perDay('net'), title: O.tpl('Revenue minus platform fees and operating expenses. Spark line: per day, {span}', { span: span }) },
           { label: 'Capital spending', value: money(a.capTotal), sub: a.cap.length ? fmt.plural(a.cap.length, 'purchase') + '<span class="lg"> · not in profit</span>' : 'None in this period', title: 'Long-lasting purchases for a property, kept out of operating profit. Platform fees: ' + money(a.feeTotal) }
         ]) +
         '<div class="fin-main"><div class="fin-col">' + chartCard(ms, r) + (D.properties.some(function (p) { return O.inCur(p) && O.tourismTaxApplies(p); }) ? taxCard(a, r) : '') + '</div><div class="fin-col">' + pnlCard(a, b, r, c) + '</div></div>' +

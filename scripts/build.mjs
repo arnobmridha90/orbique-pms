@@ -34,14 +34,21 @@ function page() {
   const css = list(path.join(APP, 'pages'), '.css').concat(list(path.join(APP, 'server'), '.css')).map((p) => `/* ${path.relative(APP, p)} */\n` + read(p));
   shell = shell.replace('<!--PAGE_CSS-->', () => (css.length ? '<style>\n' + css.join('\n') + '\n</style>' : ''));
   const files = [path.join(APP, 'data.js'), path.join(APP, 'core.js')]
-    /* the translations (app/i18n/<lang>.js; en.js and ignore.js are only for scripts/i18n-extract.mjs) */
-    .concat(list(path.join(APP, 'i18n'), '.js').filter((p) => !/[\\/](en|ignore)\.js$/.test(p)))
+    /* the translations: inline only in the single-file build; the web and phone builds ship them as i18n/<lang>.js */
+    .concat(local ? i18nSources() : [])
     .concat(list(path.join(APP, 'pages'), '.js'))
     .concat(local ? [] : list(path.join(APP, 'server'), '.js'))
     .concat(mobile ? list(path.join(APP, 'native'), '.js') : []);
   const scripts = files.map((p) => `<script>\n/* ${path.relative(APP, p)} */\n${jsSafe(read(p))}\n</script>`);
   /* modules shared with the server (api/_lib/shared/*.cjs) go in right after core.js, wrapped as O.<name> */
   scripts.splice(files.indexOf(path.join(APP, 'core.js')) + 1, 0, ...SHARED.map(([file, name]) => `<script>\n/* ${file} (shared with the server) */\n(function () {\nvar module = { exports: {} }, exports = module.exports;\n${jsSafe(read(path.join(ROOT, file)))}\nwindow.O = window.O || {}; window.O.${name} = module.exports;\n})();\n</script>`));
+  if (!local) {
+    /* where each language's file is (loaded by O.i18nLoad when that language is chosen), right after core.js; ?v= changes
+       with its content */
+    const urls = {};
+    for (const f of i18nFiles()) urls[f.lang] = (mobile ? '' : '/') + 'i18n/' + f.lang + '.js?v=' + f.hash;
+    scripts.splice(files.indexOf(path.join(APP, 'core.js')) + 1, 0, '<script>\nO.I18N_URL = ' + JSON.stringify(urls) + ';\n</script>');
+  }
   let head = '';
   if (mobile) {
     /* the phone app loads everything from its own files (relative paths); Capacitor's runtime and plugins come first */
@@ -71,6 +78,16 @@ function page() {
 }
 
 let nativeJs = null; /* the web build's vendor/native.js: {code, hash} */
+
+/* app/i18n/<lang>.js (en.js and ignore.js are only for scripts/i18n-extract.mjs) */
+function i18nSources() { return list(path.join(APP, 'i18n'), '.js').filter((p) => !/[\\/](en|ignore)\.js$/.test(p)); }
+function i18nFiles() {
+  return i18nSources().map((p) => { const code = read(p); return { lang: path.basename(p, '.js'), code, hash: crypto.createHash('sha256').update(code).digest('hex').slice(0, 12) }; });
+}
+function writeI18n(dir) {
+  fs.mkdirSync(path.join(dir, 'i18n'), { recursive: true });
+  for (const f of i18nFiles()) fs.writeFileSync(path.join(dir, 'i18n', f.lang + '.js'), f.code);
+}
 const OFFLINE_PAGE = 'offline.html'; /* mobile/www: capacitor.config.json server.errorPath */
 
 /* Capacitor's runtime and the plugins the phone app uses (app/native/bridge.js), as plain scripts: no bundler needed.
@@ -134,6 +151,7 @@ if (local) {
   nativeJs = nativeBundle();
   fs.writeFileSync(path.join(dist, 'index.html'), page());
   if (nativeJs) { fs.mkdirSync(path.join(dist, 'vendor'), { recursive: true }); fs.writeFileSync(path.join(dist, 'vendor', 'native.js'), nativeJs.code); }
+  writeI18n(dist);
   /* public files (manifest, icons, service worker) */
   const pub = path.join(ROOT, 'public');
   if (fs.existsSync(pub)) fs.cpSync(pub, dist, { recursive: true });
@@ -171,6 +189,7 @@ async function buildMobile() {
   fs.rmSync(www, { recursive: true, force: true });
   fs.mkdirSync(www, { recursive: true });
   fs.writeFileSync(path.join(www, 'index.html'), page());
+  writeI18n(www);
   /* the alert chime (scripts/alert-sound.py) is played by O.alertSound from sounds/ next to index.html */
   for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'sounds/orbique_alert.wav']) {
     const src = path.join(ROOT, 'public', f);

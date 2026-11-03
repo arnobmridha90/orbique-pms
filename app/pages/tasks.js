@@ -500,15 +500,15 @@
     var day = dayOf(t), tm = fmt.time(t.due);
     if (t.status === 'done') {
       var by = t.doneBy || people(t)[0];
-      return { cls: 'norm', txt: (t.doneAt ? 'Done ' + (t.doneAt.slice(0, 10) === D.TODAY ? fmt.time(t.doneAt) : d.fmt(t.doneAt.slice(0, 10))) : 'Done') + (by && staff(by) ? ' by ' + first(staff(by).name) : '') };
+      var at = t.doneAt ? (t.doneAt.slice(0, 10) === D.TODAY ? fmt.time(t.doneAt) : d.fmt(t.doneAt.slice(0, 10))) : null, nm = by && staff(by) ? first(staff(by).name) : null;
+      return { cls: 'norm', txt: at ? (nm ? O.tpl('Done {time} by {name}', { time: at, name: nm }) : O.tpl('Done {time}', { time: at })) : nm ? O.tpl('Done by {name}', { name: nm }) : 'Done' };
     }
     if (t.due < D.NOW) {
-      var late = day < D.TODAY ? (d.diff(day, D.TODAY) === 1 ? 'since yesterday' : 'since ' + d.fmt(day)) : 'since ' + tm;
-      return { cls: 'od', txt: 'Overdue ' + late };
+      return { cls: 'od', txt: day < D.TODAY ? (d.diff(day, D.TODAY) === 1 ? 'Overdue since yesterday' : O.tpl('Overdue since {when}', { when: d.fmt(day) })) : O.tpl('Overdue since {when}', { when: tm }) };
     }
     var mins = (Date.parse(t.due + ':00Z') - Date.parse(D.NOW + ':00Z')) / 6e4;
-    if (day === D.TODAY) return { cls: mins <= 120 ? 'soon' : 'norm', txt: 'Today ' + tm + (mins <= 120 ? ' · in ' + (mins < 60 ? Math.max(1, Math.round(mins)) + 'm' : (mins / 60).toFixed(1).replace('.0', '') + 'h') : '') };
-    if (d.diff(D.TODAY, day) === 1) return { cls: 'norm', txt: 'Tomorrow ' + tm };
+    if (day === D.TODAY) return { cls: mins <= 120 ? 'soon' : 'norm', txt: (mins <= 120 ? O.tpl('Today {time} · {soon}', { time: tm, soon: { raw: O.fmt.inDur(Math.max(1, mins)) } }) : O.tpl('Today {time}', { time: tm })) };
+    if (d.diff(D.TODAY, day) === 1) return { cls: 'norm', txt: O.tpl('Tomorrow {time}', { time: tm }) };
     return { cls: 'norm', txt: d.dowName(day) + ' ' + d.fmt(day) + ', ' + tm };
   }
   function dayHeading(day) {
@@ -523,19 +523,19 @@
     if (k === 'checkout') {
       b = b || D.bookings.filter(function (x) { return x.propertyId === pid && x.status !== 'cancelled' && x.checkOut === day; })[0];
       var nx = sameDayArrival(pid, day, b && b.id), out = [];
-      if (b) out.push((long ? b.guest.name + ' checks out ' : 'Guest out ') + fmt.time(b.checkOutTime));
-      if (nx) out.push((long ? 'next guest ' + nx.guest.name + ' arrives ' : 'next in ') + fmt.time(nx.checkInTime));
+      if (b) out.push(long ? O.tpl('{guest} checks out {time}', { guest: b.guest.name, time: fmt.time(b.checkOutTime) }) : O.tpl('Guest out {time}', { time: fmt.time(b.checkOutTime) }));
+      if (nx) out.push(long ? O.tpl('next guest {guest} arrives {time}', { guest: nx.guest.name, time: fmt.time(nx.checkInTime) }) : O.tpl('next in {time}', { time: fmt.time(nx.checkInTime) }));
       else if (long && b) out.push('no arrival the same day');
-      return out.join(' · ');
+      return O.i18nKeep(out.join(' · '));
     }
     if (k === 'checkin') {
       b = b || D.bookings.filter(function (x) { return x.propertyId === pid && liveBooking(x) && x.checkIn === day; })[0];
-      return b ? b.guest.name + ' arrives ' + fmt.time(b.checkInTime) + ' · ' + fmt.plural(b.guests || 1, 'guest') : '';
+      return b ? O.tpl('{guest} arrives {time} · {count}', { guest: b.guest.name, time: fmt.time(b.checkInTime), count: fmt.plural(b.guests || 1, 'guest') }) : '';
     }
     b = b || D.bookings.filter(function (x) { return x.propertyId === pid && liveBooking(x) && x.checkIn < day && day < x.checkOut; })[0];
     if (!b) return '';
     var n = b.nights || d.diff(b.checkIn, b.checkOut);
-    return b.guest.name + ' · night ' + (d.diff(b.checkIn, day) + 1) + ' of ' + n;
+    return O.tpl('{guest} · night {n} of {total}', { guest: b.guest.name, n: d.diff(b.checkIn, day) + 1, total: n });
   }
   function stayBooking(t) {
     if (t.bookingId && D.booking(t.bookingId)) return D.booking(t.bookingId);
@@ -596,7 +596,7 @@
       crew.map(function (s) {
         var mine = open.filter(function (t) { return W.has(t, s.id); }), now = mine.filter(function (t) { return dayOf(t) <= D.TODAY; }).length;
         return chip(s.id, U.avatar(s.name, 'sm') + esc(s.id === O.state.viewer ? 'You' : first(s.name)) + ' <span class="n">' + mine.length + '</span>', '',
-          s.name + ', ' + s.roleLabel + ': ' + fmt.plural(mine.length, 'open task') + ', ' + now + ' due today or overdue');
+          O.tpl(s.roleLabel ? '{name}, {role}: {count}, {n} due today or overdue' : '{name}: {count}, {n} due today or overdue', { name: s.name, role: s.roleLabel || '', count: fmt.plural(mine.length, 'open task'), n: now }));
       }).join('') +
       (un || st.assignee === 'unassigned' ? chip('unassigned', 'Unassigned <span class="n">' + un + '</span>', 'un', 'Open tasks nobody has yet') : '') +
       '</div>';
@@ -631,7 +631,7 @@
     opts = opts || {};
     return '<option value=""' + (!selId ? ' selected' : '') + '>' + esc(opts.noneLabel || 'Unassigned') + '</option>' + assignable(selId).map(function (s) {
       var l = load(s.id);
-      return '<option value="' + s.id + '"' + (s.id === selId ? ' selected' : '') + '>' + esc(opts.short ? first(s.name) : s.name) + (opts.short ? '' : ' · ' + esc(s.roleLabel)) + ' · ' + (l ? l + ' open' : 'free') + '</option>';
+      return '<option value="' + s.id + '"' + (s.id === selId ? ' selected' : '') + '>' + esc(opts.short ? first(s.name) : s.name) + (opts.short ? '' : ' · ' + esc(s.roleLabel)) + ' · ' + esc(l ? O.tpl('{n} open [[tasks a person has]]', { n: l }) : O.tpl('free [[a person with no open tasks]]')) + '</option>';
     }).join('') + (opts.many ? '<option value="__many">Several people…</option>' : '');
   }
   /* who is on a task, on a card or list row: one person (or nobody) is a select to change it, with "Several people…";
@@ -639,7 +639,7 @@
   function whoHTML(t) {
     var ids = people(t);
     if (can.edit() && can.assign()) {
-      if (ids.length > 1) return '<button type="button" class="tk-who tk-whobtn" data-people="' + esc(t.id) + '" aria-label="' + esc(ids.length + ' people on ' + t.title + ': ' + ids.map(staffName).join(', ') + '. Change') + '">' + avatars(ids) + '<span>' + esc(peopleNames(t, { you: true })) + '</span></button>';
+      if (ids.length > 1) return '<button type="button" class="tk-who tk-whobtn" data-people="' + esc(t.id) + '" aria-label="' + esc(O.tpl('{n} people on {task}: {names}. Change', { n: ids.length, task: t.title, names: O.fmt.andList(ids.map(staffName)) })) + '">' + avatars(ids) + '<span>' + esc(peopleNames(t, { you: true })) + '</span></button>';
       return '<select class="select' + (!ids.length ? ' unassigned' : '') + '" data-assign="' + esc(t.id) + '" aria-label="Assigned to, ' + esc(t.title) + '">' + assigneeOptions(ids[0] || '', { noneLabel: 'Assign someone', short: true, many: true }) + '</select>';
     }
     return '<span class="tk-who" title="' + esc(can.assign() ? 'View only' : noAccess('tasks.assign')) + '">' + (ids.length ? avatars(ids) + '<span>' + esc(peopleNames(t, { you: true })) + '</span>' : '<span style="color:var(--warn)">Unassigned</span>') + '</span>';
@@ -661,7 +661,7 @@
     var dl = dueLabel(t), od = isOverdue(t), un = isOpen(t) && W.none(t), ctxLine = noteShown(t) || stayLine(t), fb = !t.auto && forBooking(t);
     var pick = can.edit() && can.others();
     return '<article class="tk-card' + (od ? ' od' : un ? ' un' : '') + (t.status === 'done' ? ' done' : '') + (st.sel[t.id] ? ' sel' : '') + '">' +
-      '<div class="tk-top">' + (pick ? '<input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.title) + '">' : '') +
+      '<div class="tk-top">' + (pick ? '<input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="' + esc(O.tpl('Select {name}', { name: t.title })) + '">' : '') +
       (t.priority === 'high' && isOpen(t) ? U.pill('High', 'bad') : '') + '<span class="tk-type">' + esc(t.type) + '</span>' + autoMark(t) +
       (t.photoNote ? '<span class="tk-auto" title="Has a photo note">' + O.icon('camera') + '</span>' : '') +
       (t.requestId ? '<span class="tk-auto" title="From a unit request">' + O.icon('home') + '</span>' : '') +
@@ -713,7 +713,7 @@
       list.map(function (t) {
         var dl = dueLabel(t), pg = progress(t);
         var stCell = t.status === 'done' ? U.pill('Done', 'ok') : (pg.total ? '<div class="progress"><i style="width:' + Math.round(pg.pct * 100) + '%"></i></div><span class="xs muted">' + pg.done + '/' + pg.total + '</span>' : '') + (t.status === 'in_progress' ? U.pill('In progress', 'info') : pg.total ? '' : U.pill('To do', 'neutral'));
-        return '<tr class="' + (isOverdue(t) ? 'od' : isOpen(t) && W.none(t) ? 'un' : '') + '">' + (pick ? '<td><input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.title) + '"></td>' : '') +
+        return '<tr class="' + (isOverdue(t) ? 'od' : isOpen(t) && W.none(t) ? 'un' : '') + '">' + (pick ? '<td><input type="checkbox" data-pick="' + esc(t.id) + '"' + (st.sel[t.id] ? ' checked' : '') + ' aria-label="' + esc(O.tpl('Select {name}', { name: t.title })) + '"></td>' : '') +
           '<td><button type="button" class="tt" data-open="' + esc(t.id) + '">' + esc(t.title) + '</button> ' + (t.priority === 'high' && isOpen(t) ? U.pill('High', 'bad') : '') + '<div class="xs muted">' + esc(t.type) + (t.auto ? ' · automatic' : '') + (!t.auto && forBooking(t) ? ' · for ' + esc(bookingLine(forBooking(t), true)) : '') + '</div></td>' +
           '<td><span class="pc"><span class="prop-dot" style="background:' + (t.propertyId ? U.propColor(t.propertyId) : 'var(--border-strong)') + '"></span>' + esc(propShort(t.propertyId)) + '</span></td>' +
           '<td class="nowrap"><span class="due ' + dl.cls + '" style="margin:0">' + esc(dl.txt) + '</span></td>' +
@@ -802,8 +802,8 @@
   function checklistSelect(t) {
     var cur = t.customChecklist ? '__own' : (t.checklistId || '');
     return '<select class="select" id="tk-cl" name="checklistId"><option value="">No checklist</option>' +
-      D.checklists.map(function (c) { return '<option value="' + esc(c.id) + '"' + (cur === c.id ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.items.length + ' items)</option>'; }).join('') +
-      (t.customChecklist ? '<option value="__own" selected>Its own list (' + t.customChecklist.length + ' items)</option>' : '') + '</select>';
+      D.checklists.map(function (c) { return '<option value="' + esc(c.id) + '"' + (cur === c.id ? ' selected' : '') + '>' + esc(O.tpl('{name} ({count})', { name: c.name, count: fmt.plural(c.items.length, 'item') })) + '</option>'; }).join('') +
+      (t.customChecklist ? '<option value="__own" selected>' + esc(O.tpl('Its own list ({count})', { count: fmt.plural(t.customChecklist.length, 'item') })) + '</option>' : '') + '</select>';
   }
   /* the people picker: one chip per person who can be given tasks (tick as many as needed) and "Unassigned" (nobody).
      sel: ids ticked now; ro: shown but not changeable (no tasks.assign) */
@@ -814,8 +814,8 @@
       '<button type="button" class="tk-pp none' + (sel.length ? '' : ' on') + '" data-none aria-pressed="' + !sel.length + '"' + (ro ? ' disabled' : '') + '>Unassigned</button>' +
       list.map(function (s) {
         var on = sel.indexOf(s.id) >= 0, l = load(s.id);
-        return '<label class="tk-pp' + (on ? ' on' : '') + (ro ? ' ro' : '') + '" title="' + esc(s.name + (s.roleLabel ? ', ' + s.roleLabel : '') + ': ' + (l ? l + ' open' : 'free')) + '"><input type="checkbox" name="who" value="' + esc(s.id) + '"' + (on ? ' checked' : '') + (ro ? ' disabled' : '') + ' aria-label="' + esc(s.name + (s.roleLabel ? ', ' + s.roleLabel : '')) + '">' +
-          U.avatar(s.name, 'sm') + '<span class="n">' + esc(s.id === O.state.viewer ? 'You' : first(s.name)) + '</span><span class="l">' + (l ? l + ' open' : 'free') + '</span></label>';
+        return '<label class="tk-pp' + (on ? ' on' : '') + (ro ? ' ro' : '') + '" title="' + esc(O.tpl(s.roleLabel ? (l ? '{name}, {role}: {n} open' : '{name}, {role}: free') : l ? '{name}: {n} open' : '{name}: free', { name: s.name, role: s.roleLabel || '', n: l })) + '"><input type="checkbox" name="who" value="' + esc(s.id) + '"' + (on ? ' checked' : '') + (ro ? ' disabled' : '') + ' aria-label="' + esc(s.name + (s.roleLabel ? ', ' + s.roleLabel : '')) + '">' +
+          U.avatar(s.name, 'sm') + '<span class="n">' + esc(s.id === O.state.viewer ? 'You' : first(s.name)) + '</span><span class="l">' + esc(l ? O.tpl('{n} open [[tasks a person has]]', { n: l }) : O.tpl('free [[a person with no open tasks]]')) + '</span></label>';
       }).join('') + '</div>';
   }
   function pickedPeople(el) { return O.$$('[name=who]:checked', el).map(function (x) { return x.value; }); }
@@ -1053,7 +1053,7 @@
       if (!its.length) return '';
       var tpl = t.checklistId && O.checklist.template(t.checklistId), full = pg.done === pg.total;
       var miss = missingRequired(t).length;
-      return '<div><div class="tk-prog-h"><b>' + esc(tpl ? tpl.name : 'Checklist') + '</b><span>' + pg.done + ' of ' + pg.total + ' done</span></div>' +
+      return '<div><div class="tk-prog-h"><b>' + esc(tpl ? tpl.name : 'Checklist') + '</b><span>' + esc(O.tpl('{n} of {total} done', { n: pg.done, total: pg.total })) + '</span></div>' +
         '<div class="progress tk-bar' + (full ? ' full' : '') + '"><i style="width:' + Math.round(pg.pct * 100) + '%"></i></div>' +
         '<div class="tk-cl" role="group" aria-label="Checklist">' + its.map(function (x) {
           var dn = ck.indexOf(x.id) >= 0;
