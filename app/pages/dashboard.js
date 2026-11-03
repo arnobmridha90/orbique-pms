@@ -236,13 +236,13 @@
     m.tasks = []; m.overdue = []; m.unassigned = [];
     if (p.tasks) {
       m.tasks = D.tasks.filter(function (x) {
-        return x && x.status !== 'done' && x.due && x.due.slice(0, 10) <= t && (p.others || x.assigneeId === v.id);
+        return x && x.status !== 'done' && x.due && x.due.slice(0, 10) <= t && (p.others || O.taskwho.has(x, v.id));
       }).sort(function (a, b) {
         var ao = a.due.slice(0, 10) < t ? 0 : 1, bo = b.due.slice(0, 10) < t ? 0 : 1;
         return ao - bo || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0);
       });
       m.overdue = m.tasks.filter(function (x) { return x.due.slice(0, 10) < t; });
-      m.unassigned = p.others ? m.tasks.filter(function (x) { return !x.assigneeId; }) : [];
+      m.unassigned = p.others ? m.tasks.filter(function (x) { return O.taskwho.none(x); }) : [];
     }
     m.unread = 0; m.unreadChats = 0; m.latestChat = null;
     if (p.inbox) D.conversations.forEach(function (c) {
@@ -522,7 +522,7 @@
     var rows = list.map(function (b) {
       var p = prop(b.propertyId), gone = m.gone.indexOf(b) >= 0, task = turnoverFor(b);
       var next = D.bookings.filter(function (x) { return live(x) && x.propertyId === b.propertyId && x.checkIn === b.checkOut && x.id !== b.id && x.createdAt <= m.now; })[0];
-      var turn = task ? 'Turnover' + (task.assigneeId ? ' · ' + esc(staffName(task.assigneeId)) : ' · unassigned') + ' · ' + (task.status === 'done' ? 'done' : task.status === 'in_progress' ? 'in progress ' + progressText(task) : 'not started')
+      var turn = task ? 'Turnover' + (!O.taskwho.none(task) ? ' · ' + esc(O.taskPeople(task)) : ' · unassigned') + ' · ' + (task.status === 'done' ? 'done' : task.status === 'in_progress' ? 'in progress ' + progressText(task) : 'not started')
         : (next ? '<span class="dsh-sb warn" style="margin:0">No turnover clean booked</span>' : 'No turnover task');
       return '<div class="dsh-r"' + rowAttr(b, m) + '><div class="dsh-tm"><b>' + esc(fmt.time(b.checkOutTime)) + '</b><span>' + (gone ? 'Checked out' : 'Due out') + '</span></div>' +
         '<div style="min-width:0"><div class="dsh-nm">' + U.platIcon(b.channel) + guestName(b, m) + '<span class="u">' + esc(p.short) + '</span></div>' +
@@ -553,9 +553,9 @@
         : '<b>' + esc(fmt.time(x.due)) + '</b>' + (late ? '<span class="warn">Late</span>' : '<span>in ' + dur(mins(x.due) - mins(m.now)) + '</span>');
       var prog = progressText(x);
       var state = x.status === 'in_progress' ? 'In progress' + (prog ? ' ' + prog : '') : 'Not started';
-      var who = p.others ? (x.assigneeId ? esc(staffName(x.assigneeId)) : '<span style="color:var(--warn);font-weight:700">Unassigned</span>') + ' · ' : '';
-      var assign = !x.assigneeId && p.assign ? '<select class="select unassigned" data-assign="' + esc(x.id) + '" aria-label="Assign ' + esc(x.title + ' at ' + where) + '"><option value="">Assign to…</option>' + staffOptions() + '</select>' : '';
-      var mine = x.assigneeId === m.viewer.id || p.others;
+      var who = p.others ? (!O.taskwho.none(x) ? esc(O.taskPeople(x)) : '<span style="color:var(--warn);font-weight:700">Unassigned</span>') + ' · ' : '';
+      var assign = O.taskwho.none(x) && p.assign ? '<select class="select unassigned" data-assign="' + esc(x.id) + '" aria-label="Assign ' + esc(x.title + ' at ' + where) + '"><option value="">Assign to…</option>' + staffOptions() + '</select>' : '';
+      var mine = O.taskwho.has(x, m.viewer.id) || p.others;
       var act = p.taskEdit && mine ? (x.status === 'todo' ? '<button type="button" class="btn btn-ghost btn-sm" data-act="start" data-t="' + esc(x.id) + '" aria-label="Start ' + esc(x.title + ' at ' + where) + '">' + O.icon('play') + '<span class="lbl">Start</span></button>'
         : '<button type="button" class="btn btn-ghost btn-sm" data-act="done" data-t="' + esc(x.id) + '" aria-label="Mark ' + esc(x.title + ' at ' + where) + ' done">' + O.icon('check') + '<span class="lbl">Done</span></button>') : '';
       return '<div class="dsh-r tk' + (od ? ' od' : '') + '"><div class="dsh-tm">' + when + '</div>' +
@@ -637,7 +637,7 @@
           var whoEl = O.$('[name=who]', el), assignee = whoEl ? whoEl.value : O.state.viewer;
           var type = O.$('[name=type]', el).value, tm = O.$('[name=due]', el).value || due;
           var title = type === 'Turnover' ? 'Turnover clean' : 'Pre-arrival inspection';
-          D.tasks.push({ id: O.uid('T'), title: title, type: type, propertyId: b.propertyId, assigneeId: assignee, due: b.checkIn + 'T' + tm, priority: 'high', status: 'todo',
+          D.tasks.push({ id: O.uid('T'), title: title, type: type, propertyId: b.propertyId, assigneeId: assignee || null, assigneeIds: assignee ? [assignee] : [], due: b.checkIn + 'T' + tm, priority: 'high', status: 'todo',
             checklistId: O.checklist && O.checklist.forType ? O.checklist.forType(type, title) : null, checks: [], note: (b.createdAt.slice(0, 10) === D.TODAY ? 'Same-day booking: ' : '') + b.guest.name + ' arrives ' + fmt.time(b.checkInTime), createdBy: O.state.viewer, createdAt: D.NOW });
           U.toast(title + ' at ' + p.short + ' added for ' + staffName(assignee));
           O.emit('data', { type: 'task' });
@@ -647,11 +647,11 @@
   }
   function runSheetPDF(m) {
     var rows = [];
-    m.departures.forEach(function (b) { var t = turnoverFor(b); rows.push([b.checkOutTime, 'Check-out', b.guest.name, prop(b.propertyId).short, m.gone.indexOf(b) >= 0 ? 'Checked out' : 'Due out', t && t.assigneeId ? staffName(t.assigneeId) : '']); });
+    m.departures.forEach(function (b) { var t = turnoverFor(b); rows.push([b.checkOutTime, 'Check-out', b.guest.name, prop(b.propertyId).short, m.gone.indexOf(b) >= 0 ? 'Checked out' : 'Due out', t && !O.taskwho.none(t) ? O.taskPeople(t) : '']); });
     m.allArrivals.forEach(function (b) {
       rows.push([b.checkInTime, m.sameDay.indexOf(b) >= 0 ? 'Check-in (same-day)' : 'Check-in', b.guest.name, prop(b.propertyId).short, safe(function () { return O.readiness(b).map(function (r) { return r.label; }).join(', '); }, ''), '']);
     });
-    m.tasks.forEach(function (x) { rows.push([x.due.slice(0, 10) < m.t ? '00:00' : x.due.slice(11, 16), x.due.slice(0, 10) < m.t ? 'Task (overdue)' : 'Task', x.title, x.propertyId ? prop(x.propertyId).short : 'General', x.status === 'in_progress' ? 'In progress ' + progressText(x) : 'Not started', staffName(x.assigneeId)]); });
+    m.tasks.forEach(function (x) { rows.push([x.due.slice(0, 10) < m.t ? '00:00' : x.due.slice(11, 16), x.due.slice(0, 10) < m.t ? 'Task (overdue)' : 'Task', x.title, x.propertyId ? prop(x.propertyId).short : 'General', x.status === 'in_progress' ? 'In progress ' + progressText(x) : 'Not started', O.taskPeople(x)]); });
     rows.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
     rows = rows.map(function (r) { return [r[1] === 'Task (overdue)' ? 'Overdue' : fmt.time(r[0])].concat(r.slice(1)); });
     O.pdf.report({
@@ -742,8 +742,8 @@
       page.addEventListener('change', function (e) {
         var sel = e.target.closest('[data-assign]'); if (!sel || !sel.value) return;
         var task = D.tasks.filter(function (k2) { return k2.id === sel.dataset.assign; })[0]; if (!task) return;
-        task.assigneeId = sel.value;
-        U.toast(task.title + (task.propertyId ? ' at ' + prop(task.propertyId).short : '') + ' assigned to ' + staffName(task.assigneeId));
+        O.taskwho.add(task, sel.value);
+        U.toast(task.title + (task.propertyId ? ' at ' + prop(task.propertyId).short : '') + ' assigned to ' + staffName(sel.value));
         O.emit('data', { type: 'task', id: task.id });
       });
     }

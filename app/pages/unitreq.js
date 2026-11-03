@@ -35,7 +35,7 @@
     ];
     var seedTask = function (r, extra) {
       if (D.tasks.some(function (t) { return t.id === r.taskId; })) return;
-      var t = R.taskFor(r, { now: r.at, by: r.by }); Object.keys(extra).forEach(function (k) { t[k] = extra[k]; }); D.tasks.push(t);
+      var t = R.taskFor(r, { now: r.at, by: r.by, assigneeId: extra.assigneeId }); Object.keys(extra).forEach(function (k) { t[k] = extra[k]; }); D.tasks.push(t);
     };
     seedTask(D.unitRequests[0], { assigneeId: 's6' });
     seedTask(D.unitRequests[1], { assigneeId: 's6', status: 'done', doneAt: '2026-10-04T15:20', doneBy: 's6' });
@@ -94,9 +94,9 @@
   function audit(text) { if (!Array.isArray(D.auditLog)) D.auditLog = []; D.auditLog.unshift({ at: D.NOW, by: O.state.viewer, cat: 'tasks', text: text }); }
   function noAccess() { return 'Your access does not include raising requests. It needs "' + O.permLabel('tasks.create') + '" or "' + O.permLabel('properties.edit') + '".'; }
   UQ.canCreate = function () { return O.can('tasks.create') || O.can('properties.edit'); };
-  /* the rule is R.canCancel: the raiser alone may cancel only while the task is to do and unassigned or theirs */
+  /* the rule is R.canCancel: the raiser alone may cancel only while the task is to do and unassigned or theirs alone */
   function canCancel(r) { return R.canCancel(r, taskOf(r), { viewer: O.state.viewer, propsEdit: O.can('properties.edit'), tasksDelete: O.can('tasks.delete'), canCreate: UQ.canCreate() }); }
-  function canSeeTask(t) { return !!t && O.can('tasks') && (O.can('tasks.others') || t.assigneeId === O.state.viewer); }
+  function canSeeTask(t) { return !!t && O.can('tasks') && (O.can('tasks.others') || O.taskwho.has(t, O.state.viewer)); }
   UQ.forUnit = function (pid) { return R.sort(reqs().filter(function (r) { return r && r.propertyId === pid; })); };
   UQ.openCount = function (pid) { return reqs().filter(function (r) { return r && (!pid || r.propertyId === pid) && R.isOpen(r); }).length; };
 
@@ -201,9 +201,9 @@
           var r = R.make(v, { id: O.uid('RQ'), by: O.state.viewer, now: D.NOW });
           var t = addTask(r);
           O.unscoped(function () { D.unitRequests.push(r); });
-          audit('Raised request ' + R.trail(r) + ' for ' + propShort(r.propertyId) + ' and created the task "' + t.title + '"' + (t.assigneeId ? ' for ' + staffName(t.assigneeId) : ', unassigned'));
+          audit('Raised request ' + R.trail(r) + ' for ' + propShort(r.propertyId) + ' and created the task "' + t.title + '"' + (!O.taskwho.none(t) ? ' for ' + O.taskPeople(t) : ', unassigned'));
           O.emit('data', { type: 'request-new', id: r.id });
-          U.toast('Request saved. Task "' + t.title + '" is in Tasks' + (t.assigneeId ? ' for ' + staffName(t.assigneeId) + '.' : ', unassigned.'));
+          U.toast('Request saved. Task "' + t.title + '" is in Tasks' + (!O.taskwho.none(t) ? ' for ' + O.taskPeople(t) + '.' : ', unassigned.'));
         }
       }]
     });
@@ -237,14 +237,14 @@
     UQ.sync();
     audit('Made a new task "' + t.title + '" for request ' + R.trail(r) + ' (' + propShort(r.propertyId) + ')');
     O.emit('data', { type: 'request-task', id: r.id });
-    U.toast('Task "' + t.title + '" is in Tasks' + (t.assigneeId ? ' for ' + staffName(t.assigneeId) : '') + '.');
+    U.toast('Task "' + t.title + '" is in Tasks' + (!O.taskwho.none(t) ? ' for ' + O.taskPeople(t) : '') + '.');
   }
 
   /* ---------------- one request ---------------- */
   function taskText(r, t) {
     if (!t) return r.taskGone && R.isOpen(r) ? 'Its task was deleted' : '';
     var st = t.status === 'done' ? 'done' : t.status === 'in_progress' ? 'in progress' : 'to do';
-    return 'Task ' + st + (t.assigneeId ? ', ' + first(t.assigneeId) : ', unassigned') + (t.status !== 'done' && t.due ? ', due ' + fmt.dateTime(t.due) : '');
+    return 'Task ' + st + (!O.taskwho.none(t) ? ', ' + O.taskPeople(t, { short: true }) : ', unassigned') + (t.status !== 'done' && t.due ? ', due ' + fmt.dateTime(t.due) : '');
   }
   function rowHTML(r, opts) {
     opts = opts || {};

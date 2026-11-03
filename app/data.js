@@ -316,7 +316,7 @@
   var tasks = [
     { id: 'T-301', title: 'Turnover clean', type: 'Turnover', propertyId: 'bf3b', assigneeId: 's3', due: '2026-10-06T11:45', priority: 'high', status: 'in_progress', checklist: [9, 14], note: 'Sarah Tan arrives 12:00 (early check-in)', photos: 2 },
     { id: 'T-302', title: 'Turnover clean', type: 'Turnover', propertyId: 'bf1a', assigneeId: 's5', due: '2026-10-06T11:45', priority: 'high', status: 'todo', checklist: [0, 12], note: 'Same-day booking: Hafiz Aziz arrives 12:00' },
-    { id: 'T-303', title: 'Deep clean after checkout', type: 'Turnover', propertyId: 'or4', assigneeId: 's4', due: '2026-10-06T14:00', priority: 'medium', status: 'todo', checklist: [0, 18] },
+    { id: 'T-303', title: 'Deep clean after checkout', type: 'Turnover', propertyId: 'or4', assigneeId: 's4', assigneeIds: ['s4', 's5'], due: '2026-10-06T14:00', priority: 'medium', status: 'todo', checklist: [0, 18] },
     { id: 'T-304', title: 'Replace AC unit, bedroom 2', type: 'Maintenance', propertyId: 'or4', assigneeId: 's6', due: '2026-10-07T12:00', priority: 'medium', status: 'todo', note: 'Unit blocked until 8 Oct' },
     { id: 'T-305', title: 'Pre-arrival inspection', type: 'Inspection', propertyId: 'kls', assigneeId: 's2', due: '2026-10-06T13:30', priority: 'high', status: 'todo', checklist: [0, 10], note: 'Same-day booking: Emma Laurent arrives 15:00' },
     { id: 'T-306', title: 'Restock welcome kit', type: 'Restock', propertyId: 'mrs', assigneeId: 's2', due: '2026-10-06T09:30', priority: 'low', status: 'done', doneAt: '2026-10-06T09:12', photos: 3 },

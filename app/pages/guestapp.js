@@ -1293,7 +1293,7 @@
       if ((r.type === 'clean' || r.type === 'towels') && !r.taskId && O.can('tasks.create')) {
         var clean = r.type === 'clean', day = clean && vals.date && vals.date >= D.TODAY ? vals.date : D.TODAY;
         var due = clean ? day + 'T' + (/morning/i.test(vals.slot || r.summary || '') ? '09:00' : '13:00') : addMinutes(D.NOW, 60);
-        var t = { id: O.uid('T'), title: clean ? 'Mid-stay clean' : 'Bring extra towels and linen', type: 'Housekeeping', propertyId: b.propertyId, assigneeId: who, due: due, priority: clean ? 'low' : 'medium', status: 'todo', createdAt: D.NOW, createdBy: O.state.viewer, note: 'Guest app request from ' + guestName(b) + ': ' + (r.summary || s.name) + (r.note ? '. Note: ' + r.note : '') };
+        var t = { id: O.uid('T'), title: clean ? 'Mid-stay clean' : 'Bring extra towels and linen', type: 'Housekeeping', propertyId: b.propertyId, bookingId: b.id, assigneeId: who, due: due, priority: clean ? 'low' : 'medium', status: 'todo', createdAt: D.NOW, createdBy: O.state.viewer, note: 'Guest app request from ' + guestName(b) + ': ' + (r.summary || s.name) + (r.note ? '. Note: ' + r.note : '') };
         if (clean) { t.checklistId = 'CL-daily'; t.checks = []; }
         D.tasks.push(t); r.taskId = t.id;
         extra = ' Task created' + (who ? ' for ' + staffName(who) : ', unassigned') + '.';
@@ -1312,7 +1312,7 @@
   function problemRowHTML(r) {
     var b = D.booking(r.bookingId), t = taskById(r.taskId), photos = Array.isArray(r.photos) ? r.photos : [];
     var acts = '';
-    if (t) acts = '<span class="ga-task">' + (t.status === 'done' ? U.pill('Fixed', 'ok') : t.status === 'in_progress' ? U.pill('In progress', 'info') : U.pill('To do', 'warn')) + '<span class="small muted">' + esc(t.assigneeId ? staffName(t.assigneeId) : 'Unassigned') + '</span></span>' + (O.can('tasks') ? '<button type="button" class="btn btn-ghost btn-sm" data-ga-task="' + esc(t.id) + '">Open task</button>' : '');
+    if (t) acts = '<span class="ga-task">' + (t.status === 'done' ? U.pill('Fixed', 'ok') : t.status === 'in_progress' ? U.pill('In progress', 'info') : U.pill('To do', 'warn')) + '<span class="small muted">' + esc(O.taskPeople(t)) + '</span></span>' + (O.can('tasks') ? '<button type="button" class="btn btn-ghost btn-sm" data-ga-task="' + esc(t.id) + '">Open task</button>' : '');
     else if (r.noted) acts = U.pill('Noted', 'neutral') + '<span class="small muted">by ' + esc(staffName(r.noted.by)) + '</span>';
     else if (canReq()) acts = (O.can('tasks.create') ? '<button type="button" class="btn btn-primary btn-sm" data-ga-mktask="' + esc(r.id) + '">' + ic('tasks') + 'Create repair task</button>' : '') + '<button type="button" class="btn btn-ghost btn-sm" data-ga-noted="' + esc(r.id) + '">' + (r.when === 'arrival' ? 'Noted, no repair' : 'No repair needed') + '</button>';
     else acts = U.pill('No task yet', 'neutral');
@@ -1337,7 +1337,7 @@
     var maint = D.staff.filter(function (s) { return s.role === 'maintenance'; })[0], who = O.can('tasks.assign') ? (maint ? maint.id : null) : null;
     var later = b && b.checkOut > D.TODAY ? b.checkOut : d.add(D.TODAY, 1);
     var photos = Array.isArray(r.photos) ? r.photos : [];
-    var t = { id: O.uid('T'), title: (arrival ? 'Check damage reported on arrival: ' : 'Repair: ') + lc(r.item || 'problem'), type: 'Maintenance', propertyId: r.propertyId, assigneeId: who,
+    var t = { id: O.uid('T'), title: (arrival ? 'Check damage reported on arrival: ' : 'Repair: ') + lc(r.item || 'problem'), type: 'Maintenance', propertyId: r.propertyId, bookingId: b ? b.id : null, assigneeId: who,
       due: urgent ? addMinutes(D.NOW, 120) : (arrival ? later : d.add(D.TODAY, 1)) + 'T12:00', priority: urgent ? 'high' : arrival ? 'low' : 'medium', status: 'todo', createdAt: D.NOW, createdBy: O.state.viewer,
       note: 'Reported in the guest app by ' + (r.guest || 'the guest') + ' (' + (r.room || 'Other') + '): ' + (r.desc || r.item) + (arrival ? ' Already damaged on arrival, so the guest is not charged.' : ''), photos: photos.length };
     if (photos.length) t.photoUrls = photos.map(function (ph) { return ph.url; });

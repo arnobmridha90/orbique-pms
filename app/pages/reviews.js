@@ -361,7 +361,7 @@
     var flags = [];
     if (!r.reply) flags.push(U.pill('Needs reply · waiting ' + (a === 0 ? 'since today' : fmt.plural(a, 'day')), a >= 3 || low ? 'bad' : 'warn'));
     if (low) flags.push(U.pill(r.stars <= 2 ? 'Low rating' : 'Below average', 'bad'));
-    if (task) flags.push('<span class="pill info" title="' + esc(task.title) + '">Task ' + esc(task.id) + ': ' + esc(task.title.replace(/ \(.*\)$/, '')) + ' · ' + esc(task.status === 'done' ? 'done' : task.assigneeId ? staffName(task.assigneeId) : 'unassigned') + '</span>');
+    if (task) flags.push('<span class="pill info" title="' + esc(task.title) + '">Task ' + esc(task.id) + ': ' + esc(task.title.replace(/ \(.*\)$/, '')) + ' · ' + esc(task.status === 'done' ? 'done' : O.taskPeople(task, { none: 'unassigned' })) + '</span>');
     var minSub = Math.min.apply(null, SUBS.map(function (s) { return r.sub[s[0]]; }));
     var subs = '<div class="rv-subs" aria-label="Category scores">' + SUBS.map(function (s) { var v = r.sub[s[0]]; return '<span class="' + (v <= 3 && v === minSub ? 'lo' : '') + '">' + s[1] + ' <b>' + v + '</b></span>'; }).join('') + '</div>';
     var canBk = O.allowed('bookings'), canLink = O.can('reviews', 'edit'), canTask = O.can('tasks.create'), canChat = O.allowed('inbox');
