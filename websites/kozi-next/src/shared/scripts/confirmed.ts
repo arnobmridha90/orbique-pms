@@ -4,7 +4,7 @@
 import { BOOKED_KEY, bookingStatus, rm, TEST_MODE, type Booked, type BookingStatus } from '@shared/lib/api';
 import { fmtDayYear, fmtLong, fromIso, iso } from '@shared/lib/dates';
 
-const NAMES: Record<string, string> = { standard: 'Standard Suite', boutique: 'Boutique Suite', premium: 'Premium Suite' }; // when this tab lost the name
+const NAMES: Record<string, string> = { standard: 'Superior Suite', boutique: 'Deluxe Suite', premium: 'Premier Suite' }; // when this tab lost the name
 const PLANS: Record<string, string> = { flexible: 'Flexible', weekly: 'Weekly stay', nonref: 'Non-refundable' };
 // seconds before each new question while the payment is still being confirmed: quick at first, about four minutes in all
 const AGAIN = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 30, 30, 30, 30];

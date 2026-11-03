@@ -143,7 +143,7 @@ const hash = (s: string) => { // FNV-1a, then a final mix so neighbouring dates 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 function sampleNight(type: SuiteType, d: Date, f = 1): ApiDay {
   const k = iso(d), wkend = d.getDay() === 5 || d.getDay() === 6;
-  const b = BASE[type] ?? BASE.standard; // a type added in Orbique gets the Standard price here
+  const b = BASE[type] ?? BASE.standard; // a type added in Orbique gets the Superior price here
   const price = round2(((wkend ? b.weekend : b.week) + (d.getMonth() === 11 ? 20 : 0)) * f); // December costs more
   const open = hash(type + k) > 0.12;  // some nights already sold, so the calendar shows closed days
   return { date: k, available: open ? 1 : 0, public: price, minStay: 1, noArrival: false, noDeparture: false };

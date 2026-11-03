@@ -46,7 +46,7 @@
     {
       "id": "standard",
       "buildingId": "vortex-klcc",
-      "name": "Standard Suite",
+      "name": "Superior Suite",
       "levels": "Level 41",
       "line": "Two bedrooms, two bathrooms and a full kitchen on the 41st floor, at our simplest price.",
       "story": "Everything a family needs for a city stay: two bedrooms, two bathrooms, a full kitchen and your own washing machine, on the 41st floor of Vortex.",
@@ -67,7 +67,7 @@
     {
       "id": "boutique",
       "buildingId": "vortex-klcc",
-      "name": "Boutique Suite",
+      "name": "Deluxe Suite",
       "levels": "Level 43",
       "line": "Wake up to the Petronas Twin Towers, with a study and a marble table for four.",
       "story": "Warm gold and neutral tones, floor-length drapes and a living room that looks straight across the city to the Twin Towers. The second bedroom has a queen and a single, and the study is a quiet corner for a call home.",
@@ -96,7 +96,7 @@
           ],
           "w": 1080,
           "h": 810,
-          "alt": "Dining table and living room in the Boutique Suite"
+          "alt": "Dining table and living room in the Deluxe Suite"
         },
         {
           "id": "boutique-10-klcc-night-view",
@@ -108,7 +108,7 @@
           ],
           "w": 810,
           "h": 1080,
-          "alt": "A Petronas tower lit up at dusk, seen from the Boutique Suite"
+          "alt": "A Petronas tower lit up at dusk, seen from the Deluxe Suite"
         },
         {
           "id": "boutique-01-living-room",
@@ -212,7 +212,7 @@
     {
       "id": "premium",
       "buildingId": "vortex-klcc",
-      "name": "Premium Suite",
+      "name": "Premier Suite",
       "levels": "Levels 26 and 47",
       "line": "Our best-finished suites, with the city's landmarks outside the window.",
       "story": "Panelled feature walls, soft lighting, hotel-quality white linen and floor-to-ceiling windows that frame the Twin Towers, KL Tower or Merdeka 118, depending on the suite.",
@@ -242,7 +242,7 @@
           ],
           "w": 1280,
           "h": 960,
-          "alt": "Dining table under rattan lamps in a Premium Suite"
+          "alt": "Dining table under rattan lamps in a Premier Suite"
         },
         {
           "id": "premium-b-06-bed-klcc-view",
@@ -266,7 +266,7 @@
           ],
           "w": 1280,
           "h": 960,
-          "alt": "KL Tower lit blue at dusk, seen from a Premium bedroom"
+          "alt": "KL Tower lit blue at dusk, seen from a Premier bedroom"
         },
         {
           "id": "premium-a-08-master-bedroom-merdeka-118-night",
@@ -350,7 +350,7 @@
           ],
           "w": 960,
           "h": 1280,
-          "alt": "The Petronas Twin Towers by day from a Premium window"
+          "alt": "The Petronas Twin Towers by day from a Premier window"
         }
       ],
       "visible": true
