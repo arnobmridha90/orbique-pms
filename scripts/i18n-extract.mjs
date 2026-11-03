@@ -32,7 +32,7 @@ export function sourceFiles() {
   const add = (d, ext) => { const p = path.join(ROOT, d); if (!fs.existsSync(p)) return; for (const f of fs.readdirSync(p).sort()) if (f.endsWith(ext)) out.push(path.join(d, f)); };
   out.push('app/core.js');
   add('app/pages', '.js'); add('app/server', '.js');
-  out.push('api/_lib/shared/teamchat.cjs', 'api/_lib/shared/taskwho.cjs', 'api/_lib/shared/unitreq.cjs', 'api/_lib/shared/beds.cjs', 'api/_lib/shared/unitdue.cjs', 'api/_lib/shared/rateplan.cjs');
+  out.push('api/_lib/shared/taskwho.cjs', 'api/_lib/shared/unitreq.cjs', 'api/_lib/shared/beds.cjs', 'api/_lib/shared/unitdue.cjs', 'api/_lib/shared/rateplan.cjs');
   return out.filter((f) => !SKIP.has(f) && fs.existsSync(path.join(ROOT, f)));
 }
 

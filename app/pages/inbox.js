@@ -94,6 +94,8 @@
   var st = { sel: null, view: 'list', tab: 'guests', box: 'main', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
   var player = { key: null, audio: null, raf: 0, t0: 0, dur: 0 };
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  /* the full weekday in the chosen language (O.fmtDate uses Intl in the language's locale), English as the fallback */
+  function dayName(day) { try { if (O.state.lang && O.state.lang !== 'en' && O.fmtDate) return O.fmtDate(day, { weekday: 'long' }); } catch (e) {} return DAYS[d.dow(day)]; }
   var VARS = [['guest_first', 'Guest first name'], ['property', 'Property'], ['wifi_name', 'Wi-Fi name'], ['wifi_password', 'Wi-Fi password'], ['parking', 'Parking'], ['checkin_time', 'Check-in time'], ['checkout_time', 'Check-out time'], ['door_code', 'Door code']];
   var PAUSE_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
   var PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>';
@@ -628,12 +630,12 @@
   function listTime(iso) {
     var day = iso.slice(0, 10), n = d.diff(day, D.TODAY);
     if (n === 0) return fmt.time(iso);
-    return d.dowName(day) + ' ' + d.day(day) + ' ' + d.MONTHS[d.month(day) - 1] + (day.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ' + day.slice(0, 4) : ''); /* e.g. "Mon 2 Nov": always the date, not just the weekday */
+    return d.dowName(day) + ' ' + d.day(day) + ' ' + d.monthName(day) + (day.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ' + day.slice(0, 4) : ''); /* e.g. "Mon 2 Nov": always the date, not just the weekday */
   }
-  function fullWhen(iso) { return DAYS[d.dow(iso.slice(0, 10))] + ', ' + d.fmtY(iso.slice(0, 10)) + (iso.length >= 16 ? ' · ' + fmt.time(iso) : ''); } /* "Monday, 2 Nov 2026 · 3:15 PM" */
+  function fullWhen(iso) { return dayName(iso.slice(0, 10)) + ', ' + d.fmtY(iso.slice(0, 10)) + (iso.length >= 16 ? ' · ' + fmt.time(iso) : ''); } /* "Monday, 2 Nov 2026 · 3:15 PM" */
   function dayLabel(day) {
     var n = d.diff(day, D.TODAY);
-    var full = DAYS[d.dow(day)] + ', ' + d.fmtY(day); /* day, date and year, e.g. "Monday, 2 Nov 2026" */
+    var full = dayName(day) + ', ' + d.fmtY(day); /* day, date and year, e.g. "Monday, 2 Nov 2026" */
     if (n === 0) return 'Today · ' + full;
     if (n === 1) return 'Yesterday · ' + full;
     return full;
