@@ -1844,8 +1844,9 @@
     var NOTES = [[0, 783.99, 0.8], [0.14, 1046.5, 0.9], [0.28, 1318.51, 1]], PARTIALS = [[1, 1, 0.42], [2, 0.38, 0.2], [3, 0.16, 0.1]];
     function Ctor() { return window.AudioContext || window.webkitAudioContext; }
     function context() { if (!ctx && Ctor()) { try { ctx = new (Ctor())(); } catch (e) { ctx = null; } } return ctx; }
-    /* the web app serves it at /sounds/; the phone app and a local file have it next to index.html */
-    function url() { return (/^https?:$/.test(location.protocol) && !(O.native) ? '/' : '') + 'sounds/orbique_alert.wav'; }
+    /* the web app serves it at /sounds/ (also inside the phone app when its screens come from the live site); the
+       phone app's bundled copy (config.js native: true) and a local file have it next to index.html */
+    function url() { return (/^https?:$/.test(location.protocol) && !(O.native && (window.ORBIQUE_CONFIG || {}).native) ? '/' : '') + 'sounds/orbique_alert.wav'; }
     function load() {
       var c = context();
       if (buf || loading || !c || !window.fetch || /^file:/.test(location.href)) return;

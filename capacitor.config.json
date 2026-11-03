@@ -2,6 +2,10 @@
   "appId": "com.orbique.app",
   "appName": "Orbique",
   "webDir": "mobile/www",
+  "server": {
+    "url": "https://orbique-pms.vercel.app",
+    "errorPath": "offline.html"
+  },
   "backgroundColor": "#F6F7F9",
   "android": {
     "allowMixedContent": false

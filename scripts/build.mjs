@@ -4,11 +4,13 @@
  *   node scripts/build.mjs                        -> dist/ (the web app: index.html + vendor files + config.js)
  *   node scripts/build.mjs --local --out /tmp/x.html   -> a single self-contained file for local tests (no server, data saved in the browser)
  *   node scripts/build.mjs --mobile               -> mobile/www (the phone app's files for Capacitor; see docs/MOBILE.md)
+ *                                                    and server.url in capacitor.config.json
  *
  * The page is assembled from app/shell.html: core.css and app/pages/*.css are inlined, then one <script> per file
  * (data.js, core.js, the shared api/_lib/shared/*.cjs modules, app/pages/*.js, app/server/*.js) so a mistake in one page
  * cannot break the others.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,12 +53,23 @@ function page() {
       '<script src="/config.js"></script>\n<script src="/vendor/supabase.js"></script>';
     shell = shell.replace(/<script async src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/jspdf\/[^"]+"><\/script>/, '<script async src="/vendor/jspdf.umd.min.js"></script>');
   }
+  /* the website is also the phone app's screens (capacitor.config.json server.url, docs/MOBILE.md): inside the app,
+     whose native side has already put window.Capacitor and its transport into the page, Capacitor's plugins and
+     app/native/*.js load here, after app/server/*.js and before O.boot(). document.write keeps that order (a script it
+     writes runs before the parser goes on). A browser has no such transport and loads nothing more */
+  if (nativeJs) scripts.push('<script>\n/* phone app only: vendor/native.js (Capacitor plugins + app/native/*.js) */\n(function (w) {\n' +
+    '  var k = w.webkit && w.webkit.messageHandlers;\n' +
+    '  if (w.Capacitor && (w.androidBridge || (k && k.bridge))) document.write(\'<script src="/vendor/native.js?v=' + nativeJs.hash + '"><\\/script>\');\n' +
+    '})(window);\n</script>');
   shell = shell.replace('<!--SCRIPTS-->', () => scripts.join('\n') + '\n<script>O.boot();</script>');
   /* the shell starts with <title>, <meta> and <link> tags: they belong in <head> (Chrome ignores a manifest link in <body>) */
   const lead = shell.match(/^(?:\s*<(?:title>[^<]*<\/title|meta\b[^>]*|link\b[^>]*)>)*/)[0];
   shell = shell.slice(lead.length);
   return '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' + lead.trim() + (head ? '\n' + head : '') + '\n</head>\n<body>\n' + shell.replace(/^\s+/, '') + '\n</body>\n</html>\n';
 }
+
+let nativeJs = null; /* the web build's vendor/native.js: {code, hash} */
+const OFFLINE_PAGE = 'offline.html'; /* mobile/www: capacitor.config.json server.errorPath */
 
 /* Capacitor's runtime and the plugins the phone app uses (app/native/bridge.js), as plain scripts: no bundler needed.
  * Order matters: the runtime defines window.capacitorExports, synapse is needed by the files plugin. */
@@ -79,6 +92,24 @@ const MAP_VENDORS = [
   ['node_modules/maplibre-gl/LICENSE.txt', 'vendor/maplibre-gl.LICENSE.txt']
 ];
 
+/* vendor/native.js for the website: NATIVE_VENDORS (same order) and then app/native/*.js, each in its own try so a
+   mistake in one file does not stop the next. Only the phone app loads it (see page()). */
+function nativeBundle() {
+  const parts = [];
+  for (const [from, to] of NATIVE_VENDORS) {
+    const src = path.join(ROOT, from);
+    if (!fs.existsSync(src)) { console.warn('missing ' + from + ' (run npm install): the website will not work as the phone app\'s screens'); return null; }
+    parts.push('/* ' + to + ': ' + from + ' */\n' + read(src).replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, '\n') +
+      (to === 'vendor/cap-synapse.js' ? '\nwindow.synapse = window.synapse || window.outsystemsSynapse;' : ''));
+  }
+  for (const p of list(path.join(APP, 'native'), '.js')) {
+    const name = 'app/' + path.relative(APP, p);
+    parts.push('/* ' + name + ' */\ntry {\n' + read(p) + '\n} catch (e) { if (window.console) console.error(' + JSON.stringify(name + ' failed:') + ', e); }');
+  }
+  const code = parts.join('\n;\n') + '\n';
+  return { code, hash: crypto.createHash('sha256').update(code).digest('hex').slice(0, 12) };
+}
+
 function copy(from, to) {
   fs.mkdirSync(path.dirname(to), { recursive: true });
   /* the source maps are not shipped, so drop the comment that points browsers at them */
@@ -98,7 +129,9 @@ if (local) {
   const dist = path.resolve(outArg || path.join(ROOT, 'dist'));
   fs.rmSync(dist, { recursive: true, force: true });
   fs.mkdirSync(dist, { recursive: true });
+  nativeJs = nativeBundle();
   fs.writeFileSync(path.join(dist, 'index.html'), page());
+  if (nativeJs) { fs.mkdirSync(path.join(dist, 'vendor'), { recursive: true }); fs.writeFileSync(path.join(dist, 'vendor', 'native.js'), nativeJs.code); }
   /* public files (manifest, icons, service worker) */
   const pub = path.join(ROOT, 'public');
   if (fs.existsSync(pub)) fs.cpSync(pub, dist, { recursive: true });
@@ -196,5 +229,78 @@ async function buildMobile() {
     commit: (env.GITHUB_SHA || env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7)
   };
   fs.writeFileSync(path.join(www, 'config.js'), 'window.ORBIQUE_CONFIG = ' + JSON.stringify(cfg, null, 2) + ';\n');
-  console.log('built', www, site ? '(connected to ' + site + ')' : '(no site address: the app runs as a local test copy)');
+  fs.writeFileSync(path.join(www, OFFLINE_PAGE), offlinePage(site));
+  /* only the default folder is what Capacitor copies into the app (capacitor.config.json webDir) */
+  if (!outArg) capacitorServer(site);
+  console.log('built', www, site ? '(screens from ' + site + ', updated on each deploy)' : '(no site address: the app runs as a local test copy)');
+}
+
+/* Where the app's screens come from. With a site address the app opens the live site itself (server.url), so each
+ * deploy reaches phones the next time the app opens, with no new install, and the native side gives that page the
+ * same plugins as the bundled copy. server.errorPath is the bundled page shown when the site cannot be reached.
+ * Without a site address (ORBIQUE_SITE_URL=none: pull requests) the app shows the bundled copy in mobile/www, so it
+ * tests that build's own screens. npx cap sync copies capacitor.config.json into android/ and ios/; this keeps its
+ * other settings and its key order, and writes it only when something changed.
+ */
+function capacitorServer(site) {
+  const file = path.join(ROOT, 'capacitor.config.json');
+  const before = read(file);
+  const cfg = JSON.parse(before);
+  const server = Object.assign({}, cfg.server);
+  delete server.url; delete server.errorPath;
+  if (site) Object.assign(server, { url: site, errorPath: OFFLINE_PAGE });
+  const out = {};
+  for (const k of Object.keys(cfg)) {
+    if (k === 'server') continue;
+    out[k] = cfg[k];
+    if (k === 'webDir' && Object.keys(server).length) out.server = server;
+  }
+  if (!out.server && Object.keys(server).length) out.server = server;
+  const after = JSON.stringify(out, null, 2) + '\n';
+  if (after !== before) fs.writeFileSync(file, after);
+  console.log('capacitor.config.json: ' + (site ? 'server.url ' + site : 'no server.url (the bundled copy)'));
+}
+
+/* Shown by the app when the live site cannot be reached (no internet, or the site is down). Capacitor serves it from
+ * the app's own files (https://localhost/offline.html on Android), so everything is inline. */
+function offlinePage(site) {
+  const home = JSON.stringify((site || '') + '/');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Orbique</title>
+<style>
+html,body{margin:0;height:100%;}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#F6F7F9;color:#14181F;display:flex;align-items:center;justify-content:center;
+  padding:calc(24px + env(safe-area-inset-top,0px)) 24px calc(24px + env(safe-area-inset-bottom,0px));box-sizing:border-box;text-align:center;}
+.box{max-width:340px;}
+.mark{width:56px;height:56px;border-radius:16px;background:#0B5D54;color:#FFFFFF;font-weight:800;font-size:28px;line-height:56px;margin:0 auto 20px;}
+h1{font-size:20px;margin:0 0 10px;}
+p{font-size:15px;line-height:1.5;color:#4A5160;margin:0 0 24px;}
+button{font:inherit;font-size:15px;font-weight:700;background:#0B5D54;color:#FFFFFF;border:0;border-radius:10px;padding:12px 28px;}
+button[disabled]{opacity:0.6;}
+</style>
+</head>
+<body>
+<div class="box">
+<div class="mark" aria-hidden="true">O</div>
+<h1>No internet connection</h1>
+<p>Orbique needs the internet to open. Check that Wi-Fi or mobile data is on, then try again.</p>
+<button type="button" id="again">Try again</button>
+</div>
+<script>
+(function () {
+  var home = ${home};
+  var b = document.getElementById('again');
+  function again() { b.disabled = true; b.textContent = 'Opening...'; location.replace(home === '/' ? 'index.html' : home); }
+  b.addEventListener('click', again);
+  /* the phone is back online: try by itself */
+  window.addEventListener('online', again);
+})();
+</script>
+</body>
+</html>
+`;
 }

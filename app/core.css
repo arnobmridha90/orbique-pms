@@ -445,6 +445,11 @@ html.native .side .side-foot{padding-bottom:calc(12px + var(--sab));}
 html.native .drawer{padding-top:var(--sat); padding-right:var(--sar); padding-bottom:var(--sab);}
 html.native .modal-back{padding-top:max(6vh, calc(16px + var(--sat)));}
 html.native .toasts{bottom:calc(18px + var(--sab));}
+/* "A new version of the app is ready" (app/native/updates.js): stays until Update or Later */
+.toast.app-update{flex-wrap:wrap; justify-content:center; gap:10px; max-width:calc(100vw - 32px);}
+.toast.app-update .app-update-acts{display:flex; gap:6px;}
+.toast.app-update .app-update-go{background:var(--brand); color:var(--brand-ink);}
+.toast.app-update .app-update-later{background:transparent; color:#FFFFFF; border-color:rgba(255,255,255,0.35);}
 html.native .pg-website .wb-fullbar{padding-top:calc(10px + var(--sat)); padding-left:calc(14px + var(--sal)); padding-right:calc(14px + var(--sar));}
 @media (max-width:960px){
   html.native{--topbar-h:calc(56px + var(--sat));}
