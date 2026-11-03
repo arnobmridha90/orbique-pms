@@ -891,7 +891,7 @@
     var m = lastMsg(c), unread = c.unread > 0, feed = c.kind === 'feed';
     var av = feed ? '<span class="cv-feed">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c));
     var sub = feed ? 'Notifications' : 'Email' + (c.ota ? ' via ' + c.ota : '');
-    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text)) : '';
+    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + '<span data-no-i18n>' + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text) + '</span>') : '';
     return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(updName(c) + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
       '<span class="cv-av">' + av + '</span>' +
       '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
@@ -1078,7 +1078,7 @@
     }
     var txt = esc(codeSafe(c, m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.text));
     if (m.from === 'note') txt = txt.replace(mentionRe(), '<b class="mention">@$1</b>');
-    return { html: '<span class="txt">' + txt + '</span>' + xlHTML(m, key) + actsHTML(c, m, i) };
+    return { html: '<span class="txt" data-no-i18n>' + txt + '</span>' + xlHTML(m, key) + actsHTML(c, m, i) };
   }
   /* a booking site's answer buttons on a guest message (an Agoda special request: Accepted / Subject to availability /
      Not accepted). Each opens the site's own page, which records the answer; the chat remembers which one was picked. */
@@ -1154,7 +1154,7 @@
     return '<div class="qr-bar" role="group" aria-label="Quick replies">' + greetBtnHTML(c) + greetSetupHTML(c) + '<span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
       list.map(function (q) {
         var unit = q.propertyIds.length ? '<span class="unit" title="Tagged to ' + esc(q.propertyIds.map(function (x) { return prop(x).short; }).join(', ')) + '">' + O.icon('home') + esc(prop(b.propertyId).short) + (q.propertyIds.length > 1 ? ' +' + (q.propertyIds.length - 1) : '') + '</span>' : '';
-        return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '">' + esc(q.title) + unit + '</button>';
+        return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '" data-no-i18n>' + esc(q.title) + unit + '</button>';
       }).join('') +
       (canQR() ? '<button type="button" class="qr manage" data-act="manage">' + O.icon('edit') + 'Manage</button>' : '') + '</div>';
   }

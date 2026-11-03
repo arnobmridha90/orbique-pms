@@ -180,7 +180,7 @@
         var l = list();
         if (!l.length) return '<div class="gm-list">' + U.empty(canEdit() ? 'No greeting for this building yet. Add one to send it from the Inbox.' : 'No greeting for this building yet.', '✉') + '</div>';
         return '<div class="gm-list" role="list">' + l.map(function (g) {
-          return '<button type="button" role="listitem" class="gm-item' + (g.id === st.sel ? ' on' : '') + '" data-pick="' + esc(g.id) + '"><div class="t">' + esc(g.name || 'Untitled') + '</div><div class="x">' + esc(String(g.text || '').slice(0, 140)) + '</div></button>';
+          return '<button type="button" role="listitem" class="gm-item' + (g.id === st.sel ? ' on' : '') + '" data-pick="' + esc(g.id) + '"><div class="t">' + esc(g.name || 'Untitled') + '</div><div class="x" data-no-i18n>' + esc(String(g.text || '').slice(0, 140)) + '</div></button>';
         }).join('') + '</div>';
       }
       function chipsHTML(g, on) {
@@ -199,7 +199,7 @@
         var lines = b ? notes(filled, g) : ['Sample values. Pick a booking to see exactly what that guest would get now.'];
         return '<div class="field"><div class="gm-pvbar"><label for="gm-pv">Preview for</label><select id="gm-pv" class="select" data-f="sample"><option value="">Sample guest</option>' +
           opts.map(function (x) { var p = D.propById[x.propertyId]; return '<option value="' + esc(x.id) + '"' + (x.id === st.sample ? ' selected' : '') + '>' + esc(x.guest.name) + ' · ' + esc(p ? unitName(p) : 'no unit yet') + ' · ' + esc(d.fmtRange(x.checkIn, x.checkOut)) + '</option>'; }).join('') + '</select></div>' +
-          '<div class="gm-pv"><div class="pvb">' + (g.text.trim() ? partsHTML(filled, g) : '<span style="opacity:.8">Your message appears here.</span>') + '</div></div>' +
+          '<div class="gm-pv"><div class="pvb"' + (g.text.trim() ? ' data-no-i18n' : '') + '>' + (g.text.trim() ? partsHTML(filled, g) : '<span style="opacity:.8">Your message appears here.</span>') + '</div></div>' +
           (lines.length ? '<div class="gm-notes">' + lines.map(function (n) { return '<div>' + esc(n) + '</div>'; }).join('') + '</div>' : '') + '</div>';
       }
       function fieldsHTML(g, on) {

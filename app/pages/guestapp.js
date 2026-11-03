@@ -16,6 +16,7 @@
   function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
   function nz(v) { return v === undefined ? null : v; }
 
+  /* i18n:off — the guest's own app and its default content keep the operator's wording (scripts/i18n-extract.mjs) */
   /* =================================================================
      1. DATA
      ================================================================= */
@@ -1101,6 +1102,7 @@
     return { reload: function () { return load(false); }, stop: stop };
   };
 
+  /* i18n:on */
   /* =================================================================
      5. STAFF PAGE: guests (preview + link), requests, problems, house info, local tips, settings
      ================================================================= */
@@ -1186,7 +1188,7 @@
     var handle = null, p = D.propById[b.propertyId];
     U.modal({
       title: 'Guest app preview', sub: guestName(b) + (p ? ' · ' + (p.short || p.name) : '') + ' · ' + d.fmtRange(b.checkIn, b.checkOut), size: 'ga-pv-modal',
-      body: '<div class="ga-pv"><div class="ga-pv-frame" role="region" aria-label="Guest app preview" tabindex="0"></div></div>', autofocus: false,
+      body: '<div class="ga-pv"><div class="ga-pv-frame" data-no-i18n role="region" aria-label="Guest app preview" tabindex="0"></div></div>', autofocus: false,
       onOpen: function (el) {
         handle = O.guestMode(O.$('.ga-pv-frame', el), b.guestToken, { preview: true, hideCode: !canCode(), hideWifi: !(canCode() || O.can('properties.access')) });
       },

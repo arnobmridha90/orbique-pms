@@ -723,7 +723,7 @@
       rows.map(function (r) {
         var off = !!ex[r.c.id];
         return '<tr class="' + (off ? 'off' : '') + '"><td><input type="checkbox" data-comp="' + esc(r.c.id) + '" aria-label="Use ' + esc(r.c.name) + ' in the average"' + (off ? '' : ' checked') + '></td>' +
-          '<td><div class="cmp-nm">' + U.platIcon(r.c.channel) + esc(r.c.name) + (off ? ' <span class="faint small">left out</span>' : '') + '</div></td><td class="nowrap">' + bedsLabel(r.c.beds) + '</td><td class="num nowrap">' + r.c.distanceKm.toFixed(1) + ' km</td>' +
+          '<td><div class="cmp-nm">' + U.platIcon(r.c.channel) + '<span data-no-i18n>' + esc(r.c.name) + '</span>' + (off ? ' <span class="faint small">left out</span>' : '') + '</div></td><td class="nowrap">' + bedsLabel(r.c.beds) + '</td><td class="num nowrap">' + r.c.distanceKm.toFixed(1) + ' km</td>' +
           '<td class="num nowrap"><span class="stars">★</span> ' + r.c.rating.toFixed(2) + ' <span class="faint">(' + r.c.reviews + ')</span></td><td class="num">' + r.c.occ + '%</td>' +
           '<td class="num"><b>' + (none ? '–' : fmt.money(r.avg, { cur: m.P })) + '</b></td>' + (n ? '<td class="num">' + fmt.money(r.on, { cur: m.P }) + '</td>' : '') +
           '<td class="num">' + (none ? '–' : '<span class="' + (r.vs > 0.02 ? 'pos' : r.vs < -0.02 ? 'neg' : '') + '">' + signedPct(r.vs) + '</span>') + '</td></tr>';

@@ -558,10 +558,10 @@
     var p = D.propById[b.propertyId], body = O.$('.modal-body', dr.el); if (!body) return;
     var sub = O.$('.modal-head .sub', dr.el); if (sub) sub.textContent = b.id + ' · ' + (p ? propLabel(p) : O.bookingPlace(b));
     O.$$('.kv dt', body).forEach(function (dt) {
-      if (dt.textContent === 'Property' && p && dt.nextElementSibling) dt.nextElementSibling.textContent = propLabel(p);
+      if ((dt.textContent === 'Property' || dt.textContent === O.tr('Property')) && p && dt.nextElementSibling) dt.nextElementSibling.textContent = propLabel(p);
     });
     function section(title) {
-      return O.$$('.section-title', body).filter(function (x) { return x.textContent.trim().toLowerCase() === title; }).map(function (x) { return x.parentNode; })[0];
+      return O.$$('.section-title', body).filter(function (x) { var v = x.textContent.trim().toLowerCase(); return v === title || v === String(O.tr(title.charAt(0).toUpperCase() + title.slice(1))).toLowerCase(); }).map(function (x) { return x.parentNode; })[0];
     }
     if (!canContacts()) {
       var g = section('guest'), line = g && O.$('.small.muted', g);

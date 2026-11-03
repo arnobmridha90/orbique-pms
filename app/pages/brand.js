@@ -179,7 +179,7 @@
     }, function (e) {
       if (document.body.contains(btn)) { btn.disabled = false; btn.textContent = label; }
       /* auth.js may already have shown this message */
-      if (e && e.message && !O.$$('.toast').some(function (t) { return t.textContent === e.message; })) U.toast(e.message, 'bad');
+      if (e && e.message && !O.$$('.toast').some(function (t) { return t.textContent === e.message || t.textContent === O.tr(e.message); })) U.toast(e.message, 'bad');
     });
   }
 
@@ -191,7 +191,7 @@
       '<div class="card"><div class="card-head"><div><h3>Your logo</h3><div class="sub">PNG, JPG, SVG or WebP. Transparent backgrounds work best.</div></div><span class="pill brand">' + esc(ws.name) + ' workspace</span></div><div class="card-body stack">' +
       '<div class="logo-stage"><div class="stage" style="background:#FFFFFF"><img src="' + esc(ws.logo) + '" alt="' + esc(ws.name) + ' logo on white"></div><div class="stage" style="background:' + t['--side-bg'] + ';color:' + t['--side-ink'] + '">' + O.theme.logoHTML(ws, t['--side-bg']) + '<span class="nm">' + esc(ws.name) + '</span></div></div>' +
       (edit ? '<label class="drop" data-drop>' + O.icon('upload') + '<div><b>Upload a new logo</b> or drop it here. The colours update straight away.</div><input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden data-file></label>' +
-        (local ? '<div><div class="label">Or try a sample logo to see the colours change</div><div class="samples">' + SAMPLES.map(function (s) { var on = ws.logo === O.svgUrl(O.logos[s[0]]); return '<button type="button" class="sample' + (on ? ' on' : '') + '" data-sample="' + s[0] + '"><img src="' + esc(O.svgUrl(O.logos[s[0]])) + '" alt="">' + esc(s[1]) + '</button>'; }).join('') + '</div><div class="xs faint" style="margin-top:6px">Samples other than Orbique and Otto are made-up businesses for testing.</div></div>' : '') : '') +
+        (local ? '<div><div class="label">Or try a sample logo to see the colours change</div><div class="samples">' + SAMPLES.map(function (s) { var on = ws.logo === O.svgUrl(O.logos[s[0]]); return '<button type="button" class="sample' + (on ? ' on' : '') + '" data-sample="' + s[0] + '"><img src="' + esc(O.svgUrl(O.logos[s[0]])) + '" alt=""><span data-no-i18n>' + esc(s[1]) + '</span></button>'; }).join('') + '</div><div class="xs faint" style="margin-top:6px">Samples other than Orbique and Otto are made-up businesses for testing.</div></div>' : '') : '') +
       '</div></div>' +
       '<div class="card"><div class="card-head"><div><h3>Live preview</h3><div class="sub">How these colours look across the app</div></div></div><div class="card-body">' + miniPreview(t, ws) + '</div></div>' +
       '</div>' +
@@ -353,7 +353,7 @@
       if (draft.step === 1) {
         html += '<div class="form-grid"><div class="field"><label>Business name</label><input class="input" name="nm" value="' + esc(draft.name) + '" placeholder="e.g. Seri Stays"></div><div class="field"><label>Website address</label><input class="input" name="dm" value="' + esc(draft.domain) + '" placeholder="seristays.orbique.site"></div></div><div class="row-flex" style="justify-content:flex-end;margin-top:14px"><button class="btn btn-primary" data-w="next1">Next: logo</button></div>';
       } else if (draft.step === 2) {
-        html += '<label class="drop" data-wdrop style="display:block">' + O.icon('upload') + '<div><b>Upload the logo</b>. We pick the colours for you.</div><input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden data-wfile></label><div class="label" style="margin-top:12px">Or use a sample</div><div class="samples">' + SAMPLES.slice(2).map(function (s) { return '<button type="button" class="sample" data-wsample="' + s[0] + '"><img src="' + esc(O.svgUrl(O.logos[s[0]])) + '" alt="">' + esc(s[1]) + '</button>'; }).join('') + '</div><div class="row-flex" style="justify-content:space-between;margin-top:14px"><button class="btn btn-ghost" data-w="back">Back</button><span class="small muted" data-wmsg></span></div>';
+        html += '<label class="drop" data-wdrop style="display:block">' + O.icon('upload') + '<div><b>Upload the logo</b>. We pick the colours for you.</div><input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden data-wfile></label><div class="label" style="margin-top:12px">Or use a sample</div><div class="samples">' + SAMPLES.slice(2).map(function (s) { return '<button type="button" class="sample" data-wsample="' + s[0] + '"><img src="' + esc(O.svgUrl(O.logos[s[0]])) + '" alt=""><span data-no-i18n>' + esc(s[1]) + '</span></button>'; }).join('') + '</div><div class="row-flex" style="justify-content:space-between;margin-top:14px"><button class="btn btn-ghost" data-w="back">Back</button><span class="small muted" data-wmsg></span></div>';
       } else if (draft.step === 3) {
         var tk = O.theme.tokens(draft.brand), fake = { name: draft.name, logo: draft.logo, logoLum: draft.logoLum };
         html += '<div class="grid g2"><div class="stack"><div class="label">Picked from your logo</div><div class="swatches">' + draft.swatches.map(function (s) { return '<div class="sw"><i style="background:' + s.hex + '"></i>' + s.hex + '</div>'; }).join('') + '</div>' +
