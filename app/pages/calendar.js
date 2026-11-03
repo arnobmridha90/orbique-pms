@@ -1,6 +1,8 @@
 /* Calendar: every property on one timeline.
-   Default window: today plus the next 6 days. Step back or forward by 7 days, jump to today, or pick any start date.
-   Desktop can show 7, 14 or 30 days (remembered on this device); phones always show 7 days, in portrait and landscape.
+   One continuous timeline: swipe (or scroll, or drag with the mouse) sideways through the days and down through the units;
+   more days load as you near either end. It opens with yesterday at the left edge and today next to it. The arrows step
+   7 days, Today scrolls back to today, the date picker jumps anywhere. Redraws (data changes, sync) keep the scroll position.
+   Desktop fits 7, 14 or 30 days to the width (remembered on this device); phones fit 7 days, in portrait and landscape.
    Sticky property column ("name · location"), bars coloured by booking status with the platform mark, hatched blocks.
    Tap a bar to open the booking; tap a free night to add a booking or block dates (calendar.block).
    Unit types: untagged units come first, as before. Typed units follow under a row per type (building · type) that shows how
@@ -16,10 +18,13 @@
   var MIN_DW = 22;                       /* below this the timeline scrolls sideways instead of squeezing */
   var LENGTHS = [7, 14, 30];
   var STEP = 7;
+  var MAX_SPAN = 400;                    /* days kept on the page at once; the far end is dropped as you scroll further */
   var PHONE_Q = '(max-width:760px), (max-height:500px) and (max-width:960px)';
   var LEGEND = [['confirmed', 'confirmed', 'Confirmed'], ['checked_in', 'inhouse', 'In-house'], ['pending', 'pending', 'Pending'], ['checked_out', 'past', 'Checked out']];
 
-  var st = { start: null, prop: '', flash: null, scroll: null, view: null, tray: [], anchor: null };
+  /* from + span: the days on the page; pos: scroll position in days from `from` (survives a resize) + px down;
+     start: the day to put at the left edge the next time the timeline is laid out afresh */
+  var st = { start: null, from: null, span: 0, pos: null, prop: '', flash: null, view: null, tray: [], anchor: null };
 
   O.css('calendar', `
 .pg-calendar{--pc:210px;}
@@ -45,13 +50,15 @@
 .pg-calendar .cal-empty .btn{margin-top:12px;}
 
 /* the timeline */
-.pg-calendar .cal-scroll{position:relative; overflow:auto; max-height:calc(100vh - 200px); overscroll-behavior-x:contain;}
+.pg-calendar .cal-scroll{position:relative; overflow:auto; max-height:calc(100vh - 200px); overscroll-behavior-x:contain; -webkit-user-select:none; user-select:none;}
+.pg-calendar .cal-scroll.panning, .pg-calendar .cal-scroll.panning *{cursor:grabbing;}
 .pg-calendar .cal-track{position:relative;}
 .pg-calendar .cal-hd{display:flex; position:sticky; top:0; z-index:6; background:var(--surface); border-bottom:1px solid var(--border-strong);}
 .pg-calendar .cal-corner{position:sticky; left:0; z-index:7; width:var(--pc); flex:none; background:var(--surface); border-right:1px solid var(--border-strong); padding:6px 8px 7px 14px; display:flex; flex-direction:column; justify-content:flex-end; font-size:11px; font-weight:700; color:var(--muted); white-space:nowrap; overflow:hidden;}
 .pg-calendar .cal-days{position:relative; flex:none; height:52px;}
-.pg-calendar .cal-mo{position:absolute; top:0; height:20px; display:flex; align-items:center; padding-left:7px; font-size:11px; font-weight:800; color:var(--text-2); border-left:1px solid var(--border-strong); white-space:nowrap; overflow:hidden;}
+.pg-calendar .cal-mo{position:absolute; top:0; height:20px; display:flex; align-items:center; padding-left:7px; font-size:11px; font-weight:800; color:var(--text-2); border-left:1px solid var(--border-strong); white-space:nowrap; overflow:hidden; overflow:clip;}
 .pg-calendar .cal-mo:first-child{border-left:none;}
+.pg-calendar .cal-mo .ml{position:sticky; left:calc(var(--pc) + 7px);} /* the month name stays in view while its days scroll by */
 .pg-calendar .cal-d{position:absolute; top:20px; height:32px; display:flex; flex-direction:column; align-items:center; justify-content:center; border-left:1px solid var(--c-grid); font-variant-numeric:tabular-nums; line-height:1.1; gap:1px;}
 .pg-calendar .cal-d .w{font-size:9.5px; font-weight:700; color:var(--faint); text-transform:uppercase; letter-spacing:0.03em;}
 .pg-calendar .cal-d .n{font-size:12.5px; font-weight:800; color:var(--text-2); border-radius:5px; padding:0 4px; min-width:20px; text-align:center;}
@@ -199,8 +206,7 @@
 .pg-calendar.is-phone .cal-act{display:inline-flex; height:40px; flex:none;}
 .pg-calendar.is-phone .cal-act.icon-btn{width:40px;}
 .pg-calendar.is-phone .cal-card{margin:0 -14px; border-radius:0; border-left:none; border-right:none; overflow:visible; overflow:clip;}
-.pg-calendar.is-phone .cal-scroll{max-height:none; overflow:visible;}
-.pg-calendar.is-phone .cal-hd{top:var(--cal-top, 56px);}
+.pg-calendar.is-phone .cal-scroll{max-height:calc(100vh - var(--cal-top, 56px) - var(--cal-bot, 0px) - 8px); max-height:calc(100dvh - var(--cal-top, 56px) - var(--cal-bot, 0px) - 8px);}
 .pg-calendar.is-phone .cal-corner{padding-left:12px; padding-right:6px;}
 .pg-calendar.is-phone .cal-prop{padding:0 6px 0 12px;}
 .pg-calendar.is-phone .cal-prop .pn{font-size:12px;}
@@ -487,7 +493,7 @@
   O.blockDates = openBlock; /* other sections may reuse it */
 
   function newBooking(pid, ci, co) {
-    var o = { propertyId: pid, checkIn: ci, checkOut: co, onCreated: function (b) { st.flash = b.id; if (b.checkIn < st.start || b.checkIn > d.add(st.start, viewDays() - 1)) st.start = b.checkIn; } };
+    var o = { propertyId: pid, checkIn: ci, checkOut: co, onCreated: function (b) { st.flash = b.id; if (!st.from || b.checkIn < st.from || b.checkIn >= d.add(st.from, st.span)) { st.from = null; st.start = d.add(b.checkIn, -1); } } };
     if (O.newBooking) O.newBooking(o); else O.go('bookings', { new: true, propertyId: pid, checkIn: ci });
   }
 
@@ -618,14 +624,16 @@
     desc: 'Every property on one timeline',
     render: function (root, ctx) {
       var T = D.TODAY;
-      if (ctx.fresh) { st.start = null; st.scroll = null; }
+      /* a redraw (data change, sync, a setting) keeps the page where it was: the new shell is measured before the grid fills
+         it, and that short page would otherwise pull the window back to the top */
+      var keepY = ctx.fresh ? null : ctx.scrollY != null ? ctx.scrollY : window.pageYOffset;
+      if (ctx.fresh) { st.start = null; st.from = null; }
       if (ctx.fresh && ctx.params) {
         var pp = ctx.params;
         if (pp.propertyId && D.propById[pp.propertyId]) st.prop = pp.propertyId;
         if (pp.from && /^\d{4}-\d{2}-\d{2}$/.test(pp.from)) st.start = pp.from;
-        if (pp.bookingId && D.booking(pp.bookingId)) { var fb = D.booking(pp.bookingId); st.flash = fb.id; if (!st.start) st.start = fb.checkIn < T ? fb.checkIn : T; }
+        if (pp.bookingId && D.booking(pp.bookingId)) { var fb = D.booking(pp.bookingId); st.flash = fb.id; if (!st.start) st.start = d.add(fb.checkIn, -1); }
       }
-      if (!st.start) st.start = T;
       if (!filterOK(st.prop)) st.prop = '';
       var phone = isPhone(), portrait = phone && window.innerWidth < window.innerHeight;
       var canNew = O.can('bookings.create'), canBlock = O.can('calendar.block');
@@ -652,7 +660,10 @@
         return;
       }
 
-      var days = viewDays(), from = st.start, to = d.add(from, days - 1);
+      /* days = how many fit the width; from..to = the days in view (the label); G.from + G.days = all days on the page */
+      var days = viewDays(), pad = Math.max(28, days * 2);
+      if (!st.from || !st.pos) { var left = st.start || d.add(T, -1); st.from = d.add(left, -pad); st.span = pad * 2 + days; st.pos = { day: pad, t: 0 }; st.start = null; }
+      var from = d.add(st.from, Math.max(0, Math.round(st.pos.day))), to = d.add(from, days - 1);
       if (st.view === null) st.view = O.store.get('calendar.view', 'stays');
       var canRates = ratesOK() && liveTypes().length > 0, rates = canRates && st.view === 'rates';
       var canEditR = rates && CH().canEditRates();
@@ -685,7 +696,7 @@
         '<div class="cal-nav"><button type="button" class="icon-btn" data-nav="-1" aria-label="Previous ' + STEP + ' days" title="Previous ' + STEP + ' days">' + O.icon('left') + '</button>' +
         '<label class="cal-pick" title="Pick a start date">' + O.icon('calendar') + '<span class="lbl">' + esc(U.rangeLabel(from, to)) + '</span><input type="date" data-f="start" value="' + from + '" aria-label="Start date"></label>' +
         '<button type="button" class="icon-btn" data-nav="1" aria-label="Next ' + STEP + ' days" title="Next ' + STEP + ' days">' + O.icon('right') + '</button></div>' +
-        '<button type="button" class="btn btn-ghost btn-sm cal-today" data-nav="0"' + (from === T ? ' disabled title="Already showing today"' : '') + '>Today</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm cal-today" data-nav="0">Today</button>' +
         (phone ? '' : '<div class="seg cal-len" role="group" aria-label="Days shown">' + LENGTHS.map(function (n) { return '<button type="button" data-len="' + n + '" class="' + (n === days ? 'on' : '') + '" aria-pressed="' + (n === days) + '">' + n + ' days</button>'; }).join('') + '</div>') +
         (canRates ? '<div class="seg cal-view" role="group" aria-label="View">' + [['stays', 'Stays'], ['rates', phone ? 'Rates' : 'Rates & restrictions']].map(function (v) { var on = (v[0] === 'rates') === rates; return '<button type="button" data-view="' + v[0] + '" class="' + (on ? 'on' : '') + '" aria-pressed="' + on + '">' + esc(v[1]) + '</button>'; }).join('') + '</div>' : '') +
         '<span class="sp"></span>' +
@@ -703,7 +714,7 @@
         '<span class="hint">' + (phone ? 'Tap' : 'Click') + ' a bar to open the booking' + (canNew || canBlock ? ', or a free night to ' + (canNew ? 'add a booking' : 'block it') : '') + '.</span></div>' +
         '</div>') + '</div>';
       var wrap = O.$('.pg-calendar', root), scroll = O.$('.cal-scroll', wrap);
-      if (phone) { var tb = O.$('.topbar'); if (tb) wrap.style.setProperty('--cal-top', tb.offsetHeight + 'px'); }
+      if (phone) { var tb = O.$('.topbar'), tbar = O.$('.tabbar'); if (tb) wrap.style.setProperty('--cal-top', tb.offsetHeight + 'px'); if (tbar) wrap.style.setProperty('--cal-bot', tbar.offsetHeight + 'px'); }
 
       /* tooltip + menu live on the page wrapper (position: fixed) */
       var tip = O.html('<div class="cal-tip" role="tooltip"></div>');
@@ -714,12 +725,12 @@
       function onEsc(e) { if (e.key === 'Escape') closeMenu(); }
       ctx.onLeave(closeMenu);
 
-      var G = { from: from, to: to, days: days, props: shownProps() };
+      var G = { from: st.from, to: d.add(st.from, st.span - 1), days: st.span, vis: days, props: shownProps() };
 
       function paintGrid() {
         var T = D.TODAY, props = G.props, from = G.from, to = G.to, days = G.days;
         var cw = scroll.clientWidth, pc = parseFloat(getComputedStyle(wrap).getPropertyValue('--pc')) || 120;
-        var dw = Math.max(MIN_DW, Math.floor((cw - pc) / days * 100) / 100);
+        var dw = Math.max(MIN_DW, Math.floor((cw - pc) / G.vis * 100) / 100);
         var lw = dw * days;
         var rh = phone ? 44 : props.length > 20 ? 36 : 44;
         var bh = rh - 10, ic = dw >= 34 ? 18 : 16, fs = 12;
@@ -740,7 +751,7 @@
         if (seg) months += monthCell(seg);
         function monthCell(sg) {
           var w = sg.n * dw, lbl = w >= 100 ? d.monthName(sg.iso, true) + ' ' + sg.iso.slice(0, 4) : w >= 34 ? d.monthName(sg.iso) : '';
-          return '<div class="cal-mo" style="left:' + (sg.i0 * dw).toFixed(2) + 'px;width:' + w.toFixed(2) + 'px">' + esc(lbl) + '</div>';
+          return '<div class="cal-mo" style="left:' + (sg.i0 * dw).toFixed(2) + 'px;width:' + w.toFixed(2) + 'px"><span class="ml">' + esc(lbl) + '</span></div>';
         }
 
         /* column overlays: weekends, grid lines, today, now */
@@ -826,7 +837,7 @@
           '<div class="cal-body"><div class="cal-cols" style="left:' + pc + 'px;width:' + lw.toFixed(2) + 'px">' + cols + '</div>' + rowsHTML + '</div></div>';
 
         /* keep the scroll position across repaints */
-        if (st.scroll && !phone) { scroll.scrollLeft = st.scroll.l; scroll.scrollTop = st.scroll.t; }
+        scroll.scrollLeft = st.pos.day * dw; scroll.scrollTop = st.pos.t;
         if (st.flash) {
           var fbar = O.$('.cal-bar.flash', scroll);
           if (fbar) {
@@ -863,12 +874,12 @@
             x.badges.map(function (z) { return ', ' + z[2]; }).join('') + (x.pend ? '. A change is waiting in the tray.' : '') + (canEditR ? '' : '.');
         }
         function badges(x) { return x.badges.map(function (z) { return '<i' + (z[0] ? ' class="' + z[0] + '"' : '') + '>' + esc(z[1]) + '</i>'; }).join(''); }
-        if (phone) {
+        if (phone) { /* a list of the days in view (no sideways scrolling: the arrows and Today page through it) */
           var html = '<div class="rr-list">';
           types.forEach(function (t) {
             C.plansOf(t.id).forEach(function (p) {
               html += '<div class="rr-lh">' + esc(t.name + ' · ' + p.name) + '</div>';
-              d.range(from, to).forEach(function (iso) {
+              d.range(leftDay(), d.add(leftDay(), G.vis - 1)).forEach(function (iso) {
                 var x = info(p, iso);
                 html += '<button type="button" class="rr-li' + (x.stop ? ' stop' : '') + (x.pend ? ' pend' : '') + '" data-rr="' + esc(p.id) + '" data-date="' + iso + '"' + (canEditR && iso >= T ? '' : ' disabled') + ' aria-label="' + esc(tip(t, p, iso, x)) + '"><span>' + esc(d.dowName(iso) + ' ' + d.fmt(iso)) + '</span><span class="v">' + (x.stop ? 'Stop sell · ' : '') + esc(C.currency(t.buildingId) + ' ' + r2(x.rate)) + '</span><span class="bd">' + badges(x) + '</span></button>';
               });
@@ -877,7 +888,7 @@
           scroll.innerHTML = html + '</div>';
           return;
         }
-        var dw = Math.max(58, Math.floor((cw - pc) / days * 100) / 100), lw = dw * days, rh = 44, gh = 32;
+        var dw = Math.max(58, Math.floor((cw - pc) / G.vis * 100) / 100), lw = dw * days, rh = 44, gh = 32;
         G.dw = dw; G.pc = pc;
         var months = '', dayCells = '', seg = null, cols = '';
         for (var i = 0; i < days; i++) {
@@ -889,7 +900,7 @@
           if (i) cols += '<i class="gl" style="left:' + (i * dw).toFixed(2) + 'px"></i>';
         }
         if (seg) months += mcell(seg);
-        function mcell(sg) { var w = sg.n * dw; return '<div class="cal-mo" style="left:' + (sg.i0 * dw).toFixed(2) + 'px;width:' + w.toFixed(2) + 'px">' + esc(w >= 100 ? d.monthName(sg.iso, true) + ' ' + sg.iso.slice(0, 4) : d.monthName(sg.iso)) + '</div>'; }
+        function mcell(sg) { var w = sg.n * dw; return '<div class="cal-mo" style="left:' + (sg.i0 * dw).toFixed(2) + 'px;width:' + w.toFixed(2) + 'px"><span class="ml">' + esc(w >= 100 ? d.monthName(sg.iso, true) + ' ' + sg.iso.slice(0, 4) : d.monthName(sg.iso)) + '</span></div>'; }
         var rows = '';
         types.forEach(function (t) {
           var av = O.assign.typeAvailability({ unitTypeId: t.id, listingOf: t.listingOf, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
@@ -914,10 +925,34 @@
         scroll.innerHTML = '<div class="cal-track" style="width:' + (pc + lw).toFixed(2) + 'px">' +
           '<div class="cal-hd"><div class="cal-corner"><span class="cnt">' + fmt.plural(types.length, 'unit type') + '</span></div><div class="cal-days" style="width:' + lw.toFixed(2) + 'px">' + months + dayCells + '</div></div>' +
           '<div class="cal-body"><div class="cal-cols" style="left:' + pc + 'px;width:' + lw.toFixed(2) + 'px">' + cols + '</div>' + rows + '</div></div>';
-        if (st.scroll) { scroll.scrollLeft = st.scroll.l; scroll.scrollTop = st.scroll.t; }
+        scroll.scrollLeft = st.pos.day * dw; scroll.scrollTop = st.pos.t;
       }
-      function paint() { if (rates) paintRates(); else paintGrid(); }
-      paint();
+      /* the first day in view, and the scroll position (in days) that puts yesterday at the left edge (null: not on the page) */
+      function leftDay() { return d.add(G.from, Math.max(0, Math.round(st.pos.day))); }
+      function todayDay() { var i = d.diff(G.from, D.TODAY) - 1; return i >= 0 && i < G.days - G.vis ? i : null; }
+      /* the date label and picker follow the scroll; Today is greyed out while today is where the calendar opens */
+      var todayBtn = O.$('.cal-today', wrap), lbl = O.$('.cal-pick .lbl', wrap), pick = O.$('[data-f=start]', wrap);
+      function syncBar() {
+        var a = leftDay(), td = todayDay(), away = td == null || Math.abs(st.pos.day - td) > 0.5;
+        lbl.textContent = U.rangeLabel(a, d.add(a, G.vis - 1)); pick.value = a;
+        todayBtn.disabled = !away; todayBtn.title = away ? 'Show today' : 'Already showing today';
+      }
+      function paint() { if (rates) paintRates(); else paintGrid(); syncBar(); }
+      var pan = null; /* a mouse drag in progress (desktop) */
+      /* near either end, add days on that side (and drop the far end once the page holds MAX_SPAN days) */
+      function edge() {
+        if (!document.body.contains(scroll) || !G.dw) return;
+        var inView = (scroll.clientWidth - G.pc) / G.dw, shift = 0;
+        if (st.pos.day < pad / 2) { st.from = d.add(st.from, -pad); st.span = Math.min(MAX_SPAN, st.span + pad); shift = pad; }
+        else if (st.pos.day + inView > st.span - pad / 2) { st.span += pad; if (st.span > MAX_SPAN) { shift = MAX_SPAN - st.span; st.from = d.add(st.from, -shift); st.span = MAX_SPAN; } }
+        else return;
+        st.pos.day += shift;
+        if (pan) pan.l += shift * G.dw;
+        G.from = st.from; G.days = st.span; G.to = d.add(st.from, st.span - 1);
+        paint();
+      }
+      paint(); edge();
+      if (keepY != null && window.pageYOffset !== keepY) window.scrollTo(0, keepY);
 
       if (window.ResizeObserver) {
         var ro = new ResizeObserver(function () {
@@ -927,15 +962,36 @@
         ro.observe(scroll);
         ctx.onLeave(function () { ro.disconnect(); });
       }
-      scroll.addEventListener('scroll', function () { st.scroll = { l: scroll.scrollLeft, t: scroll.scrollTop }; tip.style.display = 'none'; closeMenu(); }, { passive: true });
+      var edging = false;
+      scroll.addEventListener('scroll', function () {
+        if (!G.dw) return;
+        st.pos = { day: scroll.scrollLeft / G.dw, t: scroll.scrollTop }; tip.style.display = 'none'; closeMenu(); syncBar();
+        if (!edging) { edging = true; requestAnimationFrame(function () { edging = false; edge(); }); }
+      }, { passive: true });
+      /* desktop: drag the timeline with the mouse (touch screens and trackpads scroll it natively) */
+      var panned = false;
+      scroll.addEventListener('pointerdown', function (e) {
+        if (e.pointerType !== 'mouse' || e.button !== 0) return;
+        pan = { x: e.clientX, y: e.clientY, l: scroll.scrollLeft, t: scroll.scrollTop, id: e.pointerId, on: false };
+      });
+      scroll.addEventListener('pointermove', function (e) {
+        if (!pan || e.pointerId !== pan.id) return;
+        var dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+        if (!pan.on && Math.abs(dx) + Math.abs(dy) < 6) return;
+        if (!pan.on) { pan.on = true; scroll.classList.add('panning'); tip.style.display = 'none'; try { scroll.setPointerCapture(e.pointerId); } catch (er) { /* older browsers */ } }
+        scroll.scrollLeft = pan.l - dx; scroll.scrollTop = pan.t - dy;
+      });
+      function endPan() { if (pan && pan.on) { panned = true; setTimeout(function () { panned = false; }, 0); scroll.classList.remove('panning'); } pan = null; }
+      scroll.addEventListener('pointerup', endPan); scroll.addEventListener('pointercancel', endPan);
+      wrap.addEventListener('click', function (e) { if (panned) { panned = false; e.stopPropagation(); e.preventDefault(); } }, true); /* a drag is not a tap */
 
-      function go(start) { st.start = start; st.scroll = null; closeMenu(); ctx.rerender(); }
+      function go(start) { st.start = start; st.from = null; closeMenu(); ctx.rerender(); }
 
       /* ---------------- events ---------------- */
       wrap.addEventListener('click', function (e) {
         var t = e.target.closest('button');
         if (t && wrap.contains(t)) {
-          if (t.dataset.view) { st.view = t.dataset.view; O.store.set('calendar.view', st.view); st.scroll = null; st.anchor = null; ctx.rerender(); return; }
+          if (t.dataset.view) { st.view = t.dataset.view; O.store.set('calendar.view', st.view); st.anchor = null; ctx.rerender(); return; }
           if (t.dataset.rr) {
             var rp = t.dataset.rr, rd = t.dataset.date;
             if (e.shiftKey && st.anchor && st.anchor.planId === rp && st.anchor.date !== rd) {
@@ -946,19 +1002,22 @@
             O.$$('.rr-c.sel', wrap).forEach(function (x) { x.classList.remove('sel'); }); t.classList.add('sel');
             openRateEditor({ planId: rp, from: rd, to: rd }, ctx.rerender); return;
           }
-          if (t.dataset.act === 'rr-add') { openRateEditor({ add: true, planId: st.anchor && st.anchor.planId, from: G.from >= D.TODAY ? G.from : D.TODAY }, ctx.rerender); return; }
+          if (t.dataset.act === 'rr-add') { openRateEditor({ add: true, planId: st.anchor && st.anchor.planId, from: leftDay() >= D.TODAY ? leftDay() : D.TODAY }, ctx.rerender); return; }
           if (t.dataset.act === 'rr-send') { sendTray(ctx.rerender); return; }
           if (t.dataset.act === 'rr-clear') { st.tray = []; ctx.rerender(); return; }
           if (t.dataset.rrDel) { st.tray = st.tray.filter(function (c) { return c.id !== t.dataset.rrDel; }); ctx.rerender(); return; }
           if (t.dataset.goCh) { O.go('channels', { tab: 'plans' }); return; }
           if (t.dataset.nav != null) {
             var nv = +t.dataset.nav;
-            go(nv === 0 ? D.TODAY : d.add(st.start, nv * STEP)); return;
+            if (!G.dw) { go(nv ? d.add(leftDay(), nv * STEP) : null); return; } /* the phone's rates list: no timeline to scroll */
+            if (nv) { scroll.scrollLeft += nv * STEP * G.dw; return; }
+            if (todayDay() != null) { scroll.scrollLeft = todayDay() * G.dw; return; }
+            go(null); return;
           }
-          if (t.dataset.len) { O.store.set('calendar.days', +t.dataset.len); st.scroll = null; ctx.rerender(); return; }
+          if (t.dataset.len) { O.store.set('calendar.days', +t.dataset.len); ctx.rerender(); return; }
           if (t.dataset.act === 'new') { newBooking(oneProp()); return; }
           if (t.dataset.act === 'block') { openBlock({ propertyId: oneProp(), typeId: st.prop.indexOf('type:') === 0 ? st.prop.slice(5) : undefined }); return; }
-          if (t.dataset.prop) { O.go('bookings', { propertyId: t.dataset.prop, from: G.from, to: G.to }); return; }
+          if (t.dataset.prop) { O.go('bookings', { propertyId: t.dataset.prop, from: leftDay(), to: d.add(leftDay(), G.vis - 1) }); return; }
           if (t.dataset.block) { tip.style.display = 'none'; var bl = (D.blocks || []).filter(function (x) { return x.id === t.dataset.block; })[0]; if (bl) openBlock({ block: bl }); return; }
           if (t.dataset.id) { tip.style.display = 'none'; openBooking(t.dataset.id); return; }
           return;
@@ -971,10 +1030,9 @@
         if (!p || nightTaken(p.id, iso)) return;
         openMenu(p, iso, e.clientX, e.clientY);
       });
-      var pick = O.$('[data-f=start]', wrap);
       pick.addEventListener('change', function () { if (/^\d{4}-\d{2}-\d{2}$/.test(pick.value)) go(pick.value); });
       if (!phone) pick.addEventListener('click', function () { try { if (pick.showPicker) pick.showPicker(); } catch (e) { /* the native control opens instead */ } });
-      O.$('[data-f=prop]', wrap).onchange = function (e) { st.prop = e.target.value; st.scroll = null; ctx.rerender(); };
+      O.$('[data-f=prop]', wrap).onchange = function (e) { st.prop = e.target.value; ctx.rerender(); };
 
       function openMenu(p, iso, x, y) {
         closeMenu();
