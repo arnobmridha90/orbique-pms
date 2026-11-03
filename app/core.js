@@ -1991,7 +1991,7 @@
   var held = false, deferred = false;
   O.render = function (fresh) {
     if (!O._started) return;
-    var id = current.id || O.state.page, def = O.pages[id];
+    var id = current.id || O.state.page, def = O.pages[id], y0 = window.pageYOffset;
     cleanup.forEach(function (f) { try { f(); } catch (e) {} }); cleanup = [];
     O.$$('.nav-item').forEach(function (n) { n.classList.toggle('active', n.dataset.page === id); });
     var root = O.$('#page-root'), actions = O.$('#tb-actions');
@@ -2005,6 +2005,7 @@
     if (!def) { root.innerHTML = U.empty('This section did not load. Reload the page to try again.', '⚠'); return; }
     var ctx = {
       params: current.params, fresh: !!fresh,
+      scrollY: y0, /* where the window was before this render emptied the header (a page can put it back after a redraw) */
       setActions: function (h) { actions.innerHTML = ''; if (typeof h === 'string') actions.innerHTML = h; else if (h) actions.appendChild(h); return actions; },
       actionsEl: actions,
       on: function (evt, fn) { cleanup.push(O.on(evt, fn)); },
