@@ -153,18 +153,18 @@
   function ruleStats(r) {
     var b30, n, last = null;
     switch (r.id) {
-      case 'r-inv': b30 = D.bookings.filter(function (b) { return b.invoiceSent && in30(b.invoiceSent.at); }); n = b30.length; last = b30.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; })[0]; return { n: n, last: last ? 'Last: ' + (last.invoiceNo || last.id) + ' to ' + last.guest.name : null };
-      case 'r-rcp': b30 = D.bookings.filter(function (b) { return b.receiptSent && in30(b.receiptSent.at); }); var q = receiptsQueued(); return { n: b30.length, last: q.length ? fmt.plural(q.length, 'receipt') + ' going out at 6:00 PM today' : null };
-      case 'r-claim': n = claims().filter(function (e) { return in30(e.date); }).length; return { n: n, last: pendingClaims().length ? pendingClaims().length + ' waiting for approval now' : 'No claims waiting', warn: pendingClaims().length > 0 };
-      case 'r-same': b30 = D.bookings.filter(function (b) { return b.sameDay && in30(b.createdAt); }); var td = b30.filter(function (b) { return b.checkIn === D.TODAY; }); return { n: b30.length, last: td.length ? 'Today: ' + td.map(function (b) { return b.guest.name + ' ' + fmt.time(b.createdAt); }).join(', ') : null, warn: td.length > 0 };
-      case 'r-rules': var held = D.bookings.filter(function (b) { return live(b) && b.checkIn >= D.TODAY && b.checkIn <= d.add(D.TODAY, 1) && b.codeStatus === 'held'; }); return { n: arrivals30().length, last: held.length ? 'Code held today for ' + held.map(function (b) { return b.guest.name; }).join(' and ') : 'No codes held for today or tomorrow', warn: held.length > 0, unit: 'guests' };
-      case 'r-damage': var dr = damageReports30().sort(function (a, b) { return a.at < b.at ? 1 : -1; }); return { n: dr.length, last: dr.length ? 'Last: ' + (dr[0].item || 'damage') + ' at ' + (D.propById[dr[0].propertyId] ? D.propById[dr[0].propertyId].short : '') + (dr[0].taskId ? ' → ' + dr[0].taskId : '') : null };
+      case 'r-inv': b30 = D.bookings.filter(function (b) { return b.invoiceSent && in30(b.invoiceSent.at); }); n = b30.length; last = b30.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; })[0]; return { n: n, last: last ? O.tpl('Last: {doc} to {guest}', { doc: last.invoiceNo || last.id, guest: last.guest.name }) : null };
+      case 'r-rcp': b30 = D.bookings.filter(function (b) { return b.receiptSent && in30(b.receiptSent.at); }); var q = receiptsQueued(); return { n: b30.length, last: q.length ? O.tpl('{count} going out at {time} today', { count: fmt.plural(q.length, 'receipt'), time: fmt.time('18:00') }) : null };
+      case 'r-claim': n = claims().filter(function (e) { return in30(e.date); }).length; return { n: n, last: pendingClaims().length ? O.tpl('{n} waiting for approval now', { n: pendingClaims().length }) : 'No claims waiting', warn: pendingClaims().length > 0 };
+      case 'r-same': b30 = D.bookings.filter(function (b) { return b.sameDay && in30(b.createdAt); }); var td = b30.filter(function (b) { return b.checkIn === D.TODAY; }); return { n: b30.length, last: td.length ? O.tpl('Today: {list}', { list: td.map(function (b) { return b.guest.name + ' ' + fmt.time(b.createdAt); }).join(', ') }) : null, warn: td.length > 0 };
+      case 'r-rules': var held = D.bookings.filter(function (b) { return live(b) && b.checkIn >= D.TODAY && b.checkIn <= d.add(D.TODAY, 1) && b.codeStatus === 'held'; }); return { n: arrivals30().length, last: held.length ? O.tpl('Code held today for {names}', { names: fmt.andList(held.map(function (b) { return b.guest.name; })) }) : 'No codes held for today or tomorrow', warn: held.length > 0, unit: 'guests' };
+      case 'r-damage': var dr = damageReports30().sort(function (a, b) { return a.at < b.at ? 1 : -1; }); return { n: dr.length, last: dr.length ? O.tpl(dr[0].taskId ? 'Last: {item} at {unit} → {task}' : 'Last: {item} at {unit}', { item: dr[0].item || O.tr('damage'), unit: D.propById[dr[0].propertyId] ? D.propById[dr[0].propertyId].short : '', task: dr[0].taskId || '' }) : null };
       case 'r-turn': return { n: departures30().length, last: null };
-      case 'r-issue': var pm = problemMessages30(); return { n: pm.length, last: pm.length ? 'Last: ' + fmt.dateTime(pm[0].m.time) : null };
+      case 'r-issue': var pm = problemMessages30(); return { n: pm.length, last: pm.length ? O.tpl('Last: {when}', { when: fmt.dateTime(pm[0].m.time) }) : null };
       case 'r-review': n = D.reviews.filter(function (x) { return x.stars <= 3 && in30(x.date); }).length; return { n: n, last: null };
       case 'r-block': n = D.blocks.filter(function (x) { return in30(x.start) || x.start > D.TODAY; }).length; return { n: n, last: null };
       case 'r-stock': return { n: 0, last: null };
-      case 'r-owner': return { n: new Set(D.properties.map(function (p) { return p.owner; }).filter(Boolean)).size, last: 'Next run ' + d.fmt(d.addMonths(d.monthStart(D.TODAY), 1)), unit: 'statements' };
+      case 'r-owner': return { n: new Set(D.properties.map(function (p) { return p.owner; }).filter(Boolean)).size, last: O.tpl('Next run {date}', { date: d.fmt(d.addMonths(d.monthStart(D.TODAY), 1)) }), unit: 'statements' };
     }
     return { n: r.runs || 0, last: r.lastRun || null };
   }
@@ -204,22 +204,22 @@
   function journeyHTML(tog, edit) {
     var A = AU(), sm = st.sample ? D.booking(st.sample) : null;
     var smp = samples();
-    var opts = '<option value="">Show variables</option>' + smp.map(function (b) { return '<option value="' + b.id + '"' + (st.sample === b.id ? ' selected' : '') + '>Preview for ' + esc(b.guest.name) + ' · ' + esc(shortOf(b.propertyId)) + ', ' + d.fmt(b.checkIn) + '</option>'; }).join('');
+    var opts = '<option value="">Show variables</option>' + smp.map(function (b) { return '<option value="' + b.id + '"' + (st.sample === b.id ? ' selected' : '') + '>' + esc(O.tpl('Preview for {guest} · {unit}, {date}', { guest: b.guest.name, unit: shortOf(b.propertyId), date: d.fmt(b.checkIn) })) + '</option>'; }).join('');
     var on = A.journey.filter(function (s) { return s.on; }).length, np = D.properties.length;
-    return '<div class="card"><div class="card-head"><div><h3>Guest message journey</h3><div class="sub">' + on + ' of ' + A.journey.length + ' steps on · ' + (np ? 'applies to ' + (np === 1 ? 'your property' : 'all ' + np + ' properties') + ' and every channel' : 'applies to every property you add') + '</div></div>' +
+    return '<div class="card"><div class="card-head"><div><h3>Guest message journey</h3><div class="sub">' + esc(O.tpl('{on} of {n} steps on', { on: on, n: A.journey.length })) + ' · ' + esc(!np ? O.tr('applies to every property you add') : np === 1 ? O.tr('applies to your property and every channel') : O.tpl('applies to all {n} properties and every channel', { n: np })) + '</div></div>' +
       (smp.length ? '<select class="select sample" data-sample aria-label="Preview messages with a booking">' + opts + '</select>' : '') + '</div>' +
       '<div class="jr">' + A.journey.map(function (s, i) {
         var n = journeyCount(s);
         return '<div class="js' + (s.on ? '' : ' off') + '"><span class="jn">' + (i + 1) + '</span><div style="min-width:0"><div class="jt"><b>' + esc(s.name) + '</b>' + s.channels.map(function (c) { return '<span class="ch">' + esc(c) + '</span>'; }).join('') + (s.on ? '' : U.pill('Paused', 'neutral')) + '</div>' +
           '<div class="jw">' + O.icon('clock') + esc(s.when) + '</div><div class="msg" data-no-i18n>' + fill(s.text, sm, s.id) + '</div></div>' +
-          '<div class="jr-side"><button type="button" class="switch' + (s.on ? ' on' : '') + '" role="switch" aria-checked="' + s.on + '" aria-label="' + esc(s.name) + ' on or off" data-jtog="' + s.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n"><b>' + fmt.num(n) + '</b> sent, 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-jedit="' + s.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
+          '<div class="jr-side"><button type="button" class="switch' + (s.on ? ' on' : '') + '" role="switch" aria-checked="' + s.on + '" aria-label="' + esc(s.name) + ' on or off" data-jtog="' + s.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n">' + O.tpl('{b} sent, 30 days', { b: { raw: '<b>' + fmt.num(n) + '</b>' } }) + '</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-jedit="' + s.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
       }).join('') + '</div>' +
       '<div class="card-foot">Messages go out in the guest\'s language when we know it. Prototype: messages are not really sent.</div></div>';
   }
   function ruleRow(r, tog, edit) {
     var s = ruleStats(r), who = r.notify ? D.staffById(r.notify) : null;
     var meta = [];
-    if (who) meta.push(U.pill('Notifies ' + who.name + (r.via ? ' on ' + r.via : ''), 'neutral'));
+    if (who) meta.push(U.pill(r.via ? O.tpl('Notifies {name} on {via}', { name: who.name, via: r.via }) : O.tpl('Notifies {name}', { name: who.name }), 'neutral'));
     if (r.scope && r.scope !== 'all') meta.push(U.pill(fmt.plural(r.scope.length, 'property', 'properties'), 'neutral'));
     if (MONEY_KEY[r.id]) meta.push(U.pill('Sends by ' + (!r.via || r.via === 'Auto' ? 'WhatsApp or email' : r.via), 'neutral'));
     if (!r.on) meta.push(U.pill('Paused', 'neutral'));
@@ -227,7 +227,7 @@
     if (s.last) meta.push(U.pill(s.last, s.warn ? 'warn' : 'info'));
     return '<div class="rl' + (r.on ? '' : ' off') + '"><span class="ri">' + O.icon(r.icon || 'automations') + '</span><div class="rw" style="min-width:0"><div class="w"><span class="k">When</span>' + esc(r.when) + '</div><div class="t"><span class="k">Then</span>' + esc(r.then) + '</div>' +
       '<div class="dt">' + esc(r.detail) + '</div>' + (meta.length ? '<div class="meta">' + meta.join('') + '</div>' : '') + '</div>' +
-      '<div class="jr-side"><button type="button" class="switch' + (r.on ? ' on' : '') + '" role="switch" aria-checked="' + r.on + '" aria-label="' + esc(r.then) + ' on or off" data-rtog="' + r.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n"><b>' + fmt.num(s.n) + '</b> ' + (s.unit || 'runs') + ', 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-redit="' + r.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
+      '<div class="jr-side"><button type="button" class="switch' + (r.on ? ' on' : '') + '" role="switch" aria-checked="' + r.on + '" aria-label="' + esc(r.then) + ' on or off" data-rtog="' + r.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n">' + O.tpl({ guests: '{b} guests, 30 days', statements: '{b} statements, 30 days' }[s.unit] || '{b} runs, 30 days', { b: { raw: '<b>' + fmt.num(s.n) + '</b>' } }) + '</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-redit="' + r.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
   }
   /* the channel manager's part: "Live" once a building is connected for real (pages/channels.js) */
   function channelState() {
@@ -249,7 +249,7 @@
     return GROUPS.filter(function (g) { return st.group === 'all' || st.group === g[0]; }).map(function (g) {
       var rs = A.rules.filter(function (r) { return r.group === g[0]; });
       if (!rs.length) return '';
-      return '<div class="card"><div class="card-head"><div><h3>' + esc(g[1]) + '</h3><div class="sub">' + rs.filter(function (r) { return r.on; }).length + ' of ' + rs.length + ' on</div></div></div><div>' + rs.map(function (r) { return ruleRow(r, tog, edit); }).join('') + (g[0] === 'ops' ? platformRuleRow() : '') + '</div></div>';
+      return '<div class="card"><div class="card-head"><div><h3>' + esc(g[1]) + '</h3><div class="sub">' + esc(O.tpl('{on} of {n} on', { on: rs.filter(function (r) { return r.on; }).length, n: rs.length })) + '</div></div></div><div>' + rs.map(function (r) { return ruleRow(r, tog, edit); }).join('') + (g[0] === 'ops' ? platformRuleRow() : '') + '</div></div>';
     }).join('') + (A.rules.some(function (r) { return r.group === 'custom'; }) && (st.group === 'all' || st.group === 'custom') ?
       '<div class="card"><div class="card-head"><div><h3>Your automations</h3><div class="sub">Rules you added</div></div></div><div>' + A.rules.filter(function (r) { return r.group === 'custom'; }).map(function (r) { return ruleRow(r, tog, edit); }).join('') + '</div></div>' : '');
   }
@@ -257,28 +257,28 @@
     var A = AU(), out = [], sameRule = A.rules.filter(function (r) { return r.id === 'r-same'; })[0], ops = sameRule && sameRule.notify ? D.staffById(sameRule.notify) : null;
     D.bookings.filter(function (b) { return live(b) && b.sameDay && b.checkIn === D.TODAY; }).forEach(function (b) {
       var t = taskFor(b), who = t && !O.taskwho.none(t) ? { name: O.taskPeople(t) } : null;
-      out.push({ at: b.createdAt, tone: 'var(--warn)', t: 'Same-day booking: ' + b.guest.name + ' at ' + shortOf(b.propertyId) + ', arriving ' + fmt.time(b.checkInTime),
-        s: (ops ? 'Alerted ' + ops.name : 'Alert sent') + (t ? ' · ' + t.title.toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }) + ' ' + t.id + ' marked urgent for ' + (who ? who.name : 'nobody yet') + (t.due ? ', due ' + fmt.time(t.due) : '') : ''), bk: b.id, task: t ? t.id : null });
+      out.push({ at: b.createdAt, tone: 'var(--warn)', t: O.tpl('Same-day booking: {guest} at {unit}, arriving {time}', { guest: b.guest.name, unit: shortOf(b.propertyId), time: fmt.time(b.checkInTime) }),
+        s: O.i18nKeep((ops ? O.tpl('Alerted {name}', { name: ops.name }) : O.tr('Alert sent')) + (t ? ' · ' + O.tpl(t.due ? '{task} {id} marked urgent for {who}, due {time}' : '{task} {id} marked urgent for {who}', { task: O.state.lang === 'en' ? t.title.toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }) : t.title, id: t.id, who: who ? who.name : 'nobody yet', time: t.due ? fmt.time(t.due) : '' }) : '')), bk: b.id, task: t ? t.id : null });
     });
-    D.bookings.filter(function (b) { return live(b) && b.invoiceSent && b.invoiceSent.at === D.TODAY; }).forEach(function (b) { out.push({ at: b.createdAt, tone: 'var(--ok)', t: 'Invoice ' + b.invoiceNo + ' sent to ' + b.guest.name, s: 'By ' + b.invoiceSent.via + ' · ' + fmt.money(b.total, { cur: b }), bk: b.id }); });
+    D.bookings.filter(function (b) { return live(b) && b.invoiceSent && b.invoiceSent.at === D.TODAY; }).forEach(function (b) { out.push({ at: b.createdAt, tone: 'var(--ok)', t: O.tpl('Invoice {no} sent to {guest}', { no: b.invoiceNo, guest: b.guest.name }), s: O.i18nKeep(O.tpl('By {via}', { via: b.invoiceSent.via }) + ' · ' + fmt.money(b.total, { cur: b })), bk: b.id }); });
     var rq = receiptsQueued();
-    if (rq.length) out.push({ at: rq.map(function (b) { return String(b.createdAt || '').slice(0, 10) === D.TODAY ? b.createdAt : D.TODAY + 'T08:00'; }).sort().pop(), tone: 'var(--info)', t: fmt.plural(rq.length, 'receipt') + ' ready to go out at 6:00 PM', s: rq.map(function (b) { return b.guest.name; }).join(', ') + ' paid today', go: 'invoices' });
-    D.bookings.filter(function (b) { return live(b) && b.checkIn === D.TODAY && b.codeStatus === 'held'; }).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--warn)', t: 'Door code held for ' + b.guest.name, s: (b.idVerified ? 'House rules not accepted yet' : 'ID not verified and house rules not accepted') + ' · ' + shortOf(b.propertyId), bk: b.id }); });
-    D.bookings.filter(function (b) { return live(b) && b.checkIn === d.add(D.TODAY, 1) && b.codeStatus !== 'held'; }).slice(0, 2).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--ok)', t: 'Check-in day message scheduled for ' + b.guest.name, s: 'Goes out tomorrow at 9:00 AM · ' + shortOf(b.propertyId), bk: b.id }); });
-    pendingClaims().filter(function (e) { return d.diff(e.date, D.TODAY) <= 1; }).slice(0, 2).forEach(function (e) { var w = D.staffById(e.paidBy) || {}; out.push({ at: e.date + 'T' + (e.date === D.TODAY ? '08:30' : '18:00'), tone: 'var(--info)', t: 'Claim from ' + (w.name || 'a team member') + ': ' + fmt.money(e.amount, { cur: e }) + ' ' + (e.type === 'Others' ? e.otherType || 'other' : e.type).toLowerCase(), s: 'Sent to ' + ((D.staffById('s1') || {}).name || 'the owner') + ' for approval', go: 'expenses' }); });
+    if (rq.length) out.push({ at: rq.map(function (b) { return String(b.createdAt || '').slice(0, 10) === D.TODAY ? b.createdAt : D.TODAY + 'T08:00'; }).sort().pop(), tone: 'var(--info)', t: O.tpl('{count} ready to go out at {time}', { count: fmt.plural(rq.length, 'receipt'), time: fmt.time('18:00') }), s: O.tpl('{names} paid today', { names: rq.map(function (b) { return b.guest.name; }).join(', ') }), go: 'invoices' });
+    D.bookings.filter(function (b) { return live(b) && b.checkIn === D.TODAY && b.codeStatus === 'held'; }).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--warn)', t: O.tpl('Door code held for {guest}', { guest: b.guest.name }), s: O.i18nKeep(O.tr(b.idVerified ? 'House rules not accepted yet' : 'ID not verified and house rules not accepted') + ' · ' + shortOf(b.propertyId)), bk: b.id }); });
+    D.bookings.filter(function (b) { return live(b) && b.checkIn === d.add(D.TODAY, 1) && b.codeStatus !== 'held'; }).slice(0, 2).forEach(function (b) { out.push({ at: D.TODAY + 'T09:00', tone: 'var(--ok)', t: O.tpl('Check-in day message scheduled for {guest}', { guest: b.guest.name }), s: O.i18nKeep(O.tpl('Goes out tomorrow at {time}', { time: fmt.time('09:00') }) + ' · ' + shortOf(b.propertyId)), bk: b.id }); });
+    pendingClaims().filter(function (e) { return d.diff(e.date, D.TODAY) <= 1; }).slice(0, 2).forEach(function (e) { var w = D.staffById(e.paidBy) || {}; out.push({ at: e.date + 'T' + (e.date === D.TODAY ? '08:30' : '18:00'), tone: 'var(--info)', t: O.tpl('Claim from {name}: {amount} {type}', { name: w.name || 'a team member', amount: fmt.money(e.amount, { cur: e }), type: (function (x) { return O.state.lang === 'en' ? x.toLowerCase() : x; })(e.type === 'Others' ? e.otherType || 'other' : e.type) }), s: O.tpl('Sent to {name} for approval', { name: (D.staffById('s1') || {}).name || 'the owner' }), go: 'expenses' }); });
     D.bookings.filter(function (b) { return live(b) && b.checkOut === D.TODAY; }).forEach(function (b) {
       var t = D.tasks.filter(function (x) { return x.type === 'Turnover' && x.propertyId === b.propertyId && String(x.due || '').slice(0, 10) === D.TODAY; })[0];
       var as = t && !O.taskwho.none(t) ? { name: O.taskPeople(t) } : null;
-      if (t) out.push({ at: D.TODAY + 'T07:30', tone: 'var(--ok)', t: 'Turnover created for ' + shortOf(t.propertyId) + ' after ' + b.guest.name + ' checks out', s: 'Assigned to ' + (as ? as.name : 'nobody yet'), task: t.id });
+      if (t) out.push({ at: D.TODAY + 'T07:30', tone: 'var(--ok)', t: O.tpl('Turnover created for {unit} after {guest} checks out', { unit: shortOf(t.propertyId), guest: b.guest.name }), s: O.tpl('Assigned to {name}', { name: as ? as.name : 'nobody yet' }), task: t.id });
     });
-    damageReports30().filter(function (r) { return String(r.at).slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (r) { out.push({ at: r.at, tone: 'var(--bad)', t: 'Damage reported' + (r.item ? ': ' + r.item : '') + (D.propById[r.propertyId] ? ' at ' + D.propById[r.propertyId].short : ''), s: (r.taskId ? 'Maintenance task ' + r.taskId + ' created with ' : 'Logged with ') + fmt.plural((r.photos || []).length || 1, 'photo'), task: r.taskId || null, go: r.taskId ? null : 'guestapp' }); });
+    damageReports30().filter(function (r) { return String(r.at).slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (r) { out.push({ at: r.at, tone: 'var(--bad)', t: O.tpl(r.item ? (D.propById[r.propertyId] ? 'Damage reported: {item} at {unit}' : 'Damage reported: {item}') : D.propById[r.propertyId] ? 'Damage reported at {unit}' : 'Damage reported', { item: r.item || '', unit: D.propById[r.propertyId] ? D.propById[r.propertyId].short : '' }), s: O.tpl(r.taskId ? 'Maintenance task {id} created with {photos}' : 'Logged with {photos}', { id: r.taskId || '', photos: fmt.plural((r.photos || []).length || 1, 'photo') }), task: r.taskId || null, go: r.taskId ? null : 'guestapp' }); });
     out = out.filter(function (f) { return f.at && String(f.at).slice(0, 10) >= d.add(D.TODAY, -1); });
     out.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
-    function when(at) { return at.slice(0, 10) === D.TODAY ? fmt.time(at) : 'Yesterday ' + fmt.time(at); }
+    function when(at) { return at.slice(0, 10) === D.TODAY ? fmt.time(at) : O.tpl('Yesterday {time}', { time: fmt.time(at) }); }
     return '<div class="card feed"><div class="card-head"><div><h3>Ran today</h3><div class="sub">What the automations did since yesterday evening</div></div></div>' +
       (out.length ? out.slice(0, 10).map(function (f) {
         var links = (f.bk ? '<button type="button" class="link" data-bk="' + f.bk + '">Open booking</button>' : '') + (f.task ? (f.bk ? ' · ' : '') + '<button type="button" class="link" data-task="' + f.task + '">Open task</button>' : '') + (!f.bk && !f.task && f.go ? '<button type="button" class="link" data-go="' + f.go + '">Open</button>' : '');
-        return '<div class="fi"><span class="fd" style="background:' + f.tone + '"></span><div class="grow"><div class="ft">' + esc(f.t) + '</div><div class="fs">' + when(f.at) + ' · ' + esc(f.s) + (links ? ' · ' + links : '') + '</div></div></div>';
+        return '<div class="fi"><span class="fd" style="background:' + f.tone + '"></span><div class="grow"><div class="ft">' + esc(f.t) + '</div><div class="fs"><span>' + esc(when(f.at)) + '</span> · <span>' + esc(f.s) + '</span>' + (links ? ' · ' + links : '') + '</div></div></div>';
       }).join('') : U.empty('Nothing has run yet today.')) + '</div>';
   }
 
@@ -313,7 +313,7 @@
   }
   function scopeField(sc) {
     var all = !sc || sc === 'all', np = D.properties.length;
-    return '<div class="field full"><label for="au-scope">Properties</label><select class="select" id="au-scope" name="scope"><option value="all"' + (all ? ' selected' : '') + '>' + (np > 1 ? 'All ' + np + ' properties' : 'Every property') + '</option>' + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (!all && sc.length === 1 && sc[0] === p.id ? ' selected' : '') + '>Only ' + esc(p.name) + '</option>'; }).join('') + '</select></div>';
+    return '<div class="field full"><label for="au-scope">Properties</label><select class="select" id="au-scope" name="scope"><option value="all"' + (all ? ' selected' : '') + '>' + esc(np > 1 ? O.tpl('All {n} properties', { n: np }) : O.tr('Every property')) + '</option>' + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (!all && sc.length === 1 && sc[0] === p.id ? ' selected' : '') + '>' + esc(O.tpl('Only {unit}', { unit: p.name })) + '</option>'; }).join('') + '</select></div>';
   }
   function editRule(id) {
     if (!canEdit()) { U.toast(WHY_EDIT, 'bad'); return; }
@@ -415,9 +415,9 @@
       var accessNote = tog && edit ? '' : '<div class="note">' + O.icon('lock') + ' ' + esc(!tog && !edit ? 'You can see the automations. An account owner can let you turn them on or off, or edit them, in Staff access.' : !tog ? 'You can edit messages and rules. ' + WHY_TOGGLE : 'You can turn automations on or off. ' + WHY_EDIT) + '</div>';
       root.innerHTML = '<div class="pg-automations stack">' + startNote +
         U.kpis([
-          { label: 'Automations on', value: onN + ' of ' + all, sub: (all - onN) ? (all - onN) + ' paused' : 'Everything is running' },
+          { label: 'Automations on', value: O.tpl('{n} of {total}', { n: onN, total: all }), sub: (all - onN) ? O.tpl('{n} paused', { n: all - onN }) : 'Everything is running' },
           { label: 'Sent for you, 30 days', value: fmt.num(msgs + inv + rcp), sub: fmt.plural(msgs, 'guest message') + ', ' + fmt.plural(inv + rcp, 'invoice or receipt', 'invoices and receipts') },
-          { label: 'Time saved, 30 days', value: '≈ ' + Math.round(hours) + ' h', sub: 'Including ' + fmt.plural(tasks, 'task') + ' created', title: 'At 2 to 4 minutes per step someone would otherwise do by hand' }
+          { label: 'Time saved, 30 days', value: '≈ ' + Math.round(hours) + ' h', sub: O.tpl('Including {count} created', { count: fmt.plural(tasks, 'task') }), title: 'At 2 to 4 minutes per step someone would otherwise do by hand' }
         ]) +
         accessNote +
         (O.alertsUI ? O.alertsUI.card() : '') +
@@ -427,7 +427,7 @@
         '<div class="stack">' + feedHTML() +
         '<div class="card"><div class="card-head"><div><h3>Door code safety chain</h3><div class="sub">What has to happen before a guest can open the door</div></div></div><div class="card-body stack">' +
         '<ol class="chain">' + chain.map(function (c, i) { return '<li><span class="cn">' + (i + 1) + '</span><div><b>' + esc(c[0]) + '</b><div class="cs">' + esc(c[1]) + '</div></div></li>'; }).join('') + '</ol>' +
-        (held.length ? '<div class="note warn">Held now: ' + held.sort(function (a, b) { return (a.checkIn + a.checkInTime) < (b.checkIn + b.checkInTime) ? -1 : 1; }).map(function (b) { return esc(b.guest.name) + ' (' + (b.idVerified ? 'house rules' : 'ID check') + ', ' + (b.checkIn === D.TODAY ? 'arrives today ' + fmt.time(b.checkInTime) : 'arrives tomorrow') + ')'; }).join('; ') + '</div>' : '<div class="note">No codes are held for today or tomorrow.</div>') +
+        (held.length ? '<div class="note warn">' + esc(O.tpl('Held now: {list}', { list: O.i18nKeep(held.sort(function (a, b) { return (a.checkIn + a.checkInTime) < (b.checkIn + b.checkInTime) ? -1 : 1; }).map(function (b) { return O.tpl(b.checkIn === D.TODAY ? '{guest} ({why}, arrives today {time})' : '{guest} ({why}, arrives tomorrow)', { guest: b.guest.name, why: b.idVerified ? 'house rules' : 'ID check', time: fmt.time(b.checkInTime) }); }).join('; ')) })) + '</div>' : '<div class="note">No codes are held for today or tomorrow.</div>') +
         '<div class="small muted">If any step is missing the code is held and the front desk sees it on the dashboard. The guest app asks for the house rules first, every time.</div>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-act="lock" style="align-self:flex-start">' + O.icon('key') + 'Change a door code</button></div></div>' +
         '</div></div></div>';

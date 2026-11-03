@@ -166,7 +166,10 @@ export function pieces(lit) {
     for (const x of t.split('\u0000')) parts.push(decode(x));
     const head = s.match(/^([^<>"]*)"\s*(?:[a-z-]+=|>|\/>)/); /* '...text" class=...' (end of an attribute value) */
     if (head) parts.push(decode(head[1]));
-  } else { const head = s.match(/^([^<>"]*)"\s*(?:[a-z-]+=|>|\/>)/); parts.push(head ? decode(head[1]) : s); }
+  } else {
+    const head = s.match(/^([^<>"]*)"\s*(?:[a-z-]+=|>|\/>)/); parts.push(head ? decode(head[1]) : s);
+    for (const m of s.matchAll(ATTRS)) parts.push(decode(m[2])); /* '" placeholder="No value"' between two concatenations */
+  }
   return parts.map((p) => p.replace(/\s+/g, ' ')).filter((p) => !/[a-z-]+=["']|^\s*["']|["']\s*$/.test(p) || /^"[^"=]+"$/.test(p.trim())).map(clean).filter((p) => isUI(p) || joined(p));
 }
 /* the words of a piece, without the punctuation that joins it to the text around it: ", arrives " -> "arrives" */
@@ -193,8 +196,8 @@ export function isUI(p) {
   if (CODEY.test(p) && !/ /.test(p)) return false;
   if (/^[a-z][\w-]*$/.test(p)) return false; /* one lower-case word: an id, a class or a key */
   if (/^(?:[a-z][\w-]*\s+)+[a-z][\w-]*$/.test(p) && /-/.test(p)) return false; /* "btn btn-sm": classes */
-  if (/^[\w-]+(?:\s+[\w-]+)*\s*\{/.test(p) || /[{;]\s*[a-z-]+\s*:/.test(p)) return false; /* CSS */
-  if (/^[.#]?[a-z][\w-]*(?:[ >,.#:[][\w\-=".'\]()# >,.:*]*)$/.test(p) && /[.#[>]/.test(p.replace(/\.$/, '')) && !/^[a-z]+(?: [a-z]+){2,}[.]?$/.test(p)) return false; /* selectors (not a sentence such as "is created when you save.") */
+  if (/^[\w-]+(?:\s+[\w-]+)*\s*\{(?!\w+\})/.test(p) || /[{;]\s*[a-z-]+\s*:/.test(p)) return false; /* CSS (not a {slot}: "Start {task} at {unit}") */
+  if (/^[.#]?[a-z][\w-]*(?:[ >,.#:[][\w\-=".'\]()# >,.:*]*)$/.test(p) && /[.#[>]/.test(p.replace(/\.$/, '')) && !/^[a-z]+(?: [a-z]+){2,}[.]?$/.test(p) && !/^e\.g\. /.test(p)) return false; /* selectors (not a sentence such as "is created when you save." or "e.g. Bay B2-14") */
   if (/^\w+\(.*\)$/.test(p) || /=>|function\s*\(|\breturn\b.*;/.test(p)) return false; /* code */
   if (/^(?:select|insert|update|delete|create|alter)\s/i.test(p) && /\b(?:from|into|table|set|where)\b/i.test(p)) return false; /* SQL */
   if (/^[A-Z]{2,5}$/.test(p)) return false; /* codes: MYR, AM, ID */

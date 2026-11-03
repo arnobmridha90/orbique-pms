@@ -113,7 +113,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png sounds/orbique_alert.wav vendor/supabase.js vendor/jspdf.umd.min.js vendor/maplibre-gl.js vendor/maplibre-gl.css vendor/maplibre-gl.LICENSE.txt vendor/native.js; do
+          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png sounds/orbique_alert.wav vendor/supabase.js vendor/jspdf.umd.min.js vendor/maplibre-gl.js vendor/maplibre-gl.css vendor/maplibre-gl.LICENSE.txt vendor/native.js i18n/bn.js i18n/ms.js i18n/zh.js; do
             test -s "dist/$f" || { echo "::error::dist/$f is missing"; exit 1; }
           done
           grep -q 'O.geo' dist/index.html || { echo "::error::api/_lib/shared/geo.cjs missing from the production page"; exit 1; }
@@ -122,6 +122,8 @@ jobs:
           grep -q 'O.unitreq' dist/index.html || { echo "::error::api/_lib/shared/unitreq.cjs missing from the production page"; exit 1; }
           grep -q 'O.beds' dist/index.html || { echo "::error::api/_lib/shared/beds.cjs missing from the production page"; exit 1; }
           grep -q 'O.teamchat' dist/index.html || { echo "::error::api/_lib/shared/teamchat.cjs missing from the production page"; exit 1; }
+          grep -q 'O.I18N_URL' dist/index.html || { echo "::error::the translations' addresses (O.I18N_URL) are missing from the production page"; exit 1; }
+          ! grep -q 'O.I18N.bn = ' dist/index.html || { echo "::error::the Bangla catalog is inlined in the production page (it should load from /i18n/bn.js)"; exit 1; }
           grep -q 'server/pwa.js' dist/index.html || { echo "::error::app/server/*.js missing from the production page"; exit 1; }
           # the phone app's screens are this page (capacitor.config.json server.url): its loader and files must be there
           grep -q '/vendor/native.js?v=' dist/index.html || { echo "::error::the phone app loader is missing from the production page"; exit 1; }

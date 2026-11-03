@@ -252,16 +252,16 @@
     if (p.archived) return { kind: 'neutral', t: 'Archived', s: p.archivedAt ? 'Archived ' + d.fmtY(String(p.archivedAt).slice(0, 10)) : '' };
     var T = D.TODAY;
     var blk = D.blocks.filter(function (x) { return x.propertyId === p.id && x.start <= T && x.end > T; })[0];
-    if (blk) return { kind: 'neutral', t: blk.type === 'owner' ? 'Owner stay' : 'Blocked', s: (blk.note ? blk.note + ', ' : '') + 'until ' + d.fmt(blk.end) };
+    if (blk) return { kind: 'neutral', t: blk.type === 'owner' ? 'Owner stay' : 'Blocked', s: blk.note ? O.tpl('{note}, until {date}', { note: blk.note, date: d.fmt(blk.end) }) : O.tpl('until {date}', { date: d.fmt(blk.end) }) };
     var bs = liveBookings(p.id);
     var stay = bs.filter(function (b) { return b.checkIn < T && b.checkOut > T; })[0];
     var arr = bs.filter(function (b) { return b.checkIn === T; })[0];
     var dep = bs.filter(function (b) { return b.checkOut === T; })[0];
-    if (stay) return { kind: 'ok', t: 'Guest in', s: stay.guest.name + ' until ' + d.fmt(stay.checkOut) };
-    if (arr && dep) return { kind: 'warn', t: 'Turnover today', s: dep.guest.name + ' out ' + fmt.time(dep.checkOutTime) + ', ' + arr.guest.name + ' in ' + fmt.time(arr.checkInTime) };
+    if (stay) return { kind: 'ok', t: 'Guest in', s: O.tpl('{guest} until {date}', { guest: stay.guest.name, date: d.fmt(stay.checkOut) }) };
+    if (arr && dep) return { kind: 'warn', t: 'Turnover today', s: O.tpl('{guest} out {time}, {guest2} in {time2}', { guest: dep.guest.name, time: fmt.time(dep.checkOutTime), guest2: arr.guest.name, time2: fmt.time(arr.checkInTime) }) };
     if (arr) return { kind: arr.status === 'checked_in' ? 'ok' : 'info', t: arr.status === 'checked_in' ? 'Guest in' : 'Arrives today', s: arr.guest.name + ', ' + fmt.time(arr.checkInTime) };
     var next = bs.filter(function (b) { return b.checkIn > T; }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : 1; })[0];
-    return { kind: 'neutral', t: 'Free tonight', s: next ? 'Next guest ' + d.fmt(next.checkIn) : 'No upcoming bookings' };
+    return { kind: 'neutral', t: 'Free tonight', s: next ? O.tpl('Next guest {date}', { date: d.fmt(next.checkIn) }) : 'No upcoming bookings' };
   }
   function missing(p) { /* details the operation needs every day */
     var m = [];
@@ -345,7 +345,7 @@
       '<span class="pp-ph">' + cover(p) + U.pill(s.t, s.kind) + (photos > 1 ? '<span class="pp-cnt">' + O.icon('image') + photos + '</span>' : '') + '</span>' +
       '<span class="pp-b"><span class="pp-nm">' + esc(p.name) + '</span>' + typeLineHTML(p) +
       '<span class="pp-loc">' + O.icon('pin') + '<span>' + esc(p.area || 'Location not set') + '</span></span>' +
-      '<span class="pp-meta"><span>' + esc(p.type || bedsText(p)) + (p.maxGuests ? ' · sleeps ' + esc(p.maxGuests) : '') + '</span><span class="st-sm">' + U.pill(s.t, s.kind) + '</span></span>' +
+      '<span class="pp-meta"><span>' + esc(p.type || bedsText(p)) + (p.maxGuests ? ' · ' + esc(O.tpl('sleeps {n}', { n: p.maxGuests })) : '') + '</span><span class="st-sm">' + U.pill(s.t, s.kind) + '</span></span>' +
       (miss.length ? '<span class="pp-warn">' + O.icon('alert') + '<span>Add the ' + esc(miss.join(', ')) + '</span></span>' : '') +
       '<span class="pp-ft"><span class="who' + (hk ? '' : ' none') + '">' + (hk ? U.avatar(hk, 'sm') + ' ' + esc(hk) : 'No housekeeper yet') + '</span>' +
       (canSeePrice() ? '<span class="pp-price">' + fmt.money(+p.base || 0, { cur: p }) + '<small> / night</small></span>' : '') + '</span>' +
@@ -565,7 +565,7 @@
           var s = statusOf(p), t = O.typeOf(p);
           var tyOpts = '<option value="">No type yet</option>' + types.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === p.unitTypeId ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
             (t && t.buildingId !== bd.id ? '<option value="' + esc(t.id) + '" selected>' + esc(O.typeTitle(t)) + '</option>' : '');
-          return '<div class="bt-row">' + (edit ? '<input type="checkbox" data-sel="' + esc(p.id) + '" aria-label="Select ' + esc(p.name) + '"' + (BT.sel[p.id] ? ' checked' : '') + '>' : '<span></span>') +
+          return '<div class="bt-row">' + (edit ? '<input type="checkbox" data-sel="' + esc(p.id) + '" aria-label="' + esc(O.tpl('Select {name}', { name: p.name })) + '"' + (BT.sel[p.id] ? ' checked' : '') + '>' : '<span></span>') +
             '<button type="button" class="u" data-bt="open" data-id="' + esc(p.id) + '" style="text-align:left;background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer"><b>' + esc(p.name) + '</b><span>' + esc(s.t + (s.s ? ' · ' + s.s : '')) + '</span></button>' +
             (edit ? '<input class="input" data-no="' + esc(p.id) + '" value="' + esc(p.unitNo || '') + '" maxlength="12" placeholder="e.g. 21-1" aria-label="Unit number of ' + esc(p.name) + '">' : '<span class="ro">' + esc(p.unitNo || '') + '</span>') +
             (edit ? '<select class="select" data-ty="' + esc(p.id) + '" aria-label="Unit type of ' + esc(p.name) + '">' + tyOpts + '</select>' : '<span class="ro">' + esc(t ? t.name : 'No type') + '</span>') + '</div>';
@@ -856,7 +856,7 @@
       (miss.length ? '<div class="note warn pp-miss">' + O.icon('alert').replace('<svg ', '<svg style="width:15px;height:15px;flex:none;margin-top:1px" ') + '<span>Add the ' + esc(miss.join(', ')) + ' so cleaning tasks and the guest app have what they need.</span></div>' : '') +
       (canEdit() && !p.archived && !(p.photos && p.photos.length) ? '<div class="note">Add a few photos. The website and the guest app show them.</div>' : '') +
       '<div class="pp-quick">' +
-      (O.can('bookings') ? '<button type="button" class="btn btn-ghost btn-sm" data-dv="bookings">' + O.icon('bookings') + 'Bookings' + (up.length ? ' · ' + up.length + ' upcoming' : '') + '</button>' : '') +
+      (O.can('bookings') ? '<button type="button" class="btn btn-ghost btn-sm" data-dv="bookings">' + O.icon('bookings') + esc(up.length ? O.tpl('Bookings · {n} upcoming', { n: up.length }) : O.tr('Bookings')) + '</button>' : '') +
       (O.can('calendar') ? '<button type="button" class="btn btn-ghost btn-sm" data-dv="calendar">' + O.icon('calendar') + 'Calendar</button>' : '') +
       (mapHref ? '<a class="btn btn-ghost btn-sm" href="' + esc(mapHref) + '" target="_blank" rel="noopener">' + O.icon('map') + 'Directions</a>' : '') +
       '</div>' +
@@ -866,8 +866,8 @@
         ['Type', esc(p.type || '') + (p.type && /BR|Studio/i.test(p.type) ? '' : ' · ' + esc(bedsText(p)))],
         p.maxGuests ? ['Sleeps', esc(fmt.plural(+p.maxGuests, 'guest'))] : null,
         canSeePrice() ? ['Base price', '<span class="pp-price">' + fmt.money(+p.base || 0, { cur: p }) + '</span> <span class="xs muted">per night</span>'] : null,
-        ['Check-in', 'From ' + esc(fmt.time(p.checkInTime || '15:00'))],
-        ['Check-out', 'By ' + esc(fmt.time(p.checkOutTime || '11:00'))],
+        ['Check-in', esc(O.tpl('From {time}', { time: fmt.time(p.checkInTime || '15:00') }))],
+        ['Check-out', esc(O.tpl('By {time} [[a time of day]]', { time: fmt.time(p.checkOutTime || '11:00') }))],
         p.notes ? ['Team notes', esc(p.notes)] : null
       ]) + '</section>' +
       '<section class="pp-vs"><h4>Location</h4>' + kv([
@@ -883,7 +883,7 @@
       ]) : '<div class="note">Lock codes, Wi-Fi passwords and parking are hidden for your role. An account owner can allow them in Staff Access.</div>') + '</section>' +
       '<section class="pp-vs"><h4>Team' + (canSeeOwner() ? ' and owner' : '') + '</h4><div class="stack" style="gap:10px">' +
       '<div class="pp-person">' + (hk ? U.avatar(hk.name) : '<span class="avatar" style="background:var(--border-strong)">?</span>') + '<div class="grow"><b>' + esc(hk ? hk.name : 'No housekeeper yet') + '</b><span>' + esc(hk ? 'Housekeeper' + (hk.phone ? ' · ' + hk.phone : '') : 'Turnover tasks for this unit are created unassigned') + '</span></div></div>' +
-      (canSeeOwner() ? '<div class="pp-person">' + U.avatar(p.owner || '?') + '<div class="grow"><b>' + esc(p.owner || 'Owner not set') + '</b><span>' + esc(['Owner'].concat([p.ownerPhone, p.ownerEmail].filter(Boolean)).join(' · ')) + '</span>' + (others.length ? '<span class="xs" style="display:block">Also owns ' + esc(others.map(function (x) { return x.short || x.name; }).join(', ')) + '</span>' : '') + '</div></div>' : '') +
+      (canSeeOwner() ? '<div class="pp-person">' + U.avatar(p.owner || '?') + '<div class="grow"><b>' + esc(p.owner || 'Owner not set') + '</b><span>' + esc(['Owner'].concat([p.ownerPhone, p.ownerEmail].filter(Boolean)).join(' · ')) + '</span>' + (others.length ? '<span class="xs" style="display:block">' + esc(O.tpl('Also owns {list}', { list: O.fmt.andList(others.map(function (x) { return x.short || x.name; })) })) + '</span>' : '') + '</div></div>' : '') +
       '</div></section></div>';
     X.body.innerHTML = html;
     var left = '', right = '';

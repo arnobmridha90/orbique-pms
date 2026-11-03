@@ -956,7 +956,8 @@
   function statusBar() {
     var P = pubState(), ws = wsInfo(), t = tplOf(site().template), F = facts();
     var pill = P.live ? (P.changed ? U.pill('Draft changes', 'warn') : U.pill('Live', 'ok')) : U.pill('Not published', 'neutral');
-    var sub = P.live ? 'Published ' + d.fmt(P.live.at.slice(0, 10)) + ', ' + fmt.time(P.live.at) + (staffName(P.live.by) ? ' by ' + staffName(P.live.by) : '') + (tplOf(P.live.template).id !== t.id ? ' · live design: ' + tplName(P.live.template) : '') : 'Pick a design, check the preview, then publish';
+    var pwhen = P.live ? d.fmt(P.live.at.slice(0, 10)) + ', ' + fmt.time(P.live.at) : '', pby = P.live ? staffName(P.live.by) : '';
+    var sub = P.live ? O.i18nKeep((pby ? O.tpl('Published {when} by {name}', { when: pwhen, name: pby }) : O.tpl('Published {when}', { when: pwhen })) + (tplOf(P.live.template).id !== t.id ? ' · ' + O.tpl('live design: {name}', { name: tplName(P.live.template) }) : '')) : 'Pick a design, check the preview, then publish';
     var direct = (D.bookings || []).filter(function (b) { return b.channel === 'direct' && b.status !== 'cancelled' && b.createdAt && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -89) && b.createdAt.slice(0, 10) <= D.TODAY; }).length;
     return '<div class="card wb-status"><span class="wb-globe">' + O.icon('website') + '</span><div class="grow"><div class="row-flex wrap"><b class="wb-domain">' + esc(ws.domain) + '</b>' + pill + '</div><div class="xs muted">' + esc(sub) + '</div></div>' +
       (F.props.length ? '<div class="wb-direct"><b>' + fmt.num(direct) + '</b><span>direct bookings<br>in 90 days</span></div>' : '') + '<div class="wb-cur"><span class="xs muted">Design</span><b>' + esc(t.name) + '</b></div></div>';

@@ -401,7 +401,7 @@
       '<div class="field"><label>Reason</label>' + U.seg([['maintenance', 'Maintenance'], ['owner', 'Owner stay']], type, 'data-type') + '</div>' +
       '<div class="field"><label>Note</label><input class="input" name="note" maxlength="120" placeholder="For example: aircon service, owner family visit" value="' + esc(bl ? bl.note || '' : '') + '"></div>' +
       '<div class="blk-sum" role="status"></div>' +
-      '<div class="xs muted">Blocked nights close the unit for new bookings on your website' + (O.channel && O.channel.mode() === 'live' ? ' and every connected channel' : '') + '.</div></div>');
+      '<div class="xs muted">' + (O.channel && O.channel.mode() === 'live' ? 'Blocked nights close the unit for new bookings on your website and every connected channel.' : 'Blocked nights close the unit for new bookings on your website.') + '</div></div>');
     function syncAll() { types.forEach(function (t) { var all = O.$('[data-all="' + t.id + '"]', body), us = O.$$('[name=u][data-t="' + t.id + '"]', body); if (!all) return; var n = us.filter(function (c) { return c.checked; }).length; all.checked = n > 0 && n === us.length; all.indeterminate = n > 0 && n < us.length; }); }
     function vals() {
       var pids = multi ? O.$$('[name=u]:checked', body).map(function (c) { return c.value; }) : [O.$('[name=pid]', body).value];
@@ -460,7 +460,7 @@
     function save() {
       var v = vals(), r = problems(v);
       if (r.err.length) { update(); return false; }
-      var end = d.add(v.z, 1), n = d.diff(v.a, end), when = ' (' + (n === 1 ? d.fmt(v.a) : d.fmtRange(v.a, v.z)) + ')';
+      var end = d.add(v.z, 1), n = d.diff(v.a, end), when = n === 1 ? d.fmt(v.a) : d.fmtRange(v.a, v.z);
       var label;
       if (bl) { bl.propertyId = v.pids[0]; bl.start = v.a; bl.end = end; bl.type = type; bl.note = v.note; bl.updatedBy = O.state.viewer; }
       else {
@@ -468,13 +468,15 @@
         v.pids.forEach(function (pid) { var x = { id: O.uid('BL'), propertyId: pid, start: v.a, end: end, type: type, note: v.note, createdBy: O.state.viewer, createdAt: D.NOW }; if (group) x.groupId = group; D.blocks.push(x); });
       }
       var ps = v.pids.map(function (pid) { return D.propById[pid]; }), t0 = ps[0] && ps[0].unitTypeId, same = t0 && ps.every(function (p) { return p.unitTypeId === t0; }), tt = same && O.unitType(t0);
-      if (ps.length === 1) label = unitName(ps[0]) + (tt ? ' (' + tt.name + ')' : '');
-      else if (tt) label = (ps.length === O.unitsOfType(t0).length ? 'all ' : '') + ps.length + ' ' + tt.name + ' units';
-      else label = ps.length + ' units';
+      if (ps.length === 1) label = tt ? unitName(ps[0]) + ' (' + O.tr(tt.name) + ')' : unitName(ps[0]);
+      else if (tt) label = O.tpl(ps.length === O.unitsOfType(t0).length ? 'all {n} {type} units' : '{n} {type} units', { n: ps.length, type: tt.name });
+      else label = O.tpl('{n} units', { n: ps.length });
       var moves = O.reassignUnits(), lost = moves.filter(function (m) { return !m.to; }).length;
       var note = O.channel ? O.channel.notice('block', ps.map(function (p) { return p && p.unitTypeId; })) : '';
-      U.toast((bl ? 'Block updated: ' : 'Blocked ') + label + ' for ' + fmt.plural(n, 'night') + when + '.' + (note ? ' ' + note : '') +
-        (moves.length ? ' ' + fmt.plural(moves.length, 'booking') + ' moved to another unit' + (lost ? ', ' + lost + ' still need' + (lost === 1 ? 's' : '') + ' a unit' : '') + '.' : ''), lost ? 'bad' : undefined);
+      var bits = [O.tpl(bl ? 'Block updated: {units} for {nights} ({when}).' : 'Blocked {units} for {nights} ({when}).', { units: label, nights: fmt.plural(n, 'night'), when: when })];
+      if (note) bits.push(O.tr(note));
+      if (moves.length) bits.push(lost ? O.tpl('{moved} moved to another unit, {n} still without a unit.', { moved: fmt.plural(moves.length, 'booking'), n: lost }) : O.tpl('{moved} moved to another unit.', { moved: fmt.plural(moves.length, 'booking') }));
+      U.toast(O.i18nKeep(bits.join(O.state.lang === 'zh' ? '' : ' ')), lost ? 'bad' : undefined);
       O.emit('data', { type: 'block' });
     }
     var actions = [{ label: 'Cancel' }, { label: bl ? 'Save changes' : 'Block dates', kind: 'primary', onClick: save }];
@@ -711,7 +713,8 @@
         '<div class="cal-legend">' + LEGEND.map(function (s) { return '<span class="lg"><i class="sw" style="background:var(--st-' + s[1] + ')"></i>' + s[2] + '</span>'; }).join('') +
         '<span class="lg"><i class="sw sw-block"></i>Blocked</span>' +
         (phone ? '' : '<span class="lg-sep"></span>' + U.channelsInUse().map(function (c) { return '<span class="lg">' + U.platIcon(c) + esc(U.platName(c)) + '</span>'; }).join('')) +
-        '<span class="hint">' + (phone ? 'Tap' : 'Click') + ' a bar to open the booking' + (canNew || canBlock ? ', or a free night to ' + (canNew ? 'add a booking' : 'block it') : '') + '.</span></div>' +
+        '<span class="hint">' + (phone ? (canNew ? 'Tap a bar to open the booking, or a free night to add a booking.' : canBlock ? 'Tap a bar to open the booking, or a free night to block it.' : 'Tap a bar to open the booking.')
+          : canNew ? 'Click a bar to open the booking, or a free night to add a booking.' : canBlock ? 'Click a bar to open the booking, or a free night to block it.' : 'Click a bar to open the booking.') + '</span></div>' +
         '</div>') + '</div>';
       var wrap = O.$('.pg-calendar', root), scroll = O.$('.cal-scroll', wrap);
       if (phone) { var tb = O.$('.topbar'), tbar = O.$('.tabbar'); if (tb) wrap.style.setProperty('--cal-top', tb.offsetHeight + 'px'); if (tbar) wrap.style.setProperty('--cal-bot', tbar.offsetHeight + 'px'); }
@@ -764,7 +767,7 @@
         if (iToday >= 0 && iToday < days) {
           cols += '<i class="td" style="left:' + (iToday * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px"></i>';
           var hm = String(D.NOW_TIME || '12:00').split(':');
-          cols += '<i class="now" style="left:' + ((iToday + (+hm[0] + (+hm[1] || 0) / 60) / 24) * dw).toFixed(2) + 'px" title="Now, ' + esc(fmt.time(D.NOW_TIME)) + '"></i>';
+          cols += '<i class="now" style="left:' + ((iToday + (+hm[0] + (+hm[1] || 0) / 60) / 24) * dw).toFixed(2) + 'px" title="' + esc(O.tpl('Now, {time}', { time: fmt.time(D.NOW_TIME) })) + '"></i>';
         }
 
         function clip(a, z) { return { a: Math.max(a, 0), z: Math.min(z, lw), cl: a < 0, cr: z > lw }; }
@@ -785,7 +788,7 @@
           else if (tight && fits(ini, 10.5)) { label = ini; bfs = 10.5; }
           var sd = sdOn && label ? '<span class="sdm" aria-hidden="true">⚡</span>' : '';
           var cls = 'cal-bar s-' + b.status + (extraCls ? ' ' + extraCls : '') + (tight ? ' tight' : '') + (c.cl ? ' clipL' : '') + (c.cr ? ' clipR' : '') + (st.flash === b.id ? ' flash' : '');
-          var aria = (extraCls ? 'No unit yet: ' : '') + nm + ', ' + U.platName(b.channel) + ', ' + U.statusLabel(b.status) + ', ' + d.fmtRange(b.checkIn, b.checkOut) + ', ' + nts;
+          var aria = O.tpl(extraCls ? 'No unit yet: {guest}, {channel}, {status}, {dates}, {nights}' : '{guest}, {channel}, {status}, {dates}, {nights}', { guest: nm, channel: U.platName(b.channel), status: U.statusLabel(b.status), dates: d.fmtRange(b.checkIn, b.checkOut), nights: nts });
           return '<button type="button" class="' + cls + '" data-id="' + esc(b.id) + '" aria-label="' + esc(aria) + '" style="left:' + left.toFixed(1) + 'px;width:' + w.toFixed(1) + 'px;top:' + ((rh - bh) / 2 - 0.5).toFixed(1) + 'px;height:' + bh + 'px;--ic:' + icPx + 'px;--fs:' + bfs + 'px">' +
             (showIc ? U.platIcon(b.channel) : '') + (label ? '<span class="cb">' + sd + esc(label) + (extra ? ' <span class="nts">· ' + esc(extra) + '</span>' : '') + '</span>' : '') + '</button>';
         }
@@ -794,7 +797,7 @@
           if (w < 6) return '';
           var lbl = x.type === 'owner' ? 'Owner stay' : 'Maintenance', room = w - 12 - 5 - 12;
           var shown = textW(lbl, fs, 800) <= room ? lbl : (x.type === 'owner' && textW('Owner', fs, 800) <= room ? 'Owner' : '');
-          return '<button type="button" class="cal-bar s-block' + (c.cl ? ' clipL' : '') + (c.cr ? ' clipR' : '') + '" data-block="' + esc(x.id) + '" aria-label="' + esc('Blocked: ' + lbl + ', ' + d.fmtRange(x.start, d.add(x.end, -1))) + '" style="left:' + left.toFixed(1) + 'px;width:' + w.toFixed(1) + 'px;top:' + ((rh - bh) / 2 - 0.5).toFixed(1) + 'px;height:' + bh + 'px;--fs:' + fs + 'px">' +
+          return '<button type="button" class="cal-bar s-block' + (c.cl ? ' clipL' : '') + (c.cr ? ' clipR' : '') + '" data-block="' + esc(x.id) + '" aria-label="' + esc(O.tpl('Blocked: {what}, {dates}', { what: lbl, dates: d.fmtRange(x.start, d.add(x.end, -1)) })) + '" style="left:' + left.toFixed(1) + 'px;width:' + w.toFixed(1) + 'px;top:' + ((rh - bh) / 2 - 0.5).toFixed(1) + 'px;height:' + bh + 'px;--fs:' + fs + 'px">' +
             (w >= 20 ? sizeIcon(O.icon(x.type === 'owner' ? 'home' : 'lock'), 12) : '') + (shown ? '<span class="cb">' + esc(shown) + '</span>' : '') + '</button>';
         }
 
@@ -807,7 +810,7 @@
           if (sub) { short = p.unitNo ? 'Unit ' + p.unitNo : short; locShort = phone && portrait ? '' : p.unitNo ? propName(p) : ''; }
           var inner = '<span class="pn">' + esc(short) + '</span>' + (locShort ? '<span class="pl">' + esc(locShort) + '</span>' : '');
           var cell = canOpenProp
-            ? '<button type="button" class="cal-prop' + (sub ? ' sub' : '') + '" data-prop="' + esc(p.id) + '" title="' + esc(propLabel(p) + '. Click to see its bookings.') + '">' + inner + '</button>'
+            ? '<button type="button" class="cal-prop' + (sub ? ' sub' : '') + '" data-prop="' + esc(p.id) + '" title="' + esc(O.tpl('{unit}. Click to see its bookings.', { unit: propLabel(p) })) + '">' + inner + '</button>'
             : '<div class="cal-prop' + (sub ? ' sub' : '') + '" title="' + esc(propLabel(p)) + '">' + inner + '</div>';
           return '<div class="cal-row" style="height:' + rh + 'px">' + cell +
             '<div class="cal-lane' + (canAct ? '' : ' ro') + '" data-pid="' + esc(p.id) + '" style="width:' + lw.toFixed(2) + 'px">' + bars + '</div></div>';
@@ -815,12 +818,13 @@
         function groupRow(t) {
           var bd = O.building(t.buildingId), av = O.assign.typeAvailability({ unitTypeId: t.id, listingOf: t.listingOf, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
           var cells = av.map(function (n, i) {
-            var over = n.raw < 0, txt = over ? (dw >= 64 ? 'Oversold' : '!') : dw >= 76 ? n.availability + ' of ' + n.units + ' free' : dw >= 34 ? n.availability + '/' + n.units : String(n.availability);
-            var tl = d.dowName(n.date) + ' ' + d.fmt(n.date) + ': ' + (over ? 'oversold by ' + fmt.plural(-n.raw, 'booking') : n.availability + ' of ' + n.units + ' ' + t.name + ' units free') + (n.unassigned ? ', ' + n.unassigned + ' without a unit' : '');
+            var over = n.raw < 0, txt = over ? (dw >= 64 ? 'Oversold' : '!') : dw >= 76 ? O.tpl('{n} of {total} free', { n: n.availability, total: n.units }) : dw >= 34 ? n.availability + '/' + n.units : String(n.availability);
+            var dy = d.dowName(n.date) + ' ' + d.fmt(n.date), tl = over ? (n.unassigned ? O.tpl('{day}: oversold by {count}, {k} without a unit', { day: dy, count: fmt.plural(-n.raw, 'booking'), k: n.unassigned }) : O.tpl('{day}: oversold by {count}', { day: dy, count: fmt.plural(-n.raw, 'booking') }))
+              : n.unassigned ? O.tpl('{day}: {n} of {total} {type} units free, {k} without a unit', { day: dy, n: n.availability, total: n.units, type: t.name, k: n.unassigned }) : O.tpl('{day}: {n} of {total} {type} units free', { day: dy, n: n.availability, total: n.units, type: t.name });
             return '<span class="cal-av' + (over ? ' over' : n.availability === 0 ? ' full' : '') + '" style="left:' + (i * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px" title="' + esc(tl) + '">' + esc(txt) + '</span>';
           }).join('');
           var sub = phone && portrait ? '' : (bd ? bd.name : '');
-          return '<div class="cal-row grp" style="height:' + gh + 'px"><div class="cal-prop" title="' + esc(O.typeTitle(t) + ': units free each night') + '"><span class="pn">' + esc(t.name) + '</span>' + (sub ? '<span class="pl">' + esc(sub) + '</span>' : '') + '</div>' +
+          return '<div class="cal-row grp" style="height:' + gh + 'px"><div class="cal-prop" title="' + esc(O.tpl('{type}: units free each night', { type: O.typeTitle(t) })) + '"><span class="pn">' + esc(t.name) + '</span>' + (sub ? '<span class="pl">' + esc(sub) + '</span>' : '') + '</div>' +
             '<div class="cal-lane ro" style="width:' + lw.toFixed(2) + 'px">' + cells + '</div></div>';
         }
         function unassignedRow(r) {
@@ -905,10 +909,10 @@
         types.forEach(function (t) {
           var av = O.assign.typeAvailability({ unitTypeId: t.id, listingOf: t.listingOf, units: D.properties, bookings: D.bookings, blocks: D.blocks || [], from: from, to: to });
           var bd = O.building(t.buildingId), on = C.typeConnected(t.id);
-          rows += '<div class="cal-row grp" style="height:' + gh + 'px"><div class="cal-prop" title="' + esc(O.typeTitle(t) + ': units free each night') + '"><span class="pn">' + esc(t.name) + '</span><span class="pl">' + esc((bd ? bd.name : '') + (on ? '' : ' · not connected')) + '</span></div>' +
+          rows += '<div class="cal-row grp" style="height:' + gh + 'px"><div class="cal-prop" title="' + esc(O.tpl('{type}: units free each night', { type: O.typeTitle(t) })) + '"><span class="pn">' + esc(t.name) + '</span><span class="pl">' + esc((bd ? bd.name : '') + (on ? '' : ' · not connected')) + '</span></div>' +
             '<div class="cal-lane ro" style="width:' + lw.toFixed(2) + 'px">' + av.map(function (n, j) {
               var over = n.raw < 0;
-              return '<span class="cal-av' + (over ? ' over' : n.availability === 0 ? ' full' : '') + '" style="left:' + (j * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px" title="' + esc(d.fmt(n.date) + ': ' + n.availability + ' of ' + n.units + ' free') + '">' + (over ? 'Oversold' : n.availability + ' of ' + n.units) + '</span>';
+              return '<span class="cal-av' + (over ? ' over' : n.availability === 0 ? ' full' : '') + '" style="left:' + (j * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px" title="' + esc(O.tpl('{date}: {n} of {total} free', { date: d.fmt(n.date), n: n.availability, total: n.units })) + '">' + esc(over ? O.tr('Oversold') : O.tpl('{n} of {total}', { n: n.availability, total: n.units })) + '</span>';
             }).join('') + '</div></div>';
           C.plansOf(t.id).forEach(function (p) {
             var cells = '';
@@ -1037,7 +1041,7 @@
       function openMenu(p, iso, x, y) {
         closeMenu();
         var now = D.TODAY, past = iso < now, span = freeUntil(p.id, iso), freeN = d.diff(iso, span.to);
-        var head = '<div class="cm-h"><b>' + esc(propName(p)) + '</b><div class="s">' + esc(d.dowName(iso) + ' ' + d.fmtY(iso)) + (past ? ' · past night' : ' · free night') + '</div>' +
+        var head = '<div class="cm-h"><b>' + esc(propName(p)) + '</b><div class="s">' + esc(d.dowName(iso) + ' ' + d.fmtY(iso) + ' · ' + O.tr(past ? 'past night' : 'free night')) + '</div>' +
           (!past ? '<div class="s">' + (span.capped ? 'Free for 120+ nights' : 'Free for ' + fmt.plural(freeN, 'night') + ' (until ' + esc(d.fmt(span.to)) + ')') + (O.can('bookings.value') ? ' · your price ' + fmt.money(rateOf(p.id, iso), { cur: p }) : '') + '</div>' : '') + '</div>';
         menu = O.html('<div class="cal-menu" role="menu">' + head +
           (canNew ? '<button type="button" class="cm-o" role="menuitem" data-m="new"' + (past ? ' disabled' : '') + '>' + O.icon('plus') + '<span>New booking<span class="s">Direct booking from ' + esc(d.fmt(iso)) + '</span></span></button>' : '') +

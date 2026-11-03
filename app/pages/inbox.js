@@ -799,7 +799,7 @@
   function rowHTML(c) {
     var b = bk(c), p = b ? prop(b.propertyId) : null, m = lastMsg(c), unread = c.unread > 0;
     var soon = b && (arrivingToday(b) || b.checkIn === d.add(D.TODAY, 1));
-    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc((b ? b.guest.name : 'Guest') + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
+    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(unread ? O.tpl('{name}, {n} unread', { name: b ? b.guest.name : O.tr('Guest'), n: c.unread }) : b ? b.guest.name : O.tr('Guest')) + '">' +
       '<span class="cv-av">' + U.avatar(b ? b.guest.name : '?') + (b ? U.platIcon(b.channel) : '') + '</span>' +
       '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + (p ? esc(p.short) + ' · ' : '') + '<span class="' + (soon ? 'soon' : '') + '">' + esc(listPhrase(b)) + '</span></span>' + (b && b.sameDay ? '<span class="sd">Same-day</span>' : '') + '</span>' +
@@ -893,7 +893,7 @@
     var av = feed ? '<span class="cv-feed">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c));
     var sub = feed ? 'Notifications' : 'Email' + (c.ota ? ' via ' + c.ota : '');
     var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + '<span data-no-i18n>' + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text) + '</span>') : '';
-    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(updName(c) + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
+    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(unread ? O.tpl('{name}, {n} unread', { name: updName(c), n: c.unread }) : updName(c)) + '">' +
       '<span class="cv-av">' + av + '</span>' +
       '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + esc(sub) + '</span></span>' +
@@ -969,8 +969,8 @@
       '<div class="ib-hacts">' +
       (canBk ? '<button type="button" class="ib-ic hide-sm" data-act="booking" title="Open booking" aria-label="Open booking">' + O.icon('bookings') + '</button>' : '') +
       (canCodes() ? '<button type="button" class="ib-ic" data-act="lock" title="Change door code" aria-label="Change door code">' + O.icon('key') + '</button>' : '') +
-      (canContacts() && tel ? '<a class="ib-ic" href="tel:' + esc(tel) + '" title="Call ' + esc(b.guest.phone) + '" aria-label="Call ' + esc(b.guest.name) + '">' + O.icon('whatsapp') + '</a>'
-        : '<button type="button" class="ib-ic" disabled title="Your access does not include guest phone numbers" aria-label="Call ' + esc(b.guest.name) + ' (not available)">' + O.icon('whatsapp') + '</button>') +
+      (canContacts() && tel ? '<a class="ib-ic" href="tel:' + esc(tel) + '" title="' + esc(O.tpl('Call {name}', { name: b.guest.phone })) + '" aria-label="' + esc(O.tpl('Call {name}', { name: b.guest.name })) + '">' + O.icon('whatsapp') + '</a>'
+        : '<button type="button" class="ib-ic" disabled title="Your access does not include guest phone numbers" aria-label="' + esc(O.tpl('Call {name} (not available)', { name: b.guest.name })) + '">' + O.icon('whatsapp') + '</button>') +
       (menu ? '<div class="ib-more"><button type="button" class="ib-ic" data-act="more" aria-haspopup="true" aria-label="More options">' + O.icon('more') + '</button><div class="ib-menu" role="menu">' + menu + '</div></div>' : '') +
       '</div></header>';
   }
