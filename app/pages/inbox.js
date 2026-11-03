@@ -628,16 +628,15 @@
   function listTime(iso) {
     var day = iso.slice(0, 10), n = d.diff(day, D.TODAY);
     if (n === 0) return fmt.time(iso);
-    if (n === 1) return 'Yesterday';
-    if (n < 7) return DAYS[d.dow(day)];
-    return d.fmtDM(day) + '/' + day.slice(0, 4);
+    return d.dowName(day) + ' ' + d.day(day) + ' ' + d.MONTHS[d.month(day) - 1] + (day.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ' + day.slice(0, 4) : ''); /* e.g. "Mon 2 Nov": always the date, not just the weekday */
   }
+  function fullWhen(iso) { return DAYS[d.dow(iso.slice(0, 10))] + ', ' + d.fmtY(iso.slice(0, 10)) + (iso.length >= 16 ? ' · ' + fmt.time(iso) : ''); } /* "Monday, 2 Nov 2026 · 3:15 PM" */
   function dayLabel(day) {
     var n = d.diff(day, D.TODAY);
-    if (n === 0) return 'Today';
-    if (n === 1) return 'Yesterday';
-    if (n < 7) return DAYS[d.dow(day)];
-    return d.dowName(day) + ', ' + d.fmtY(day);
+    var full = DAYS[d.dow(day)] + ', ' + d.fmtY(day); /* day, date and year, e.g. "Monday, 2 Nov 2026" */
+    if (n === 0) return 'Today · ' + full;
+    if (n === 1) return 'Yesterday · ' + full;
+    return full;
   }
   function arrivingToday(b) { return b && b.status !== 'cancelled' && b.checkIn === D.TODAY; }
   function inHouse(b) { return b && b.status !== 'cancelled' && b.checkIn < D.TODAY && b.checkOut > D.TODAY; }
@@ -801,7 +800,7 @@
     var soon = b && (arrivingToday(b) || b.checkIn === d.add(D.TODAY, 1));
     return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc((b ? b.guest.name : 'Guest') + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
       '<span class="cv-av">' + U.avatar(b ? b.guest.name : '?') + (b ? U.platIcon(b.channel) : '') + '</span>' +
-      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
+      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + (p ? esc(p.short) + ' · ' : '') + '<span class="' + (soon ? 'soon' : '') + '">' + esc(listPhrase(b)) + '</span></span>' + (b && b.sameDay ? '<span class="sd">Same-day</span>' : '') + '</span>' +
       '<span class="cv-l3"><span class="cv-prev">' + previewHTML(c) + '</span>' + marksHTML(c) + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>' + rowMoreHTML(c, b ? b.guest.name : 'the guest') + '</div>';
   }
@@ -895,7 +894,7 @@
     var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text)) : '';
     return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(updName(c) + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
       '<span class="cv-av">' + av + '</span>' +
-      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
+      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + esc(sub) + '</span></span>' +
       '<span class="cv-l3"><span class="cv-prev">' + prev + '</span>' + marksHTML(c) + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>' + rowMoreHTML(c, updName(c)) + '</div>';
   }
@@ -1110,7 +1109,7 @@
     var firstUnread = mark ? mark.i : -1;
     c.messages.forEach(function (m, i) {
       var day = m.time.slice(0, 10);
-      if (day !== prevDay) { out.push('<div class="day">' + esc(dayLabel(day)) + '</div>'); prevDay = day; prevKey = null; }
+      if (day !== prevDay) { out.push('<div class="day">' + esc(dayLabel(day) + ' · ' + fmt.time(m.time)) + '</div>'); prevDay = day; prevKey = null; }
       if (i === firstUnread) { out.push('<div class="unread-div" role="separator">' + fmt.plural(mark.n, 'unread message') + '</div>'); prevKey = null; }
       if (m.from === 'system') {
         var extra = (m.body ? '<details class="sysb"><summary>' + (m.subject ? 'Show the email' : 'Show more') + '</summary><div class="sysb-t">' + linkify(m.body) + '</div></details>' : '') +
@@ -1127,7 +1126,7 @@
       if (side === 'inote') who = '<div class="who">' + O.icon('lock') + 'Internal note · ' + esc((staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       else if (side === 'out' && first) who = '<div class="who">' + esc(m.app && !m.staffId ? 'From the WhatsApp app' : (staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       var status = side === 'out' ? msgStatus(c, i) : null;
-      var meta = '<span class="meta">' + (m.via && VIA[m.via] && side === 'in' ? '<span class="mvia">' + esc(VIA[m.via]) + '</span>' : '') + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
+      var meta = '<span class="meta" title="' + esc(fullWhen(m.time)) + '">' + (m.via && VIA[m.via] && side === 'in' ? '<span class="mvia">' + esc(VIA[m.via]) + '</span>' : '') + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
       if (m.via === 'email' && side === 'in' && (m.subject || (m.files && m.files.length))) inner = { html: (m.subject ? '<div class="subj">' + esc(m.subject) + '</div>' : '') + inner.html + (m.files && m.files.length ? '<div class="efiles">' + O.icon('clip') + 'In the original email: ' + esc(m.files.join(', ')) + '</div>' : '') };
       var cls = 'bub' + (inner.media ? ' media' + (inner.cap ? ' hascap' : '') + (m.type === 'file' || inner.file ? ' isfile' : '') : '') + (inner.voice ? ' vbub' : '');
       out.push('<div class="msg ' + side + (first ? ' first' : '') + '" data-i="' + i + '"><div class="' + cls + '">' + who + inner.html + (inner.voice ? meta.replace('class="meta"', 'class="meta"') : meta) + '</div>' +
