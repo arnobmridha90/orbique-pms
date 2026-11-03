@@ -58,9 +58,20 @@ when you come back to it, unless you are in the middle of typing something).
 A few changes are in the phone side of the app and need a new install. When one is ready, the Android app shows **A
 new version of the app is ready** at the bottom of the screen (it checks when it opens, at most every few hours):
 
-- Tap **Update**. The phone's browser downloads `Orbique-test.apk`. Open the download and tap **Install** (as in steps
-  2 to 4 above). It installs over the app you have and keeps you signed in.
+- Tap **Update**. The app downloads the new version itself (the notice shows how far it is, for example
+  "Downloading the update… 45%"; you can keep using the app, or tap **Cancel**). Then Android asks whether to install
+  it: tap **Install**. It installs over the app you have and keeps you signed in. No file to find in Downloads.
+- **The first time only**, Android asks you to allow Orbique to install updates. The notice says **Allow Orbique to
+  install updates, then tap Update again** and Android opens its setting: turn on **Allow from this source** and go
+  back to Orbique. The download then starts by itself (if not, tap **Update** again).
+- If you closed Android's install question by mistake, the notice says **Almost done: tap Install when Android asks**:
+  tap **Install** to bring it back.
+- If something goes wrong (no internet, not enough space), the notice says so; tap **Try again**. Before installing,
+  the app checks that the download really is Orbique, signed with the same key as the app you have, and newer;
+  otherwise it deletes it and says the update did not pass the safety check.
 - Tap **Later** to hide it. It does not ask again for that version, only when an even newer one is ready.
+- Test builds from before this feature open the download in the phone's browser instead: open the download and tap
+  **Install** (as in steps 2 to 4 above). After that one update, the app updates itself as described here.
 
 You can also update by hand at any time: open the same address again and install. A new test build installs over the
 old one and keeps you signed in, as long as both were signed with the same key (a digital signature that tells Android the update comes
@@ -406,11 +417,40 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
   number) with the newest test build, read from the title of the `android-test` release ("Android test build N") through
   `https://api.github.com/repos/arnobmridha90/orbique-pms/releases/tags/android-test` (it answers with CORS; 60 requests
   an hour per address without a token, and the app asks at most every 6 hours, when it opens or comes to the front).
-  Newer: the **Update** / **Later** notice. **Update** sets `location.href` to the APK address on github.com, which
-  Capacitor hands to the phone's browser; **Later** is kept per build (`orbique4:appUpdate:later`). Any failure shows
-  nothing. Local builds (version code 1) never ask. Release asset downloads are not used for the check: github.com answers
+  Newer: the **Update** / **Later** notice; **Later** is kept per build (`orbique4:appUpdate:later`). **Update** uses
+  the in-app updater below when the build has it; otherwise (builds from before it) it sets `location.href` to the APK
+  address on github.com, which Capacitor hands to the phone's browser. Any failure of the check shows nothing. Local builds (version code 1) never ask. Release asset downloads are not used for the check: github.com answers
   them with a redirect that has no CORS headers, so a page cannot read them. When the app is on Google Play, Play updates it: limit this
   check to the test builds then (the Play build has another signing key, so a test APK would not install over it).
+- **In-app updater (Android):** the app's own Capacitor plugin `AppUpdater`
+  (`android/app/src/main/java/com/orbique/app/AppUpdaterPlugin.java`, registered in `MainActivity.onCreate` with
+  `registerPlugin` before the bridge starts; no npm package). The page reaches it with `Capacitor.registerPlugin('AppUpdater')`
+  from `app/native/updates.js`, only when `Capacitor.isPluginAvailable('AppUpdater')` (the native side lists the plugins
+  it has in `Capacitor.PluginHeaders`, so older builds fall back to the browser download). Methods: `canInstall()`
+  `{supported, allowed}`, `openInstallSettings()`, `download({url})` with `downloadProgress` events `{percent, downloaded,
+  total}` (percent -1 when the size is unknown), `cancel()`, `install()`. `O.appUpdate.updater` runs the steps (allow
+  installs, download, install, Cancel, Try again, going on when the app comes back after "allow installs") and
+  `O.appUpdate.view` the words; both are unit tested in `tests/native_updates.test.mjs`, and `tests/native_sim.py`
+  (`live-updater`) runs it with a simulated plugin. Safety checks in the plugin, which trusts nothing from the page:
+  - only `https://github.com/arnobmridha90/orbique-pms/releases/download/<tag>/<name>.apk` (hard-coded, plain names, no
+    user, port, `%`-escapes or `..`); redirects are followed by hand, at most 5, and must stay on https and on
+    `github.com` or `*.githubusercontent.com` (GitHub's release asset hosts); at most 300 MB
+  - the file goes to the app's cache (`cache/updates/`, covered by `cache-path` in `res/xml/file_paths.xml`; deleted when
+    the app next starts) and is checked before install, and again by `install()`: `getPackageArchiveInfo` must give this
+    app's package name, the same signing certificate(s) (SHA-256 of `signingInfo` on Android 9 and later,
+    `signatures` before) as the installed app, and a higher `versionCode`. Otherwise the file is deleted and the call
+    fails with `WRONG_PACKAGE`, `WRONG_SIGNATURE`, `NOT_NEWER` or `INVALID_APK`. Other codes: `BAD_URL`, `BUSY`,
+    `NETWORK`, `STORAGE`, `CANCELLED`, `NO_FILE`, `NEEDS_PERMISSION`, `NO_INSTALLER`, `UNSUPPORTED`
+  - `install()` opens only the file the plugin itself downloaded and checked, through the existing FileProvider
+    (`${applicationId}.fileprovider`) as a content URI with `ACTION_VIEW`, `application/vnd.android.package-archive` and
+    `FLAG_GRANT_READ_URI_PERMISSION`. Android's installer still shows its own Install question and refuses a different key
+  - `REQUEST_INSTALL_PACKAGES` is declared only in `android/app/src/beta/AndroidManifest.xml` and
+    `android/app/src/debug/AndroidManifest.xml`, not for the Google Play bundle (Play only allows it for apps whose main
+    purpose is installing apps). Without it `canInstall()` says `supported: false` and the page keeps the browser
+    download. On Android 8 and later `canRequestPackageInstalls()` must also be true: if not, `openInstallSettings()`
+    opens "Install unknown apps" for Orbique (`Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES`)
+  - iPhone: nothing (the update check is Android only). The emulator check fails when logcat has no
+    `OrbiqueUpdater: AppUpdater plugin loaded` line (the plugin's `load()`), that is when the plugin is not registered.
 - `app/native/bridge.js` is loaded after `app/server/*.js` and before `O.boot()`, and does nothing in a normal browser
   (it checks `Capacitor.isNativePlatform()`). It replaces `O.download` (file written to the app cache with the
   Filesystem plugin, then the Share plugin), `O.voice` (the Text-to-Speech plugin), `window.open` and clicks on links to
@@ -430,7 +470,8 @@ Run on a device or emulator from Android Studio or Xcode, or with `npx cap run a
   can see page errors, and removes it again before the Google Play bundle. `capacitor.config.json` itself leaves it out,
   so local and Play builds keep the default.
 - **Phone permissions:**
-  - Android (`android/app/src/main/AndroidManifest.xml`): `INTERNET`; `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS` for
+  - Android (`android/app/src/main/AndroidManifest.xml`): `INTERNET`; `REQUEST_INSTALL_PACKAGES` for in-app updates,
+    in the test builds only (`src/beta`, `src/debug`; see "In-app updater"); `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS` for
     inbox voice notes (Capacitor asks for both when the page calls `getUserMedia` and refuses if either is missing),
     with the microphone marked as not required so Play still lists the app on devices without one; a `<queries>`
     entry for `android.media.action.IMAGE_CAPTURE`. There is deliberately **no `CAMERA` permission**:

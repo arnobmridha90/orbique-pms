@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into src/main/AndroidManifest.xml for the debug build only (not the Google Play bundle). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- In-app updates of the test builds (AppUpdaterPlugin): hand a downloaded, checked APK to Android's installer.
+         Android 8 and later also ask the person once to allow installs from Orbique ("Install unknown apps"). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+</manifest>

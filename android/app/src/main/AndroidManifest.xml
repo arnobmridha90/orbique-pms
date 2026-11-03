@@ -51,6 +51,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 13 and later: booking alerts ask for this the first time they are turned on -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- In-app updates (AppUpdaterPlugin) need REQUEST_INSTALL_PACKAGES. It is declared only for the test builds, in
+         src/beta and src/debug: Google Play does not allow it for an app like this, so the Play bundle leaves it out. -->
 
     <!-- Voice notes in the inbox (getUserMedia). Capacitor asks for both when the page wants the microphone and refuses
          if either is missing; RECORD_AUDIO is asked the first time someone records. -->

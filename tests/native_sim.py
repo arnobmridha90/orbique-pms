@@ -40,7 +40,10 @@ Set-ups (--only picks some):
               with the Android shell, vendor/native.js (Capacitor plugins + app/native/*.js) loads before O.boot() and
               the bridge works; the update notice (app/native/updates.js) against a stand-in for GitHub's release API:
               newer / same / older build, API errors, offline, Later remembered per build; new screens after 30
-              minutes in the background reload the page; iOS asks GitHub nothing
+              minutes in the background reload the page; iOS asks GitHub nothing; with the AppUpdater plugin
+              (live-updater): Update asks to allow installs and goes on when the app comes back, downloads with progress
+              in the notice, opens the installer; Cancel, a failed download and Try again, a build without the plugin's
+              install permission (the browser download as before)
     website   dist/ in a plain browser: no Capacitor file is requested and the page boots as before
 
 Screenshots go to <out>/<set-up>/*.png. Prints PASS/FAIL per check and writes <out>/results.json;
@@ -80,6 +83,9 @@ NATIVE_PLUGINS = {
     'CapacitorCookies': 'getCookies setCookie deleteCookie clearCookies clearAllCookies',
     'CapacitorHttp': 'request get post put patch delete',
 }
+# The app's own plugin (android/app/src/main/java/com/orbique/app/AppUpdaterPlugin.java), Android only. Builds from before
+# it have no such plugin: a set-up gets it with updater=True.
+UPDATER_PLUGIN = {'AppUpdater': 'canInstall openInstallSettings download cancel install'}
 
 # What the native shell provides before the page's own scripts (the global object, the transport and a fake native
 # side). __SIM_CONFIG__ is replaced with JSON.
@@ -119,6 +125,7 @@ NATIVE_SHELL_JS = r"""
   /* text to speech: QUEUE_FLUSH stops what is playing. Android's plugin clears its requests on stop, so the stopped
      sentence's call never answers; iOS resolves it from speechSynthesizer(didCancel:) */
   var tts = window.__tts = { pending: [], dropped: [] };
+  var upd = window.__upd = { job: null, ready: false, installs: 0 };
   function ttsFinish(p) { var i = tts.pending.indexOf(p); if (i < 0) return; tts.pending.splice(i, 1); spoken.push(p.text); ok(p.call); }
   function ttsCancelAll() {
     tts.pending.splice(0).forEach(function (p) {
@@ -180,7 +187,38 @@ NATIVE_SHELL_JS = r"""
     /* with no speech engine (or before it started) Android's isLanguageAvailable says no for every language */
     'TextToSpeech.isLanguageSupported': function (c) { ok(c, { supported: !SIM.ttsUnavailable && SIM.langs.indexOf((c.options || {}).lang) >= 0 }); },
     'TextToSpeech.getSupportedLanguages': function (c) { ok(c, { languages: SIM.ttsUnavailable ? [] : SIM.langs.slice() }); },
-    'TextToSpeech.getSupportedVoices': function (c) { ok(c, { voices: [] }); }
+    'TextToSpeech.getSupportedVoices': function (c) { ok(c, { voices: [] }); },
+    /* AppUpdater: installs allowed or not (__sim.updAllowed), supported (false: a build without the permission); a
+       download sends progress 0, 25 .. 100 every __sim.updStepMs, then answers (or fails with __sim.updError) */
+    'AppUpdater.canInstall': function (c) { var sup = SIM.updSupported !== false; ok(c, { supported: sup, allowed: sup && !!SIM.updAllowed }); },
+    'AppUpdater.openInstallSettings': function (c) { ok(c, { opened: true }); },
+    'AppUpdater.download': function (c) {
+      var url = String((c.options || {}).url || '');
+      if (url.indexOf('https://github.com/arnobmridha90/orbique-pms/releases/download/') !== 0) return err(c, 'Only Orbique downloads', 'BAD_URL');
+      if (upd.job) return err(c, 'An update is already downloading', 'BUSY');
+      var job = upd.job = { call: c, n: 0 };
+      (function step() {
+        job.timer = setTimeout(function () {
+          if (upd.job !== job) return;
+          if (job.n <= 4) { emit('AppUpdater', 'downloadProgress', { percent: job.n * 25, downloaded: job.n * 25, total: 100 }); job.n++; return step(); }
+          upd.job = null;
+          if (SIM.updError) return err(c, 'failed', SIM.updError);
+          upd.ready = true;
+          ok(c, { versionCode: 5801, bytes: 100 });
+        }, SIM.updStepMs || 40);
+      })();
+    },
+    'AppUpdater.cancel': function (c) {
+      var job = upd.job;
+      if (job) { clearTimeout(job.timer); upd.job = null; err(job.call, 'The download was cancelled', 'CANCELLED'); }
+      ok(c);
+    },
+    'AppUpdater.install': function (c) {
+      if (!upd.ready) return err(c, 'No checked update to install', 'NO_FILE');
+      if (!SIM.updAllowed) return err(c, 'Orbique is not allowed to install updates yet', 'NEEDS_PERMISSION');
+      upd.installs++;
+      ok(c, { started: true });
+    }
   };
   function handle(c) {
     if (!c || !c.pluginId || c.pluginId === 'Console') return; /* js.error reports, iOS console mirroring */
@@ -232,10 +270,10 @@ INSET_BANDS_JS = """(ins) => {
 }"""
 
 
-def plugin_js():
+def plugin_js(updater=False):
     """The plugin part of what Android's JSExport.getPluginJS / iOS's JSExport.exportJS inject."""
     headers, out = [], ['(function (w) { var a = (w.Capacitor = w.Capacitor || {}), p = (a.Plugins = a.Plugins || {}), t;']
-    for name, spec in NATIVE_PLUGINS.items():
+    for name, spec in dict(NATIVE_PLUGINS, **(UPDATER_PLUGIN if updater else {})).items():
         methods = [dict(name=n, rtype=r) if r else dict(name=n) for n, r in BASE_METHODS]
         out.append("t = (p[%s] = {}); t.addListener = function (e, cb) { return w.Capacitor.addListener(%s, e, cb); };" % (json.dumps(name), json.dumps(name)))
         for m in spec.split():
@@ -254,7 +292,7 @@ def native_init_script(platform, **cfg):
     cfg['platform'] = platform
     with open(BRIDGE_JS[platform], encoding='utf-8') as f:
         bridge = f.read()
-    return '\n'.join([NATIVE_SHELL_JS.replace('__SIM_CONFIG__', json.dumps(cfg)), bridge, plugin_js()])
+    return '\n'.join([NATIVE_SHELL_JS.replace('__SIM_CONFIG__', json.dumps(cfg)), bridge, plugin_js(bool(cfg.get('updater')))])
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -1101,6 +1139,74 @@ def live(browser, base, out):
     r.check('no JS errors in the whole run', not r.errors, r.errors)
     r.close()
     results = r.results
+
+    print('live-updater (the website build inside an Android app with the AppUpdater plugin)')
+    r = Run(browser, base, 'live-updater', out, 'android', appBuild='5701', updater=True, updAllowed=False, updStepMs=60)
+    pg = r.pg
+    r.github = (200, release(5801))
+    booted = r.boot()
+    r.check('boots', booted)
+    shown = r.until("() => !!document.querySelector('.app-update')", timeout=8000)
+    r.check('newer published build: the notice offers Update', shown and 'A new version of the app is ready' in (r.js("() => document.querySelector('.app-update').textContent") or ''))
+    del r.handed[:]
+    r.clear_calls()
+    msg = "() => { const e = document.querySelector('.app-update .app-update-msg'); return e ? e.textContent : null; }"
+    pg.click('.app-update [data-upd=go]')
+    r.until("() => (document.querySelector('.app-update') || {}).dataset?.state === 'permission'", timeout=3000)
+    r.check('installs not allowed yet: Android\'s setting opens', r.calls('AppUpdater', 'openInstallSettings') and not r.calls('AppUpdater', 'download'), r.calls('AppUpdater'))
+    r.check('the notice says "Allow Orbique to install updates, then tap Update again"', r.js(msg) == 'Allow Orbique to install updates, then tap Update again', r.js(msg))
+    r.shot('updater-permission')
+    r.js('() => { __simAppState(false); }')
+    r.wait(100)
+    r.js('() => { __sim.updAllowed = true; __simAppState(true); }')
+    went = r.until("() => /Downloading the update\u2026 [0-9]+%/.test(document.querySelector('.app-update .app-update-msg')?.textContent || '')", timeout=3000)
+    r.check('back with installs allowed: the download starts by itself, with its progress in the notice', went, r.js(msg))
+    r.shot('updater-downloading')
+    r.check('the download is the release APK, in the app (nothing handed to the phone\'s browser)',
+            [c['options'].get('url') for c in r.calls('AppUpdater', 'download')] == [APK_URL] and not r.handed, (r.calls('AppUpdater', 'download'), r.handed))
+    r.check('the app stays usable while it downloads (no window over the page)', r.js("() => !document.querySelector('.modal-back') && !!document.querySelector('.app-update [data-upd=cancel]')"))
+    done = r.until("() => (document.querySelector('.app-update') || {}).dataset?.state === 'installing'", timeout=4000)
+    r.check('downloaded and checked: Android\'s installer opens, the notice says to tap Install', done and r.js('() => __upd.installs') == 1 and 'tap Install' in (r.js(msg) or ''), r.js(msg))
+    r.shot('updater-installing')
+    pg.click('.app-update [data-upd=go]')
+    r.wait(200)
+    r.check('Install again (installer closed): opens it again without a new download', r.js('() => __upd.installs') == 2 and len(r.calls('AppUpdater', 'download')) == 1)
+    pg.click('.app-update [data-upd=later]')
+    r.wait(100)
+    r.check('Later: the notice goes and is remembered for that build', not r.js("() => !!document.querySelector('.app-update')") and r.js("() => localStorage.getItem('orbique4:appUpdate:later')") == '5801',
+            r.js("() => localStorage.getItem('orbique4:appUpdate:later')"))
+
+    def offer(build):
+        r.github = (200, release(build))
+        r.js("() => { __upd.ready = false; document.querySelectorAll('.app-update').forEach(x => x.remove()); O.native.checkForUpdate(); }")
+        return r.until("() => !!document.querySelector('.app-update')", timeout=3000)
+    offer(5901)
+    r.clear_calls()
+    pg.click('.app-update [data-upd=go]')
+    r.until("() => !!document.querySelector('.app-update [data-upd=cancel]')", timeout=2000)
+    pg.click('.app-update [data-upd=cancel]')
+    r.wait(400)
+    r.check('Cancel: the download stops and the notice goes', r.calls('AppUpdater', 'cancel') and not r.js("() => !!document.querySelector('.app-update')") and r.js('() => __upd.job') is None)
+    r.check('Cancel: a toast says so, and nothing is installed', any('cancelled' in t['text'] for t in r.toasts()) and r.js('() => __upd.installs') == 2, r.toasts())
+    r.clear_ui()
+    offer(6001)
+    r.js("() => { __sim.updError = 'NETWORK'; }")
+    pg.click('.app-update [data-upd=go]')
+    err_shown = r.until("() => (document.querySelector('.app-update') || {}).dataset?.state === 'error'", timeout=4000)
+    r.check('a failed download: the notice says why and offers Try again', err_shown and 'internet' in (r.js(msg) or '') and r.js("() => !!document.querySelector('.app-update [data-upd=go]')") and 'Try again' in r.js("() => document.querySelector('.app-update').textContent"), r.js(msg))
+    r.shot('updater-error')
+    r.js("() => { __sim.updError = null; }")
+    pg.click('.app-update [data-upd=go]')
+    r.check('Try again: downloads and opens the installer', r.until("() => (document.querySelector('.app-update') || {}).dataset?.state === 'installing'", timeout=4000))
+    r.js("() => { __sim.updSupported = false; }")
+    offer(6101)
+    del r.handed[:]
+    pg.click('.app-update [data-upd=go]')
+    r.wait(300)
+    r.check('a build without the install permission (Google Play): the phone\'s browser downloads it as before', r.handed == [APK_URL] and not r.js("() => !!document.querySelector('.app-update')"), r.handed)
+    r.check('no JS errors', not r.errors, r.errors)
+    r.close()
+    results += r.results
 
     print('live-ios (the website build inside the iPhone app)')
     r = Run(browser, base, 'live-ios', out, 'ios', appBuild='5701')

@@ -79,6 +79,158 @@ test('new screens: the live config.js names another build', () => {
   assert.equal(A.parseConfig('<!doctype html>'), null);
 });
 
+/* ---- Update with the app's own AppUpdater plugin (O.appUpdate.updater): a stand-in for the plugin ---- */
+const flush = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); };
+function fakeUpdater(opts = {}) {
+  const f = { calls: [], states: [], fallbacks: 0, progress: null, dl: null, can: opts.can || { supported: true, allowed: true }, installError: opts.installError || null };
+  f.P = {
+    canInstall: async () => { f.calls.push('canInstall'); return f.can; },
+    openInstallSettings: async () => { f.calls.push('openInstallSettings'); return { opened: true }; },
+    addListener: (ev, cb) => { f.calls.push('addListener:' + ev); f.progress = cb; return Promise.resolve({ remove: async () => { f.calls.push('removeListener'); } }); },
+    download: (o) => { f.calls.push('download:' + o.url); return new Promise((resolve, reject) => { f.dl = { resolve, reject }; }); },
+    cancel: async () => { f.calls.push('cancel'); if (f.dl) f.dl.reject({ code: 'CANCELLED', message: 'The download was cancelled' }); },
+    install: async () => { f.calls.push('install'); if (f.installError) { const e = f.installError; f.installError = null; throw e; } return { started: true }; }
+  };
+  f.u = A.updater(f.P, APK, (state, info) => f.states.push([state, plain(info)]), () => { f.fallbacks++; });
+  f.last = () => f.states[f.states.length - 1];
+  f.text = () => A.view(f.last()[0], f.last()[1]).text;
+  return f;
+}
+
+test('the notice\'s words and buttons for each step', () => {
+  const v = (s, i) => plain(A.view(s, i));
+  assert.deepEqual(v('offer'), { text: 'A new version of the app is ready', buttons: [['go', 'Update'], ['later', 'Later']] });
+  assert.equal(v('downloading', { percent: -1 }).text, 'Downloading the update\u2026');
+  assert.equal(v('downloading', { percent: 45.7 }).text, 'Downloading the update\u2026 45%');
+  assert.deepEqual(v('downloading', { percent: 0 }).buttons, [['cancel', 'Cancel']]);
+  assert.equal(v('permission').text, 'Allow Orbique to install updates, then tap Update again');
+  assert.deepEqual(v('installing').buttons, [['go', 'Install'], ['later', 'Later']]);
+  assert.match(v('error', { code: 'NETWORK' }).text, /could not be downloaded/);
+  assert.match(v('error', { code: 'WRONG_SIGNATURE' }).text, /safety check/);
+  assert.match(v('error', { code: 'NOT_NEWER' }).text, /already installed/);
+  assert.match(v('error', { code: 'STORAGE' }).text, /not enough space/);
+  assert.match(v('error', { code: 'SOMETHING_NEW' }).text, /did not work/);
+  assert.deepEqual(v('error', { code: 'NETWORK' }).buttons, [['go', 'Try again'], ['later', 'Later']]);
+});
+
+test('Update with the plugin: download with progress, then Android\'s installer', async () => {
+  const f = fakeUpdater();
+  f.u.start();
+  await flush();
+  assert.deepEqual(f.calls, ['canInstall', 'addListener:downloadProgress', 'download:' + APK]);
+  assert.equal(f.text(), 'Downloading the update\u2026');
+  f.progress({ percent: 45, downloaded: 45, total: 100 });
+  assert.equal(f.text(), 'Downloading the update\u2026 45%');
+  f.u.start(); /* a second tap while downloading does nothing */
+  await flush();
+  assert.equal(f.calls.filter((c) => c.startsWith('download')).length, 1);
+  f.dl.resolve({ versionCode: 5801, bytes: 100 });
+  await flush();
+  assert.deepEqual(f.calls.slice(3).sort(), ['install', 'removeListener'], 'the progress listener is removed and the installer opened');
+  assert.equal(f.last()[0], 'installing');
+  assert.equal(f.text(), 'Almost done: tap Install when Android asks');
+  /* the person closed the installer: Install again opens it again, without a new download */
+  f.u.start();
+  await flush();
+  assert.deepEqual(f.calls.slice(5), ['canInstall', 'install']);
+  assert.equal(f.fallbacks, 0);
+});
+
+test('installs not allowed yet: Android\'s setting opens, and the update goes on when the person comes back', async () => {
+  const f = fakeUpdater({ can: { supported: true, allowed: false } });
+  f.u.start();
+  await flush();
+  assert.deepEqual(f.calls, ['canInstall', 'openInstallSettings']);
+  assert.equal(f.text(), 'Allow Orbique to install updates, then tap Update again');
+  assert.equal(await f.u.resume(), false, 'back, still not allowed');
+  assert.equal(f.last()[0], 'permission');
+  f.can = { supported: true, allowed: true };
+  const going = f.u.resume();
+  await flush();
+  assert.equal(f.last()[0], 'downloading', 'allowed now: the download starts by itself');
+  f.dl.resolve({});
+  assert.equal(await going, true);
+  await flush();
+  assert.equal(f.last()[0], 'installing');
+  assert.equal(await f.u.resume(), false, 'resume does nothing outside the "allow installs" step');
+});
+
+test('permission taken back after the download: asked again, then installs the file already checked', async () => {
+  const f = fakeUpdater({ installError: { code: 'NEEDS_PERMISSION', message: 'not allowed' } });
+  f.u.start();
+  await flush();
+  f.dl.resolve({});
+  await flush();
+  assert.equal(f.last()[0], 'permission');
+  assert.ok(f.calls.includes('openInstallSettings'));
+  const n = f.calls.length;
+  await f.u.resume();
+  await flush();
+  assert.deepEqual(f.calls.slice(n), ['canInstall', 'canInstall', 'install'], 'no second download');
+  assert.equal(f.last()[0], 'installing');
+});
+
+test('a failed download shows the reason, and Try again downloads again', async () => {
+  const f = fakeUpdater();
+  f.u.start();
+  await flush();
+  f.dl.reject({ code: 'NETWORK', message: 'HTTP 502' });
+  await flush();
+  assert.deepEqual(f.last(), ['error', { code: 'NETWORK' }]);
+  assert.match(f.text(), /Check the internet connection/);
+  f.u.start();
+  await flush();
+  assert.equal(f.calls.filter((c) => c.startsWith('download')).length, 2);
+  f.dl.reject({ code: 'WRONG_SIGNATURE', message: 'not signed like the app' });
+  await flush();
+  assert.match(f.text(), /safety check/);
+  f.u.start();
+  await flush();
+  f.dl.resolve({});
+  f.installError = { code: 'NOT_NEWER' };
+  await flush();
+  assert.deepEqual(f.last(), ['error', { code: 'NOT_NEWER' }]);
+  f.u.start();
+  await flush();
+  assert.equal(f.calls.filter((c) => c.startsWith('download')).length, 4, 'a refused file is downloaded again, not installed');
+});
+
+test('Cancel stops the download and nothing after it changes the notice', async () => {
+  const f = fakeUpdater();
+  f.u.start();
+  await flush();
+  const late = f.progress;
+  f.u.cancel();
+  await flush();
+  assert.ok(f.calls.includes('cancel'));
+  assert.ok(f.calls.includes('removeListener'));
+  assert.equal(f.last()[0], 'closed');
+  late({ percent: 80 });
+  await flush();
+  assert.equal(f.last()[0], 'closed', 'a late progress event is ignored');
+  assert.ok(!f.calls.includes('install'));
+});
+
+test('a build without the install permission (Google Play) and other failures', async () => {
+  const f = fakeUpdater({ can: { supported: false, allowed: false } });
+  f.u.start();
+  await flush();
+  assert.equal(f.fallbacks, 1, 'the browser download instead');
+  assert.equal(f.last()[0], 'closed');
+  assert.ok(!f.calls.includes('openInstallSettings') && !f.calls.some((c) => c.startsWith('download')));
+  const g = fakeUpdater();
+  g.P.canInstall = async () => { throw { code: 'UNIMPLEMENTED', message: 'not implemented' }; };
+  g.u.start();
+  await flush();
+  assert.deepEqual(g.last(), ['error', { code: 'UNIMPLEMENTED' }]);
+  const h = fakeUpdater({ installError: { code: 'UNSUPPORTED' } });
+  h.u.start();
+  await flush();
+  h.dl.resolve({});
+  await flush();
+  assert.equal(h.fallbacks, 1);
+});
+
 test('the website build: the phone app\'s loader, and vendor/native.js in the right order', () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'orbique-web-'));
   try {
