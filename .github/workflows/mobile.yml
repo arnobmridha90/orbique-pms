@@ -430,6 +430,13 @@ jobs:
             printf '%s\n' "$errors" | sed -E 's/^.* E Capacitor\/Console *: //' | head -20 | while IFS= read -r line; do echo "::error::$line"; done
             fail=1
           fi
+          # the app's own plugin for in-app updates (AppUpdaterPlugin.java) logs this from load() when the bridge registers it
+          if grep -qE 'OrbiqueUpdater *: AppUpdater plugin loaded' "$log"; then
+            echo "The AppUpdater plugin is registered."
+          else
+            echo "::error::The AppUpdater plugin did not load (no 'AppUpdater plugin loaded' line in logcat): check MainActivity.registerPlugin."
+            fail=1
+          fi
           grep -q 'Loading app at' "$log" || echo "::warning::Capacitor's 'Loading app at' line is missing from logcat; look at the screenshots."
           grep -qE "ResumedActivity.*$pkg_re/" "$out/activities.txt" 2>/dev/null \
             || echo "::warning::Orbique was not the app on screen at 30 seconds; look at the screenshots."
@@ -514,6 +521,7 @@ jobs:
             else
               printf '**This build has a new signing key: uninstall the Orbique test app first, then install this one.** '
             fi
+            printf 'After that the app offers each new build itself: tap Update, then Install. '
             printf 'Only install Orbique from this page, never from a file someone sends you. Guide: https://github.com/%s/blob/main/docs/MOBILE.md\n' "$GITHUB_REPOSITORY"
           } > "$RUNNER_TEMP/notes.md"
           # The app reads this title to offer an update (app/native/updates.js: "Android test build <N>", N = versionCode)
