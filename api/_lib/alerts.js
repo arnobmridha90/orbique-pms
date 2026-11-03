@@ -11,7 +11,10 @@
  *   channelStatus(sb, orgId)            which channels are set up, for the Automations page
  *   emailConfig(), pushConfig()         RESEND_API_KEY / ALERT_EMAIL_FROM, FIREBASE_SERVICE_ACCOUNT (never returned)
  *   googleAccessToken(cfg, opts)        an OAuth token for Firebase from the service account (signed JWT, cached)
+ *   sendTeamPush(sb, cfg, orgId, users, text, data)   a Team chat message to these people's phones (0024)
  *
+ * Booking alerts go to the phones registered with booking_alerts (owners and ops managers, 0024); every member's
+ * phone may register for Team chat alerts.
  * WhatsApp alerts use an approved message template (WHATSAPP_ALERT_TEMPLATE, default "booking_alert", language
  * WHATSAPP_ALERT_LANG, default "en") with two body values: the title and the details. WhatsApp only lets a business
  * write first with a template. Sent from the workspace's WhatsApp number (whatsapp_numbers).
@@ -262,8 +265,48 @@ export const resetTokenCache = () => { tokenCache = null; };
 
 export async function sendPush(sb, cfg, orgId, msg, data, opts = {}) {
   if (!cfg.configured) return cfg.invalid ? 'skipped: FIREBASE_SERVICE_ACCOUNT is not a valid service account key' : 'skipped: phone alerts are not set up (FIREBASE_SERVICE_ACCOUNT)';
-  const devices = must(await sb.from('push_devices').select('token').eq('org_id', orgId), 'load phones') || [];
+  // phones of owners and ops managers (0024: other members' phones register for Team chat alerts only)
+  const devices = must(await sb.from('push_devices').select('token').eq('org_id', orgId).eq('booking_alerts', true), 'load phones') || [];
   if (!devices.length) return 'skipped: no phone has turned on alerts yet';
+  const r = await fcmSend(sb, cfg, devices, (token) => ({
+    token,
+    notification: { title: msg.title, body: msg.lines.join('\n') },
+    data: dataStrings(data),
+    // Android: the loud channel the app makes (app/native/bridge.js) and its sound, res/raw/orbique_alert.wav
+    android: { priority: 'high', notification: { channel_id: PUSH_CHANNEL, sound: PUSH_SOUND, notification_priority: 'PRIORITY_MAX', default_vibrate_timings: false, vibrate_timings: ['0s', '0.4s', '0.2s', '0.4s'] } },
+    // iPhone: the same sound from the app bundle (ios/App/App/orbique_alert.wav), delivered straight away
+    apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: PUSH_SOUND + '.wav' } } }
+  }), opts);
+  if (r.sent || !r.failed.length) return r.sent ? 'sent' : 'skipped: no phone has turned on alerts yet';
+  throw new AlertError('Firebase: ' + r.failed[0], { permanent: false });
+}
+
+/* Team chat (0024; api/alerts.js 'team-message'): one message to the phones of these people (user ids), on the phone
+   app's "Team chat" channel (app/native/bridge.js) with the phone's usual sound; a chat's alerts replace each other.
+   text {title, body}; data {kind: 'team', chatId}. -> {sent, failed: [why], phones}; one phone's error never throws. */
+export const TEAM_CHANNEL = 'team_chat';
+export async function sendTeamPush(sb, cfg, orgId, userIds, text, data, opts = {}) {
+  const users = [...new Set((userIds || []).filter((u) => typeof u === 'string' && u))];
+  if (!cfg.configured || !users.length) return { sent: 0, failed: [], phones: 0, skipped: !cfg.configured ? 'phone alerts are not set up' : 'nobody to alert' };
+  const devices = must(await sb.from('push_devices').select('token').eq('org_id', orgId).in('user_id', users), 'load phones') || [];
+  if (!devices.length) return { sent: 0, failed: [], phones: 0 };
+  const tag = 'team-' + clean(data && data.chatId, 60);
+  const r = await fcmSend(sb, cfg, devices, (token) => ({
+    token,
+    notification: { title: clean(text.title, 80), body: clean(text.body, 180) },
+    data: dataStrings(data),
+    android: { priority: 'high', notification: { channel_id: TEAM_CHANNEL, tag, default_sound: true } },
+    apns: { headers: { 'apns-priority': '10', 'apns-collapse-id': tag }, payload: { aps: { sound: 'default', 'thread-id': tag } } }
+  }), opts);
+  return Object.assign(r, { phones: devices.length });
+}
+
+function dataStrings(data) {
+  return Object.fromEntries(Object.entries(data || {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, String(v)]));
+}
+
+/* one FCM message per phone (build(token) -> the message); a phone whose token is gone is forgotten. -> {sent, failed} */
+async function fcmSend(sb, cfg, devices, build, opts = {}) {
   const token = await googleAccessToken(cfg, opts);
   const url = cfg.fcmUrl + '/v1/projects/' + encodeURIComponent(cfg.projectId) + '/messages:send';
   let sent = 0;
@@ -272,15 +315,7 @@ export async function sendPush(sb, cfg, orgId, msg, data, opts = {}) {
     const r = await fetchJson(opts.fetch || fetch, url, {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: {
-        token: d.token,
-        notification: { title: msg.title, body: msg.lines.join('\n') },
-        data: Object.fromEntries(Object.entries(data || {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, String(v)])),
-        // Android: the loud channel the app makes (app/native/bridge.js) and its sound, res/raw/orbique_alert.wav
-        android: { priority: 'high', notification: { channel_id: PUSH_CHANNEL, sound: PUSH_SOUND, notification_priority: 'PRIORITY_MAX', default_vibrate_timings: false, vibrate_timings: ['0s', '0.4s', '0.2s', '0.4s'] } },
-        // iPhone: the same sound from the app bundle (ios/App/App/orbique_alert.wav), delivered straight away
-        apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: PUSH_SOUND + '.wav' } } }
-      } })
+      body: JSON.stringify({ message: build(d.token) })
     });
     if (r.ok) { sent++; continue; }
     const status = r.body && r.body.error && (r.body.error.status || (r.body.error.details || []).map((x) => x.errorCode).join(','));
@@ -291,8 +326,7 @@ export async function sendPush(sb, cfg, orgId, msg, data, opts = {}) {
     }
     failed.push(clean(r.body && r.body.error && r.body.error.message, 200) || 'HTTP ' + r.status);
   }
-  if (sent || !failed.length) return sent ? 'sent' : 'skipped: no phone has turned on alerts yet';
-  throw new AlertError('Firebase: ' + failed[0], { permanent: false });
+  return { sent, failed };
 }
 
 /* ---------- the outbox ---------- */
@@ -398,7 +432,7 @@ export async function queueTest(sb, orgId, by, opts = {}) {
 /** Which channels can send, for the settings card. Never includes a key. */
 export async function channelStatus(sb, orgId, userId) {
   const [devices, number, last] = await Promise.all([
-    sb.from('push_devices').select('token, user_id, platform, updated_at').eq('org_id', orgId),
+    sb.from('push_devices').select('token, user_id, platform, updated_at').eq('org_id', orgId).eq('booking_alerts', true),
     waNumber(sb, orgId),
     sb.from('alert_outbox').select('kind, done, created_at, finished_at, last_error').eq('org_id', orgId).order('id', { ascending: false }).limit(5)
   ]);

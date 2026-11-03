@@ -98,7 +98,7 @@
   }
 
   /* ---------- reading access (role values, person values = role + overrides) ---------- */
-  function roleSec(role, sec) { var r = D.rolePerms && D.rolePerms[role]; return (r && r.sections && r.sections[sec]) || 'none'; }
+  function roleSec(role, sec) { var r = D.rolePerms && D.rolePerms[role]; if (r && r.sections && !(sec in r.sections)) r = O.DEFAULT_ROLE_PERMS && O.DEFAULT_ROLE_PERMS[role]; /* a section added after the role was saved (as O.sectionLevel) */ return (r && r.sections && r.sections[sec]) || 'none'; }
   function roleAct(role, key) { var r = D.rolePerms && D.rolePerms[role]; return !!(r && r.actions && r.actions[key]); }
   function rpEdit(role) {
     var r = D.rolePerms[role];
@@ -232,7 +232,7 @@
     var lv = secLevel(m, sec), on = lv !== 'none', open = !!m.open[sec], ov = secOv(m, sec);
     var grant = acts.filter(function (a) { return !a[4]; }), nOn = grant.filter(function (a) { return actOk(lv, a) && actVal(m, sec + '.' + a[0]); }).length;
     var nPersonal = m.mode === 'person' ? grant.filter(function (a) { return actOv(m, sec + '.' + a[0]); }).length : 0;
-    var sub = !on ? 'Off · hidden from the menu' : (lv === 'edit' ? 'Can view and edit' : 'View only') + ' · ' + nOn + ' of ' + grant.length + ' actions on';
+    var sub = !on ? 'Off · hidden from the menu' : (lv === 'edit' ? 'Can view and edit' : 'View only') + (grant.length ? ' · ' + nOn + ' of ' + grant.length + ' actions on' : '');
     if (nPersonal) sub += ' · ' + fmt.plural(nPersonal, 'personal change');
     var ctl;
     if (m.editable) {

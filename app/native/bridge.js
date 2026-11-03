@@ -14,8 +14,10 @@
    tests/native_sim.py runs these files in Chromium with Capacitor's native side simulated.
    - guest and invite links point at the live site (window.ORBIQUE_CONFIG.appUrl, or the page's own address when the
      screens come from the live site), not at the app's own files
-   - booking alerts (Firebase Cloud Messaging): owners and ops managers are asked once to allow notifications; the
-     phone's token goes to /api/alerts (register-device); tapping an alert opens the booking; signing out removes it
+   - booking alerts (Firebase Cloud Messaging): everyone is asked once to allow notifications; the phone's token goes to
+     /api/alerts (register-device), which gives owners' and ops managers' phones booking alerts and everyone's phone
+     Team chat alerts (on their own "Team chat" channel, the phone's usual sound); tapping a booking alert opens the
+     booking, tapping a Team chat alert opens that chat; signing out removes the phone
      alerts ring Orbique's own chime (res/raw/orbique_alert.wav on Android, orbique_alert.wav in the iPhone app); with the
      app open, O.alertSound plays it instead
    Loaded after app/server/*.js and before O.boot().
@@ -275,21 +277,33 @@
        first made, so a new sound needs a new id here and in alerts.js. */
     var LOUD = { id: 'alerts_loud', name: 'Booking and message alerts', description: 'New bookings, cancellations, date changes and guest messages, with the Orbique chime',
       importance: 5, visibility: 1, sound: 'orbique_alert', vibration: true, lights: true, lightColor: '#14B8A6' };
-    var canAlert = function () { var r = O.auth.role && O.auth.role(); return !!O.auth.orgId() && (r === 'owner' || r === 'ops'); };
+    /* Team chat (pages/team.js): its own channel, the phone's usual notification sound (api/_lib/alerts.js TEAM_CHANNEL) */
+    var TEAM = { id: 'team_chat', name: 'Team chat', description: 'Messages from your team in Orbique', importance: 4, visibility: 0, vibration: true, lights: true, lightColor: '#14B8A6' };
+    /* every member's phone registers: the server gives booking alerts only to owners and ops managers (api/alerts.js) */
+    var canAlert = function () { return !!O.auth.orgId(); };
     var settle = function (r) { var w = waiting; waiting = []; w.forEach(function (fn) { fn(r); }); };
     var sendToken = function (token) {
-      if (!canAlert()) return Promise.resolve({ ok: false, message: 'Booking alerts are for account owners and ops managers.' });
+      if (!canAlert()) return Promise.resolve({ ok: false, message: 'Open a workspace first.' });
       return O.auth.call('/api/alerts', { action: 'register-device', orgId: O.auth.orgId(), token: token, platform: platform })
         .then(function () { return { ok: true }; }, function (e) { return { ok: false, message: (e && e.message) || 'This phone could not be signed up for alerts.' }; });
     };
     Push.addListener('registration', function (t) { pushToken = t && t.value; sendToken(pushToken).then(settle); });
     Push.addListener('registrationError', function (e) { settle({ ok: false, message: 'The phone could not sign up for notifications' + (e && e.error ? ': ' + e.error : '.') }); });
     Push.addListener('pushNotificationReceived', function (n) { /* the app is open: the chime and a toast instead of a system notification */
+      if (n && n.data && n.data.kind === 'team') { if (O.teamChat && O.teamChat.onPush) O.teamChat.onPush(n); return; } /* Team chat rings and shows it itself */
       if (O.alertSound) O.alertSound.play();
       if (n && n.title) U.toast(n.title + (n.body ? ': ' + String(n.body).split('\n')[0] : ''));
     });
     Push.addListener('pushNotificationActionPerformed', function (a) {
-      var id = a && a.notification && a.notification.data && a.notification.data.bookingId;
+      var nd = a && a.notification && a.notification.data;
+      if (nd && nd.kind === 'team' && nd.chatId) {
+        (function openChat(tries) {
+          if (O._started && O.pages.team) { O.go('team', { chatId: nd.chatId }); return; }
+          if (tries > 0) setTimeout(function () { openChat(tries - 1); }, 500);
+        })(20);
+        return;
+      }
+      var id = nd && nd.bookingId;
       if (!id) return;
       (function open(tries) {
         if (O._started && O.booking && O.data.bookings && O.data.bookings.some(function (b) { return b.id === id; })) { O.booking.open(id); return; }
@@ -298,7 +312,7 @@
       })(20);
     });
     var enable = function (ask) {
-      if (!canAlert()) return Promise.resolve({ ok: false, message: 'Booking alerts are for account owners and ops managers.' });
+      if (!canAlert()) return Promise.resolve({ ok: false, message: 'Open a workspace first.' });
       return Push.checkPermissions().then(function (p) {
         if (p.receive === 'granted') return p;
         if (!ask || p.receive === 'denied') return p;
@@ -306,6 +320,8 @@
       }).then(function (p) {
         if (p.receive !== 'granted') return { ok: false, message: 'Notifications are off for Orbique. Turn them on in the phone\'s settings (Apps, Orbique, Notifications).' };
         var channel = platform === 'android' && Push.createChannel ? Push.createChannel(LOUD).catch(function () {}).then(function () {
+          return Push.createChannel(TEAM).catch(function () {});
+        }).then(function () {
           /* the first test apps made a quiet "bookings" channel; channels cannot change, so it goes and LOUD replaces it */
           return Push.deleteChannel ? Push.deleteChannel({ id: 'bookings' }).catch(function () {}) : null;
         }) : Promise.resolve();

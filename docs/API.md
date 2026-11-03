@@ -166,10 +166,26 @@ content has been published. Hidden buildings and units are included with `visibl
 them out. The content is checked again on the way out, so anything invalid is dropped. 404 for an unknown `ws`.
 The website reads it when it builds or refreshes a page.
 
+## POST /api/alerts
+
+Booking alerts (`api/_lib/alerts.js`, migration `0011`) and Team chat phone alerts (`0024_team_chat.sql`). Signed in,
+`{action, orgId, ...}`.
+
+| action | who | body | answer |
+|---|---|---|---|
+| `status` | any active member | `{orgId}` | which channels are set up, phones registered, the last alerts |
+| `test` | owner or ops manager | `{orgId}` | sends a test alert on every channel: `{done: {email, whatsapp, push}}` |
+| `register-device` | any active member | `{orgId, token, platform}` | this phone gets Team chat alerts; booking alerts too (`push_devices.booking_alerts`) only when the member is the owner or an ops manager, set again on every registration |
+| `unregister-device` | the member who registered it | `{orgId, token}` | this phone stops getting alerts |
+| `team-message` | the sender of the message | `{orgId, messageId}` | phone alerts for a Team chat message just sent: `{phones, sent}`. Claimed once through `team_push_claim` (service role only), within 15 minutes of the message; goes to the others in the chat with Team chat access who did not mute it, never the sender. Android channel `team_chat`. |
+
 ## Database functions the browser calls (supabase.rpc)
 
 From `supabase/migrations/0001_core.sql`: `my_context()`, `platform_overview()`, `set_org_status(p_org, p_status)`,
 `set_org_plan(p_org, p_plan)`, `reset_org(p_org)`. From `0003_guest.sql`: `guest_get(p_token)`, `guest_act(p_token, p_action, p_args)`.
+From `0024_team_chat.sql` (Team chat): `team_list(p_org)`, `team_open(p_org, p_kind, p_name, p_staff)`,
+`team_manage(p_org, p_chat, p_name, p_add, p_remove)`, `team_read(p_org, p_chat)`, `team_mute(p_org, p_chat, p_muted)`;
+messages are inserted straight into `team_messages` (row level security) and files go to the private bucket `team-files`.
 Check the SQL for the exact argument names.
 
 ## Browser-side O.auth (app/server/auth.js) used by pages

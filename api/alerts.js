@@ -1,16 +1,20 @@
-/* POST /api/alerts  {action, orgId, ...}   booking alerts (api/_lib/alerts.js, migration 0011)
+/* POST /api/alerts  {action, orgId, ...}   booking alerts (api/_lib/alerts.js, migration 0011) and Team chat alerts (0024)
  *
  *   status             any active member of orgId      which channels are set up, phones registered, the last alerts
  *   test               owner or ops manager of orgId   send a test alert on every channel now -> {done: {email, whatsapp, push}}
- *   register-device    owner or ops manager of orgId   {token, platform}: this phone gets booking alerts
+ *   register-device    any active member of orgId      {token, platform}: this phone gets Team chat alerts, and booking
+ *                                                      alerts too when the member is the owner or an ops manager
  *   unregister-device  the member who registered it    {token}: this phone stops getting them
+ *   team-message       the sender of the message       {messageId}: phone alerts for a Team chat message just sent, once,
+ *                                                      to the others in the chat who did not mute it -> {phones, sent}
  *
  * Sign-in: "Authorization: Bearer <Supabase access token>". Uses the service-role key (server only).
  * Never returns a key; channel results are plain English ("sent", "skipped: why", "failed: why").
  */
 import { ok, fail, send, cors, readJson, bearer, bad, forbidden, uuid as uuidField } from './_lib/http.js';
 import { requireAdminClient, check, caller, membership } from './_lib/supabase.js';
-import { channelStatus, queueTest } from './_lib/alerts.js';
+import { channelStatus, queueTest, pushConfig, sendTeamPush } from './_lib/alerts.js';
+import TC from './_lib/shared/teamchat.cjs';
 
 const ALERT_ROLES = ['owner', 'ops'];
 
@@ -38,16 +42,28 @@ const ACTIONS = {
     return { done: await queueTest(sb, orgId, me.id) };
   },
   'register-device': async (sb, body, me) => {
-    const { orgId } = await member(sb, body, me, ALERT_ROLES);
+    const { orgId, m } = await member(sb, body, me);
     const token = deviceToken(body.token);
     const platform = ['android', 'ios'].includes(body.platform) ? body.platform : 'android';
-    check(await sb.from('push_devices').upsert({ token, org_id: orgId, user_id: me.id, platform, updated_at: new Date().toISOString() }, { onConflict: 'token' }), 'save phone');
-    return { registered: true };
+    const bookingAlerts = ALERT_ROLES.includes(m.role);
+    check(await sb.from('push_devices').upsert({ token, org_id: orgId, user_id: me.id, platform, booking_alerts: bookingAlerts, updated_at: new Date().toISOString() }, { onConflict: 'token' }), 'save phone');
+    return { registered: true, bookingAlerts };
   },
   'unregister-device': async (sb, body, me) => {
     const token = deviceToken(body.token);
     check(await sb.from('push_devices').delete().eq('token', token).eq('user_id', me.id), 'remove phone');
     return { registered: false };
+  },
+  'team-message': async (sb, body, me) => {
+    const { orgId } = await member(sb, body, me);
+    const messageId = uuidField(body.messageId, 'Message');
+    // the database checks that the caller sent it, that it is new and not alerted yet, and who is in the chat (0024)
+    const claim = check(await sb.rpc('team_push_claim', { p_org: orgId, p_msg: messageId, p_user: me.id }), 'claim team alert');
+    if (!claim || !Array.isArray(claim.users) || !claim.users.length) return { phones: 0, sent: 0 };
+    const text = TC.pushText(claim.chat, claim.senderName, { body: claim.body, file: claim.file });
+    const r = await sendTeamPush(sb, pushConfig(), orgId, claim.users, text, { kind: 'team', chatId: claim.chat && claim.chat.id });
+    if (r.failed && r.failed.length) console.error('[api] team alert:', r.failed[0]);
+    return { phones: r.phones || 0, sent: r.sent || 0 };
   }
 };
 

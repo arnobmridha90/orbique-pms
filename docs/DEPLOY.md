@@ -85,6 +85,9 @@ New environment variables only reach a new deployment.
 If the build fails at a `migrate:` line, the website keeps running the previous version. Send the build log to your
 developer.
 
+For developers: `0024_team_chat.sql` (Team chat) is applied by the same build step like every other migration. It
+adds the private Storage bucket `team-files` and puts `team_messages` and `team_chats` in the realtime publication.
+
 For developers: `0020_reveal_24h.sql` replaces guest app functions from `0003_guest.sql` and `0008_guest_units.sql`.
 If you ever run `node scripts/migrate.mjs --reapply` on 0003 or 0008, re-apply 0020 straight after, or the door code
 rule goes back to 30 minutes before check-in.
