@@ -34,12 +34,14 @@ function page() {
   const css = list(path.join(APP, 'pages'), '.css').concat(list(path.join(APP, 'server'), '.css')).map((p) => `/* ${path.relative(APP, p)} */\n` + read(p));
   shell = shell.replace('<!--PAGE_CSS-->', () => (css.length ? '<style>\n' + css.join('\n') + '\n</style>' : ''));
   const files = [path.join(APP, 'data.js'), path.join(APP, 'core.js')]
+    /* the translations (app/i18n/<lang>.js; en.js and ignore.js are only for scripts/i18n-extract.mjs) */
+    .concat(list(path.join(APP, 'i18n'), '.js').filter((p) => !/[\\/](en|ignore)\.js$/.test(p)))
     .concat(list(path.join(APP, 'pages'), '.js'))
     .concat(local ? [] : list(path.join(APP, 'server'), '.js'))
     .concat(mobile ? list(path.join(APP, 'native'), '.js') : []);
   const scripts = files.map((p) => `<script>\n/* ${path.relative(APP, p)} */\n${jsSafe(read(p))}\n</script>`);
   /* modules shared with the server (api/_lib/shared/*.cjs) go in right after core.js, wrapped as O.<name> */
-  scripts.splice(2, 0, ...SHARED.map(([file, name]) => `<script>\n/* ${file} (shared with the server) */\n(function () {\nvar module = { exports: {} }, exports = module.exports;\n${jsSafe(read(path.join(ROOT, file)))}\nwindow.O = window.O || {}; window.O.${name} = module.exports;\n})();\n</script>`));
+  scripts.splice(files.indexOf(path.join(APP, 'core.js')) + 1, 0, ...SHARED.map(([file, name]) => `<script>\n/* ${file} (shared with the server) */\n(function () {\nvar module = { exports: {} }, exports = module.exports;\n${jsSafe(read(path.join(ROOT, file)))}\nwindow.O = window.O || {}; window.O.${name} = module.exports;\n})();\n</script>`));
   let head = '';
   if (mobile) {
     /* the phone app loads everything from its own files (relative paths); Capacitor's runtime and plugins come first */

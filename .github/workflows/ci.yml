@@ -44,6 +44,9 @@ jobs:
           done < <(find api scripts -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort; echo public/sw.js)
           exit $fail
 
+      - name: Every UI string has a Bangla, Malay and Chinese translation (app/i18n)
+        run: node scripts/i18n-extract.mjs --check
+
       - name: Unit tests (unit assignment, guest message timing, greeting messages, booking alerts, website bookings, profit planner, live website content, staff sign-in, nearby places, unit files, rooms and beds, unit requests, task assignees, phone app updates, team chat)
         run: node --test tests/assign.test.mjs tests/guestmsg.test.mjs tests/greeting.test.mjs tests/account_update.test.mjs tests/account_logins.test.mjs tests/alerts.test.mjs tests/website.test.mjs tests/website.flow.test.mjs tests/rateplan.test.mjs tests/site-content.test.mjs tests/site.api.test.mjs tests/places.test.mjs tests/unitfile.test.mjs tests/beds-requests.test.mjs tests/taskwho.test.mjs tests/native_updates.test.mjs tests/teamchat.test.mjs
 

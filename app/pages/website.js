@@ -71,6 +71,7 @@
   /* =====================================================================
      FACTS FROM THE WORKSPACE (computed once per render pass)
      ===================================================================== */
+  /* i18n:off — default wording of the public website (the site keeps the operator's language) */
   var CITY_ALIAS = { 'george town': 'Penang', 'georgetown': 'Penang', 'batu ferringhi': 'Penang', 'tanjung bungah': 'Penang', 'gurney drive': 'Penang', 'pulau pinang': 'Penang', 'malacca': 'Melaka', 'kl': 'Kuala Lumpur', 'tanah rata': 'Cameron Highlands', 'brinchang': 'Cameron Highlands', 'genting': 'Genting Highlands', 'kk': 'Kota Kinabalu', 'jb': 'Johor Bahru', 'pj': 'Petaling Jaya' };
   var GEO = { 'Penang': [5.41, 100.33], 'Langkawi': [6.35, 99.8], 'Alor Setar': [6.12, 100.37], 'Ipoh': [4.6, 101.08], 'Cameron Highlands': [4.47, 101.38], 'Genting Highlands': [3.42, 101.79], 'Kuala Lumpur': [3.14, 101.69], 'Petaling Jaya': [3.1, 101.6], 'Shah Alam': [3.07, 101.52], 'Putrajaya': [2.93, 101.69], 'Port Dickson': [2.52, 101.8], 'Melaka': [2.19, 102.25], 'Johor Bahru': [1.49, 103.74], 'Desaru': [1.55, 104.26], 'Kuantan': [3.81, 103.33], 'Cherating': [4.13, 103.39], 'Kuala Terengganu': [5.33, 103.14], 'Kota Bharu': [6.13, 102.24] };
   var CITY_NOTE = {
@@ -242,6 +243,7 @@
   function seoTitle() { var F = facts(), ws = wsInfo(); return site().seo.title || (ws.name + ' | ' + (F.cities.length ? 'Stays in ' + F.cities.slice(0, 4).map(function (c) { return shortCity(c.name); }).join(', ') : 'Book direct')); }
   function seoDesc() { var F = facts(), ws = wsInfo(); return site().seo.desc || ('Book ' + (F.props.length ? F.props.length + ' serviced homes' : 'your stay') + ' directly with ' + ws.name + '. Self check-in, fast Wi-Fi, an invoice for every stay and no platform fees.'); }
 
+  /* i18n:on */
   /* =====================================================================
      DESIGNS
      order: default home section order (the owner's own order, D.website.home, is shared by every design)
@@ -250,36 +252,36 @@
   var TPL = [
     { id: 'coastal', name: 'Coastal escape', desc: 'Bright and airy: a full-width sea-view hero, a floating date search and soft sand tones.', best: 'Beach condos and seaside apartments', type: 'Clean modern sans', mood: 'Light and airy', scene: 'sea', header: 'overlay',
       order: ['intro', 'units', 'amenities', 'reviews', 'location', 'book'], v: { intro: 'center', units: 'cards', amenities: 'icons', reviews: 'cards', location: 'map', book: 'split', footer: 'columns' },
-      words: { intro: 'Looked after, not just listed', units: ['Stay with us', 'Homes by the water and in town'], amen: ['Every stay includes', 'Thoughtful touches, no surprises'], rev: ['Guest reviews', 'Loved by our guests'], loc: ['Where we are', 'Find your favourite corner'], book: ['Book direct', 'Ready for a few slow days?'] },
-      copy: function (F) { return ['Wake up to sea breezes and slow mornings', 'Bright, serviced homes in ' + cityList(F) + '. Book direct for the best rate and a host who answers.', 'Check availability']; } },
+      /* i18n:off */ words: { intro: 'Looked after, not just listed', units: ['Stay with us', 'Homes by the water and in town'], amen: ['Every stay includes', 'Thoughtful touches, no surprises'], rev: ['Guest reviews', 'Loved by our guests'], loc: ['Where we are', 'Find your favourite corner'], book: ['Book direct', 'Ready for a few slow days?'] },
+      copy: function (F) { return ['Wake up to sea breezes and slow mornings', 'Bright, serviced homes in ' + cityList(F) + '. Book direct for the best rate and a host who answers.', 'Check availability']; } }, /* i18n:on */
     { id: 'urban', name: 'Urban loft', desc: 'Dark and confident: condensed capitals, an index-style homes grid and a moving neighbourhood ticker.', best: 'City apartments, studios and lofts', type: 'Bold capitals and mono', mood: 'Dark and bold', scene: 'night', header: 'dark',
       order: ['intro', 'units', 'amenities', 'reviews', 'location', 'book'], v: { intro: 'split', units: 'grid', amenities: 'list', reviews: 'quote', location: 'map', book: 'band', footer: 'columns' },
-      words: { intro: 'Your base in the city', units: ['Stays', 'Choose your base'], amen: ['Included', 'Everything you need, nothing you don\'t'], rev: ['Reviews', 'Guests say'], loc: ['Neighbourhoods', 'Close to everything'], book: ['Book', 'Your keys are waiting'] },
-      copy: function (F) { return ['Live like a local in the city', (F.props.length ? F.props.length + ' serviced apartments' : 'Serviced apartments') + ' in ' + cityList(F) + '. Self check-in, fast Wi-Fi and a host on WhatsApp.', 'Find your stay']; } },
+      /* i18n:off */ words: { intro: 'Your base in the city', units: ['Stays', 'Choose your base'], amen: ['Included', 'Everything you need, nothing you don\'t'], rev: ['Reviews', 'Guests say'], loc: ['Neighbourhoods', 'Close to everything'], book: ['Book', 'Your keys are waiting'] },
+      copy: function (F) { return ['Live like a local in the city', (F.props.length ? F.props.length + ' serviced apartments' : 'Serviced apartments') + ' in ' + cityList(F) + '. Self check-in, fast Wi-Fi and a host on WhatsApp.', 'Find your stay']; } }, /* i18n:on */
     { id: 'highland', name: 'Highland retreat', desc: 'Calm and natural: a panoramic hero, serif headings and roomy rows for each home.', best: 'Villas, retreats and long weekends', type: 'Classic serif with a light sans', mood: 'Calm and natural', scene: 'hills', header: 'overlay',
       order: ['intro', 'units', 'amenities', 'reviews', 'location', 'book'], v: { intro: 'letter', units: 'rows', amenities: 'split', reviews: 'quote', location: 'stops', book: 'split', footer: 'columns' },
-      words: { intro: 'Slow down, we have it covered', units: ['Where to stay', 'Homes with room to breathe'], amen: ['Ready when you arrive', 'Everything is taken care of'], rev: ['From our guestbook', 'Kind words'], loc: ['Getting here', 'Easy to reach, hard to leave'], book: ['Plan your stay', 'Come away for the weekend'] },
-      copy: function (F) { return ['Cool air, quiet mornings and room to breathe', 'Homes made for long weekends and slow weeks, looked after by a local team in ' + cityList(F) + '.', 'Plan your escape']; } },
+      /* i18n:off */ words: { intro: 'Slow down, we have it covered', units: ['Where to stay', 'Homes with room to breathe'], amen: ['Ready when you arrive', 'Everything is taken care of'], rev: ['From our guestbook', 'Kind words'], loc: ['Getting here', 'Easy to reach, hard to leave'], book: ['Plan your stay', 'Come away for the weekend'] },
+      copy: function (F) { return ['Cool air, quiet mornings and room to breathe', 'Homes made for long weekends and slow weeks, looked after by a local team in ' + cityList(F) + '.', 'Plan your escape']; } }, /* i18n:on */
     { id: 'heritage', name: 'Heritage shophouse', desc: 'Warm and storied: Peranakan tile borders, arched photos, Didot headlines and a numbered collection.', best: 'Heritage houses and boutique stays', type: 'High-contrast serif', mood: 'Warm and classic', scene: 'heritage', header: 'center',
       order: ['intro', 'units', 'amenities', 'reviews', 'location', 'book'], v: { intro: 'letter', units: 'list', amenities: 'icons', reviews: 'pull', location: 'map', book: 'split', footer: 'centered' },
-      words: { intro: 'A home with a past', units: ['The collection', 'Homes with a sense of place'], amen: ['Comforts', 'Old walls, modern comforts'], rev: ['Guestbook', 'In our guests\' words'], loc: ['The neighbourhood', 'Streets worth walking'], book: ['Reservations', 'Stay in a piece of history'] },
-      copy: function (F) { return ['Old houses, new stories', 'Restored homes with character in ' + cityList(F) + ', each with a story of its own.', 'Book your stay']; } },
+      /* i18n:off */ words: { intro: 'A home with a past', units: ['The collection', 'Homes with a sense of place'], amen: ['Comforts', 'Old walls, modern comforts'], rev: ['Guestbook', 'In our guests\' words'], loc: ['The neighbourhood', 'Streets worth walking'], book: ['Reservations', 'Stay in a piece of history'] },
+      copy: function (F) { return ['Old houses, new stories', 'Restored homes with character in ' + cityList(F) + ', each with a story of its own.', 'Book your stay']; } }, /* i18n:on */
     { id: 'minimal', name: 'Minimal grid', desc: 'Quiet Swiss layout: a bento hero, square photos, hairlines and one confident brand tile.', best: 'Design-led apartments', type: 'Swiss sans and mono', mood: 'Clean and quiet', scene: 'abstract', header: 'bar',
       order: ['intro', 'units', 'amenities', 'reviews', 'location', 'book'], v: { intro: 'split', units: 'grid', amenities: 'list', reviews: 'columns', location: 'list', book: 'split', footer: 'columns' },
-      words: { intro: 'Well made. Well kept.', units: ['Homes', 'All homes'], amen: ['Standard', 'In every home'], rev: ['Reviews', 'What guests say'], loc: ['Locations', 'Where we are'], book: ['Book', 'Check your dates'] },
-      copy: function (F) { return ['Well-made homes. Nothing extra.', 'Good beds, real kitchens and fast Wi-Fi in ' + cityList(F) + '. Booked in a minute.', 'See the homes']; } },
+      /* i18n:off */ words: { intro: 'Well made. Well kept.', units: ['Homes', 'All homes'], amen: ['Standard', 'In every home'], rev: ['Reviews', 'What guests say'], loc: ['Locations', 'Where we are'], book: ['Book', 'Check your dates'] },
+      copy: function (F) { return ['Well-made homes. Nothing extra.', 'Good beds, real kitchens and fast Wi-Fi in ' + cityList(F) + '. Booked in a minute.', 'See the homes']; } }, /* i18n:on */
     { id: 'editorial', name: 'Boutique editorial', desc: 'A magazine cover: large italic serif type, captions, pull quotes and a featured home.', best: 'Boutique collections and host-led brands', type: 'Book serif with italics', mood: 'Refined and literary', scene: 'living', header: 'center',
       order: ['intro', 'units', 'reviews', 'amenities', 'location', 'book'], v: { intro: 'letter', units: 'feature', amenities: 'list', reviews: 'pull', location: 'list', book: 'band', footer: 'centered' },
-      words: { intro: 'A letter from the host', units: ['The collection', 'Homes worth the journey'], amen: ['The details', 'What to expect'], rev: ['Notes from guests', 'Overheard'], loc: ['Places', 'Where to find us'], book: ['Reservations', 'Write to us'] },
-      copy: function (F) { return ['A collection of homes worth the journey', 'Hand-picked stays in ' + cityList(F) + ', chosen for their light, their streets and the people next door.', 'Explore the collection']; } },
+      /* i18n:off */ words: { intro: 'A letter from the host', units: ['The collection', 'Homes worth the journey'], amen: ['The details', 'What to expect'], rev: ['Notes from guests', 'Overheard'], loc: ['Places', 'Where to find us'], book: ['Reservations', 'Write to us'] },
+      copy: function (F) { return ['A collection of homes worth the journey', 'Hand-picked stays in ' + cityList(F) + ', chosen for their light, their streets and the people next door.', 'Explore the collection']; } }, /* i18n:on */
     { id: 'tropical', name: 'Tropical resort', desc: 'Lush and sunny: deep green sections, palm-leaf patterns, rounded photos and a scrolling homes row.', best: 'Pool villas, resorts and holiday condos', type: 'Geometric sans', mood: 'Lush and sunny', scene: 'pool', header: 'overlay',
       order: ['intro', 'units', 'amenities', 'reviews', 'location', 'book'], v: { intro: 'center', units: 'carousel', amenities: 'icons', reviews: 'cards', location: 'map', book: 'band', footer: 'columns' },
-      words: { intro: 'Holiday mode, switched on', units: ['Our homes', 'Pick your spot in the sun'], amen: ['Holiday ready', 'Pack light, we have the rest'], rev: ['Happy guests', 'Holiday stories'], loc: ['Destinations', 'Where the holidays happen'], book: ['Book direct', 'Your holiday starts here'] },
-      copy: function (F) { return ['Sun, pools and long lazy days', 'Holiday homes in ' + cityList(F) + ' with space to unwind and a host on call.', 'Plan your holiday']; } },
+      /* i18n:off */ words: { intro: 'Holiday mode, switched on', units: ['Our homes', 'Pick your spot in the sun'], amen: ['Holiday ready', 'Pack light, we have the rest'], rev: ['Happy guests', 'Holiday stories'], loc: ['Destinations', 'Where the holidays happen'], book: ['Book direct', 'Your holiday starts here'] },
+      copy: function (F) { return ['Sun, pools and long lazy days', 'Holiday homes in ' + cityList(F) + ' with space to unwind and a host on call.', 'Plan your holiday']; } }, /* i18n:on */
     { id: 'family', name: 'Family stays', desc: 'Friendly and playful: rounded shapes, polaroid photos, sticker highlights and speech-bubble reviews.', best: 'Family holidays and group trips', type: 'Soft rounded sans', mood: 'Friendly and playful', scene: 'garden', header: 'bar',
       order: ['intro', 'units', 'amenities', 'reviews', 'location', 'book'], v: { intro: 'bubble', units: 'polaroid', amenities: 'icons', reviews: 'cards', location: 'map', book: 'split', footer: 'columns' },
-      words: { intro: 'Hello from your hosts', units: ['Family homes', 'Room for everyone'], amen: ['Made for families', 'Little things that make it easy'], rev: ['Happy families', 'What parents tell us'], loc: ['Where we are', 'Fun nearby'], book: ['Say hello', 'Plan your family trip'] },
-      copy: function (F) { return ['Holidays the whole family will love', 'Spacious homes in ' + cityList(F) + ' with full kitchens, room to play and hosts who think of the little things.', 'Find a family home']; } }
+      /* i18n:off */ words: { intro: 'Hello from your hosts', units: ['Family homes', 'Room for everyone'], amen: ['Made for families', 'Little things that make it easy'], rev: ['Happy families', 'What parents tell us'], loc: ['Where we are', 'Fun nearby'], book: ['Say hello', 'Plan your family trip'] },
+      copy: function (F) { return ['Holidays the whole family will love', 'Spacious homes in ' + cityList(F) + ' with full kitchens, room to play and hosts who think of the little things.', 'Find a family home']; } } /* i18n:on */
   ];
   var TPL_BY = {}; TPL.forEach(function (t) { TPL_BY[t.id] = t; });
   function tplOf(id) { return TPL_BY[id] || TPL_BY[LEGACY[id]] || TPL[0]; }
@@ -302,6 +304,7 @@
     return { headline: cval('headline') || dflt[0], sub: cval('sub') || dflt[1], cta: cval('cta') || dflt[2], introTitle: cval('introTitle') || t.words.intro, intro: cval('intro') || introDefault(F, wsInfo()) };
   }
 
+  /* i18n:off — the public website the builder draws keeps the operator's wording (scripts/i18n-extract.mjs) */
   /* =====================================================================
      COLOURS: each design applies the workspace brand its own way
      ===================================================================== */
@@ -939,6 +942,7 @@
     return site().pageSections.about.filter(function (s) { return s.on !== false; }).map(function (s) { return parts[s.id] || ''; }).join('');
   }
 
+  /* i18n:on */
   /* =====================================================================
      BUILDER UI
      ===================================================================== */
@@ -959,8 +963,8 @@
   }
   function swatches(t) { var v = palette(t); return '<span class="wb-sw" aria-hidden="true">' + [v.bg, v.alt, v.btn, v.acc, v.deep].map(function (c) { return '<i style="background:' + c + '"></i>'; }).join('') + '</span>'; }
   function thumb(t, attrs) {
-    return '<div role="button" tabindex="0" class="wb-thumb" ' + attrs + ' aria-label="Preview the ' + esc(t.name) + ' design"><div class="wb-shot" aria-hidden="true" inert><div class="wb-fit" data-fit="1280">' + renderSite(t, 'home', { limit: 3 }) + '</div></div>' +
-      '<div class="wb-mini-phone" aria-hidden="true" inert><div class="wb-fit" data-fit="390">' + renderSite(t, 'home', { limit: 2 }) + '</div></div><span class="wb-hover">' + O.icon('eye') + 'Preview</span></div>';
+    return '<div role="button" tabindex="0" class="wb-thumb" ' + attrs + ' aria-label="Preview the ' + esc(t.name) + ' design"><div class="wb-shot" aria-hidden="true" inert><div class="wb-fit" data-no-i18n data-fit="1280">' + renderSite(t, 'home', { limit: 3 }) + '</div></div>' +
+      '<div class="wb-mini-phone" aria-hidden="true" inert><div class="wb-fit" data-no-i18n data-fit="390">' + renderSite(t, 'home', { limit: 2 }) + '</div></div><span class="wb-hover">' + O.icon('eye') + 'Preview</span></div>';
   }
   function galleryHTML() {
     var S = site(), P = pubState(), F = facts(), ed = canEdit();
@@ -976,7 +980,7 @@
       '<div class="section-title wb-extra-t">Every design also includes these pages</div><div class="grid g2 wb-extra">' +
       [['property', 'Property and booking', 'One page per property (' + F.props.length + ' now): photo gallery, amenities, live availability from your calendar, nightly prices and a booking card.'], ['about', 'About and contact', 'Your story and team, questions and answers, a contact form and a WhatsApp button.']].map(function (p) {
         var cur = tplOf(S.template);
-        return '<article class="card wb-tcard wb-pcard"><div role="button" tabindex="0" class="wb-thumb" data-act="preview" data-t="' + cur.id + '" data-page="' + p[0] + '" aria-label="Preview the ' + esc(p[1]) + ' page"><div class="wb-shot" aria-hidden="true" inert><div class="wb-fit" data-fit="1280">' + renderSite(cur, p[0], { limit: 1 }) + '</div></div><span class="wb-hover">' + O.icon('eye') + 'Preview</span></div><div class="wb-tinfo"><div class="row-flex wrap"><b class="wb-tname">' + esc(p[1]) + '</b>' + U.pill('In the ' + cur.name + ' style', 'neutral') + '</div><p class="small muted">' + esc(p[2]) + '</p><div class="row-flex wb-tact"><button type="button" class="btn btn-ghost btn-sm" data-act="edit" data-page="' + p[0] + '">' + O.icon('edit') + 'Edit this page</button></div></div></article>';
+        return '<article class="card wb-tcard wb-pcard"><div role="button" tabindex="0" class="wb-thumb" data-act="preview" data-t="' + cur.id + '" data-page="' + p[0] + '" aria-label="Preview the ' + esc(p[1]) + ' page"><div class="wb-shot" aria-hidden="true" inert><div class="wb-fit" data-no-i18n data-fit="1280">' + renderSite(cur, p[0], { limit: 1 }) + '</div></div><span class="wb-hover">' + O.icon('eye') + 'Preview</span></div><div class="wb-tinfo"><div class="row-flex wrap"><b class="wb-tname">' + esc(p[1]) + '</b>' + U.pill('In the ' + cur.name + ' style', 'neutral') + '</div><p class="small muted">' + esc(p[2]) + '</p><div class="row-flex wb-tact"><button type="button" class="btn btn-ghost btn-sm" data-act="edit" data-page="' + p[0] + '">' + O.icon('edit') + 'Edit this page</button></div></div></article>';
       }).join('') + '</div>';
   }
   function emptyNote() {
@@ -1002,7 +1006,7 @@
   function card(title, sub, body, extra) { return '<div class="card"><div class="card-head"><div><h3>' + esc(title) + '</h3>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div>' + (extra || '') + '</div><div class="card-body stack">' + body + '</div></div>'; }
   function editorHTML() {
     var S = site(), t = tplOf(S.template), F = facts(), ro = !canEdit(), dflt = t.copy(F, wsInfo()), C2 = S.content, ws = wsInfo();
-    var left = '<div class="card"><div class="card-body wb-tplbox"><div class="wb-tplmini" aria-hidden="true" inert><div class="wb-fit" data-fit="1280">' + renderSite(t, 'home', { limit: 1 }) + '</div></div><div class="grow"><div class="xs muted b">Design</div><div class="b">' + esc(t.name) + '</div><div class="xs muted">' + esc(t.mood) + '</div></div><button type="button" class="btn btn-ghost btn-sm" data-act="gallery">Change</button></div></div>';
+    var left = '<div class="card"><div class="card-body wb-tplbox"><div class="wb-tplmini" aria-hidden="true" inert><div class="wb-fit" data-no-i18n data-fit="1280">' + renderSite(t, 'home', { limit: 1 }) + '</div></div><div class="grow"><div class="xs muted b">Design</div><div class="b">' + esc(t.name) + '</div><div class="xs muted">' + esc(t.mood) + '</div></div><button type="button" class="btn btn-ghost btn-sm" data-act="gallery">Change</button></div></div>';
     if (!F.props.length) left += emptyNote();
     if (st.page === 'home') {
       left += card('Home page sections', 'Show, hide and reorder. Kept when you change design.', secRows(homeList(t), 'home', ro));
@@ -1026,8 +1030,8 @@
     var x0 = F.byId[ctxFor(t, 'property', {}).pid];
     var path = st.page === 'home' ? '/' : st.page === 'property' ? '/stays/' + (x0 ? x0.slug : 'your-home') : '/about';
     var right = '<div class="card wb-prevcard"><div class="wb-prevbar">' + U.seg([['home', 'Home'], ['property', 'Property'], ['about', 'About']], st.page, 'data-pagetab') + '<span class="spacer"></span>' + U.seg([['desktop', 'Desktop'], ['phone', 'Phone']], st.device, 'data-device') + '<button type="button" class="btn btn-ghost btn-sm" data-act="full" aria-label="Full screen preview">' + O.icon('eye') + '<span class="wb-hide-sm">Full screen</span></button></div>' +
-      '<div class="wb-stage dev-' + st.device + '">' + (st.device === 'phone' ? '<div class="phone"><div class="phone-screen"><div class="wb-site" id="wb-site">' + renderSite(t, st.page, {}) + '</div></div></div>' :
-        '<div class="wb-browser"><div class="wb-chrome"><i></i><i></i><i></i><span class="wb-url">' + O.icon('lock') + '<span>' + esc(ws.domain + path) + '</span></span></div><div class="wb-viewport"><div class="wb-fit" data-fit="1280" id="wb-site">' + renderSite(t, st.page, {}) + '</div></div></div>') + '</div>' +
+      '<div class="wb-stage dev-' + st.device + '">' + (st.device === 'phone' ? '<div class="phone"><div class="phone-screen"><div class="wb-site" data-no-i18n id="wb-site">' + renderSite(t, st.page, {}) + '</div></div></div>' :
+        '<div class="wb-browser"><div class="wb-chrome"><i></i><i></i><i></i><span class="wb-url">' + O.icon('lock') + '<span>' + esc(ws.domain + path) + '</span></span></div><div class="wb-viewport"><div class="wb-fit" data-no-i18n data-fit="1280" id="wb-site">' + renderSite(t, st.page, {}) + '</div></div></div>') + '</div>' +
       '<div class="card-foot">The preview is clickable: open a home, pick dates on the calendar and try the forms. Nothing is booked or sent from the preview.</div></div>';
     return '<div class="wb-mtabs">' + U.seg([['edit', 'Edit'], ['preview', 'Preview']], st.mtab, 'data-mtab') + '</div><div class="wb-editor m-' + st.mtab + '"><div class="wb-left stack">' + left + '</div><div class="wb-right">' + right + publishCard() + '</div></div>';
   }
@@ -1045,8 +1049,8 @@
   function fullHTML() {
     var f = st.full, t = tplOf(f.t), S = site(), i = TPL.indexOf(t), small = window.innerWidth < 1000, isCur = t.id === S.template;
     var use = isCur ? U.pill('In use', 'brand') : '<button type="button" class="btn btn-primary btn-sm wb-use" data-act="use" data-t="' + t.id + '"' + dis(canEdit(), NO_EDIT) + '>Use this design</button>';
-    var body = f.device === 'phone' ? '<div class="phone"><div class="phone-screen"><div class="wb-site" id="wb-fsite">' + renderSite(t, f.page, {}) + '</div></div></div>' :
-      small ? '<div class="wb-fitbox"><div class="wb-fit" data-fit="1280" id="wb-fsite">' + renderSite(t, f.page, {}) + '</div></div>' : '<div class="wb-site wb-fullsite" id="wb-fsite">' + renderSite(t, f.page, {}) + '</div>';
+    var body = f.device === 'phone' ? '<div class="phone"><div class="phone-screen"><div class="wb-site" data-no-i18n id="wb-fsite">' + renderSite(t, f.page, {}) + '</div></div></div>' :
+      small ? '<div class="wb-fitbox"><div class="wb-fit" data-no-i18n data-fit="1280" id="wb-fsite">' + renderSite(t, f.page, {}) + '</div></div>' : '<div class="wb-site wb-fullsite" data-no-i18n id="wb-fsite">' + renderSite(t, f.page, {}) + '</div>';
     return '<div class="wb-full" role="dialog" aria-modal="true" aria-label="' + esc(t.name + ' preview') + '"><div class="wb-fullbar"><div class="wb-fnav"><button type="button" class="icon-btn" data-act="step" data-dir="-1" aria-label="Previous design">' + O.icon('left') + '</button><div class="wb-ftitle"><b>' + esc(t.name) + '</b><span class="xs muted">' + (i + 1) + ' of ' + TPL.length + ' · ' + esc(t.best) + '</span></div><button type="button" class="icon-btn" data-act="step" data-dir="1" aria-label="Next design">' + O.icon('right') + '</button></div>' +
       '<span class="spacer"></span><div class="wb-fctl">' + U.seg([['home', 'Home'], ['property', 'Property'], ['about', 'About']], f.page, 'data-fpage') + U.seg([['desktop', 'Desktop'], ['phone', 'Phone']], f.device, 'data-fdevice') + '</div>' + use +
       '<button type="button" class="icon-btn" data-act="close-full" aria-label="Close preview">' + O.icon('x') + '</button></div><div class="wb-fullbody dev-' + f.device + '">' + body + '</div></div>';

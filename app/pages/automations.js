@@ -211,7 +211,7 @@
       '<div class="jr">' + A.journey.map(function (s, i) {
         var n = journeyCount(s);
         return '<div class="js' + (s.on ? '' : ' off') + '"><span class="jn">' + (i + 1) + '</span><div style="min-width:0"><div class="jt"><b>' + esc(s.name) + '</b>' + s.channels.map(function (c) { return '<span class="ch">' + esc(c) + '</span>'; }).join('') + (s.on ? '' : U.pill('Paused', 'neutral')) + '</div>' +
-          '<div class="jw">' + O.icon('clock') + esc(s.when) + '</div><div class="msg">' + fill(s.text, sm, s.id) + '</div></div>' +
+          '<div class="jw">' + O.icon('clock') + esc(s.when) + '</div><div class="msg" data-no-i18n>' + fill(s.text, sm, s.id) + '</div></div>' +
           '<div class="jr-side"><button type="button" class="switch' + (s.on ? ' on' : '') + '" role="switch" aria-checked="' + s.on + '" aria-label="' + esc(s.name) + ' on or off" data-jtog="' + s.id + '"' + (tog ? '' : ' disabled title="' + esc(WHY_TOGGLE) + '"') + '></button><span class="n"><b>' + fmt.num(n) + '</b> sent, 30 days</span>' + (edit ? '<button type="button" class="btn btn-ghost btn-xs" data-jedit="' + s.id + '">' + O.icon('edit') + 'Edit</button>' : '') + '</div></div>';
       }).join('') + '</div>' +
       '<div class="card-foot">Messages go out in the guest\'s language when we know it. Prototype: messages are not really sent.</div></div>';
