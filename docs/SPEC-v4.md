@@ -146,7 +146,9 @@ Keep grouping by property, date range picker, filters, search, the booking drawe
 cancel, copy guest-app link (`O.guestLink`), CSV (`bookings.export`).
 
 **Calendar** — cleaner. Default window = **today plus the next 6 days (7 days)**, step back/forward by 7 days or pick any
-start date ("any 7-day interval"). Same 7 days in portrait and landscape on phones. **Remove the local events** row and
+start date ("any 7-day interval"). Later change (owner): the timeline is one continuous scroll, swipe or drag sideways
+through the days and down through the units, more days loading at either end; the 7 / 14 / 30 days set how many fit the
+width, and the week arrows are optional. Same 7 days in portrait and landscape on phones. **Remove the local events** row and
 anything event-related. Check how many days are comfortable on a phone and put the finding in your notes (current
 estimate: 7 days in portrait at 390px is ~43px per day: enough for a coloured bar with platform mark and guest initials,
 not full names; landscape fits 14). Desktop may offer 7 / 14 / 30 days. Keep booking bars coloured by status with the
