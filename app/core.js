@@ -1180,9 +1180,9 @@
     var out = [];
     /* the check-in readiness task counts once the clean is done (or when there is no clean that day) */
     var insp = (!clean || clean.status === 'done') && D.tasks.filter(function (t) { return t.propertyId === b.propertyId && (t.type === 'Inspection' || t.checklistId === 'CL-checkin') && due(t) === b.checkIn && b.checkIn >= D.TODAY; })[0];
-    var pg = function (t) { var c = O.checklist.progress(t); return c.total ? ' ' + c.done + '/' + c.total : ''; };
-    if (insp) out.push({ key: 'clean', label: insp.status === 'done' ? 'Inspected' : insp.status === 'in_progress' ? 'Inspecting' + pg(insp) : 'Inspection not started', state: insp.status === 'done' ? 'ok' : insp.status === 'in_progress' ? 'wait' : 'todo' });
-    else if (clean) out.push({ key: 'clean', label: clean.status === 'done' ? 'Cleaned' : clean.status === 'in_progress' ? 'Cleaning' + pg(clean) : 'Clean not started', state: clean.status === 'done' ? 'ok' : clean.status === 'in_progress' ? 'wait' : 'todo' });
+    var pg = function (t, w, w0) { var c = O.checklist.progress(t); return c.total ? O.tpl(w, { done: c.done + '/' + c.total }) : w0; };
+    if (insp) out.push({ key: 'clean', label: insp.status === 'done' ? 'Inspected' : insp.status === 'in_progress' ? pg(insp, 'Inspecting {done}', 'Inspecting') : 'Inspection not started', state: insp.status === 'done' ? 'ok' : insp.status === 'in_progress' ? 'wait' : 'todo' });
+    else if (clean) out.push({ key: 'clean', label: clean.status === 'done' ? 'Cleaned' : clean.status === 'in_progress' ? pg(clean, 'Cleaning {done}', 'Cleaning') : 'Clean not started', state: clean.status === 'done' ? 'ok' : clean.status === 'in_progress' ? 'wait' : 'todo' });
     else if (b.checkIn < D.TODAY) out.push({ key: 'clean', label: 'Checked in', state: 'ok' });
     else {
       var turn = D.bookings.some(function (x) { return x !== b && x.propertyId === b.propertyId && x.status !== 'cancelled' && x.checkOut === b.checkIn; });
@@ -1280,7 +1280,7 @@
   O.invoice.html = function (b, kind) {
     var ws = O.ws(), p = D.propById[b.propertyId] || { name: 'the property', area: '' }, isR = kind === 'receipt', ct = O.contact(b);
     var no = isR ? b.receiptNo : b.invoiceNo, date = isR ? b.paidAt : b.invoiceDate;
-    return '<div class="doc"><div class="doc-head"><div class="doc-logo">' + O.theme.logoHTML(ws, O.theme.get('--brand')) + '<span>' + O.esc(ws.legal || ws.name) + '</span></div><div class="doc-kind">' + (isR ? 'Payment receipt' : 'Invoice') + '</div></div>' +
+    return '<div class="doc" data-no-i18n><div class="doc-head"><div class="doc-logo">' + O.theme.logoHTML(ws, O.theme.get('--brand')) + '<span>' + O.esc(ws.legal || ws.name) + '</span></div><div class="doc-kind">' + (isR ? 'Payment receipt' : 'Invoice') + '</div></div>' +
       '<div class="doc-body"><div class="doc-meta"><div><div class="dm-k">Billed to</div><b>' + O.esc(b.guest.name) + '</b><br>' + O.esc(ct.email) + '<br>' + O.esc(ct.phone) + '<br>' + O.esc(b.guest.countryName || '') + '</div>' +
       '<div class="right"><div class="dm-k">' + (isR ? 'Receipt no.' : 'Invoice no.') + '</div><b>' + O.esc(no || 'Not issued yet') + '</b><div class="dm-k" style="margin-top:6px">Date</div>' + (date ? d.fmtY(date) : '–') + '<div class="dm-k" style="margin-top:6px">Booking</div>' + O.esc(b.id) + ' · ' + O.esc(U.platName(b.channel)) + '</div></div>' +
       '<table><thead><tr><th>Description</th><th></th><th class="num">Amount</th></tr></thead><tbody>' +
@@ -1402,11 +1402,11 @@
         bookingTasksHTML(b) +
         '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (O.can('inbox') && (conv || (b.status !== 'cancelled' && b.checkOut >= D.TODAY && O.can('inbox.send'))) ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
         (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly, { cur: b }) + '</dt><dd>' + O.fmt.money(b.accommodation, { cur: b }) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee, { cur: b }) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax, { cur: b }) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total, { cur: b }) + '</dd>' +
-        (O.isOwner() ? '<dt>' + O.esc(U.platName(b.channel)) + ' fee</dt><dd>−' + O.fmt.money(b.platformFee, { cur: b }) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout, { cur: b }) + '</dd>' : '') + '</dl></div>' : '') +
+        (O.isOwner() ? '<dt>' + O.esc(O.tpl('{site} fee', { site: U.platName(b.channel) })) + '</dt><dd>−' + O.fmt.money(b.platformFee, { cur: b }) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout, { cur: b }) + '</dd>' : '') + '</dl></div>' : '') +
         (b.status !== 'cancelled' && canInv && canMoney ? '<div><div class="section-title" style="margin-top:0">Invoice &amp; receipt</div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Invoice ' + O.esc(b.invoiceNo || '') + '</div><div class="lr-sub">Created automatically ' + d.fmtY(b.invoiceDate || b.checkIn) + '</div></div>' + O.invoice.statusHTML(b, 'invoice') + '<button class="btn btn-ghost btn-xs" data-act="inv">View</button></div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Receipt ' + O.esc(b.receiptNo || '') + '</div><div class="lr-sub">' + (b.paidAt ? 'Created automatically when paid, ' + d.fmtY(b.paidAt) : 'Created automatically when payment arrives') + '</div></div>' + O.invoice.statusHTML(b, 'receipt') + (b.paidAt || canPay ? '<button class="btn btn-ghost btn-xs" data-act="rcp">' + (b.paidAt ? 'View' : 'Record payment') + '</button>' : '') + '</div>' +
-          (canSend ? '<button class="btn btn-primary btn-sm" data-act="sendboth" style="margin-top:8px">' + O.icon('send') + 'Send invoice' + (b.paidAt ? ' and receipt' : '') + ' to guest</button>' : '') + '</div>' : '') +
+          (canSend ? '<button class="btn btn-primary btn-sm" data-act="sendboth" style="margin-top:8px">' + O.icon('send') + (b.paidAt ? 'Send invoice and receipt to guest' : 'Send invoice to guest') + '</button>' : '') + '</div>' : '') +
         '</div>';
     }
     /* the tasks for this booking (task.bookingId: automatic turnovers and checks, and tasks made "For" it), the ones
@@ -1922,7 +1922,10 @@
     available: function () { return 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function'; },
     pick: function () {
       if (!O.voice.available()) return null;
-      var vs = speechSynthesis.getVoices() || [], pref = [/en-GB.*(Daniel|Arthur|George|Male)/i, /Google UK English Male/i, /en-GB/i, /en-MY|en-SG|en-IN/i, /en-AU/i, /en-US/i, /^en/i];
+      var vs = speechSynthesis.getVoices() || [], l = O.state && O.state.lang;
+      /* another language: a voice of that language (Bangla, Malay, Taiwanese Mandarin), or none and the browser picks one for the language */
+      if (l && l !== 'en') { var want = { bn: [/^bn/i], ms: [/^ms/i], zh: [/^zh-TW/i, /^zh-HK/i, /^zh/i] }[l] || []; for (var j = 0; j < want.length; j++) { var w = vs.filter(function (x) { return want[j].test(x.lang); })[0]; if (w) return w; } return null; }
+      var pref = [/en-GB.*(Daniel|Arthur|George|Male)/i, /Google UK English Male/i, /en-GB/i, /en-MY|en-SG|en-IN/i, /en-AU/i, /en-US/i, /^en/i];
       for (var i = 0; i < pref.length; i++) { var v = vs.filter(function (x) { return pref[i].test(x.lang + ' ' + x.name); })[0]; if (v) return v; }
       return vs[0] || null;
     },
@@ -1939,7 +1942,7 @@
         if (me !== O.voice._run) return;
         if (i >= parts.length) { O.voice._finish(job, true); return; }
         var u = new SpeechSynthesisUtterance(parts[i].trim()), v = O.voice.pick();
-        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
+        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = O.state && O.state.lang && O.state.lang !== 'en' && O.locale ? O.locale().split('-u-')[0] : 'en-GB';
         u.rate = o.rate || 1.02; u.pitch = o.pitch || 0.95;
         var idx = i; u.onstart = function () { if (!started) { started = true; if (o.onstart) o.onstart(); } if (o.onpart) o.onpart(idx, parts.length); };
         u.onend = function () { i++; next(); }; u.onerror = function () { i++; next(); };
@@ -1966,16 +1969,341 @@
   if (O.voice.available()) { try { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = function () {}; } catch (e) {} }
 
   /* ===================================================================
-     I18N (menu + page titles; pages render in English)
+     I18N: every word on screen in the chosen language (Settings menu: English, Bangla, Bahasa Malaysia, Hokkien)
+     The pages write English. Translations live in app/i18n/{bn,ms,zh}.js as O.I18N.<lang> = {"English": "..."}, keyed by
+     the exact English text (scripts/i18n-extract.mjs finds every UI string in the code; CI fails on one with no
+     translation). O.tr(english) translates a string; a MutationObserver translates every text node and the placeholder /
+     title / aria-label / alt of every element the app draws, so pages, drawers, modals and toasts need no changes.
+     Lookup order for a piece of text: the exact string; the string with its numbers as {n} ("3 nights" -> "{n} nights");
+     a key with {placeholders} ("Due in {n} days", "Overdue: {x}"); the parts between separators (" · ", " — ", ": ");
+     and last, every known phrase inside it. What the user or a guest wrote is not in the catalog, so it stays as it is;
+     a node or subtree marked data-no-i18n (or contenteditable, textarea, the guest's own app) is never touched.
+     Dates use Intl in the language's locale (bn-BD, ms-MY, zh-TW: written Chinese, Traditional characters, for Hokkien),
+     with Latin digits so numbers read the same everywhere.
      =================================================================== */
   O.LANGS = [['en', 'English', 'EN'], ['bn', 'বাংলা', 'Bangla'], ['ms', 'Bahasa Malaysia', 'MS'], ['zh', '中文（福建話）', 'Hokkien']];
-  var NAV_I18N = {
-    en: { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' },
-    bn: { overview: 'ওভারভিউ', operate: 'পরিচালনা', insights: 'বিশ্লেষণ', finance: 'ফাইন্যান্স', grow: 'প্রবৃদ্ধি', manage: 'ব্যবস্থাপনা', dashboard: 'ড্যাশবোর্ড', bookings: 'বুকিং', calendar: 'ক্যালেন্ডার', reviews: 'রিভিউ', inbox: 'ইনবক্স', greetings: 'স্বাগত বার্তা', tasks: 'কাজ ও পরিষ্কার', statistics: 'পরিসংখ্যান', reports: 'রিপোর্ট', invoices: 'ইনভয়েস ও রসিদ', expenses: 'খরচ', financials: 'আর্থিক হিসাব', website: 'ওয়েবসাইট নির্মাতা', livesite: 'লাইভ ওয়েবসাইট', guestapp: 'গেস্ট অ্যাপ', properties: 'প্রপার্টি', channels: 'চ্যানেল', inventory: 'ইনভেন্টরি', pricing: 'মূল্য নির্ধারণ', planner: 'লাভ পরিকল্পনা', automations: 'স্বয়ংক্রিয়তা', owner: 'মালিক পোর্টাল', staff: 'স্টাফ অ্যাক্সেস', brand: 'ব্র্যান্ড ও সেটআপ', more: 'আরও', home: 'হোম', platform: 'প্ল্যাটফর্ম অ্যাডমিন' },
-    ms: { overview: 'Gambaran', operate: 'Operasi', insights: 'Analisis', finance: 'Kewangan', grow: 'Perkembangan', manage: 'Pengurusan', dashboard: 'Papan Pemuka', bookings: 'Tempahan', calendar: 'Kalendar', reviews: 'Ulasan', inbox: 'Peti Masuk', greetings: 'Mesej Ucapan Selamat', tasks: 'Tugasan & Pembersihan', statistics: 'Statistik', reports: 'Laporan', invoices: 'Invois & Resit', expenses: 'Perbelanjaan', financials: 'Penyata Kewangan', website: 'Pembina Laman Web', livesite: 'Laman Web Langsung', guestapp: 'Aplikasi Tetamu', properties: 'Hartanah', channels: 'Saluran', inventory: 'Inventori', pricing: 'Harga', planner: 'Perancang Untung', automations: 'Automasi', owner: 'Portal Pemilik', staff: 'Akses Kakitangan', brand: 'Jenama & Persediaan', more: 'Lagi', home: 'Utama', platform: 'Pentadbir platform' },
-    zh: { overview: '总览', operate: '营运', insights: '分析', finance: '财务', grow: '拓展', manage: '管理', dashboard: '仪表板', bookings: '订单', calendar: '日历', reviews: '评价', inbox: '收件箱', greetings: '欢迎信息', tasks: '任务与清洁', statistics: '统计', reports: '报表', invoices: '发票与收据', expenses: '支出', financials: '财务报表', website: '网站建设器', livesite: '在线网站', guestapp: '住客应用', properties: '房源', channels: '渠道', inventory: '库存', pricing: '定价', planner: '利润规划', automations: '自动化', owner: '业主门户', staff: '员工权限', brand: '品牌与设置', more: '更多', home: '首页', platform: '平台管理' }
+  O.LOCALES = { en: 'en-MY', bn: 'bn-BD-u-nu-latn', ms: 'ms-MY', zh: 'zh-TW' };
+  O.I18N = O.I18N || {};
+  var NAV_EN = { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', team: 'Team chat', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' };
+  O.NAV_EN = NAV_EN;
+  var I = (function () {
+    var own = Object.prototype.hasOwnProperty, caches = {}, pats = {}, frags = {};
+    var BRAND = /(^|[^A-Za-z])(Booking\.com|Trip\.com|Airbnb|Agoda|Expedia|Vrbo|Channex|WhatsApp|Orbique|Kozi)(?![A-Za-z])/g;
+    var NUM = /\d+(?:[.,:]\d+)*/g, SEP = /( · | — | – | \| | → |: |; |\. (?=[A-Z]))/;
+    /* the workspace's own words stay as they are: a text that is exactly a value in the data (a guest's message, a note, a
+       unit called "Melaka Loft") is not translated unless the catalog has it word for word, and the names in the data are
+       kept whole inside longer texts ("Melaka Loft · due 5 Oct"), so "Loft" in a name is never translated on its own.
+       Logs the app writes itself (auditLog) are left out, so they are translated like any other text. */
+    var data = { set: null, re: null, src: null, dirty: true, at: 0 };
+    var NAMEK = { name: 1, short: 1, title: 1, guest: 1, unitNo: 1, company: 1, legal: 1, owner: 1, ownerName: 1, guestName: 1, first: 1, last: 1, fullName: 1, displayName: 1, label: 1, roleLabel: 1 };
+    var SKIPK = { auditLog: 1, activity: 1, notifications: 1, alerts: 1, log: 1, logs: 1, STORY: 1, STORY0: 1, channels: 1, countryName: 1 };
+    function scan() {
+      var set = new Set(), names = new Set(), seen = new WeakSet();
+      (function walk(v, k, depth) {
+        if (v == null || depth > 7) return;
+        if (typeof v === 'string') {
+          var s = v.trim(); if (s.length < 2 || s.length > 600 || !/[A-Za-z]/.test(s)) return;
+          set.add(s);
+          if (NAMEK[k] && s.length >= 3 && s.length <= 60 && /[A-Za-z]{2}/.test(s) && (/ /.test(s) || /^[A-Z]/.test(s))) names.add(s);
+          return;
+        }
+        if (typeof v !== 'object' || seen.has(v)) return; seen.add(v);
+        if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) walk(v[i], k, depth + 1); return; }
+        for (var key in v) if (own.call(v, key) && !SKIPK[key]) walk(v[key], key, depth + 1);
+      })(O.data, '', 0);
+      /* the pricing competitor sets are made on demand: their listing names are names too */
+      try { if (typeof O.data.compSet === 'function') (O.data.properties || []).forEach(function (p) { O.data.compSet(p.id).forEach(function (c) { if (c && c.name) { set.add(c.name); names.add(c.name); } }); }); } catch (e) {}
+      var list = Array.from(names).sort(function (a, b) { return b.length - a.length; });
+      data.set = set; data.re = list.length ? new RegExp('(^|[^A-Za-z])(' + list.map(reEsc).join('|') + ')(?![A-Za-z])', 'g') : null;
+      data.src = O.data; data.dirty = false; data.at = Date.now(); caches = {};
+    }
+    function dataInfo() {
+      if (!O.data) return data;
+      if (data.src !== O.data || (data.dirty && Date.now() - data.at > 1500)) { try { scan(); } catch (e) { data.dirty = false; } }
+      return data;
+    }
+    if (O.on) O.on('data', function () { data.dirty = true; });
+    function table() { var l = O.state && O.state.lang; return l && l !== 'en' ? O.I18N[l] || null : null; }
+    function exact(t, s) { return own.call(t, s) ? t[s] : null; }
+    function reEsc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    /* keys with {placeholders}: "Due in {n} days", "Overdue: {x}" */
+    function patterns(l, t) {
+      if (pats[l]) return pats[l];
+      var out = [];
+      Object.keys(t).forEach(function (k) {
+        if (k.indexOf('{') < 0 || !/\{[a-z0-9_]+\}/i.test(k)) return;
+        if (k.indexOf('[[') >= 0) return; /* a word with a note for translators is O.tpl's alone */
+        var names = [], lits = k.split(/\{[a-z0-9_]+\}/i), re = '^';
+        k.replace(/\{([a-z0-9_]+)\}/gi, function (m, nm) { names.push(nm); return m; });
+        lits.forEach(function (x, i) { re += reEsc(x); if (i < names.length) re += names[i] === 'n' ? '(\\d+(?:[.,:]\\d+)*)' : '((?:(?! · ).)+?)'; }); /* a slot never runs over a " · " */
+        var lit = lits.slice().sort(function (a, b) { return b.length - a.length; })[0];
+        if (!/[A-Za-z]{2,}/.test(lit)) return; /* "{n}" alone is not a pattern */
+        if (lits.join('').replace(/[^A-Za-z]/g, '').length < 3) return; /* nor "{from} to {to}" or "By {via}": too loose for any text (O.tpl uses them whole) */
+        if (/^\{[a-z0-9_]+\}/i.test(k) && /\{[a-z0-9_]+\}$/i.test(k) && !/[A-Za-z]{2,}[^A-Za-z{}]+[A-Za-z]{2,}/.test(lits.join(' ').replace(/\s+/g, ' ').trim().replace(/^\W+|\W+$/g, ''))) return; /* nor "{field} for {unit}", which would take any "A for B" */
+        out.push({ re: new RegExp(re + '$'), names: names, to: t[k], lit: lit, w: lits.join('').length });
+      });
+      /* the most specific first: "{x}. Compared with {x} ({x})." before "Share of {x}" */
+      out.sort(function (a, b) { return b.w - a.w; });
+      return (pats[l] = out);
+    }
+    function fillNamed(to, names, vals) {
+      /* the same name more than once ({x} ... {x}) fills in the order of the English */
+      var by = {};
+      names.forEach(function (nm, i) { (by[nm] = by[nm] || []).push(vals[i]); });
+      return to.replace(/\{([a-z0-9_]+)\}/gi, function (m, nm) { var q = by[nm]; if (!q || !q.length) return m; var v = q.shift(); return nm === 'n' || /^\{[A-Za-z0-9_]+\}$/.test(v) ? v : val(v); });
+    }
+    function whole(t, s) {
+      var r = exact(t, s); if (r != null) return r;
+      if (/\d/.test(s)) {
+        var nums = [], k = s.replace(NUM, function (m) { nums.push(m); return '{n}'; }), i = 0;
+        r = exact(t, k); if (r != null) return r.replace(/\{n\}/g, function (m) { return nums[i] != null ? nums[i++] : m; });
+      }
+      return null;
+    }
+    function plain(l, t, s) {
+      if (!s) return s;
+      var r = whole(t, s); if (r != null) return r;
+      var P = patterns(l, t);
+      for (var j = 0; j < P.length; j++) { if (s.indexOf(P[j].lit) < 0) continue; var m = s.match(P[j].re); if (m) return fillNamed(P[j].to, P[j].names, m.slice(1)); }
+      return null;
+    }
+    /* decoration around the words: "+ New booking", "Note:", "Saving…", "(optional)" */
+    function decorated(l, t, s, wholeOnly) {
+      var r = whole(t, s); if (r != null) return r;
+      var m = s.match(/^([^A-Za-z0-9{"“(]*|\()([\s\S]*?)([\s:;.…!?)*,]*)$/);
+      /* the text as it is, then without its decoration, before any {x} pattern ("A, to B and to C;" is a sentence the
+         catalog has whole, not "{from} to {to}") */
+      if (m && m[2] && (m[1] || m[3])) { r = whole(t, m[2]); if (r != null) return m[1] + r + (l === 'zh' ? m[3].replace(/^:/, '：').replace(/^;/, '；').replace(/^\.$/, '。') : m[3]); }
+      if (wholeOnly) return null; /* several pieces together are a catalog sentence or nothing: a {x} pattern would swallow the " · " between them */
+      r = plain(l, t, s); if (r != null) return r;
+      if (m && m[2] && (m[1] || m[3])) { r = plain(l, t, m[2]); if (r != null) return m[1] + r + (l === 'zh' ? m[3].replace(/^:/, '：').replace(/^;/, '；').replace(/^\.$/, '。') : m[3]); }
+      if (/^[A-Z][a-z]/.test(s)) { r = plain(l, t, s.charAt(0).toLowerCase() + s.slice(1)); if (r != null) return r; }
+      return null;
+    }
+    /* every known phrase inside a longer text, longest first, at word edges */
+    /* known phrases inside a longer text. Only phrases of two words or more, since one word cut out of a sentence ("No"
+       of "No value") reads oddly; a single word only when it is the text's one English word ("Booked 17", "Tuesday 6") */
+    function fragRe(l, t, one) {
+      var c = one ? 'w' + l : l;
+      if (frags[c] !== undefined) return frags[c];
+      var ks = Object.keys(t).filter(function (k) { return k.indexOf('{') < 0 && /[A-Za-z]{2,}/.test(k) && (one ? !/[A-Za-z]{2,}[^A-Za-z]+[A-Za-z]{2,}/.test(k) : /[A-Za-z]{2,}[^A-Za-z]+[A-Za-z]{2,}/.test(k)); }).sort(function (a, b) { return b.length - a.length; });
+      return (frags[c] = ks.length ? new RegExp('(^|[^A-Za-z])(' + ks.map(reEsc).join('|') + ')(?![A-Za-z])', 'g') : null);
+    }
+    var fragUsed = false;
+    function frag(l, t, s) {
+      var re = fragRe(l, t); if (!re) return s;
+      fragUsed = true;
+      var keep = [], nr = data.re;
+      /* brand names stay whole: "Booking.com", never a translated "Booking" + ".com" */
+      s = s.replace(/\{[A-Za-z0-9_]+\}/g, function (m) { keep.push(m); return '\u0001' + (keep.length - 1) + '\u0002'; }); /* {guest_first} in a template */
+      BRAND.lastIndex = 0; s = s.replace(BRAND, function (m, pre, k) { keep.push(k); return pre + '\u0001' + (keep.length - 1) + '\u0002'; });
+      if (nr) { nr.lastIndex = 0; s = s.replace(nr, function (m, pre, k) { keep.push(k); return pre + '\u0001' + (keep.length - 1) + '\u0002'; }); }
+      s = s.replace(re, function (m, pre, k) { return pre + t[k]; });
+      if ((s.replace(/\u0001\d+\u0002/g, ' ').match(/[A-Za-z]*[a-z][A-Za-z]*/g) || []).filter(function (w) { return w.length > 1; }).length === 1) /* AM, PM, RM and codes are not words */ { var re1 = fragRe(l, t, true); if (re1) { re1.lastIndex = 0; s = s.replace(re1, function (m, pre, k) { return pre + t[k]; }); } }
+      return keep.length ? s.replace(/\u0001(\d+)\u0002/g, function (m, i) { return keep[+i]; }) : s;
+    }
+    /* a value inside a sentence ("Use {x} in the average"): translated only when the catalog knows it whole, so a name
+       such as "Palm Loft 12E" is never cut into words */
+    function val(v) {
+      var t = table(); if (!t || !/[A-Za-z]/.test(v)) return v;
+      var l = O.state.lang, m = String(v).match(/^(\s*)([\s\S]*?)(\s*)$/);
+      if (made[l] && made[l].has(m[2])) return v;
+      var x = isData(t, m[2]) ? null : decorated(l, t, m[2]);
+      if (x == null && !isData(t, m[2])) { var parts = m[2].split(SEP); if (parts.length > 1) x = runs(l, t, parts); } /* "A. Compared with B." */
+      return x != null ? m[1] + x + m[3] : v;
+    }
+    function isData(t, s) { return !!(data.set && data.set.has(s) && !own.call(t, s)); }
+    /* a text cut at " · ", ". " and the like: the longest runs of pieces the catalog knows go first ("A. B." where the
+       catalog has the two sentences together, or "A" + ". " where it has "A."), then each piece on its own */
+    function runs(l, t, parts) {
+      var out = '', n = (parts.length + 1) / 2, i = 0;
+      function sep(k) { var p = parts[2 * k + 1]; return l === 'zh' && p === ': ' ? '：' : p; }
+      while (i < n) {
+        var done = false;
+        for (var j = Math.min(n - 1, i + 6); j >= i && !done; j--) {
+          var s = parts.slice(2 * i, 2 * j + 1).join(''), x = null, dot = false;
+          if (j + 1 < n && parts[2 * j + 1] === '. ') { x = decorated(l, t, s + '.', j > i); dot = x != null; }
+          if (x == null) x = j === i && isData(t, s) ? s : decorated(l, t, s, j > i);
+          if (x != null) { out += x; if (j + 1 < n) out += dot ? (l === 'zh' ? '' : ' ') : sep(j); i = j + 1; done = true; }
+        }
+        if (!done) { out += frag(l, t, parts[2 * i]); if (i + 1 < n) out += sep(i); i++; }
+      }
+      return out;
+    }
+    /* O.tpl: a whole sentence from one catalog template; the slots are filled after the template is translated, so a
+       language can put them in its own order. {n} slots are numbers; other slots are translated only when the catalog
+       knows the value whole (names and the workspace's own words stay as they are). What it returns is already in the
+       language, so the DOM pass leaves it (and its text pieces) alone. */
+    var made = {};
+    function deent(x) { return x.replace(/&(amp|lt|gt|quot|#39);/g, function (m, e) { return { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e]; }); }
+    function tpl(en, v) {
+      v = v || {};
+      var t = table(), to = t && own.call(t, en) ? t[en] : null;
+      if (to != null) dataInfo();
+      /* "free [[a person with no open tasks]]": a note for translators where one English word has two meanings; never shown */
+      var r = (to != null ? to : en.replace(/ \[\[[^\]]*\]\]$/, '')).replace(/\{([a-z0-9_]+)\}/gi, function (m, nm) {
+        if (!own.call(v, nm)) return m;
+        if (v[nm] && typeof v[nm] === 'object' && own.call(v[nm], 'raw')) return String(v[nm].raw); /* HTML put in as it is: { raw: '<b>…</b>' } */
+        var x = v[nm] == null ? '' : String(v[nm]);
+        return to != null && nm !== 'n' ? val(x) : x;
+      });
+      return to != null ? keep(r) : r;
+    }
+    /* a text already in the language (sentences from O.tpl joined together): the DOM pass leaves it as it is */
+    function keep(r) {
+      var t = table(); if (!t || r == null) return r;
+      var l = O.state.lang, mk = made[l] || (made[l] = new Set());
+      if (mk.size > 20000) mk.clear();
+      r = String(r); mk.add(r.trim()); mk.add(deent(r).trim());
+      if (r.indexOf('<') >= 0) r.replace(/<[^>]*>/g, '\u0000').split('\u0000').forEach(function (p) { p = deent(p).trim(); if (p) mk.add(p); });
+      return r;
+    }
+    function tr(s) {
+      var t = table(); if (!t || s == null) return s;
+      s = String(s); if (!/[A-Za-z]/.test(s)) return s;
+      var l = O.state.lang;
+      if (made[l] && (made[l].has(s.trim()) || made[l].has(s.trim().replace(/[.。]$/, '')))) return s; /* O.tpl's own text, maybe with a full stop put after it */
+      dataInfo();
+      var c = caches[l] || (caches[l] = new Map());
+      if (c.has(s)) return c.get(s);
+      fragUsed = false;
+      var m = s.match(/^(\s*)([\s\S]*?)(\s*)$/), body = m[2], r = isData(t, body) ? body : decorated(l, t, body);
+      if (r == null) {
+        var parts = body.split(SEP);
+        if (parts.length > 1) r = runs(l, t, parts);
+        else r = frag(l, t, body);
+      }
+      r = m[1] + r + m[3];
+      /* tests (tests/i18n_e2e.mjs): the texts only translated piece by piece, which a whole-sentence template should cover */
+      if (fragUsed && window.ORBIQUE_I18N_DEBUG) (O.i18nPieced = O.i18nPieced || new Map()).set(s, r);
+      if (c.size > 20000) c.clear();
+      c.set(s, r); return r;
+    }
+    return { tr: tr, tpl: tpl, keep: keep, table: table, reset: function () { caches = {}; pats = {}; frags = {}; made = {}; } };
+  })();
+  /* O.tr('Save') -> 'Simpan' in Bahasa Malaysia; English (or an unknown string) comes back as it is */
+  O.tr = I.tr;
+  O.i18nReset = I.reset;
+  O.tpl = I.tpl;
+  O.i18nKeep = I.keep;
+  /* O.t: the menu's labels by page id (and any English string) */
+  O.t = function (key) { return Object.prototype.hasOwnProperty.call(NAV_EN, key) ? I.tr(NAV_EN[key]) : I.tr(key); };
+  /* the translations are separate files in the web build (O.I18N_URL, scripts/build.mjs): a language's file loads the
+     first time it is chosen (the service worker keeps it), English needs none; the single-file build has them inline */
+  O.i18nLoad = function (lang, done) {
+    if (lang === 'en' || O.I18N[lang]) { if (done) done(true); return; }
+    var url = O.I18N_URL && O.I18N_URL[lang]; if (!url) { if (done) done(false); return; }
+    var q = O.i18nLoad.q || (O.i18nLoad.q = {});
+    if (q[lang]) { if (done) q[lang].push(done); return; }
+    q[lang] = done ? [done] : [];
+    var sc = document.createElement('script'); sc.src = url; sc.async = true;
+    function end(ok) { var cbs = q[lang] || []; delete q[lang]; I.reset(); cbs.forEach(function (f) { f(ok && !!O.I18N[lang]); }); }
+    sc.onload = function () { end(true); }; sc.onerror = function () { sc.remove(); end(false); };
+    document.head.appendChild(sc);
   };
-  O.t = function (key) { return (NAV_I18N[O.state.lang] || NAV_I18N.en)[key] || NAV_I18N.en[key] || key; };
+  O.locale = function () { return O.LOCALES[O.state.lang] || 'en-MY'; };
+
+  /* dates: English keeps the app's own short forms ("6 Oct"); other languages use Intl */
+  (function () {
+    var d = O.d, base = { fmt: d.fmt, fmtY: d.fmtY, fmtRange: d.fmtRange, monthName: d.monthName, dowName: d.dowName }, fmts = {};
+    function utc(iso) { return new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10))); }
+    function F(opts) { var k = O.state.lang + JSON.stringify(opts); return fmts[k] || (fmts[k] = new Intl.DateTimeFormat(O.locale(), Object.assign({ timeZone: 'UTC' }, opts))); }
+    function intl() { return O.state && O.state.lang && O.state.lang !== 'en' && window.Intl && Intl.DateTimeFormat; }
+    O.fmtDate = function (iso, opts) { return F(opts).format(utc(iso)); };
+    d.fmt = function (iso) { return intl() && iso ? O.fmtDate(iso, { day: 'numeric', month: 'short' }) : base.fmt(iso); };
+    d.fmtY = function (iso) { return intl() && iso ? O.fmtDate(iso, { day: 'numeric', month: 'short', year: 'numeric' }) : base.fmtY(iso); };
+    d.fmtRange = function (a, b) { return intl() && a && b ? (F({ day: 'numeric', month: 'short' }).formatRange ? F({ day: 'numeric', month: 'short' }).formatRange(utc(a), utc(b)) : d.fmt(a) + ' – ' + d.fmt(b)) : base.fmtRange(a, b); };
+    d.monthName = function (iso, long) { return intl() && iso ? O.fmtDate(iso.slice(0, 7) + '-01', { month: long ? 'long' : 'short' }) : base.monthName(iso, long); };
+    d.dowName = function (iso) { return intl() && iso ? O.fmtDate(iso, { weekday: 'short' }) : base.dowName(iso); };
+    /* '15:00' or an ISO date-time -> '3:00 PM' in English, '3:00 PTG' / '下午3:00' in the chosen language */
+    var baseTime = O.fmt.time;
+    O.fmt.time = function (t, opts) {
+      if (!t || !intl()) return baseTime(t);
+      var hm = t.length > 5 ? t.slice(11, 16) : t; if (!/^\d\d:\d\d$/.test(hm)) return baseTime(t);
+      return F(Object.assign({ hour: 'numeric', minute: '2-digit' }, opts || {})).format(new Date(Date.UTC(2026, 0, 1, +hm.slice(0, 2), +hm.slice(3, 5))));
+    };
+  })();
+  /* "3 nights", "5m ago", "yesterday" in the chosen language */
+  (function () {
+    var plural = O.fmt.plural, ago = O.fmt.ago;
+    O.fmt.plural = function (n, one, many) {
+      var t = I.table(), k = '{n} ' + one;
+      if (t && Object.prototype.hasOwnProperty.call(t, k)) return t[k].replace('{n}', n);
+      return plural(n, one, many);
+    };
+    O.fmt.ago = function (iso) { return I.tr(ago(iso)); };
+    /* minutes -> "1h 45m" / "1 ঘ 45 মি", and "in 1h 45m" / "1 ঘ 45 মি পরে" */
+    O.fmt.dur = function (m) {
+      m = Math.max(0, Math.round(m)); var h = Math.floor(m / 60), r = m % 60;
+      return h ? (r ? O.tpl('{h}h {m}m', { h: h, m: r }) : O.tpl('{h}h', { h: h })) : O.tpl('{m}m', { m: r });
+    };
+    O.fmt.inDur = function (m) { return O.tpl('in {dur}', { dur: { raw: O.fmt.dur(m) } }); };
+    /* ['A', 'B', 'C'] -> 'A, B and C' ('A, B dan C', 'A、B和C') */
+    var lists = {};
+    O.fmt.andList = function (a) {
+      a = (a || []).filter(function (x) { return x != null && x !== ''; }).map(String);
+      var l = O.state && O.state.lang;
+      if (l && l !== 'en' && window.Intl && Intl.ListFormat) { try { return (lists[l] || (lists[l] = new Intl.ListFormat(O.locale(), { type: 'conjunction' }))).format(a); } catch (e) {} }
+      return a.length <= 1 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+    };
+  })();
+
+  /* the DOM: translate what the app draws, and put the English back when English is chosen again */
+  (function () {
+    var ATTRS = ['placeholder', 'title', 'aria-label', 'alt', 'data-tip'], SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, NOSCRIPT: 1, CODE: 1 };
+    var SKIP_SEL = '[data-no-i18n],[contenteditable=""],[contenteditable="true"]';
+    var texts = new WeakMap(), attrs = new WeakMap(), on = false;
+    function skipEl(el) { return SKIP[el.nodeName] || (el.hasAttribute && (el.hasAttribute('data-no-i18n') || (el.isContentEditable && el.getAttribute('contenteditable') !== null))); }
+    function text(n) {
+      var v = n.nodeValue, rec = texts.get(n), en = rec && v === rec[1] ? rec[0] : v;
+      if (!/[A-Za-z]/.test(en)) { if (rec) texts.delete(n); return; }
+      var out = on ? I.tr(en) : en;
+      if (out !== v) n.nodeValue = out;
+      if (out !== en) texts.set(n, [en, out]); else if (rec) texts.delete(n);
+    }
+    function attr(el) {
+      var m = attrs.get(el);
+      for (var i = 0; i < ATTRS.length; i++) {
+        var a = ATTRS[i], v = el.getAttribute(a); if (v == null) continue;
+        var rec = m && m[a], en = rec && v === rec[1] ? rec[0] : v;
+        if (!/[A-Za-z]/.test(en)) continue;
+        var out = on ? I.tr(en) : en;
+        if (out !== v) el.setAttribute(a, out);
+        if (out !== en) { if (!m) attrs.set(el, m = {}); m[a] = [en, out]; } else if (rec) delete m[a];
+      }
+      if (el.nodeName === 'INPUT' && (el.type === 'button' || el.type === 'submit') && el.value) { var r2 = m && m.value, en2 = r2 && el.value === r2[1] ? r2[0] : el.value, o2 = on ? I.tr(en2) : en2; if (o2 !== el.value) el.value = o2; if (o2 !== en2) { if (!m) attrs.set(el, m = {}); m.value = [en2, o2]; } }
+    }
+    function walk(root) {
+      if (!root) return;
+      if (root.nodeType === 3) { text(root); return; }
+      if (root.nodeType !== 1 && root.nodeType !== 11 && root.nodeType !== 9) return;
+      if (root.nodeType === 1) { if (skipEl(root)) return; attr(root); }
+      var w = document.createTreeWalker(root, 5, { acceptNode: function (n) { return n.nodeType === 1 && skipEl(n) ? 2 : 1; } }), n;
+      while ((n = w.nextNode())) { if (n.nodeType === 3) text(n); else attr(n); }
+    }
+    function inSkip(n) { var p = n.nodeType === 1 ? n : n.parentNode; return !p || !p.closest || !!p.closest(SKIP_SEL + ',script,style,textarea,noscript,code'); }
+    var mo = window.MutationObserver ? new MutationObserver(function (recs) {
+      if (!on && !recs.length) return;
+      for (var i = 0; i < recs.length; i++) {
+        var r = recs[i];
+        if (r.type === 'childList') { for (var j = 0; j < r.addedNodes.length; j++) { var n = r.addedNodes[j]; if (n.isConnected && !inSkip(n)) walk(n); } }
+        else if (r.type === 'characterData') { if (r.target.isConnected && !inSkip(r.target)) text(r.target); }
+        else if (r.type === 'attributes') { if (r.target.isConnected && !inSkip(r.target)) attr(r.target); }
+      }
+    }) : null;
+    var observing = false;
+    O.i18nApply = function (root) {
+      on = !!I.table();
+      walk(root || document.body);
+      if (on && !observing && mo && document.body) { mo.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS }); observing = true; }
+      document.documentElement.lang = (O.state.lang === 'zh' ? 'zh-Hant' : O.state.lang) || 'en';
+    };
+    /* the browser's own boxes */
+    ['alert', 'confirm', 'prompt'].forEach(function (k) {
+      var f = window[k]; if (typeof f !== 'function') return;
+      window[k] = function (msg) { var a = [].slice.call(arguments); if (a.length) a[0] = I.tr(msg); return f.apply(window, a); };
+    });
+  })();
 
   /* ===================================================================
      ROUTER + SHELL
@@ -2074,14 +2402,14 @@
   }
   O.notifications = function () {
     var out = [], P = function (id) { return D.propById[id] ? D.propById[id].short : 'Unknown unit'; };
-    D.bookings.filter(function (b) { return b.sameDay && b.checkIn === D.TODAY && b.status !== 'cancelled'; }).forEach(function (b) { out.push({ icon: '⚡', tone: 'warn', t: 'Same-day booking: ' + b.guest.name, s: P(b.propertyId) + ' · confirmed ' + O.fmt.time(b.createdAt) + ', arrives ' + O.fmt.time(b.checkInTime), go: ['dashboard'] }); });
+    D.bookings.filter(function (b) { return b.sameDay && b.checkIn === D.TODAY && b.status !== 'cancelled'; }).forEach(function (b) { out.push({ icon: '⚡', tone: 'warn', t: O.tpl('Same-day booking: {guest}', { guest: b.guest.name }), s: O.tpl('{unit} · confirmed {time}, arrives {time2}', { unit: P(b.propertyId), time: O.fmt.time(b.createdAt), time2: O.fmt.time(b.checkInTime) }), go: ['dashboard'] }); });
     var nr = D.reviews.filter(function (r) { return !r.reply; });
-    if (nr.length && O.can('reviews')) out.push({ icon: '★', tone: 'bad', t: nr.length + ' reviews need a reply', s: nr.filter(function (r) { return r.stars <= 3; }).length + ' of them are 3 stars or lower', go: ['reviews', { needsReply: true }] });
+    if (nr.length && O.can('reviews')) out.push({ icon: '★', tone: 'bad', t: O.tpl('{n} reviews need a reply', { n: nr.length }), s: O.tpl('{n} of them are 3 stars or lower', { n: nr.filter(function (r) { return r.stars <= 3; }).length }), go: ['reviews', { needsReply: true }] });
     var mine = function (t) { return O.can('tasks.others') || O.taskwho.has(t, O.state.viewer); };
-    D.tasks.filter(function (t) { return t.status !== 'done' && t.due.slice(0, 10) < D.TODAY && mine(t); }).forEach(function (t) { out.push({ icon: '⏰', tone: 'bad', t: 'Overdue: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
-    if (O.can('tasks.assign')) D.tasks.filter(function (t) { return t.status !== 'done' && O.taskwho.none(t); }).forEach(function (t) { out.push({ icon: '👤', tone: 'warn', t: 'Unassigned task: ' + t.title, s: (t.propertyId ? P(t.propertyId) : 'General') + ' · due ' + O.fmt.dateTime(t.due), go: ['tasks'] }); });
-    if (O.can('invoices')) D.bookings.filter(function (b) { return b.status !== 'cancelled' && !b.invoiceSent && b.invoiceNo && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (b) { out.push({ icon: '🧾', tone: '', t: 'Invoice not sent: ' + b.guest.name, s: b.invoiceNo + ' · ' + O.fmt.money(b.total, { cur: b }), go: ['invoices'] }); });
-    if (O.can('bookings')) D.bookings.filter(function (b) { return b.status === 'pending'; }).slice(0, 2).forEach(function (b) { out.push({ icon: '⏳', tone: 'warn', t: 'Pending booking: ' + b.guest.name, s: P(b.propertyId) + ' · ' + d.fmtRange(b.checkIn, b.checkOut), go: ['bookings'] }); });
+    D.tasks.filter(function (t) { return t.status !== 'done' && t.due.slice(0, 10) < D.TODAY && mine(t); }).forEach(function (t) { out.push({ icon: '⏰', tone: 'bad', t: O.tpl('Overdue: {task}', { task: t.title }), s: O.tpl('{unit} · due {when}', { unit: t.propertyId ? P(t.propertyId) : O.tr('General'), when: O.fmt.dateTime(t.due) }), go: ['tasks'] }); });
+    if (O.can('tasks.assign')) D.tasks.filter(function (t) { return t.status !== 'done' && O.taskwho.none(t); }).forEach(function (t) { out.push({ icon: '👤', tone: 'warn', t: O.tpl('Unassigned task: {task}', { task: t.title }), s: O.tpl('{unit} · due {when}', { unit: t.propertyId ? P(t.propertyId) : O.tr('General'), when: O.fmt.dateTime(t.due) }), go: ['tasks'] }); });
+    if (O.can('invoices')) D.bookings.filter(function (b) { return b.status !== 'cancelled' && !b.invoiceSent && b.invoiceNo && b.createdAt.slice(0, 10) >= d.add(D.TODAY, -1); }).forEach(function (b) { out.push({ icon: '🧾', tone: '', t: O.tpl('Invoice not sent: {guest}', { guest: b.guest.name }), s: b.invoiceNo + ' · ' + O.fmt.money(b.total, { cur: b }), go: ['invoices'] }); });
+    if (O.can('bookings')) D.bookings.filter(function (b) { return b.status === 'pending'; }).slice(0, 2).forEach(function (b) { out.push({ icon: '⏳', tone: 'warn', t: O.tpl('Pending booking: {guest}', { guest: b.guest.name }), s: P(b.propertyId) + ' · ' + d.fmtRange(b.checkIn, b.checkOut), go: ['bookings'] }); });
     (O.notifiers || []).forEach(function (fn) { try { out.push.apply(out, fn() || []); } catch (e) { console.error(e); } });
     return out;
   };
@@ -2154,7 +2482,7 @@
       var b = e.target.closest('[data-viewer]'); if (!b) return; O.$('#viewer-menu').classList.remove('open'); O.state.viewer = b.dataset.viewer; O.store.set('viewer', O.state.viewer); U.toast('Now viewing as ' + O.viewer().name + ' (' + O.viewer().roleLabel + ')'); O.emit('viewer');
     });
     U.closeOnOutside(O.$('#lang-btn'), O.$('#lang-menu'));
-    O.$('#lang-menu').addEventListener('click', function (e) { var b = e.target.closest('[data-lang]'); if (!b) return; O.$('#lang-menu').classList.remove('open'); O.state.lang = b.dataset.lang; O.store.set('lang', O.state.lang); O.emit('lang'); });
+    O.$('#lang-menu').addEventListener('click', function (e) { var b = e.target.closest('[data-lang]'); if (!b) return; O.$('#lang-menu').classList.remove('open'); var l = b.dataset.lang; O.state.lang = l; O.store.set('lang', l); O.emit('lang'); O.i18nLoad(l, function (ok) { if (ok && O.state.lang === l) O.emit('lang'); }); });
     U.closeOnOutside(O.$('#bell-btn'), O.$('#bell-menu'));
     O.$('#bell-btn').addEventListener('click', function () {
       paintShell();
@@ -2187,6 +2515,9 @@
       return;
     }
     O.state.lang = O.store.get('lang', 'en');
+    if (!O.I18N[O.state.lang] && !(O.I18N_URL && O.I18N_URL[O.state.lang])) O.state.lang = 'en';
+    else if (!O.I18N[O.state.lang]) { var bootLang = O.state.lang; O.i18nLoad(bootLang, function (ok) { if (O.state.lang !== bootLang) return; if (!ok) O.state.lang = 'en'; O.emit('lang'); }); }
+    O.i18nApply(); O.on('lang', function () { O.i18nApply(); }); /* after the shell and the page have redrawn */
     var savedWs = O.store.get('workspace', 'orbique'); if (O.workspaces[savedWs]) O.state.workspace = savedWs;
     Object.keys(O.workspaces).forEach(function (k) { var sl = O.store.get('logo:' + k, null); if (sl && sl.logo) { O.workspaces[k].logo = sl.logo; O.workspaces[k].logoName = sl.name; } });
     var savedBrand = O.store.get('brand:' + O.state.workspace, null); if (savedBrand && savedBrand.primary) O.ws().brand = savedBrand;

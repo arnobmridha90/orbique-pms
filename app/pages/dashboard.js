@@ -166,7 +166,7 @@
   function andList(a) { return a.length <= 1 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
   function ord(n) { var s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
   function mins(iso) { return Date.parse(iso.slice(0, 16) + ':00Z') / 6e4; } /* 'YYYY-MM-DDTHH:MM' -> minutes */
-  function dur(m) { m = Math.max(0, Math.round(m)); var h = Math.floor(m / 60), r = m % 60; return h ? h + 'h' + (r ? ' ' + r + 'm' : '') : r + 'm'; }
+  function dur(m) { return O.fmt.dur(m); }
   function firstName(name) { var w = String(name || '').trim().split(/\s+/); return w.length > 2 ? w.slice(0, -1).join(' ') : (w[0] || 'there'); } /* 'Mei Fen Lim' -> 'Mei Fen' */
   function prop(pid) { return D.propById[pid] || { short: pid ? 'Removed unit' : 'General', name: pid ? 'Removed unit' : 'General' }; }
   function staffName(id) { var s = id && D.staffById(id); return s ? s.name : 'Unassigned'; }
@@ -176,12 +176,13 @@
   function sayTime(hm) {
     if (!hm) return ''; hm = hm.length > 5 ? hm.slice(11, 16) : hm;
     var h = +hm.slice(0, 2), m = hm.slice(3, 5);
+    if (O.state.lang && O.state.lang !== 'en') return O.fmt.time(hm, m === '00' ? { minute: undefined } : null); /* '下午3時', '3 PTG' */
     if (m === '00' && h === 12) return 'noon';
     if (m === '00' && h === 0) return 'midnight';
     return ((h % 12) || 12) + (m === '00' ? '' : ':' + m) + ' ' + (h < 12 ? 'AM' : 'PM');
   }
   function partOfDay() { var h = +String(D.NOW_TIME || '09:00').slice(0, 2); return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening'; }
-  function longDate(iso) { return DAYS_LONG[d.dow(iso)] + ' ' + d.day(iso) + ' ' + d.monthName(iso, true); }
+  function longDate(iso) { return O.state.lang && O.state.lang !== 'en' ? O.fmtDate(iso, { weekday: 'long', day: 'numeric', month: 'long' }) : DAYS_LONG[d.dow(iso)] + ' ' + d.day(iso) + ' ' + d.monthName(iso, true); }
   function sayDate(iso) { return DAYS_LONG[d.dow(iso)] + ' the ' + ord(d.day(iso)) + ' of ' + d.monthName(iso, true); }
   function pctWord(c) { return Math.round(Math.abs(c) * 100); }
   function safe(fn, dflt) { try { var v = fn(); return v == null ? dflt : v; } catch (e) { return dflt; } }
@@ -269,11 +270,94 @@
   function moneyPhrase(mm) {
     if (mm.change == null) return '';
     var p = pctWord(mm.change);
-    return p === 0 ? 'about the same as the same days in ' + mm.pmon : p + '% ' + (mm.change > 0 ? 'above' : 'below') + ' the same days in ' + mm.pmon;
+    return p === 0 ? O.tpl('about the same as the same days in {month}', { month: mm.pmon }) : O.tpl(mm.change > 0 ? '{pct}% above the same days in {month}' : '{pct}% below the same days in {month}', { pct: p, month: mm.pmon });
   }
 
   /* ------------------------------------------------------------------ the brief (read aloud) */
+  /* the brief in another language: the same facts, each sentence one catalog template (English keeps the spoken style
+     below, with words for numbers and "the 6th of October") */
+  function briefOther(m) {
+    var s = [], p = m.perm, T = O.tpl, pl = fmt.plural, list = O.fmt.andList;
+    s.breaks = [];
+    function topic() { if (s.length && s.breaks.indexOf(s.length) < 0) s.breaks.push(s.length); }
+    var pod = partOfDay();
+    s.push(T(pod === 'morning' ? 'Good morning, {name}.' : pod === 'afternoon' ? 'Good afternoon, {name}.' : 'Good evening, {name}.', { name: m.first }));
+    s.push(T('It is {date}, {time}.', { date: O.fmtDate(m.t, { weekday: 'long', day: 'numeric', month: 'long' }), time: sayTime(m.time) }));
+    if (m.empty) {
+      topic();
+      s.push(O.tr('Your workspace is ready, but it has no properties yet.'));
+      s.push(O.tr(p.addProperty ? 'Add your first property, then your bookings, and I\'ll brief you on each day from here.' : 'Once your properties and bookings are added, I\'ll brief you on each day from here.'));
+      return s;
+    }
+    var at = function (b) { return T('{guest} at {unit}', { guest: b.guest.name, unit: prop(b.propertyId).short }); };
+    if (p.stays) {
+      topic();
+      var nA = m.allArrivals.length, nS = m.sameDay.length;
+      if (!nA) s.push(O.tr('No guests arrive today.'));
+      else {
+        s.push(T('{count} arriving today.', { count: pl(nA, 'guest') }));
+        if (nS) s.push(T('Same-day bookings: {n}.', { n: nS }));
+        if (m.nextArrival) {
+          var t0 = m.nextArrival.checkInTime, next = m.allArrivals.filter(function (b) { return b.checkInTime === t0; });
+          s.push(T('Next up, at {time}: {who}.', { time: sayTime(t0), who: next.length <= 2 ? list(next.map(at)) : pl(next.length, 'guest') }));
+        }
+        var r = m.ready;
+        if (r.noClean.length) s.push(T('No clean booked yet: {list}.', { list: r.noClean.length <= 2 ? list(r.noClean.map(function (b) { return prop(b.propertyId).short; })) : pl(r.noClean.length, 'unit') }));
+        if (r.prep.length) s.push(T('Unit prep still under way: {count}.', { count: pl(r.prep.length, 'unit') }));
+        if (r.id.length) s.push(T('ID check still to do: {list}.', { list: r.id.length <= 3 ? list(r.id.map(function (b) { return b.guest.name; })) : pl(r.id.length, 'guest') }));
+        if (!r.noClean.length && !r.prep.length && !r.id.length) s.push(O.tr(nA === 1 ? 'Their unit is ready.' : 'Every arrival is ready.'));
+      }
+      var nD = m.departures.length, nG = m.gone.length;
+      if (!nD) s.push(O.tr('No one checks out today.'));
+      else s.push(nG ? T('{count} checking out today, {n} already left.', { count: pl(nD, 'guest'), n: nG }) : T('{count} checking out today.', { count: pl(nD, 'guest') }));
+      if (m.inHouse.length) s.push(T('{count} staying on tonight.', { count: pl(m.inHouse.length, 'other guest') }));
+    }
+    var task = function (x) { var u = x.propertyId ? prop(x.propertyId).short : ''; return u ? T('{task} at {unit}', { task: x.title || O.tr('Task'), unit: u }) : String(x.title || O.tr('Task')); };
+    var when = function (x) {
+      var day = x.due.slice(0, 10), hm = x.due.slice(11, 16);
+      if (day < m.t) return d.diff(day, m.t) === 1 ? O.tr('overdue since yesterday') : T('overdue since {when}', { when: d.fmt(day) });
+      return x.due < m.now ? T('late since {time}', { time: sayTime(hm) }) : T('due {time}', { time: sayTime(hm) });
+    };
+    if (p.tasks) {
+      topic();
+      var n = m.tasks.length, od = m.overdue.length, first = m.tasks[0];
+      if (!n) s.push(O.tr(p.others ? 'There are no open tasks today.' : 'You have no open tasks today.'));
+      else {
+        s.push(od ? T('Open tasks today: {n}, {od} overdue.', { n: n, od: od }) : T('Open tasks today: {n}.', { n: n }));
+        if (!p.others) s.push(T('First up: {task}, {when}.', { task: task(first), when: when(first) }));
+        else {
+          if (od && od <= 2) s.push(T('Overdue: {list}.', { list: list(m.overdue.map(task)) }));
+          if (m.unassigned.length) s.push(T('Not assigned to anyone yet: {n}.', { n: m.unassigned.length }));
+        }
+      }
+    }
+    var att = [];
+    if (p.inbox && m.unread) att.push(m.unreadChats > 1 ? T('Unread guest messages: {n}, in {chats} conversations.', { n: m.unread, chats: m.unreadChats }) : T('Unread guest messages: {n}.', { n: m.unread }));
+    if (p.reviews && m.needReply.length) att.push(T('Reviews waiting for a reply: {n}.', { n: m.needReply.length }));
+    if (p.inventory && m.low.length) {
+      var names = m.low.map(invName).filter(Boolean);
+      att.push(names.length && m.low.length <= 3 ? T('Stock running low: {list}.', { list: list(names) }) : T('Stock items running low: {n}.', { n: m.low.length }));
+    }
+    if (p.inventory && m.overuse.length) {
+      var ot = String(m.overuse[0].text || '').replace(/[.\s。]+$/, '');
+      att.push(m.overuse.length === 1 ? T('Usage warning: {text}.', { text: ot }) : T('Usage warnings: {n}. The first: {text}.', { n: m.overuse.length, text: ot }));
+    }
+    if (!att.length && (p.inbox || p.reviews)) att.push(O.tr(p.inbox && p.reviews ? 'Your inbox and reviews are all caught up.' : p.inbox ? 'Your inbox is all caught up.' : 'Every review has a reply.'));
+    if (att.length) topic();
+    s.push.apply(s, att);
+    if (m.money) {
+      topic();
+      var mm = m.money, pc = mm.change == null ? null : pctWord(mm.change);
+      s.push(T('{month} so far: {amount} in revenue.', { month: mm.mon, amount: fmt.money(mm.cur) }));
+      if (pc != null) s.push(pc === 0 ? T('About the same as the same days in {month}.', { month: mm.pmon }) : T(mm.change > 0 ? '{pct}% above the same days in {month}.' : '{pct}% below the same days in {month}.', { pct: pc, month: mm.pmon }));
+    }
+    topic();
+    s.push(O.tr('That\'s everything for now.'));
+    s.push(O.tr(pod === 'morning' ? 'Have a good morning.' : pod === 'afternoon' ? 'Have a good afternoon.' : 'Have a good evening.'));
+    return s;
+  }
   function briefSentences(m) {
+    if (O.state.lang && O.state.lang !== 'en') return briefOther(m);
     var s = [], p = m.perm;
     s.breaks = []; /* where a new topic starts: the panel shows each topic as its own short paragraph */
     function topic() { if (s.length && s.breaks.indexOf(s.length) < 0) s.breaks.push(s.length); }
@@ -363,6 +447,7 @@
   /* the same sentence, ready for the speech engine: money in ringgit, decimals spoken, no stray full stops inside a sentence
      (core's O.voice.speak splits on . ! ? so each sentence stays one part and the highlight follows it) */
   function speakable(s) {
+    if (O.state.lang && O.state.lang !== 'en') { var u = String(s).trim().replace(/[–—]/g, ', ').replace(/[.!?。！？]+$/, ''); return u.replace(/[.!?](?=\s)/g, ',') + (O.state.lang === 'zh' ? '。' : '.'); } /* a voice of the language reads the money and decimals its own way */
     var t = String(s).trim()
       .replace(/RM\s?([\d,]+(?:\.\d+)?)/g, '$1 ringgit')
       .replace(new RegExp(fmt.cur().replace(/[$.]/g, '\\$&') + '\\s?([\\d,]+(?:\\.\\d+)?)', 'g'), '$1 ' + O.viewCur())
@@ -453,14 +538,15 @@
   /* ------------------------------------------------------------------ cards */
   function heroHTML(m) {
     var p = m.perm, bits = [];
-    if (p.stays) bits.push(fmt.plural(m.allArrivals.length, 'arrival') + (m.sameDay.length ? ' (' + m.sameDay.length + ' same-day)' : ''), fmt.plural(m.departures.length, 'departure'));
-    if (p.tasks) bits.push(fmt.plural(m.tasks.length, p.others ? 'open task' : 'task for you', p.others ? 'open tasks' : 'tasks for you') + (m.overdue.length ? ' (' + m.overdue.length + ' overdue)' : ''));
+    if (p.stays) bits.push(m.sameDay.length ? O.tpl('{count} ({n} same-day)', { count: fmt.plural(m.allArrivals.length, 'arrival'), n: m.sameDay.length }) : fmt.plural(m.allArrivals.length, 'arrival'), fmt.plural(m.departures.length, 'departure'));
+    var tk = fmt.plural(m.tasks.length, p.others ? 'open task' : 'task for you', p.others ? 'open tasks' : 'tasks for you');
+    if (p.tasks) bits.push(m.overdue.length ? O.tpl('{count} ({n} overdue)', { count: tk, n: m.overdue.length }) : tk);
     if (p.inbox && m.unread) bits.push(fmt.plural(m.unread, 'unread message'));
-    var sum = bits.length ? cap(andList(bits)) + ' today.' : 'Here is what matters today.';
+    var sum = bits.length ? cap(O.tpl('{list} today.', { list: O.fmt.andList(bits) })) : O.tr('Here is what matters today.');
     var foot = '';
     if (m.money) {
       var mm = m.money, ph = moneyPhrase(mm);
-      foot += '<div class="dsh-money" title="Revenue earned on nights from ' + esc(d.fmtRange(mm.from, mm.to)) + ', compared with ' + esc(d.fmtRange(mm.pfrom, mm.pto)) + ' (' + esc(fmt.money(mm.prev)) + ')' + (O.multiCur() ? ', units in ' + esc(O.viewCur()) + ' only' : '') + '"><span>' + esc(mm.mon) + ' so far</span><b>' + fmt.money(mm.cur) + '</b>' +
+      foot += '<div class="dsh-money" title="' + esc(O.tpl(O.multiCur() ? 'Revenue earned on nights from {range}, compared with {prev} ({amount}), units in {cur} only' : 'Revenue earned on nights from {range}, compared with {prev} ({amount})', { range: d.fmtRange(mm.from, mm.to), prev: d.fmtRange(mm.pfrom, mm.pto), amount: fmt.money(mm.prev), cur: O.viewCur() })) + '"><span>' + esc(O.tpl('{month} so far', { month: mm.mon })) + '</span><b>' + fmt.money(mm.cur) + '</b>' +
         (ph ? '<span class="delta ' + (pctWord(mm.change) === 0 ? 'flat' : mm.change > 0 ? 'good' : 'bad') + '">' + (pctWord(mm.change) === 0 ? '± ' : mm.change > 0 ? '▲ ' : '▼ ') + esc(ph) + '</span>' : '') + O.curSwitchHTML() + '</div>';
     }
     var links = (p.stays || p.tasks ? '<button type="button" class="btn btn-quiet btn-sm" data-act="runsheet" title="Download today\'s run sheet (PDF): arrivals, departures and open tasks">' + O.icon('printer') + 'Run sheet</button>' : '') +
@@ -481,7 +567,7 @@
   function rowAttr(b, m) { return m.perm.openBooking ? ' data-row="' + esc(b.id) + '"' : ''; }
   function moreBtn(key, total, shown, noun) {
     if (total <= (CAP[key] || 6) + 1) return '';
-    return '<button type="button" class="dsh-more" data-more="' + key + '" aria-expanded="' + !!st.more[key] + '">' + (st.more[key] ? 'Show fewer' : 'Show ' + (total - shown) + ' more ' + noun) + '</button>';
+    return '<button type="button" class="dsh-more" data-more="' + key + '" aria-expanded="' + !!st.more[key] + '">' + esc(st.more[key] ? O.tr('Show fewer') : O.tpl({ 'check-ins': 'Show {n} more check-ins', guests: 'Show {n} more guests', tasks: 'Show {n} more tasks' }[noun] || 'Show {n} more', { n: total - shown })) + '</button>';
   }
   function cut(list, key) { var n = CAP[key] || 6; return st.more[key] || list.length <= n + 1 ? list : list.slice(0, n); }
   function cleanNeeded(b) { return safe(function () { return O.readiness(b); }, []).some(function (r) { return r.key === 'clean' && r.label === 'No clean booked'; }); }
@@ -491,8 +577,8 @@
   function arrivalRow(b, m, sameDay) {
     var left = mins(b.checkIn + 'T' + (b.checkInTime || '15:00')) - mins(m.now);
     var p = prop(b.propertyId);
-    var when = '<b>' + esc(fmt.time(b.checkInTime)) + '</b><span' + (sameDay && left > 0 && left < 60 ? ' class="bad"' : sameDay && left > 0 && left < 180 ? ' class="warn"' : '') + '>' + (left > 0 ? 'in ' + dur(left) : 'Check-in open') + '</span>';
-    var sub = sameDay ? 'Booked ' + esc(fmt.time(b.createdAt)) + ' · ' + dur(mins(b.checkIn + 'T' + (b.checkInTime || '15:00')) - mins(b.createdAt)) + ' notice' : esc(fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest'));
+    var when = '<b>' + esc(fmt.time(b.checkInTime)) + '</b><span' + (sameDay && left > 0 && left < 60 ? ' class="bad"' : sameDay && left > 0 && left < 180 ? ' class="warn"' : '') + '>' + (left > 0 ? esc(O.fmt.inDur(left)) : 'Check-in open') + '</span>';
+    var sub = sameDay ? esc(O.tpl('Booked {time} · {dur} notice', { time: fmt.time(b.createdAt), dur: dur(mins(b.checkIn + 'T' + (b.checkInTime || '15:00')) - mins(b.createdAt)) })) : esc(fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest'));
     return '<div class="dsh-r' + (sameDay ? ' sd' : '') + '"' + rowAttr(b, m) + '><div class="dsh-tm">' + when + '</div>' +
       '<div style="min-width:0"><div class="dsh-nm">' + U.platIcon(b.channel) + guestName(b, m) + '<span class="u">' + esc(p.short) + '</span></div>' +
       '<div class="dsh-sb">' + sub + '</div>' + safe(function () { return O.readinessHTML(b); }, '') + '</div>' +
@@ -505,7 +591,7 @@
   }
   function arrivalsHTML(m) {
     var list = m.arrivals, shown = cut(list, 'arrivals');
-    var sub = m.sameDay.length ? 'On this morning\'s list · ' + fmt.plural(m.sameDay.length, 'same-day booking') + ' shown separately' : 'On this morning\'s list · no same-day bookings so far';
+    var sub = m.sameDay.length ? O.tpl('On this morning\'s list · {count} shown separately', { count: fmt.plural(m.sameDay.length, 'same-day booking') }) : 'On this morning\'s list · no same-day bookings so far';
     var cal = O.allowed('calendar') ? '<button type="button" class="btn btn-quiet btn-sm" data-go="calendar">' + O.icon('calendar') + 'Calendar</button>' : '';
     return '<section class="card" data-card="arrivals">' + head('Check-ins today', list.length, sub, cal) +
       (list.length ? shown.map(function (b) { return arrivalRow(b, m, false); }).join('') + moreBtn('arrivals', list.length, shown.length, 'check-ins') : '<div class="dsh-quiet">No check-ins were expected today.</div>') + '</section>';
@@ -522,11 +608,11 @@
     var rows = list.map(function (b) {
       var p = prop(b.propertyId), gone = m.gone.indexOf(b) >= 0, task = turnoverFor(b);
       var next = D.bookings.filter(function (x) { return live(x) && x.propertyId === b.propertyId && x.checkIn === b.checkOut && x.id !== b.id && x.createdAt <= m.now; })[0];
-      var turn = task ? 'Turnover' + (!O.taskwho.none(task) ? ' · ' + esc(O.taskPeople(task)) : ' · unassigned') + ' · ' + (task.status === 'done' ? 'done' : task.status === 'in_progress' ? 'in progress ' + progressText(task) : 'not started')
+      var turn = task ? esc(O.tr('Turnover')) + ' · ' + (!O.taskwho.none(task) ? '<span data-no-i18n>' + esc(O.taskPeople(task)) + '</span>' : esc(O.tr('unassigned'))) + ' · ' + esc(task.status === 'done' ? O.tr('done') : task.status === 'in_progress' ? O.tpl('in progress {done}', { done: progressText(task) }) : O.tr('not started'))
         : (next ? '<span class="dsh-sb warn" style="margin:0">No turnover clean booked</span>' : 'No turnover task');
       return '<div class="dsh-r"' + rowAttr(b, m) + '><div class="dsh-tm"><b>' + esc(fmt.time(b.checkOutTime)) + '</b><span>' + (gone ? 'Checked out' : 'Due out') + '</span></div>' +
         '<div style="min-width:0"><div class="dsh-nm">' + U.platIcon(b.channel) + guestName(b, m) + '<span class="u">' + esc(p.short) + '</span></div>' +
-        '<div class="dsh-sb">' + turn + (next ? ' · next guest ' + esc(sayTime(next.checkInTime)) : '') + '</div></div><div class="dsh-act"></div></div>';
+        '<div class="dsh-sb">' + turn + (next ? ' · ' + esc(O.tpl('next guest {time}', { time: sayTime(next.checkInTime) })) : '') + '</div></div><div class="dsh-act"></div></div>';
     }).join('');
     return '<section class="card" data-card="departures">' + head('Check-outs today', list.length, sub) + (rows || '<div class="dsh-quiet">No one checks out today.</div>') + '</section>';
   }
@@ -544,20 +630,20 @@
   function tasksHTML(m) {
     var p = m.perm, list = m.tasks, shown = cut(list, 'tasks');
     var title = p.others ? 'Today\'s tasks' : 'Your tasks today';
-    var sub = list.length ? 'Still to do' + (m.overdue.length ? ' · <span style="color:var(--bad);font-weight:700">' + m.overdue.length + ' overdue</span>' : '') + (m.unassigned.length ? ' · <span style="color:var(--warn);font-weight:700">' + m.unassigned.length + ' unassigned</span>' : '') : '';
+    var sub = list.length ? esc(O.tr('Still to do')) + (m.overdue.length ? ' · <span style="color:var(--bad);font-weight:700">' + esc(O.tpl('{n} overdue', { n: m.overdue.length })) + '</span>' : '') + (m.unassigned.length ? ' · <span style="color:var(--warn);font-weight:700">' + esc(O.tpl('{n} unassigned', { n: m.unassigned.length })) + '</span>' : '') : '';
     var all = '<button type="button" class="btn btn-quiet btn-sm" data-go="tasks">' + O.icon('tasks') + 'All tasks</button>';
     var rows = shown.map(function (x) {
       var od = x.due.slice(0, 10) < m.t, late = !od && x.due < m.now;
       var where = x.propertyId ? prop(x.propertyId).short : 'General';
-      var when = od ? '<b>' + esc(fmt.time(x.due)) + '</b><span class="bad">Overdue</span><span>since ' + esc(d.fmt(x.due.slice(0, 10))) + '</span>'
-        : '<b>' + esc(fmt.time(x.due)) + '</b>' + (late ? '<span class="warn">Late</span>' : '<span>in ' + dur(mins(x.due) - mins(m.now)) + '</span>');
+      var when = od ? '<b>' + esc(fmt.time(x.due)) + '</b><span class="bad">Overdue</span><span>' + esc(O.tpl('since {date}', { date: d.fmt(x.due.slice(0, 10)) })) + '</span>'
+        : '<b>' + esc(fmt.time(x.due)) + '</b>' + (late ? '<span class="warn">Late</span>' : '<span>' + esc(O.fmt.inDur(mins(x.due) - mins(m.now))) + '</span>');
       var prog = progressText(x);
-      var state = x.status === 'in_progress' ? 'In progress' + (prog ? ' ' + prog : '') : 'Not started';
+      var state = x.status === 'in_progress' ? (prog ? O.tpl('In progress {done}', { done: prog }) : 'In progress') : 'Not started';
       var who = p.others ? (!O.taskwho.none(x) ? esc(O.taskPeople(x)) : '<span style="color:var(--warn);font-weight:700">Unassigned</span>') + ' · ' : '';
-      var assign = O.taskwho.none(x) && p.assign ? '<select class="select unassigned" data-assign="' + esc(x.id) + '" aria-label="Assign ' + esc(x.title + ' at ' + where) + '"><option value="">Assign to…</option>' + staffOptions() + '</select>' : '';
+      var assign = O.taskwho.none(x) && p.assign ? '<select class="select unassigned" data-assign="' + esc(x.id) + '" aria-label="' + esc(O.tpl('Assign {task} at {unit}', { task: x.title, unit: where })) + '"><option value="">Assign to…</option>' + staffOptions() + '</select>' : '';
       var mine = O.taskwho.has(x, m.viewer.id) || p.others;
-      var act = p.taskEdit && mine ? (x.status === 'todo' ? '<button type="button" class="btn btn-ghost btn-sm" data-act="start" data-t="' + esc(x.id) + '" aria-label="Start ' + esc(x.title + ' at ' + where) + '">' + O.icon('play') + '<span class="lbl">Start</span></button>'
-        : '<button type="button" class="btn btn-ghost btn-sm" data-act="done" data-t="' + esc(x.id) + '" aria-label="Mark ' + esc(x.title + ' at ' + where) + ' done">' + O.icon('check') + '<span class="lbl">Done</span></button>') : '';
+      var act = p.taskEdit && mine ? (x.status === 'todo' ? '<button type="button" class="btn btn-ghost btn-sm" data-act="start" data-t="' + esc(x.id) + '" aria-label="' + esc(O.tpl('Start {task} at {unit}', { task: x.title, unit: where })) + '">' + O.icon('play') + '<span class="lbl">Start</span></button>'
+        : '<button type="button" class="btn btn-ghost btn-sm" data-act="done" data-t="' + esc(x.id) + '" aria-label="' + esc(O.tpl('Mark {task} at {unit} done', { task: x.title, unit: where })) + '">' + O.icon('check') + '<span class="lbl">Done</span></button>') : '';
       return '<div class="dsh-r tk' + (od ? ' od' : '') + '"><div class="dsh-tm">' + when + '</div>' +
         '<div style="min-width:0"><div class="dsh-nm"><span>' + esc(x.title) + '</span><span class="u">' + esc(where) + '</span></div>' +
         '<div class="dsh-sb">' + who + esc(state) + '</div>' + assign + '</div>' +
@@ -575,22 +661,22 @@
     var p = m.perm, out = [];
     if (p.inbox && m.unread) {
       var g = m.latestChat && m.latestChat.bookingId ? D.booking(m.latestChat.bookingId) : null;
-      out.push({ tone: 'info', icon: 'chat', t: fmt.plural(m.unread, 'unread guest message'), s: 'In ' + fmt.plural(m.unreadChats, 'conversation') + (g ? ' · latest from ' + g.guest.name : ''), go: ['inbox'] });
+      out.push({ tone: 'info', icon: 'chat', t: fmt.plural(m.unread, 'unread guest message'), s: O.tpl(g ? 'In {count} · latest from {guest}' : 'In {count}', { count: fmt.plural(m.unreadChats, 'conversation'), guest: g ? g.guest.name : '' }), go: ['inbox'] });
     }
-    if (p.reviews && m.needReply.length) out.push({ tone: m.lowReviews.length ? 'bad' : 'warn', icon: 'star', t: fmt.plural(m.needReply.length, 'review needs', 'reviews need') + ' a reply', s: m.lowReviews.length ? m.lowReviews.length + ' rated 3 stars or lower' : 'All rated 4 stars or higher', go: ['reviews', { needsReply: true }] });
+    if (p.reviews && m.needReply.length) out.push({ tone: m.lowReviews.length ? 'bad' : 'warn', icon: 'star', t: O.tpl(m.needReply.length === 1 ? '{n} review needs a reply' : '{n} reviews need a reply', { n: m.needReply.length }), s: m.lowReviews.length ? O.tpl('{n} rated 3 stars or lower', { n: m.lowReviews.length }) : 'All rated 4 stars or higher', go: ['reviews', { needsReply: true }] });
     if (p.inventory && m.low.length) {
       var names = m.low.map(invName).filter(Boolean);
-      out.push({ tone: 'warn', icon: 'inventory', t: fmt.plural(m.low.length, 'item') + ' low on stock', s: names.length ? names.slice(0, 3).join(', ') + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '') : 'At or below the reorder level', go: ['inventory', { tab: 'stock', low: true }] });
+      out.push({ tone: 'warn', icon: 'inventory', t: O.tpl('{count} low on stock', { count: fmt.plural(m.low.length, 'item') }), s: names.length ? (names.length > 3 ? O.tpl('{list} and {n} more', { list: names.slice(0, 3).join(', '), n: names.length - 3 }) : names.join(', ')) : 'At or below the reorder level', go: ['inventory', { tab: 'stock', low: true }] });
     }
     if (p.inventory) m.overuse.slice(0, 3).forEach(function (w) {
       var unit = w.propertyId && D.propById[w.propertyId] ? D.propById[w.propertyId].short : '', what = invName(w);
-      out.push({ tone: 'warn', icon: 'alert', t: (unit || 'A unit') + ' is using more ' + (what ? what.replace(/\s+\d+(\.\d+)?\s?(ml|l|g|kg|pcs|pack)$/i, '').toLowerCase() : 'than usual'), s: String(w.text || ''), go: ['inventory', { tab: 'overuse' }] });
+      out.push({ tone: 'warn', icon: 'alert', t: O.tpl(what ? '{unit} is using more {item}' : '{unit} is using more than usual', { unit: unit || 'A unit', item: what ? (O.state.lang === 'en' ? what.replace(/\s+\d+(\.\d+)?\s?(ml|l|g|kg|pcs|pack)$/i, '').toLowerCase() : what) : '' }), s: String(w.text || ''), go: ['inventory', { tab: 'overuse' }] });
     });
     if (p.channels) {
       var ci = O.channel.conflicts();
       if (ci.length) {
         var one = ci.length === 1 ? ci[0] : null, bad = ci.some(function (c) { return c.tone === 'bad'; });
-        out.unshift({ tone: bad ? 'bad' : 'warn', icon: 'alert', t: one ? one.t : fmt.plural(ci.length, 'channel issue'), s: one ? one.s : ci.slice(0, 2).map(function (c) { return c.t; }).join(' · ') + (ci.length > 2 ? ' and ' + (ci.length - 2) + ' more' : ''),
+        out.unshift({ tone: bad ? 'bad' : 'warn', icon: 'alert', t: one ? one.t : fmt.plural(ci.length, 'channel issue'), s: one ? one.s : ci.length > 2 ? O.tpl('{list} and {n} more', { list: ci.slice(0, 2).map(function (c) { return O.tr(c.t); }).join(' · '), n: ci.length - 2 }) : ci.slice(0, 2).map(function (c) { return c.t; }).join(' · '),
           go: one ? one.go : (O.allowed('channels') ? ['channels', { tab: 'alerts' }] : ['bookings']), n: ci.length });
       }
     }

@@ -180,7 +180,7 @@
         var l = list();
         if (!l.length) return '<div class="gm-list">' + U.empty(canEdit() ? 'No greeting for this building yet. Add one to send it from the Inbox.' : 'No greeting for this building yet.', '✉') + '</div>';
         return '<div class="gm-list" role="list">' + l.map(function (g) {
-          return '<button type="button" role="listitem" class="gm-item' + (g.id === st.sel ? ' on' : '') + '" data-pick="' + esc(g.id) + '"><div class="t">' + esc(g.name || 'Untitled') + '</div><div class="x">' + esc(String(g.text || '').slice(0, 140)) + '</div></button>';
+          return '<button type="button" role="listitem" class="gm-item' + (g.id === st.sel ? ' on' : '') + '" data-pick="' + esc(g.id) + '"><div class="t">' + esc(g.name || 'Untitled') + '</div><div class="x" data-no-i18n>' + esc(String(g.text || '').slice(0, 140)) + '</div></button>';
         }).join('') + '</div>';
       }
       function chipsHTML(g, on) {
@@ -199,7 +199,7 @@
         var lines = b ? notes(filled, g) : ['Sample values. Pick a booking to see exactly what that guest would get now.'];
         return '<div class="field"><div class="gm-pvbar"><label for="gm-pv">Preview for</label><select id="gm-pv" class="select" data-f="sample"><option value="">Sample guest</option>' +
           opts.map(function (x) { var p = D.propById[x.propertyId]; return '<option value="' + esc(x.id) + '"' + (x.id === st.sample ? ' selected' : '') + '>' + esc(x.guest.name) + ' · ' + esc(p ? unitName(p) : 'no unit yet') + ' · ' + esc(d.fmtRange(x.checkIn, x.checkOut)) + '</option>'; }).join('') + '</select></div>' +
-          '<div class="gm-pv"><div class="pvb">' + (g.text.trim() ? partsHTML(filled, g) : '<span style="opacity:.8">Your message appears here.</span>') + '</div></div>' +
+          '<div class="gm-pv"><div class="pvb"' + (g.text.trim() ? ' data-no-i18n' : '') + '>' + (g.text.trim() ? partsHTML(filled, g) : '<span style="opacity:.8">Your message appears here.</span>') + '</div></div>' +
           (lines.length ? '<div class="gm-notes">' + lines.map(function (n) { return '<div>' + esc(n) + '</div>'; }).join('') + '</div>' : '') + '</div>';
       }
       function fieldsHTML(g, on) {
@@ -211,11 +211,11 @@
             (on ? '<label class="sr-only" for="gm-fl' + i + '">Field name</label><input id="gm-fl' + i + '" class="input" data-fl="' + i + '" maxlength="40" value="' + esc(f.label) + '">' : '<b>' + esc(f.label) + '</b>') +
             '<code>{f_' + esc(f.key) + '}</code>' +
             '<label class="check" title="Like a door code: only people who can see door codes see the values on screen. The guest always gets the real value."><input type="checkbox" data-fp="' + i + '"' + (f.private ? ' checked' : '') + (on ? '' : ' disabled') + '><span>Private, like a door code</span></label>' +
-            (on ? '<button type="button" class="btn btn-ghost btn-xs" data-fdel="' + i + '" aria-label="Remove ' + esc(f.label) + '">' + O.icon('trash') + '</button>' : '') + '</div>' +
+            (on ? '<button type="button" class="btn btn-ghost btn-xs" data-fdel="' + i + '" aria-label="' + esc(O.tpl('Remove {name}', { name: f.label })) + '">' + O.icon('trash') + '</button>' : '') + '</div>' +
             (units.length ? '<div class="gm-vals">' + units.map(function (p) {
               var v = f.values[p.id] || '';
-              return '<label><span title="' + esc(p.name) + '">' + esc(unitName(p)) + '</span>' + (hide ? '<input class="input" disabled value="' + (v ? 'Hidden' : '') + '" placeholder="No value" aria-label="' + esc(f.label) + ' for ' + esc(p.name) + ' (hidden)">'
-                : '<input class="input" data-fv="' + i + '" data-unit="' + esc(p.id) + '" maxlength="200" value="' + esc(v) + '" placeholder="No value"' + (on ? '' : ' readonly') + ' aria-label="' + esc(f.label) + ' for ' + esc(p.name) + '">') + '</label>';
+              return '<label><span title="' + esc(p.name) + '">' + esc(unitName(p)) + '</span>' + (hide ? '<input class="input" disabled value="' + (v ? 'Hidden' : '') + '" placeholder="No value" aria-label="' + esc(O.tpl('{field} for {unit} (hidden)', { field: f.label, unit: p.name })) + '">'
+                : '<input class="input" data-fv="' + i + '" data-unit="' + esc(p.id) + '" maxlength="200" value="' + esc(v) + '" placeholder="No value"' + (on ? '' : ' readonly') + ' aria-label="' + esc(O.tpl('{field} for {unit}', { field: f.label, unit: p.name })) + '">') + '</label>';
             }).join('') + '</div>' : '<div class="small muted">This building has no units yet.</div>') +
             (hide ? '<div class="small muted">' + O.icon('lock') + ' The values are hidden: door codes are not part of your access.</div>' : '') + '</div>';
         }).join('');

@@ -86,7 +86,7 @@
   }
 
   /* ------------------------------------------------------------------ words: "5.7 rolls of toilet paper" */
-  function pluralWord(w) { if (/[^aeiou]y$/i.test(w)) return w.slice(0, -1) + 'ies'; if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es'; return w + 's'; }
+  function pluralWord(w) { if (O.state.lang && O.state.lang !== 'en') return w; /* the unit is the workspace's own word: only English adds an s */ if (/[^aeiou]y$/i.test(w)) return w.slice(0, -1) + 'ies'; if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es'; return w + 's'; }
   function singularWord(w) {
     if (/ies$/i.test(w)) return w.slice(0, -3) + 'y';
     if (/ss$/i.test(w)) return w;
@@ -204,16 +204,15 @@
     });
     return res;
   }
-  function periodText(res) { return res.days >= 89 ? 'the previous three months' : 'the previous ' + res.days + ' days'; }
+  function periodText(res) { return res.days >= 89 ? O.tr('the previous three months') : O.tpl('the previous {n} days', { n: res.days }); }
   function overuseText(r, res) {
-    var P = propName(r.propertyId), per = periodText(res), n = noun(r.itemId, rq(r.recent));
-    if (r.basis === 'stay') {
-      if (r.ratio == null) return P + ' used ' + qd(r.recent) + ' ' + n + ' per stay in the last 30 days and none in ' + per;
-      return P + ' used ' + qd(r.recent) + ' ' + n + ' per stay in the last 30 days vs ' + qd(r.baseline) + ' on average over ' + per;
-    }
-    var extra = r.fallback === 'norecent' ? ' without any check-outs' : '';
-    if (r.ratio == null) return P + ' used ' + qd(r.recent) + ' ' + n + ' in the last 30 days' + extra + ' and none in ' + per;
-    return P + ' used ' + qd(r.recent) + ' ' + n + ' in the last 30 days' + extra + ' vs ' + qd(r.baseline) + ' a month on average over ' + per;
+    var it = item(r.itemId), v = { unit: propName(r.propertyId), period: periodText(res), qty: qd(r.recent), base: qd(r.baseline) };
+    /* the item: "bottles of drinking water" in English; other languages name the item as the workspace wrote it */
+    v.what = O.state.lang === 'en' ? noun(r.itemId, rq(r.recent)) : it ? it.name : O.tr('items');
+    if (r.basis === 'stay') return O.tpl(r.ratio == null ? '{unit} used {qty} {what} per stay in the last 30 days and none in {period}' : '{unit} used {qty} {what} per stay in the last 30 days vs {base} on average over {period}', v);
+    var none = r.fallback === 'norecent';
+    if (r.ratio == null) return O.tpl(none ? '{unit} used {qty} {what} in the last 30 days without any check-outs and none in {period}' : '{unit} used {qty} {what} in the last 30 days and none in {period}', v);
+    return O.tpl(none ? '{unit} used {qty} {what} in the last 30 days without any check-outs vs {base} a month on average over {period}' : '{unit} used {qty} {what} in the last 30 days vs {base} a month on average over {period}', v);
   }
   function overuse(opts) {
     var res = analyze(opts);
@@ -314,7 +313,7 @@
         html += '<div class="s-row' + (s.low ? ' low' : '') + '"><span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' +
           '<span class="r qty">' + qtyText(s.qty) + ' <span>' + esc(unitWord(it, s.qty)) + '</span></span>' +
           '<span class="r muted c-re">' + qtyText(s.reorder) + '</span><span class="r muted c-cover">' + cover + '</span><span class="r c-pill">' + pill + '</span>' +
-          '<span class="sub">Reorder at ' + qtyText(s.reorder) + (s.daysLeft != null ? ' · lasts about ' + (s.daysLeft > 90 ? '3+ months' : fmt.plural(s.daysLeft, 'day')) : '') + '</span></div>';
+          '<span class="sub">' + esc(s.daysLeft != null ? O.tpl('Reorder at {qty} · lasts about {time}', { qty: qtyText(s.reorder), time: s.daysLeft > 90 ? O.tr('3+ months') : fmt.plural(s.daysLeft, 'day') }) : O.tpl('Reorder at {qty}', { qty: qtyText(s.reorder) })) + '</span></div>';
       });
     });
     return html;

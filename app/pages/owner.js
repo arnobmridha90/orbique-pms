@@ -159,7 +159,7 @@
   function payoutState(name, ms) {
     var key = name + '|' + ms.slice(0, 7), ap = D.ownerPayouts[key], pd = payoutDate(ms);
     if (d.monthEnd(ms) >= D.TODAY) return { k: 'open', label: 'Month in progress', short: 'In progress', pill: 'info', key: key };
-    if (pd < D.TODAY) return { k: 'paid', label: 'Paid ' + d.fmt(pd), short: 'Paid ' + d.fmt(pd), pill: 'ok', key: key };
+    if (pd < D.TODAY) return { k: 'paid', label: O.tpl('Paid {date}', { date: d.fmt(pd) }), short: O.tpl('Paid {date}', { date: d.fmt(pd) }), pill: 'ok', key: key };
     if (ap) return { k: 'approved', label: 'Approved, pays ' + d.fmt(pd), short: 'Approved', pill: 'brand', key: key, ap: ap };
     return { k: 'review', label: 'Awaiting approval', short: 'To approve', pill: 'warn', key: key };
   }
@@ -304,7 +304,7 @@
     var name = st.owner, units = ownerUnits(name), money = canMoney(), ws = O.ws();
     var S = statement(name, st.month), t = S.t;
     var prevMs = d.addMonths(st.month, -1), P = prevMs >= firstMonth() ? statement(name, prevMs, S.partial ? d.addMonths(S.to, -1) : null) : null;
-    var vsTxt = P ? 'vs ' + (S.partial ? d.fmtRange(P.from, P.to) : d.monthName(prevMs)) : null;
+    var vsTxt = P ? O.tpl('vs {x}', { x: S.partial ? d.fmtRange(P.from, P.to) : d.monthName(prevMs) }) : null;
     var ps = payoutState(name, st.month), sent = sentFor(name, st.month);
     function dl(cur, prev) { return P && prev ? (cur - prev) / Math.abs(prev) : null; }
 
@@ -357,7 +357,7 @@
     }
 
     /* unit performance */
-    var perf = '<div class="card"><div class="card-head"><div class="hd"><h3>Unit performance · ' + esc(monthLabel(st.month)) + (S.partial ? ' to date' : '') + '</h3><div class="sub">Occupancy, rates and guest ratings for each unit' + (P ? ' · change ' + esc(vsTxt) : '') + '</div></div></div>' +
+    var perf = '<div class="card"><div class="card-head"><div class="hd"><h3>' + esc(O.tpl(S.partial ? 'Unit performance · {month} to date' : 'Unit performance · {month}', { month: monthLabel(st.month) })) + '</h3><div class="sub">' + esc(P ? O.tpl('Occupancy, rates and guest ratings for each unit · change {vs}', { vs: { raw: vsTxt } }) : O.tr('Occupancy, rates and guest ratings for each unit')) + '</div></div></div>' +
       '<div class="card-body flush"><div class="table-wrap"><table class="table perf"><thead><tr><th>Unit</th><th class="num">Occupancy</th><th class="num">Change</th><th class="num">Nights</th>' + (money ? '<th class="num">ADR</th>' : '') + '<th class="num">Rating</th></tr></thead><tbody>' +
       S.lines.map(function (l, i) {
         var pl = P ? P.lines[i] : null, c = pl ? l.occ - pl.occ : null;

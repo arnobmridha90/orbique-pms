@@ -200,8 +200,8 @@
   function issues(b) {
     var T = D.TODAY, out = [];
     if (!live(b) || b.status === 'checked_in' || b.status === 'checked_out' || b.checkIn < T) return out;
-    if (b.conflict && b.conflict.kind === 'double_booking') out.push(['bad', 'Double booking', 'Another booking or a block overlaps these nights' + (b.conflict.with && b.conflict.with.length ? ' (' + b.conflict.with.join(', ') + ')' : '') + '. Move one of them.']);
-    if (!b.propertyId && b.unitTypeId) out.push(['bad', 'Needs a unit', 'No single ' + ((O.unitType(b.unitTypeId) || {}).name || '') + ' unit is free for the whole stay. Pick one by hand.']);
+    if (b.conflict && b.conflict.kind === 'double_booking') out.push(['bad', 'Double booking', b.conflict.with && b.conflict.with.length ? O.tpl('Another booking or a block overlaps these nights ({ids}). Move one of them.', { ids: b.conflict.with.join(', ') }) : 'Another booking or a block overlaps these nights. Move one of them.']);
+    if (!b.propertyId && b.unitTypeId) out.push(['bad', 'Needs a unit', O.tpl('No single {type} unit is free for the whole stay. Pick one by hand.', { type: (O.unitType(b.unitTypeId) || {}).name || '' })]);
     if (b.status === 'pending') out.push(['wait', 'Pending', 'Waiting for confirmation or payment']);
     var money = canValue(); /* invoice and payment steps only for people who see booking values */
     if (money && !b.invoiceSent && b.invoiceNo) out.push(['wait', 'Invoice not sent', 'Invoice ' + b.invoiceNo + ' is ready to send']);
@@ -210,14 +210,14 @@
       if (!b.idVerified) out.push(['wait', 'ID pending', 'The guest has not verified their ID yet']);
       if (b.checkIn <= d.add(T, 1)) {
         var clean = O.readiness(b).filter(function (r) { return r.key === 'clean'; })[0];
-        if (clean && clean.state === 'todo') out.push(['todo', clean.label, 'Unit not ready yet: ' + clean.label.toLowerCase()]);
+        if (clean && clean.state === 'todo') out.push(['todo', clean.label, O.tpl('Unit not ready yet: {state}', { state: O.state.lang === 'en' ? clean.label.toLowerCase() : clean.label })]);
       }
     }
     return out;
   }
   function needsAction(b) { return issues(b).length > 0; }
   function actionTitle() {
-    return 'Upcoming bookings that are pending' + (canValue() ? ', have an invoice that was not sent, are waiting for payment,' : '') + ' or arrive in the next ' + ACTION_DAYS + ' days without a verified ID or a ready unit';
+    return O.tpl(canValue() ? 'Upcoming bookings that are pending, have an invoice that was not sent, are waiting for payment, or arrive in the next {n} days without a verified ID or a ready unit' : 'Upcoming bookings that are pending or arrive in the next {n} days without a verified ID or a ready unit', { n: ACTION_DAYS });
   }
 
   function inRange(b, r) {
@@ -276,7 +276,7 @@
   }
   function rowHTML(b, showValue) {
     var cx = b.status === 'cancelled', sub = staySub(b);
-    return '<div class="bk-row' + (cx ? ' cx' : '') + '" data-id="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.guest.name + ', ' + d.fmtRange(b.checkIn, b.checkOut) + ', ' + U.statusLabel(b.status)) + '">' +
+    return '<div class="bk-row' + (cx ? ' cx' : '') + '" data-id="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(O.tpl('{guest}, {dates}, {status}', { guest: b.guest.name, dates: d.fmtRange(b.checkIn, b.checkOut), status: U.statusLabel(b.status) })) + '">' +
       '<div class="c-guest"><div class="l1">' + esc(b.guest.name) + (b.sameDay ? '<span class="sd" title="Booked today (' + esc(fmt.time(b.createdAt)) + ') for arrival today">⚡ Same-day</span>' : '') + '</div><div class="l2">' + esc(b.id) + (b.reservationCode ? ' · ' + esc(U.platName(b.channel) + ' ' + b.reservationCode) : '') + (b.guest.countryName ? ' · ' + esc(b.guest.countryName) : '') + '</div></div>' +
       '<div class="c-stay"><div class="l1">' + d.fmtRange(b.checkIn, b.checkOut) + ' <span class="nts">· ' + fmt.plural(b.nights, 'night') + '</span></div><div class="l2' + (sub[0] ? ' soon' : '') + '">' + esc(sub[1]) + '</div></div>' +
       '<div class="c-plat">' + U.plat(b.channel) + '</div>' +
@@ -416,7 +416,7 @@
         dyn.innerHTML =
           '<div class="bk-chips">' + chips + '</div>' +
           (D.bookings.length ? '<div class="bk-sum"><div class="txt"><b>' + fmt.plural(L.length, 'booking') + '</b> ' + (st.q && st.q.trim() ? 'matching your search, any dates' : matchTxt + ' <b>' + esc(rangeText()) + '</b>') +
-            (cancelled ? ' <span class="muted">+ ' + cancelled + ' cancelled</span>' : '') + (hiddenCx ? ' · <button type="button" class="bk-link" data-st="cancelled" title="Cancelled bookings are hidden. Show them">' + fmt.plural(hiddenCx, 'cancelled booking') + ' hidden</button>' : '') + statsLink + '</div>' +
+            (cancelled ? ' <span class="muted">' + esc(O.tpl('+ {n} cancelled', { n: cancelled })) + '</span>' : '') + (hiddenCx ? ' · <button type="button" class="bk-link" data-st="cancelled" title="Cancelled bookings are hidden. Show them">' + esc(O.tpl('{count} hidden', { count: fmt.plural(hiddenCx, 'cancelled booking') })) + '</button>' : '') + statsLink + '</div>' +
             (filtersActive() ? '<button type="button" class="btn btn-ghost btn-sm" data-act="clear">' + O.icon('x') + 'Clear filters</button>' : '') +
             '<button type="button" class="btn btn-ghost btn-sm xp" data-act="expand"' + (anyClosed ? '' : ' disabled') + '>Expand all</button>' +
             '<button type="button" class="btn btn-ghost btn-sm xp" data-act="collapse"' + (anyOpen ? '' : ' disabled') + '>Collapse all</button></div>' : '') +
@@ -558,10 +558,10 @@
     var p = D.propById[b.propertyId], body = O.$('.modal-body', dr.el); if (!body) return;
     var sub = O.$('.modal-head .sub', dr.el); if (sub) sub.textContent = b.id + ' · ' + (p ? propLabel(p) : O.bookingPlace(b));
     O.$$('.kv dt', body).forEach(function (dt) {
-      if (dt.textContent === 'Property' && p && dt.nextElementSibling) dt.nextElementSibling.textContent = propLabel(p);
+      if ((dt.textContent === 'Property' || dt.textContent === O.tr('Property')) && p && dt.nextElementSibling) dt.nextElementSibling.textContent = propLabel(p);
     });
     function section(title) {
-      return O.$$('.section-title', body).filter(function (x) { return x.textContent.trim().toLowerCase() === title; }).map(function (x) { return x.parentNode; })[0];
+      return O.$$('.section-title', body).filter(function (x) { var v = x.textContent.trim().toLowerCase(); return v === title || v === String(O.tr(title.charAt(0).toUpperCase() + title.slice(1))).toLowerCase(); }).map(function (x) { return x.parentNode; })[0];
     }
     if (!canContacts()) {
       var g = section('guest'), line = g && O.$('.small.muted', g);
@@ -602,7 +602,7 @@
     var t = O.unitType(b.unitTypeId); if (!t) return;
     var old = O.$('.bk-unit', body); if (old) old.remove();
     var p = D.propById[b.propertyId], bd = O.building(t.buildingId), a = b.assignment || {}, lk = p ? lockOf(b) : null;
-    var how = !p ? 'No single ' + t.name + ' unit is free for the whole stay. Pick one by hand, or free a unit and let Orbique pick again.'
+    var how = !p ? O.tpl('No single {type} unit is free for the whole stay. Pick one by hand, or free a unit and let Orbique pick again.', { type: t.name })
       : a.how === 'manual' ? 'Picked by ' + (whoName(a.by) || 'the team') + (a.at ? ' on ' + d.fmt(String(a.at).slice(0, 10)) : '') + '.'
         : 'Picked by Orbique: the unit that leaves the smallest gaps between stays.';
     var canMove = O.can('bookings.edit') && canEditB(b);
@@ -658,9 +658,9 @@
     var run = function () {
       var before = b.propertyId, res = O.assignBooking(b, { fresh: true, ignoreLock: true }), p = D.propById[res.unitId];
       O.emit('data', { type: 'booking', bookingId: b.id });
-      if (!p) U.toast('No single ' + t.name + ' unit is free for the whole stay, so ' + b.guest.name + ' still needs a unit.', 'bad');
-      else if (p.id === before) U.toast((p.unitNo || p.name) + ' is still the best fit. Orbique may move the booking later if that makes room.');
-      else U.toast(b.guest.name + ' is now in ' + (p.unitNo ? 'unit ' + p.unitNo : p.name) + ', the best fit.');
+      if (!p) U.toast(O.tpl('No single {type} unit is free for the whole stay, so {guest} still needs a unit.', { type: t.name, guest: b.guest.name }), 'bad');
+      else if (p.id === before) U.toast(O.tpl('{unit} is still the best fit. Orbique may move the booking later if that makes room.', { unit: p.unitNo || p.name }));
+      else U.toast(O.tpl('{guest} is now in {unit}, the best fit.', { guest: b.guest.name, unit: p.unitNo ? O.tpl('unit {no} [[the number of a unit]]', { no: p.unitNo }) : p.name }));
     };
     var lk = b.propertyId ? lockOf(b) : null;
     if (lk) U.confirm(LOCK_TXT[lk] + ' Let Orbique pick the best unit again? It may move the guest and will no longer hold this unit.', 'Re-assign', 'primary', 'Re-assign ' + b.guest.name + '?').then(function (ok) { if (ok) run(); });
@@ -773,7 +773,8 @@
     var p = res && D.propById[res.unitId];
     return { p: p || cur || O.unitsOfType(tid)[0], typeId: tid, t: O.unitType(tid), auto: true, unitId: p ? p.id : null };
   }
-  function unitWord(p) { return p ? (p.unitNo ? 'unit ' + p.unitNo : (p.short || p.name)) : ''; }
+  function unitWord(p) { return p ? (p.unitNo ? O.tpl('unit {no} [[the number of a unit]]', { no: p.unitNo }) : (p.short || p.name)) : ''; }
+  function bold(s) { return '<b>' + esc(O.tr(s)) + '</b>'; }
 
   /* ---------------- edit booking ---------------- */
   function editBooking(b) {
@@ -811,12 +812,12 @@
       var av = $('.nb-avail');
       if (ok && r.auto && !r.unitId) {
         av.className = 'nb-avail bad';
-        av.innerHTML = '<b>No single ' + esc(r.t.name) + ' unit is free for all ' + fmt.plural(nights, 'night') + '.</b> You can still save: the booking waits under "' + esc(r.t.name) + ' · no unit yet" until you pick a unit.';
+        av.innerHTML = O.tpl('{note} You can still save: the booking waits under "{type} · no unit yet" until you pick a unit.', { note: { raw: '<b>' + esc(O.tpl('No single {type} unit is free for all {count}.', { type: r.t.name, count: fmt.plural(nights, 'night') })) + '</b>' }, type: { raw: esc(r.t.name) } });
       } else {
         av.className = 'nb-avail ' + (!ok || cf.length ? 'bad' : changed ? 'ok' : 'info');
-        av.innerHTML = !ok ? 'Check-out must be after check-in.' : cf.length ? '<b>Not available.</b> ' + esc(cf[0]) + (cf.length > 1 ? ' and ' + (cf.length - 1) + ' more.' : '.')
-          : r.auto ? (r.unitId === b.propertyId ? '<b>Available.</b> The guest keeps ' + esc(unitWord(p)) + '.' : '<b>Available.</b> Orbique puts the guest in ' + esc(unitWord(p)) + ', the best fit.')
-            : changed ? '<b>Available</b> for all ' + fmt.plural(nights, 'night') + ' at ' + esc(p.short || p.name) + '.' : 'Same dates and unit as now.';
+        av.innerHTML = !ok ? esc(O.tr('Check-out must be after check-in.')) : cf.length ? bold('Not available.') + ' ' + esc(cf.length > 1 ? O.tpl('{first} and {n} more.', { first: cf[0], n: cf.length - 1 }) : cf[0] + '.')
+          : r.auto ? (r.unitId === b.propertyId ? O.tpl('{available} The guest keeps {unit}.', { available: { raw: bold('Available.') }, unit: { raw: esc(unitWord(p)) } }) : O.tpl('{available} Orbique puts the guest in {unit}, the best fit.', { available: { raw: bold('Available.') }, unit: { raw: esc(unitWord(p)) } }))
+            : changed ? O.tpl('{available} for all {count} at {unit}.', { available: { raw: bold('Available') }, count: fmt.plural(nights, 'night'), unit: { raw: esc(p.short || p.name) } }) : esc(O.tr('Same dates and unit as now.'));
       }
       var acc = Math.round((b.nightly || 0) * nights), clean = v.pid === b.propertyId ? b.cleaningFee : cleaningFor(p), tax = b.guest.foreign && O.tourismTaxApplies(p) ? 10 * nights : 0, tot = acc + clean + tax, mc = { cur: p };
       $('.nb-sum').innerHTML = '<h4>' + esc(propName(p)) + '</h4><div class="muted small">' + esc(place(p)) + '</div><div class="muted small">' + (ok ? d.fmtY(v.ci) + ' → ' + d.fmtY(v.co) + ' · ' + fmt.plural(nights, 'night') : 'Choose dates') + '</div>' +
@@ -983,11 +984,11 @@
       $('.nb-payout').textContent = ota ? (v.total > 0 ? 'Your payout: ' + fmt.money(Math.max(0, v.total - v.fee), mc) + '. ' : '') + 'Suggested from the usual ' + Math.round(feePct(v.src) * 100) + '%; use the figure on ' + site + '.' : '';
       $('.nb-tax').textContent = !ttax ? '' : foreign ? 'Tourism tax ' + fmt.money(10, mc) + ' per night applies' : 'No tourism tax for Malaysian guests';
       var ok = v.ci && v.co && v.co > v.ci, nights = ok ? d.diff(v.ci, v.co) : 0;
-      var cf = !ok ? [] : r.auto ? (r.unitId ? [] : ['No single ' + r.t.name + ' unit is free for all of these nights']) : conflictsFor(v.pid, v.ci, v.co);
+      var cf = !ok ? [] : r.auto ? (r.unitId ? [] : [O.tpl('No single {type} unit is free for all of these nights', { type: r.t.name })]) : conflictsFor(v.pid, v.ci, v.co);
       var av = $('.nb-avail');
       av.className = 'nb-avail ' + (!ok ? 'bad' : cf.length ? 'bad' : 'ok');
-      av.innerHTML = !ok ? 'Check-out must be after check-in.' : cf.length ? '<b>Not available.</b> ' + esc(cf[0]) + (cf.length > 1 ? ' and ' + (cf.length - 1) + ' more.' : '.')
-        : r.auto ? '<b>Available</b> for all ' + fmt.plural(nights, 'night') + '. Orbique puts the guest in ' + esc(unitWord(p)) + ', the best fit.' : '<b>Available</b> for all ' + fmt.plural(nights, 'night') + ' at ' + esc(p.short || p.name) + '.';
+      av.innerHTML = !ok ? esc(O.tr('Check-out must be after check-in.')) : cf.length ? bold('Not available.') + ' ' + esc(cf.length > 1 ? O.tpl('{first} and {n} more.', { first: cf[0], n: cf.length - 1 }) : cf[0] + '.')
+        : r.auto ? O.tpl('{available} for all {count}. Orbique puts the guest in {unit}, the best fit.', { available: { raw: bold('Available') }, count: fmt.plural(nights, 'night'), unit: { raw: esc(unitWord(p)) } }) : O.tpl('{available} for all {count} at {unit}.', { available: { raw: bold('Available') }, count: fmt.plural(nights, 'night'), unit: { raw: esc(p.short || p.name) } });
       var acc = nights * v.price, clean = cleaningFor(p), tax = foreign && ttax ? 10 * nights : 0;
       var invNo = nextNo('invoiceNo', 'INV-' + T.slice(0, 4) + '-');
       $('.nb-sum').innerHTML = '<h4>' + esc(propName(p)) + '</h4><div class="muted small">' + esc(place(p)) + '</div><div class="muted small">' + (ok ? d.fmtY(v.ci) + ' → ' + d.fmtY(v.co) + ' · ' + fmt.plural(nights, 'night') : 'Choose dates') + '</div>' +
@@ -1023,7 +1024,7 @@
             if (v.ci < now && v.co <= now) err.push('This stay has already ended. Only stays from today, or ones still going on, can be added.');
             else if (v.ci < d.add(now, -PAST)) err.push('Check-in can be at most ' + PAST + ' days ago.');
             if (d.diff(v.ci, v.co) > 60) err.push('A direct booking can be at most 60 nights.');
-            if (r.auto) { if (!r.unitId) err.push('No single ' + r.t.name + ' unit is free for all of these nights. Try other dates or another type.'); }
+            if (r.auto) { if (!r.unitId) err.push(O.tpl('No single {type} unit is free for all of these nights. Try other dates or another type.', { type: r.t.name })); }
             else { var cf = conflictsFor(v.pid, v.ci, v.co); if (cf.length) err.push((p.short || p.name) + ' is not available: ' + cf[0] + '.'); }
           }
           if (!v.name) err.push('Enter the guest\'s name.');

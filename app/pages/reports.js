@@ -152,11 +152,14 @@
     var c, ds = dataStart();
     if (st.compare === 'lastMonth') c = { from: d.addMonths(r.from, -1), to: d.addMonths(r.to, -1) };
     else { var len = d.diff(r.from, r.to) + 1; c = { from: d.add(r.from, -len), to: d.add(r.from, -1) }; }
-    if (ds && c.from < ds) { clampNote += (clampNote ? ' ' : '') + 'No comparison: the ' + compName() + ' falls before records start on ' + d.fmtY(ds) + '.'; return null; }
+    if (ds && c.from < ds) { clampNote += (clampNote ? ' ' : '') + O.tpl('No comparison: the {period} falls before records start on {date}.', { period: compName(), date: d.fmtY(ds) }); return null; }
     return c;
   }
   function rangeText(r) { return U.rangeLabel(r.from, r.to); }
-  function compName() { return st.compare === 'lastMonth' ? 'same period last month' : 'previous period'; }
+  function compName() { return O.tr(st.compare === 'lastMonth' ? 'same period last month' : 'previous period'); }
+  /* a sentence with the figures in bold: B(x) puts x in as it is, inside <b> */
+  function B(x) { return { raw: '<b>' + x + '</b>' }; }
+  function andNames(a) { return fmt.andList(a.map(function (x) { return O.state.lang === 'en' ? x.toLowerCase() : x; })); }
   function moneyAxis(v, ax) { if (!ax || v < 10000) return fmt.money(v); var k = v / 1000; return fmt.cur() + ' ' + (k % 1 === 0 ? k : (k * 10) % 1 === 0 ? k.toFixed(1) : k.toFixed(2)) + 'k'; }
   function countAxis(v, ax) { return v % 1 ? (ax ? '' : v.toFixed(1)) : String(v); }
   /* what a report needs before it can say anything: shown as an empty state when the workspace has none at all */
@@ -169,8 +172,8 @@
   function chg(cur, prev) { return prev > 0 ? (cur - prev) / prev : null; } /* a change from zero or a negative base is not meaningful */
   /* 'up 8.0%' / 'down 8.0%' / 'level' for sentences */
   /* 'up 8.0% on the previous period', or 'nothing to compare in the previous period' when that period had none */
-  function cmpPhrase(cur, prev) { return prev > 0 ? chgWords(chg(cur, prev)) + ' on the ' + compName() : 'nothing to compare in the ' + compName(); }
-  function chgWords(c) { if (c == null || isNaN(c)) return 'no change'; if (Math.abs(c) < 0.0005) return 'level'; return (c > 0 ? 'up ' : 'down ') + fmt.changeText(c).replace(/^[+−±]/, ''); }
+  function cmpPhrase(cur, prev) { return prev > 0 ? O.tpl('{change} on the {period}', { change: chgWords(chg(cur, prev)), period: compName() }) : O.tpl('nothing to compare in the {period}', { period: compName() }); }
+  function chgWords(c) { if (c == null || isNaN(c)) return O.tr('no change'); if (Math.abs(c) < 0.0005) return O.tr('level'); return O.tpl(c > 0 ? 'up {pct}' : 'down {pct}', { pct: fmt.changeText(c).replace(/^[+−±]/, '') }); }
   function f(pid) { return pid ? { propertyId: pid } : null; }
   /* with several currencies a report covers the units in the view currency (O.curSwitchHTML); M's all-unit totals mix
      currencies, so they are summed unit by unit here. One currency: these are M's own functions. */
@@ -356,8 +359,8 @@
     var ss = staysStarting(r, pid), los = avg(ss, function (b) { return b.nights; }), ssP = c ? staysStarting(c, pid) : [], losP = c ? avg(ssP, function (b) { return b.nights; }) : null;
     var weekday = (function () { var s = 0, a = 0; d.range(r.from, r.to).forEach(function (x) { if (d.isWeekend(x)) return; s += mSold(x, x, f(pid)); a += mAvail(x, x, pid || undefined); }); return a ? s / a : 0; })();
     var kpis = [
-      { label: 'Occupancy', value: fmt.pct(occ, 1), sub: c ? ptsHTML(occ - occP) + ' vs ' + fmt.pct(occP, 1) : null, hl: true },
-      { label: 'Nights sold', value: fmt.num(sold), delta: c ? chg(sold, soldP) : null, sub: c ? 'vs ' + fmt.num(soldP) : null },
+      { label: 'Occupancy', value: fmt.pct(occ, 1), sub: c ? ptsHTML(occ - occP) + ' ' + O.tpl('vs {x}', { x: fmt.pct(occP, 1) }) : null, hl: true },
+      { label: 'Nights sold', value: fmt.num(sold), delta: c ? chg(sold, soldP) : null, sub: c ? O.tpl('vs {x}', { x: fmt.num(soldP) }) : null },
       { label: 'Nights available', value: fmt.num(avail), sub: blocked ? fmt.num(blocked) + ' blocked' : 'none blocked' },
       { label: 'Weekend occupancy', value: fmt.pct(we), sub: c ? ptsHTML(we - weP) + ' Fri and Sat' : 'Fri and Sat nights' },
       { label: 'Weekday occupancy', value: fmt.pct(weekday), sub: 'Sun to Thu nights' },
@@ -381,7 +384,7 @@
       kpis: kpis, chartTitle: 'Occupancy ' + chart.unit, chartSub: 'Share of available nights that were sold', chart: chart, side: side,
       table: { title: 'By property', sub: 'Nights sold, availability and stay length', cols: cols, rows: rows, total: total },
       summary: [['Occupancy', fmt.pct(occ, 1)], ['Nights sold', fmt.num(sold)], ['Nights available', fmt.num(avail)], ['Weekend occupancy', fmt.pct(we)]],
-      insight: c ? 'Occupancy is <b>' + fmt.pct(occ, 1) + '</b>, ' + (occ >= occP ? 'up ' : 'down ') + ptsText(Math.abs(occ - occP)).replace(/^[+−±]/, '') + ' on the ' + compName() + '. Weekends run at ' + fmt.pct(we) + ' against ' + fmt.pct(weekday) + ' on weekdays.' : 'Occupancy is <b>' + fmt.pct(occ, 1) + '</b>. Weekends run at ' + fmt.pct(we) + ' against ' + fmt.pct(weekday) + ' on weekdays.'
+      insight: O.tpl(c ? 'Occupancy is {occ}, {change} on the {period}. Weekends run at {weekend} against {weekday} on weekdays.' : 'Occupancy is {occ}. Weekends run at {weekend} against {weekday} on weekdays.', { occ: B(fmt.pct(occ, 1)), change: c ? O.tpl(occ >= occP ? 'up {pct}' : 'down {pct}', { pct: ptsText(Math.abs(occ - occP)).replace(/^[+−±]/, '') }) : '', period: compName(), weekend: fmt.pct(we), weekday: fmt.pct(weekday) })
     };
   };
 
@@ -392,7 +395,7 @@
     var fe = fees(r, pid), feP = c ? fees(c, pid) : null;
     var nights = mSold(r.from, r.to, f(pid));
     var kpis = [
-      { label: 'Revenue', value: fmt.money(rev), delta: c ? chg(rev, revP) : null, sub: c ? 'vs ' + fmt.money(revP) : null, hl: true },
+      { label: 'Revenue', value: fmt.money(rev), delta: c ? chg(rev, revP) : null, sub: c ? O.tpl('vs {x}', { x: fmt.money(revP) }) : null, hl: true },
       { label: 'ADR', value: fmt.money(adr), delta: c ? chg(adr, adrP) : null, sub: 'per night sold' },
       { label: 'RevPAR', value: fmt.money(rp), delta: c ? chg(rp, rpP) : null, sub: 'per available night' },
       { label: 'Platform fees', value: fmt.money(fe), delta: c ? chg(fe, feP) : null, deltaOpts: { invert: true }, sub: rev ? fmt.pct(fe / rev, 1) + ' of revenue' : null },
@@ -416,7 +419,7 @@
       kpis: kpis, chartTitle: 'Revenue ' + chart.unit, chartSub: 'Accommodation and cleaning fees earned on nights in the range', chart: chart, side: side,
       table: { title: 'By property', sub: 'Revenue, rates and fees', cols: cols, rows: rows, total: total },
       summary: [['Revenue', fmt.money(rev)], ['ADR', fmt.money(adr)], ['RevPAR', fmt.money(rp)], ['Platform fees', fmt.money(fe)]],
-      insight: 'Revenue is <b>' + fmt.money(rev) + '</b>' + (c ? ', ' + cmpPhrase(rev, revP) : '') + '. ADR ' + fmt.money(adr) + ' on ' + fmt.num(nights) + ' nights sold; platforms kept ' + fmt.money(fe) + '.'
+      insight: O.tpl(c ? 'Revenue is {rev}, {cmp}. ADR {adr} on {n} nights sold; platforms kept {fees}.' : 'Revenue is {rev}. ADR {adr} on {n} nights sold; platforms kept {fees}.', { rev: B(fmt.money(rev)), cmp: c ? cmpPhrase(rev, revP) : '', adr: fmt.money(adr), n: fmt.num(nights), fees: fmt.money(fe) })
     };
   };
 
@@ -430,10 +433,10 @@
     var value = sum(cr, function (b) { return b.revenue; }), valueP = sum(crP, function (b) { return b.revenue; });
     var same = cr.filter(function (b) { return String(b.createdAt || '').slice(0, 10) === b.checkIn; }).length;
     var kpis = [
-      { label: 'Bookings made', value: fmt.num(cr.length), delta: c ? chg(cr.length, crP.length) : null, sub: c ? 'vs ' + crP.length : null, hl: true },
+      { label: 'Bookings made', value: fmt.num(cr.length), delta: c ? chg(cr.length, crP.length) : null, sub: c ? O.tpl('vs {x}', { x: crP.length }) : null, hl: true },
       { label: 'Nights booked', value: fmt.num(nights), delta: c ? chg(nights, nightsP) : null },
       money ? { label: 'Booked value', value: fmt.money(value), delta: c ? chg(value, valueP) : null, sub: 'of new bookings' } : { label: 'Avg stay booked', value: cr.length ? (nights / cr.length).toFixed(1) + ' nights' : '–' },
-      { label: 'Avg lead time', value: lead != null ? Math.round(lead) + ' days' : '–', sub: c && leadP != null ? 'vs ' + Math.round(leadP) + ' days' : 'booking to arrival' },
+      { label: 'Avg lead time', value: lead != null ? fmt.plural(Math.round(lead), 'day') : '–', sub: c && leadP != null ? O.tpl('vs {x}', { x: fmt.plural(Math.round(leadP), 'day') }) : 'booking to arrival' },
       { label: 'Cancellations', value: fmt.num(canc), delta: c ? chg(canc, cancP) : null, deltaOpts: { invert: true }, sub: all.length ? fmt.pct(canc / all.length) + ' cancelled' : null },
       { label: 'Same-day bookings', value: fmt.num(same), sub: 'booked for arrival that day' }
     ];
@@ -460,8 +463,9 @@
     return {
       kpis: kpis, chartTitle: 'Bookings made ' + chart.unit, chartSub: 'By the date the booking was made (cancelled bookings excluded)', chart: chart, side: side,
       table: { title: 'Lead time', sub: 'How far ahead guests booked', cols: cols, rows: rows, total: { v: tot } },
-      summary: [['Bookings made', fmt.num(cr.length)], ['Nights booked', fmt.num(nights)], ['Avg lead time', lead != null ? Math.round(lead) + ' days' : '–'], ['Cancellations', fmt.num(canc)]],
-      insight: '<b>' + fmt.plural(cr.length, 'booking') + '</b> made' + (c ? ' (' + cmpPhrase(cr.length, crP.length) + ')' : '') + (lead != null ? ', booked on average ' + fmt.plural(Math.round(lead), 'day') + ' before arrival. ' : '. ') + (same ? (same === 1 ? 'One was a same-day booking, made on the day of arrival.' : same + ' were same-day bookings, made on the day of arrival.') : 'No same-day bookings.')
+      summary: [['Bookings made', fmt.num(cr.length)], ['Nights booked', fmt.num(nights)], ['Avg lead time', lead != null ? fmt.plural(Math.round(lead), 'day') : '–'], ['Cancellations', fmt.num(canc)]],
+      insight: O.i18nKeep(O.tpl(c ? (lead != null ? '{count} made ({cmp}), booked on average {days} before arrival.' : '{count} made ({cmp}).') : lead != null ? '{count} made, booked on average {days} before arrival.' : '{count} made.', { count: B(fmt.plural(cr.length, 'booking')), cmp: c ? cmpPhrase(cr.length, crP.length) : '', days: lead != null ? fmt.plural(Math.round(lead), 'day') : '' }) + (O.state.lang === 'zh' ? '' : ' ') +
+        (same ? (same === 1 ? O.tr('One was a same-day booking, made on the day of arrival.') : O.tpl('{n} were same-day bookings, made on the day of arrival.', { n: same })) : O.tr('No same-day bookings.')))
     };
   };
 
@@ -488,7 +492,7 @@
     var made = created(r, pid, true), leadAll = avg(allStays, leadDays);
     var kpis = [
       { label: 'Top channel', value: top && top.nights ? esc(U.platName(top.ch)) : '–', sub: top && totN ? fmt.pct(top.nights / totN) + ' of nights' : null, hl: true },
-      { label: 'Direct share', value: totN ? fmt.pct(direct.nights / totN, 1) : '–', sub: c && totN ? ptsHTML(direct.nights / totN - directP) + ' vs ' + fmt.pct(directP, 1) : 'no OTA commission' },
+      { label: 'Direct share', value: totN ? fmt.pct(direct.nights / totN, 1) : '–', sub: c && totN ? ptsHTML(direct.nights / totN - directP) + ' ' + O.tpl('vs {x}', { x: fmt.pct(directP, 1) }) : 'no OTA commission' },
       { label: 'Nights sold', value: fmt.num(totN), delta: c ? chg(totN, mSold(c.from, c.to, f(pid))) : null },
       money ? { label: 'OTA commission', value: fmt.money(otaFee), sub: otaRev ? fmt.pct(otaFee / otaRev, 1) + ' of OTA revenue' : null } : { label: 'Channels used', value: String(data.filter(function (x) { return x.nights; }).length), sub: 'of ' + data.length + ' connected' },
       { label: 'OTA share', value: totN ? fmt.pct(1 - direct.nights / totN) : '–', sub: 'of nights, via OTAs', title: 'Airbnb, Booking.com, Agoda and Vrbo' }
@@ -509,12 +513,12 @@
     tot.push(leadAll != null ? Math.round(leadAll) : null, made.length ? made.filter(function (b) { return !live(b); }).length / made.length : null);
     var side = { title: 'Share of nights', sub: rangeText(r), html: '<div class="side-list">' + O.chart.hbars(data.slice().sort(function (a, b) { return b.nights - a.nights; }).map(function (x) { return { label: U.plat(x.ch), value: totN ? x.nights / totN * 100 : 0, display: totN ? fmt.pct(x.nights / totN) : '0%' }; }), { max: 100 }) + '</div>' + (money ? '<div class="note rp-sfoot">' + feeNote() + '</div>' : '') };
     return {
-      kpis: kpis, chartTitle: 'Nights sold by channel', chartSub: c ? 'This period against the ' + compName() : rangeText(r), chart: chart, side: side,
+      kpis: kpis, chartTitle: 'Nights sold by channel', chartSub: c ? O.tpl('This period against the {period}', { period: compName() }) : rangeText(r), chart: chart, side: side,
       table: { title: 'By channel', sub: money ? 'Volume, revenue and fees (OTA commission, or card fees on direct bookings)' : 'Volume and booking behaviour', cols: cols, rows: rows, total: { v: tot } },
       summary: [['Top channel', top && top.nights ? U.platName(top.ch) : '–'], ['Direct share', totN ? fmt.pct(direct.nights / totN, 1) : '–'], ['Nights sold', fmt.num(totN)]].concat(money ? [['OTA commission', fmt.money(otaFee)]] : []),
       notes: 'Lead time is the average number of days between booking and arrival. Cancelled is the share of bookings made in the range that were later cancelled.',
       pdfNote: money ? feeNote() : '',
-      insight: top && totN ? '<b>' + esc(U.platName(top.ch)) + '</b> brings ' + fmt.pct(top.nights / totN) + ' of nights. Direct bookings are ' + fmt.pct(direct.nights / totN, 1) + ' of nights' + (money ? ', and OTAs kept ' + fmt.money(otaFee) + ' in commission.' : '.') : 'No nights sold in this range.'
+      insight: top && totN ? O.tpl(money ? '{top} brings {pct} of nights. Direct bookings are {direct} of nights, and OTAs kept {fee} in commission.' : '{top} brings {pct} of nights. Direct bookings are {direct} of nights.', { top: B(esc(U.platName(top.ch))), pct: fmt.pct(top.nights / totN), direct: fmt.pct(direct.nights / totN, 1), fee: money ? fmt.money(otaFee) : '' }) : 'No nights sold in this range.'
     };
   };
 
@@ -553,7 +557,7 @@
       kpis: kpis, chartTitle: 'Arrivals ' + chart.unit, chartSub: 'Stays by check-in date', chart: chart, side: side,
       table: { title: 'By country', sub: 'Guest origin from booking details', cols: cols, rows: rows, total: { v: tot } },
       summary: [['Arrivals', fmt.num(ss.length)], ['International', ss.length ? fmt.pct(intl.length / ss.length) : '–'], ['Countries', fmt.num(keys.length)], ['Groups of 3 or more', fmt.num(groups.length)]],
-      insight: ss.length ? '<b>' + fmt.pct(intl.length / ss.length) + '</b> of ' + fmt.plural(ss.length, 'arrival') + ' came from abroad, from ' + fmt.plural(keys.length, 'country', 'countries') + '. ' + esc(keys[0]) + ' is the biggest market.' : 'No arrivals in this range.'
+      insight: ss.length ? O.tpl('{pct} of {arrivals} came from abroad, from {countries}. {top} is the biggest market.', { pct: B(fmt.pct(intl.length / ss.length)), arrivals: fmt.plural(ss.length, 'arrival'), countries: fmt.plural(keys.length, 'country', 'countries'), top: { raw: esc(O.tr(keys[0] || '')) } }) : 'No arrivals in this range.'
     };
   };
 
@@ -563,11 +567,11 @@
     var five = rv.filter(function (x) { return x.stars === 5; }).length, low = rv.filter(function (x) { return x.stars <= 3; }).length;
     var replied = rv.filter(function (x) { return x.reply; }).length;
     var kpis = [
-      { label: 'Average rating', value: a ? a.toFixed(2) + ' ★' : '–', delta: c && a && aP ? chg(a, aP) : null, sub: c && aP ? 'vs ' + aP.toFixed(2) : null, hl: true },
+      { label: 'Average rating', value: a ? a.toFixed(2) + ' ★' : '–', delta: c && a && aP ? chg(a, aP) : null, sub: c && aP ? O.tpl('vs {x}', { x: aP.toFixed(2) }) : null, hl: true },
       { label: 'Reviews', value: fmt.num(rv.length), delta: c ? chg(rv.length, rvP.length) : null },
       { label: '5-star share', value: rv.length ? fmt.pct(five / rv.length) : '–' },
       { label: '3 stars or lower', value: fmt.num(low), sub: low ? 'check the comments' : 'none', deltaOpts: { invert: true } },
-      { label: 'Response rate', value: rv.length ? fmt.pct(replied / rv.length) : '–', sub: (rv.length - replied) + ' need a reply' }
+      { label: 'Response rate', value: rv.length ? fmt.pct(replied / rv.length) : '–', sub: O.tpl('{n} need a reply', { n: rv.length - replied }) }
     ];
     var stars = [5, 4, 3, 2, 1];
     var chart = catChart(stars.map(function (s) { return s + ' stars'; }), stars.map(function (s) { return rv.filter(function (x) { return x.stars === s; }).length; }), c ? stars.map(function (s) { return rvP.filter(function (x) { return x.stars === s; }).length; }) : null, r, c, { aria: 'Reviews by star rating', yFormat: countAxis, xFormat: function (l) { return l.replace(' stars', '★'); } });
@@ -578,10 +582,10 @@
     var plats = ['airbnb', 'booking', 'agoda', 'vrbo', 'google'].map(function (pl) { var l = rv.filter(function (x) { return x.platform === pl; }); return { pl: pl, n: l.length, a: avg(l, function (x) { return x.stars; }) }; }).filter(function (x) { return x.n; });
     var side = { title: 'Rating by platform', sub: 'Average stars and review count', html: plats.length ? '<div class="side-list">' + O.chart.hbars(plats.map(function (x) { return { label: U.plat(x.pl), value: x.a, display: x.a.toFixed(2) + ' · ' + x.n }; }), { max: 5 }) + '</div>' + goBtn('reviews', 'Open reviews') : U.empty('No reviews in this range.') };
     return {
-      kpis: kpis, chartTitle: 'Reviews by star rating', chartSub: c ? 'This period against the ' + compName() : rangeText(r), chart: chart, side: side,
+      kpis: kpis, chartTitle: 'Reviews by star rating', chartSub: c ? O.tpl('This period against the {period}', { period: compName() }) : rangeText(r), chart: chart, side: side,
       table: { title: 'By property', sub: 'Ratings and sub-scores (out of 5)', cols: cols, rows: rows, total: { v: row('All properties', rv) } },
       summary: [['Average rating', a ? a.toFixed(2) : '–'], ['Reviews', fmt.num(rv.length)], ['5-star share', rv.length ? fmt.pct(five / rv.length) : '–'], ['Response rate', rv.length ? fmt.pct(replied / rv.length) : '–']],
-      insight: rv.length ? 'Guests rated stays <b>' + a.toFixed(2) + ' out of 5</b> across ' + fmt.plural(rv.length, 'review') + '. ' + (rv.length - replied ? (rv.length - replied) + ' still need a reply.' : 'Every review has a reply.') : 'No reviews in this range.'
+      insight: rv.length ? O.i18nKeep(O.tpl('Guests rated stays {score} across {count}.', { score: B(esc(O.tpl('{n} out of 5', { n: a.toFixed(2) }))), count: fmt.plural(rv.length, 'review') }) + (O.state.lang === 'zh' ? '' : ' ') + (rv.length - replied ? O.tpl('{n} still need a reply.', { n: rv.length - replied }) : O.tr('Every review has a reply.'))) : 'No reviews in this range.'
     };
   };
 
@@ -618,7 +622,7 @@
       kpis: kpis, chartTitle: 'Turnovers ' + chart.unit, chartSub: 'Check-outs that needed a clean', chart: chart, side: side,
       table: { title: 'By property', sub: 'Arrivals, turnovers and blocked nights', cols: cols, rows: rows, total: { v: tot } },
       summary: [['Check-ins', fmt.num(ins.length)], ['Turnovers', fmt.num(outs.length)], ['Back-to-back', fmt.num(b2b.length)], ['Same-day bookings', fmt.num(same.length)]],
-      insight: '<b>' + fmt.plural(outs.length, 'turnover') + '</b> in ' + fmt.plural(days, 'day') + ', ' + b2b.length + ' of them back-to-back with a new arrival the same day.'
+      insight: O.tpl('{count} in {days}, {n} of them back-to-back with a new arrival the same day.', { count: B(fmt.plural(outs.length, 'turnover')), days: fmt.plural(days, 'day'), n: b2b.length })
     };
   };
 
@@ -636,7 +640,7 @@
     var types = typeList.filter(function (t) { return byType[t] || byTypeP[t]; });
     var topType = types.slice().sort(function (a, b) { return (byType[b] || 0) - (byType[a] || 0); })[0];
     var kpis = [
-      { label: 'Total spent', value: fmt.money(tot), delta: c ? chg(tot, totP) : null, deltaOpts: { invert: true }, sub: c ? 'vs ' + fmt.money(totP) : null, hl: true },
+      { label: 'Total spent', value: fmt.money(tot), delta: c ? chg(tot, totP) : null, deltaOpts: { invert: true }, sub: c ? O.tpl('vs {x}', { x: fmt.money(totP) }) : null, hl: true },
       { label: 'Operating costs', value: fmt.money(opT), delta: c ? chg(opT, opP) : null, deltaOpts: { invert: true }, sub: nights ? fmt.money(opT / nights) + ' per night sold' : 'running the units' },
       { label: 'Capital spending', value: fmt.money(capT), sub: capex.length ? fmt.plural(capex.length, 'purchase') + ' that last years' : 'none in this range', title: 'Furniture, appliances, aircon units and renovation: assets that last years' },
       { label: 'Biggest type', value: topType ? esc(shortT(topType)) : '–', title: topType || '', sub: topType && tot ? fmt.pct((byType[topType] || 0) / tot) + ' of spend' : null },
@@ -657,11 +661,11 @@
     var acct = D.staff.filter(function (s) { return s.role === 'owner'; })[0];
     var side = { title: 'By person', sub: 'Who paid, including the owner', html: pk.length ? '<div class="side-list">' + O.chart.hbars(pk.map(function (k) { var s = D.staffById(k); return { label: esc(s ? s.name : k || 'Not recorded'), value: byP[k], display: fmt.money(byP[k]) }; })) + '</div>' + (acct ? '<div class="xs muted rp-sfoot">Includes ' + esc(acct.name) + ', the account owner.</div>' : '') + (O.allowed('expenses') ? '<button type="button" class="btn btn-ghost btn-sm rp-sfoot" data-go="expenses">Open expenses</button>' : '') : U.empty('No expenses in this range.') };
     return {
-      kpis: kpis, chartTitle: 'Expenses by type', chartSub: c ? 'This period against the ' + compName() : rangeText(r), chart: chart, side: side,
+      kpis: kpis, chartTitle: 'Expenses by type', chartSub: c ? O.tpl('This period against the {period}', { period: compName() }) : rangeText(r), chart: chart, side: side,
       table: { title: 'By type', sub: 'Spending from recorded expenses; capital spending is part of the total', cols: cols, rows: rows, total: { v: totRow } },
       summary: [['Total spent', fmt.money(tot)], ['Operating costs', fmt.money(opT)], ['Capital spending', fmt.money(capT)], ['Staff claims', fmt.money(sum(claims, function (e) { return e.amount; }))]],
       notes: 'Operating costs keep the units running (cleaning, laundry, utilities, repairs). Capital spending buys things that last years (furniture, appliances, aircon units) and is shown apart in Financials.',
-      insight: ex.length ? 'Spent <b>' + fmt.money(tot) + '</b> across ' + fmt.plural(ex.length, 'entry', 'entries') + (c ? ' (' + cmpPhrase(tot, totP) + ')' : '') + ', of which ' + fmt.money(capT) + ' was capital spending. ' + esc(topType) + ' is the biggest line.' : 'No expenses recorded in this range.'
+      insight: ex.length ? O.tpl(c ? 'Spent {total} across {count} ({cmp}), of which {capex} was capital spending. {type} is the biggest line.' : 'Spent {total} across {count}, of which {capex} was capital spending. {type} is the biggest line.', { total: B(fmt.money(tot)), count: fmt.plural(ex.length, 'entry', 'entries'), cmp: c ? cmpPhrase(tot, totP) : '', capex: fmt.money(capT), type: { raw: esc(O.tr(topType)) } }) : 'No expenses recorded in this range.'
     };
   };
 
@@ -672,7 +676,7 @@
     var stays = D.bookings.filter(function (b) { return live(b) && pidOk(b) && O.tourismTaxApplies(b) && M.nightsIn(b, r.from, r.to) > 0; });
     var fs = stays.filter(function (b) { return b.guest.foreign; }), ds = stays.filter(function (b) { return !b.guest.foreign; });
     var kpis = [
-      { label: 'Tax collected', value: fmt.money(tax), delta: c ? chg(tax, taxP) : null, sub: c ? 'vs ' + fmt.money(taxP) : null, hl: true },
+      { label: 'Tax collected', value: fmt.money(tax), delta: c ? chg(tax, taxP) : null, sub: c ? O.tpl('vs {x}', { x: fmt.money(taxP) }) : null, hl: true },
       { label: 'Foreign room-nights', value: fmt.num(fn), sub: fmt.money(TAX_PER_NIGHT, { cur: 'MYR' }) + ' each' },
       { label: 'Foreign stays', value: fmt.num(fs.length), sub: 'taxable' },
       { label: 'Malaysian stays', value: fmt.num(ds.length), sub: 'exempt' },
@@ -706,7 +710,7 @@
       table: { title: 'By property', sub: 'Taxable and exempt nights', cols: cols, rows: rows, total: { v: totRow } },
       summary: [['Tax collected', fmt.money(tax)], ['Foreign room-nights', fmt.num(fn)], ['Foreign stays', fmt.num(fs.length)], ['Malaysian stays (exempt)', fmt.num(ds.length)]],
       notes: 'Tourism tax is ' + fmt.money(TAX_PER_NIGHT, { cur: 'MYR' }) + ' per room per night for foreign guests; Malaysian guests are exempt. It is collected for the Royal Malaysian Customs Department, passed through and not counted as revenue.',
-      insight: '<b>' + fmt.money(tax) + '</b> collected on ' + fmt.num(fn) + ' foreign room-nights. This is passed through to Customs and is not revenue.'
+      insight: O.tpl('{tax} collected on {n} foreign room-nights. This is passed through to Customs and is not revenue.', { tax: B(fmt.money(tax)), n: fmt.num(fn) })
     };
   };
 
@@ -730,7 +734,7 @@
     var link = O.allowed('owner');
     function ownerCell(n) { return link ? '<button type="button" class="lnk" data-go-owner="' + esc(n) + '" title="Open ' + esc(n) + '’s owner portal">' + esc(n) + '</button>' : esc(n); }
     var kpis = [
-      { label: 'Owner payouts', value: fmt.money(T.payout), delta: c ? chg(T.payout, TP.payout) : null, sub: c ? 'vs ' + fmt.money(TP.payout) : null, hl: true },
+      { label: 'Owner payouts', value: fmt.money(T.payout), delta: c ? chg(T.payout, TP.payout) : null, sub: c ? O.tpl('vs {x}', { x: fmt.money(TP.payout) }) : null, hl: true },
       { label: 'Revenue', value: fmt.money(T.gross), delta: c ? chg(T.gross, TP.gross) : null, sub: fmt.plural(T.units, 'unit') },
       { label: 'Management fee', value: fmt.money(T.mgmt), sub: Math.round(F.MGMT * 100) + '% after platform fees' },
       { label: 'Costs charged', value: fmt.money(T.opex + T.capex), sub: T.capex ? fmt.money(T.capex) + ' capital spending' : 'running costs only' },
@@ -753,7 +757,7 @@
       table: { title: 'By owner', sub: 'Statement figures for the selected dates', cols: cols, rows: rows, total: { v: tot } },
       summary: [['Owner payouts', fmt.money(T.payout)], ['Revenue', fmt.money(T.gross)], ['Management fee', fmt.money(T.mgmt)], ['Costs charged', fmt.money(T.opex + T.capex)]],
       notes: 'Payouts here cover the selected dates and leave out balances carried between months. Monthly statements, approvals and carried balances are in the Owner portal.',
-      insight: 'Owners earn <b>' + fmt.money(T.payout) + '</b> from ' + fmt.money(T.gross) + ' of revenue' + (c ? ' (' + cmpPhrase(T.payout, TP.payout) + ')' : '') + '; the management fee comes to ' + fmt.money(T.mgmt) + '. ' + (best && best.t.payout > 0 ? esc(best.name) + ' has the largest payout, ' + fmt.money(best.t.payout) + '.' : '')
+      insight: O.i18nKeep(O.tpl(c ? 'Owners earn {payout} from {gross} of revenue ({cmp}); the management fee comes to {fee}.' : 'Owners earn {payout} from {gross} of revenue; the management fee comes to {fee}.', { payout: B(fmt.money(T.payout)), gross: fmt.money(T.gross), cmp: c ? cmpPhrase(T.payout, TP.payout) : '', fee: fmt.money(T.mgmt) }) + (best && best.t.payout > 0 ? (O.state.lang === 'zh' ? '' : ' ') + O.tpl('{name} has the largest payout, {amount}.', { name: { raw: esc(best.name) }, amount: fmt.money(best.t.payout) }) : ''))
     };
   };
 
@@ -800,8 +804,8 @@
     var share = function (v) { return A[rank] ? v / A[rank] : 0; };
 
     var kpis = [
-      money ? { label: 'Stock used', value: fmt.money(A.cost), delta: c ? chg(A.cost, B.cost) : null, deltaOpts: { invert: true }, sub: c ? 'vs ' + fmt.money(B.cost) : 'at current item cost', hl: true }
-        : { label: 'Items used', value: fmt.num(A.qty), delta: c ? chg(A.qty, B.qty) : null, deltaOpts: { invert: true }, sub: c ? 'vs ' + fmt.num(B.qty) : fmt.plural(itemIds.length, 'product'), hl: true },
+      money ? { label: 'Stock used', value: fmt.money(A.cost), delta: c ? chg(A.cost, B.cost) : null, deltaOpts: { invert: true }, sub: c ? O.tpl('vs {x}', { x: fmt.money(B.cost) }) : 'at current item cost', hl: true }
+        : { label: 'Items used', value: fmt.num(A.qty), delta: c ? chg(A.qty, B.qty) : null, deltaOpts: { invert: true }, sub: c ? O.tpl('vs {x}', { x: fmt.num(B.qty) }) : fmt.plural(itemIds.length, 'product'), hl: true },
       money ? { label: 'Items used', value: fmt.num(A.qty), sub: fmt.plural(itemIds.length, 'product') } : { label: 'Stays restocked', value: fmt.num(A.stays), sub: 'turnovers with stock logged' },
       money ? { label: 'Cost per stay', value: A.stays ? fmt.money(A.cost / A.stays) : '–', sub: fmt.plural(A.stays, 'stay') + ' restocked' } : { label: 'Items per stay', value: A.stays ? (A.qty / A.stays).toFixed(1) : '–', sub: fmt.plural(A.stays, 'stay') }
     ];
@@ -882,8 +886,10 @@
 
     var unitWord = pid ? unitName(pid) : null;
     var insight = !A.qty ? 'No stock was recorded as used in this range. Stock used is logged in Inventory, usually at each turnover.'
-      : pid ? '<b>' + esc(unitWord) + '</b> used ' + fmt.num(A.qty) + ' items' + (money ? ' worth ' + fmt.money(A.cost) : '') + ' over ' + fmt.plural(A.stays, 'stay') + (c ? ' (' + cmpPhrase(A[rank], B[rank]) + ')' : '') + ', mostly ' + topNames(A.units[pid] || NO_UNIT, 2).map(function (s) { return esc(s.toLowerCase()); }).join(' and ') + '.'
-        : '<b>' + esc(unitName(top.u)) + '</b> used the most stock (' + mf(top.x[rank]) + '), mostly ' + topNames(top.x, 2).map(function (s) { return esc(s.toLowerCase()); }).join(' and ') + '. All units used ' + fmt.num(A.qty) + ' items' + (money ? ' worth ' + fmt.money(A.cost) : '') + ' over ' + fmt.plural(A.stays, 'stay') + (c ? ', ' + cmpPhrase(A[rank], B[rank]) : '') + '.';
+      : pid ? O.tpl(money ? (c ? '{unit} used {n} items worth {cost} over {stays} ({cmp}), mostly {items}.' : '{unit} used {n} items worth {cost} over {stays}, mostly {items}.') : c ? '{unit} used {n} items over {stays} ({cmp}), mostly {items}.' : '{unit} used {n} items over {stays}, mostly {items}.',
+          { unit: { raw: '<b>' + esc(unitWord) + '</b>' }, n: fmt.num(A.qty), cost: money ? fmt.money(A.cost) : '', stays: fmt.plural(A.stays, 'stay'), cmp: c ? cmpPhrase(A[rank], B[rank]) : '', items: { raw: esc(andNames(topNames(A.units[pid] || NO_UNIT, 2))) } })
+        : O.tpl(money ? (c ? '{unit} used the most stock ({amount}), mostly {items}. All units used {n} items worth {cost} over {stays}, {cmp}.' : '{unit} used the most stock ({amount}), mostly {items}. All units used {n} items worth {cost} over {stays}.') : c ? '{unit} used the most stock ({amount}), mostly {items}. All units used {n} items over {stays}, {cmp}.' : '{unit} used the most stock ({amount}), mostly {items}. All units used {n} items over {stays}.',
+          { unit: { raw: '<b>' + esc(unitName(top.u)) + '</b>' }, amount: mf(top.x[rank]), items: { raw: esc(andNames(topNames(top.x, 2))) }, n: fmt.num(A.qty), cost: money ? fmt.money(A.cost) : '', stays: fmt.plural(A.stays, 'stay'), cmp: c ? cmpPhrase(A[rank], B[rank]) : '' });
     var summary = money ? [['Stock used', fmt.money(A.cost)], ['Items used', fmt.num(A.qty)], ['Cost per stay', A.stays ? fmt.money(A.cost / A.stays) : '–'], pid ? ['Stays restocked', fmt.num(A.stays)] : ['Top unit', top ? unitShort(top.u) : '–']]
       : [['Items used', fmt.num(A.qty)], ['Stays restocked', fmt.num(A.stays)], ['Items per stay', A.stays ? (A.qty / A.stays).toFixed(1) : '–'], pid ? ['Products', fmt.num(itemIds.length)] : ['Top unit', top ? unitShort(top.u) : '–']];
     var note = 'Counts every stock-out recorded for a unit (turnover restocks and repairs) in the range.' + (money ? ' Cost uses each product’s current unit cost.' : '');
@@ -1043,7 +1049,7 @@
     function match(r) { if (!ws.length) return true; var hay = (r.name + ' ' + r.desc + ' ' + GRP[r.group].name + ' ' + (r.kw || '')).toLowerCase(); return ws.every(function (w) { return hay.indexOf(w) >= 0; }); }
     var groups = GROUPS.map(function (g) { return { g: g, items: REPORTS.filter(function (r) { return r.group === g.id && match(r); }) }; }).filter(function (x) { return x.items.length; });
     var n = sum(groups, function (x) { return x.items.length; });
-    var cnt = ws.length ? fmt.plural(n, 'report') + ' found' : fmt.plural(REPORTS.length, 'report') + ' in ' + GROUPS.length + ' groups';
+    var cnt = ws.length ? fmt.plural(n, 'report') + ' found' : O.tpl('{count} in {n} groups', { count: fmt.plural(REPORTS.length, 'report'), n: GROUPS.length });
     var grid = groups.length ? '<div class="rl-grid">' + groups.map(function (x) {
       return '<section class="card rl-group" aria-label="' + esc(x.g.name) + '"><div class="card-head"><div class="rl-gh"><span class="rl-gi">' + O.icon(x.g.icon) + '</span><div><h3>' + esc(x.g.name) + '</h3><div class="sub">' + esc(x.g.desc) + '</div></div></div></div><div class="rl-list">' +
         x.items.map(function (r) {

@@ -16,6 +16,7 @@
   function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
   function nz(v) { return v === undefined ? null : v; }
 
+  /* i18n:off — the guest's own app and its default content keep the operator's wording (scripts/i18n-extract.mjs) */
   /* =================================================================
      1. DATA
      ================================================================= */
@@ -1101,6 +1102,7 @@
     return { reload: function () { return load(false); }, stop: stop };
   };
 
+  /* i18n:on */
   /* =================================================================
      5. STAFF PAGE: guests (preview + link), requests, problems, house info, local tips, settings
      ================================================================= */
@@ -1147,11 +1149,11 @@
     if (w === 'confirmation') return U.pill('Code waits for confirmation', 'neutral');
     if (w === 'checkin') return U.pill('Code waits for check-in', soon ? 'warn' : 'neutral');
     if (w === 'id') return U.pill('Code waits for the ID', soon ? 'warn' : 'neutral');
-    return U.pill('Code from ' + atLabel(s.revealAt, D.NOW), 'info');
+    return U.pill(O.tpl('Code from {when}', { when: atLabel(s.revealAt, D.NOW) }), 'info');
   }
   function guestRowHTML(x) {
     var b = x.b, s = x.s, c = cfg(), gc = isObj(b.guestCheckin) ? b.guestCheckin : null;
-    var who = U.avatar(guestName(b)) + '<span class="ga-who-t"><b>' + esc(guestName(b)) + '</b><span>' + esc(propShort(b.propertyId)) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(+b.guests || 1, 'guest') + (gc && gc.arrivalTime && (s.state === 'upcoming' || s.state === 'arrival') ? ' · arriving around ' + esc(fmt.time(gc.arrivalTime)) : '') + '</span></span>';
+    var who = U.avatar(guestName(b)) + '<span class="ga-who-t"><b>' + esc(guestName(b)) + '</b><span>' + esc(propShort(b.propertyId)) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(+b.guests || 1, 'guest') + (gc && gc.arrivalTime && (s.state === 'upcoming' || s.state === 'arrival') ? ' · ' + esc(O.tpl('arriving around {time}', { time: fmt.time(gc.arrivalTime) })) : '') + '</span></span>';
     var pills = (b.status === 'cancelled' ? U.pill('Cancelled', 'neutral') : b.status === 'pending' ? U.pill('Pending', 'warn') : '') +
       (s.state === 'checkout' ? U.pill('Leaves today', 'info') : '') +
       (s.checkinDone ? U.pill('Checked in online', 'ok') : U.pill('Not checked in online', s.state === 'upcoming' ? 'neutral' : 'warn')) +
@@ -1174,8 +1176,8 @@
     var today = rows.filter(function (x) { return x.s.state === 'arrival'; }), done = today.filter(function (x) { return x.s.visible; }).length;
     var groups = [['Arriving today', function (x) { return x.s.state === 'arrival'; }], ['Staying now', function (x) { return x.s.state === 'inhouse' || x.s.state === 'checkout'; }],
       ['Next 7 days', function (x) { return x.s.state === 'upcoming'; }], ['Selected booking', function (x) { return ['upcoming', 'arrival', 'inhouse', 'checkout'].indexOf(x.s.state) < 0; }]];
-    return '<p class="ga-lead">Every booking has its own guest app: online check-in, the door code when it is time, Wi-Fi, the house guide, requests and messages.' +
-      (today.length ? ' <b>' + done + ' of ' + today.length + '</b> arriving today can see their door code.' : '') + '</p>' +
+    return '<p class="ga-lead">' + esc(O.tr('Every booking has its own guest app: online check-in, the door code when it is time, Wi-Fi, the house guide, requests and messages.')) +
+      (today.length ? ' ' + O.tpl('{count} arriving today can see their door code.', { count: { raw: '<b>' + esc(O.tpl('{n} of {total}', { n: done, total: today.length })) + '</b>' } }) : '') + '</p>' +
       groups.map(function (g) {
         var list = rows.filter(g[1]); if (!list.length) return '';
         return '<section class="card ga-grp"><div class="card-head"><h3>' + esc(g[0]) + '</h3><span class="sub">' + fmt.plural(list.length, 'booking') + '</span></div><div class="ga-glist">' + list.map(guestRowHTML).join('') + '</div></section>';
@@ -1186,7 +1188,7 @@
     var handle = null, p = D.propById[b.propertyId];
     U.modal({
       title: 'Guest app preview', sub: guestName(b) + (p ? ' · ' + (p.short || p.name) : '') + ' · ' + d.fmtRange(b.checkIn, b.checkOut), size: 'ga-pv-modal',
-      body: '<div class="ga-pv"><div class="ga-pv-frame" role="region" aria-label="Guest app preview" tabindex="0"></div></div>', autofocus: false,
+      body: '<div class="ga-pv"><div class="ga-pv-frame" data-no-i18n role="region" aria-label="Guest app preview" tabindex="0"></div></div>', autofocus: false,
       onOpen: function (el) {
         handle = O.guestMode(O.$('.ga-pv-frame', el), b.guestToken, { preview: true, hideCode: !canCode(), hideWifi: !(canCode() || O.can('properties.access')) });
       },

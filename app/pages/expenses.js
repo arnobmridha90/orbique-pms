@@ -193,7 +193,7 @@
   function ccBadge(e) { var c = clsOf(e); return '<span class="cc-b ' + c + '" title="' + esc(CC[c][0]) + '">' + CC[c][1] + '</span>'; }
   function splitText(list) {
     var op = sum(list.filter(function (e) { return clsOf(e) === 'opex'; })), cap = sum(list.filter(function (e) { return clsOf(e) === 'capex'; }));
-    return 'operating ' + money(op) + ' · capital ' + money(cap);
+    return O.tpl('operating {op} · capital {cap}', { op: money(op), cap: money(cap) });
   }
   function typeLabel(e) { return e.type === 'Others' ? 'Others: ' + (e.otherType || 'unspecified') : e.type; }
   function isClaim(e) { return e.method === CLAIM; }
@@ -388,7 +388,7 @@
           '<span class="amt">' + money(e.amount, curE(e)) + '</span><div class="btns"><button type="button" class="btn btn-ghost btn-sm" data-act="reject">Reject</button><button type="button" class="btn btn-primary btn-sm" data-act="approve">Approve</button></div></div>';
       }).join('');
       return '<div class="card"><div class="card-head"><div><h3>Claims waiting for your approval' + (pend.length ? '<span class="cl-head-count">' + pend.length + '</span>' : '') + '</h3><div class="sub">' +
-        (pend.length ? money(sum(pend)) + ' paid personally by staff' : 'Nothing to approve') + (appr.length ? ' · ' + money(sum(appr)) + ' approved, still to pay back' : '') + '</div></div>' +
+        esc(O.i18nKeep((pend.length ? O.tpl('{amount} paid personally by staff', { amount: money(sum(pend)) }) : O.tr('Nothing to approve')) + (appr.length ? ' · ' + O.tpl('{amount} approved, still to pay back', { amount: money(sum(appr)) }) : ''))) + '</div></div>' +
         '<div class="row-flex wrap">' + (appr.length ? '<button type="button" class="btn btn-ghost btn-sm" data-act="payall">Mark ' + appr.length + ' as paid back</button>' : '') + (pend.length > 1 ? '<button type="button" class="btn btn-primary btn-sm" data-act="approveall">Approve all</button>' : '') + '</div></div>' +
         (pend.length ? '<div>' + rowsH + '</div>' : '<div class="card-body">' + U.empty(all.length ? 'All claims are approved. New claims from staff appear here.' : 'No claims yet. When staff pay with their own money, their claims appear here.', '✓') + '</div>') + '</div>';
     }
@@ -429,7 +429,7 @@
       '<div class="row-flex wrap">' + (anyFilter() ? '<button type="button" class="btn btn-quiet btn-sm" data-act="clear">Clear filters</button>' : '') + '<button type="button" class="btn btn-ghost btn-sm" data-act="csv"' + (list.length ? '' : ' disabled title="Nothing to export"') + '>' + O.icon('download') + 'Export CSV</button></div></div>';
     var filters = '<div class="ex-filters"><div class="toolbar"><span data-slot="range"></span>' +
       '<label class="sr-only" for="ex-ft">Type</label><select class="select" id="ex-ft" data-f="type"><option value="">All types</option>' + D.expenseTypes.map(function (t) { return '<option' + (st.type === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' +
-      '<label class="sr-only" for="ex-fc">Cost type</label><select class="select" id="ex-fc" data-f="cls"><option value="">All cost types</option>' + ['opex', 'capex'].map(function (k) { return '<option value="' + k + '"' + (st.cls === k ? ' selected' : '') + '>' + CC[k][1] + ' only</option>'; }).join('') + '</select>' +
+      '<label class="sr-only" for="ex-fc">Cost type</label><select class="select" id="ex-fc" data-f="cls"><option value="">All cost types</option>' + ['opex', 'capex'].map(function (k) { return '<option value="' + k + '"' + (st.cls === k ? ' selected' : '') + '>' + esc(O.tr(k === 'opex' ? 'Operating only' : 'Capital only')) + '</option>'; }).join('') + '</select>' +
       (all ? '<label class="sr-only" for="ex-fp">Person</label><select class="select" id="ex-fp" data-f="person"><option value="">Everyone</option>' + D.staff.map(function (s) { return '<option value="' + s.id + '"' + (st.person === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select>' : '') +
       '<label class="sr-only" for="ex-fpr">Property</label><select class="select" id="ex-fpr" data-f="prop"><option value="">All properties</option><option value="general"' + (st.prop === 'general' ? ' selected' : '') + '>General / company</option>' + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (st.prop === p.id ? ' selected' : '') + '>' + esc(p.short) + '</option>'; }).join('') + '</select>' +
       '<div class="search">' + O.icon('search') + '<label class="sr-only" for="ex-q">Search expenses</label><input id="ex-q" type="search" placeholder="Search notes, types, people" value="' + esc(st.q) + '"></div></div>' +
@@ -509,7 +509,7 @@
 
       ctx.setActions(O.curSwitchHTML() + '<button type="button" class="btn btn-ghost" data-top="csv"' + (list.length ? '' : ' disabled title="Nothing to export"') + '>' + O.icon('download') + 'Export CSV</button>' + (canRecord() ? '<button type="button" class="btn btn-primary" data-top="new">' + O.icon('plus') + 'Record expense</button>' : ''));
       root.innerHTML = '<div class="pg-expenses">' + U.kpis([
-        { label: canAll() ? 'Operating costs' : 'Your operating costs', value: money(opex), delta: fmt.change(opex, prevOpex), deltaOpts: { invert: true }, sub: '<span class="lg">vs prior ' + fmt.plural(nDays, 'day') + '</span><span class="sm">vs prior ' + nDays + 'd</span>', title: 'Running costs of the month, counted in profit. Compared with ' + U.rangeLabel(pr.from, pr.to) + ': ' + money(prevOpex), hl: true },
+        { label: canAll() ? 'Operating costs' : 'Your operating costs', value: money(opex), delta: fmt.change(opex, prevOpex), deltaOpts: { invert: true }, sub: '<span class="lg">' + esc(O.tpl('vs prior {days}', { days: fmt.plural(nDays, 'day') })) + '</span><span class="sm">' + esc(O.tpl('vs prior {n}d', { n: nDays })) + '</span>', title: 'Running costs of the month, counted in profit. Compared with ' + U.rangeLabel(pr.from, pr.to) + ': ' + money(prevOpex), hl: true },
         { label: canAll() ? 'Capital spending' : 'Your capital spending', value: money(capex), sub: capL.length ? fmt.plural(capL.length, 'purchase') + '<span class="lg"> · kept out of profit</span>' : 'None in range', title: 'Long-lasting purchases for a property, shown below operating profit in Financials' },
         { label: pendLabel, value: money(sum(pendAll)), sub: pendAll.length ? fmt.plural(pendAll.length, 'claim') + ' waiting' + (apprAll.length ? '<span class="lg"> · ' + money(sum(apprAll)) + ' to pay back</span>' : '') : apprAll.length ? money(sum(apprAll)) + ' approved, to pay back' : 'Nothing waiting', title: 'Approved claims not yet paid back: ' + money(sum(apprAll)) },
         { label: 'Receipts missing', value: fmt.num(noRc.length), sub: noRc.length ? money(sum(noRc)) + ' in total' : 'All have receipts' }

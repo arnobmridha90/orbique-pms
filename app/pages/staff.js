@@ -281,10 +281,10 @@
     var order = { owner: 0, ops: 1, frontdesk: 2, housekeeping: 3, maintenance: 4, accountant: 5 };
     cur.sort(function (a, b) { return (order[a.role] != null ? order[a.role] : 9) - (order[b.role] != null ? order[b.role] : 9) || String(a.name).localeCompare(String(b.name)); });
     var online = cur.filter(function (s) { return lastSeen(s) === 'Online now'; }).length;
-    var subBits = [fmt.plural(cur.length, 'person', 'people')]; if (online) subBits.push(online + ' online now'); if (inv) subBits.push(fmt.plural(inv, 'invite') + ' waiting');
+    var subBits = [fmt.plural(cur.length, 'person', 'people')]; if (online) subBits.push(O.tpl('{n} online now', { n: online })); if (inv) subBits.push(O.tpl('{count} waiting', { count: fmt.plural(inv, 'invite') }));
     var head = '<div class="stf-ph"><span>Person</span><span>Role</span><span>Properties</span><span>Last active</span><span>Status</span><span></span></div>';
     var alone = cur.length <= 1 && !inv;
-    return '<div class="card"><div class="card-head"><div><h3>Team</h3><div class="sub">' + esc(subBits.join(' · ')) + '. Select a person to see their access.</div></div></div>' + head +
+    return '<div class="card"><div class="card-head"><div><h3>Team</h3><div class="sub">' + esc(O.tpl('{summary}. Select a person to see their access.', { summary: O.i18nKeep(subBits.join(' · ')) })) + '</div></div></div>' + head +
       '<div class="stf-pl">' + cur.map(personRow).join('') + '</div>' +
       (alone ? '<div class="stf-empty"><p>Add the people who clean, check guests in, fix things and keep the books. Each person signs in with their own account and sees only what their role allows.</p>' + (canInvite() ? '<button type="button" class="btn btn-ghost" data-do="add">' + O.icon('plus') + 'Add person</button>' : '') + '</div>' : '') +
       (old.length ? '<button type="button" class="stf-more" data-do="gone" aria-expanded="' + st.showGone + '">' + (st.showGone ? 'Hide' : 'Show') + ' ' + fmt.plural(old.length, 'former team member') + '</button>' + (st.showGone ? '<div class="stf-pl">' + old.map(personRow).join('') + '</div>' : '') : '') +
