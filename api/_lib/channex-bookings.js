@@ -187,6 +187,10 @@ export function revisionToBookings(rev, ctx = {}) {
     // Agoda's amounts are what the property receives; its price to the guest is refsell_amt, so the fee is the difference
     const sellRatio = channel === 'agoda' && commission === null ? agodaSellRatio(room) : 0;
     let payout = collect === 'property' ? total : money(total - platformFee);
+    // Trip.com prepaid (net rate) sends what it pays the property, after its commission and promotions: that is the payout.
+    // Its guest price is not in the booking, so no fee is taken off and none is guessed.
+    const tripNet = channel === 'trip' && collect === 'ota' && commission === null;
+    if (tripNet) { payout = total; platformFee = 0; }
     if (sellRatio) {
       payout = total;
       accommodation = money(accommodation * sellRatio);
@@ -224,7 +228,8 @@ export function revisionToBookings(rev, ctx = {}) {
     if (validTime(rev.arrival_hour)) b.arrivalHour = rev.arrival_hour;
     if (groupRef) b.groupRef = groupRef;
     if (currency && currency !== 'MYR') b.currency = currency;
-    if (commission === null && !sellRatio) b.feeEstimated = true;
+    if (commission === null && !sellRatio && !tripNet) b.feeEstimated = true;
+    if (tripNet) b.netRate = true;
     if (collect) b.paymentCollect = collect;
     if (collect !== 'property') { b.paidAt = createdAt.slice(0, 10); b.payMethod = 'Paid via ' + (CHANNEL_NAME[channel] || 'the platform'); }
     if (status === 'cancelled') b.cancelledAt = ctx.today || todayMY(ctx.now || Date.now());
@@ -246,7 +251,7 @@ export function newBookingFields(b) {
 
 /** Keys a channel revision owns; everything else (unit, door code, guest token, staff notes, invoices…) stays as staff left it. */
 export const CHANNEL_KEYS = ['unitTypeId', 'listingTypeId', 'ratePlanId', 'channel', 'otaName', 'reservationCode', 'channex', 'groupRef', 'guests', 'checkIn', 'checkOut',
-  'nights', 'nightly', 'accommodation', 'cleaningFee', 'tourismTax', 'total', 'revenue', 'currency', 'platformFee', 'feeEstimated', 'payout',
+  'nights', 'nightly', 'accommodation', 'cleaningFee', 'tourismTax', 'total', 'revenue', 'currency', 'platformFee', 'feeEstimated', 'netRate', 'payout',
   'paymentCollect', 'otaNotes', 'arrivalHour'];
 
 /**
