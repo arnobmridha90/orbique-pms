@@ -8212,5 +8212,9 @@ O.I18N.zh = {
 "{h}h": "{h} 小時",
 "{m}m": "{m} 分",
 "{n} other guest": "{n} 位其他房客",
+"Translated": "已翻譯",
+"Translated from {lang}": "譯自{lang}",
+"See original": "查看原文",
+"See translation": "查看譯文",
 "Direct": "直接預訂"
 };

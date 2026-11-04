@@ -7,6 +7,8 @@
  *   unregister-device  the member who registered it    {token}: this phone stops getting them
  *   team-message       the sender of the message       {messageId}: phone alerts for a Team chat message just sent, once,
  *                                                      to the others in the chat who did not mute it -> {phones, sent}
+ *   team-translate     any active member of orgId      {ids, to}: Team chat messages (up to 40, only chats the member is
+ *                                                      in) in language `to` -> {configured, to, items, pending} (0025)
  *
  * Sign-in: "Authorization: Bearer <Supabase access token>". Uses the service-role key (server only).
  * Never returns a key; channel results are plain English ("sent", "skipped: why", "failed: why").
@@ -15,6 +17,7 @@ import { ok, fail, send, cors, readJson, bearer, bad, forbidden, uuid as uuidFie
 import { requireAdminClient, check, caller, membership } from './_lib/supabase.js';
 import { channelStatus, queueTest, pushConfig, sendTeamPush } from './_lib/alerts.js';
 import TC from './_lib/shared/teamchat.cjs';
+import { teamTranslate } from './_lib/team-translate.js';
 
 const ALERT_ROLES = ['owner', 'ops'];
 
@@ -64,6 +67,10 @@ const ACTIONS = {
     const r = await sendTeamPush(sb, pushConfig(), orgId, claim.users, text, { kind: 'team', chatId: claim.chat && claim.chat.id });
     if (r.failed && r.failed.length) console.error('[api] team alert:', r.failed[0]);
     return { phones: r.phones || 0, sent: r.sent || 0 };
+  },
+  'team-translate': async (sb, body, me) => {
+    const { orgId } = await member(sb, body, me);
+    return teamTranslate(sb, { orgId, userId: me.id, ids: body.ids, to: body.to });
   }
 };
 

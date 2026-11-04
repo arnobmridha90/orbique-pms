@@ -105,6 +105,10 @@ var STR = {
   unmutedToast: 'Phone alerts for this chat are on',
   loading: 'Loading…',
   sending: 'Sending…',
+  translated: 'Translated',
+  translatedFrom: 'Translated from {lang}',
+  seeOriginal: 'See original',
+  seeTranslation: 'See translation',
   someone: 'Someone',
   formerStaff: 'Former staff'
 };

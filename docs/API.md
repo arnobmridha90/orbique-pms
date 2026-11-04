@@ -178,6 +178,7 @@ Booking alerts (`api/_lib/alerts.js`, migration `0011`) and Team chat phone aler
 | `register-device` | any active member | `{orgId, token, platform}` | this phone gets Team chat alerts; booking alerts too (`push_devices.booking_alerts`) only when the member is the owner or an ops manager, set again on every registration |
 | `unregister-device` | the member who registered it | `{orgId, token}` | this phone stops getting alerts |
 | `team-message` | the sender of the message | `{orgId, messageId}` | phone alerts for a Team chat message just sent: `{phones, sent}`. Claimed once through `team_push_claim` (service role only), within 15 minutes of the message; goes to the others in the chat with Team chat access who did not mute it, never the sender. Android channel `team_chat`. |
+| `team-translate` | any active member | `{orgId, ids, to}` | Team chat messages (up to 40) in language `to` (ISO 639-1): `{configured, to, items: {<id>: {text, from, same}}, pending}`. Only messages in chats the member is in (`team__in`). Each translation is made once per message and language and kept in `team_message_translations` (0025, service role only); `pending` ran out of time, ask again. Needs `ANTHROPIC_API_KEY`; without it `configured` is false and nothing new is translated. |
 
 ## Database functions the browser calls (supabase.rpc)
 

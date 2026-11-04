@@ -298,6 +298,21 @@ begin
   raise notice 'ok: grants, bucket private, push_devices.booking_alerts, realtime tables';
 end $$;
 
+-- 0025: translations are for the server only, and go with their message
+do $$
+declare m uuid;
+begin
+  if has_table_privilege('authenticated', 'public.team_message_translations', 'select') then raise exception 'members may read translations directly'; end if;
+  if has_table_privilege('anon', 'public.team_message_translations', 'select') then raise exception 'anon may read translations'; end if;
+  if not has_table_privilege('service_role', 'public.team_message_translations', 'insert') then raise exception 'the server cannot save translations'; end if;
+  select id into m from public.team_messages limit 1;
+  insert into public.team_message_translations (message_id, lang, src_lang, body) values (m, 'en', 'ms', 'Room is ready');
+  begin insert into public.team_message_translations (message_id, lang) values (m, 'english'); raise exception 'bad language saved'; exception when check_violation then null; end;
+  delete from public.team_messages where id = m;
+  if exists (select 1 from public.team_message_translations where message_id = m) then raise exception 'translation outlived its message'; end if;
+  raise notice 'ok: translations server-only, removed with their message';
+end $$;
+
 rollback;
 \o
 select 'team chat: ok';

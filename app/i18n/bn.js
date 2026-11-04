@@ -8212,5 +8212,9 @@ O.I18N.bn = {
 "{h}h": "{h} ঘ",
 "{m}m": "{m} মি",
 "{n} other guest": "{n} জন অন্য অতিথি",
+"Translated": "অনূদিত",
+"Translated from {lang}": "{lang} থেকে অনূদিত",
+"See original": "মূল লেখা দেখুন",
+"See translation": "অনুবাদ দেখুন",
 "Direct": "ডাইরেক্ট"
 };
