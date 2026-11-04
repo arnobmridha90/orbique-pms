@@ -114,6 +114,17 @@ test('revisionToBookings: Agoda sends the net it pays, so the guest price comes 
   assert.equal(e.total, 484.06); assert.equal(e.feeEstimated, true);
 });
 
+test('revisionToBookings: Trip.com prepaid sends its net rate, so the amount is the payout and nothing more is taken off', () => {
+  const room = { checkin_date: '2026-12-08', checkout_date: '2026-12-09', room_type_id: RT_T, rate_plan_id: RP_T, amount: '157.16',
+    days: { '2026-12-08': '157.16' }, occupancy: { adults: 4 } };
+  const b = revisionToBookings(rev({ unique_id: 'CTP-1', ota_name: 'CTrip', ota_commission: null, payment_collect: 'ota', amount: '157.16', services: [], rooms: [room] }), ctx()).bookings[0];
+  assert.equal(b.channel, 'trip');
+  assert.equal(b.payout, 157.16); assert.equal(b.platformFee, 0); assert.equal(b.netRate, true); assert.equal(b.feeEstimated, undefined);
+  // paid at the property: unchanged, the estimate stays
+  const p = revisionToBookings(rev({ unique_id: 'CTP-2', ota_name: 'CTrip', ota_commission: null, payment_collect: 'property', amount: '157.16', services: [], rooms: [room] }), ctx()).bookings[0];
+  assert.equal(p.payout, 157.16); assert.equal(p.netRate, undefined);
+});
+
 test('stripRevision and revisionAttrs: no card data kept; API shape unwrapped', () => {
   const s = stripRevision(rev());
   assert.equal(s.guarantee, undefined);
