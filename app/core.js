@@ -483,6 +483,7 @@
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>'
   };
   IC.reviews = IC.star; IC.inbox = IC.chat;
+  IC.team = '<path d="M17 9.5a6.5 6.5 0 0 1-9.6 5.7L3 16.5l1.2-3.8A6.5 6.5 0 1 1 17 9.5z"/><path d="M19.6 10.6A5.5 5.5 0 0 1 18.8 19l1.7 2.3-4-.9a5.5 5.5 0 0 1-5-1"/>';
   IC.greetings = IC.chat.replace('/>', '/><path d="M8.5 12.5a4.2 4.2 0 0 0 7 0"/><path d="M9 8.8h.01M15 8.8h.01"/>');
   O.icon = function (name, cls) {
     return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (IC[name] || IC.more) + '</svg>';
@@ -1466,6 +1467,7 @@
     ['calendar', 'Calendar', [['block', 'Block and unblock dates', 'Owner stays and maintenance blocks', 'do']]],
     ['reviews', 'Reviews', [['reply', 'Reply to reviews', 'Public replies on every platform', 'do']]],
     ['inbox', 'Inbox', [['send', 'Message guests', 'Reply on WhatsApp, email and platforms. Without it, people who open the inbox can still send the greeting message.', 'do'], ['notes', 'Write internal notes', 'Notes only the team sees', 'do'], ['quickReplies', 'Edit quick replies', 'Saved replies for the whole team', 'do'], ['greetings', 'Write greeting messages', 'Greeting messages for each building, with the parts that change per booking', 'do']]],
+    ['team', 'Team chat', []],
     ['tasks', 'Tasks & cleaning', [['create', 'Create tasks', '', 'do'], ['assign', 'Assign tasks to others', 'Create tasks for others and reassign them', 'do'], ['others', 'See other people\'s tasks', 'When off, people see only their own tasks', 'see'], ['delete', 'Delete tasks', '', 'do'], ['checklists', 'Edit checklist templates', 'Check-in, check-out and daily housekeeping lists', 'do']]],
     ['invoices', 'Invoices & receipts', [['send', 'Send invoices and receipts', 'To guests by WhatsApp or email', 'do'], ['payments', 'Record payments', 'Mark invoices paid', 'do'], ['settings', 'Change invoice settings', 'Numbering, tax and automatic sending', 'do']]],
     ['expenses', 'Expenses', [['record', 'Record their own expenses', 'Log what they spend and claim it back', 'do'], ['viewAll', 'See everyone\'s expenses', 'When off, people see only their own', 'see'], ['approve', 'Approve expense claims', 'Pay back staff who paid personally', 'do', true]]],
@@ -1495,15 +1497,15 @@
   }
   function all(keys) { var o = {}; keys.split(' ').forEach(function (k) { o[k] = true; }); return o; }
   O.DEFAULT_ROLE_PERMS = {
-    ops: roleDefaults({ dashboard: 'edit', statistics: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', invoices: 'edit', expenses: 'edit', reports: 'view', website: 'edit', guestapp: 'edit', properties: 'edit', channels: 'edit', inventory: 'edit', pricing: 'edit', automations: 'edit', owner: 'view', staff: 'view', brand: 'view' },
+    ops: roleDefaults({ team: 'edit', dashboard: 'edit', statistics: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', invoices: 'edit', expenses: 'edit', reports: 'view', website: 'edit', guestapp: 'edit', properties: 'edit', channels: 'edit', inventory: 'edit', pricing: 'edit', automations: 'edit', owner: 'view', staff: 'view', brand: 'view' },
       all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value bookings.export calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies inbox.greetings tasks.create tasks.assign tasks.others tasks.delete tasks.checklists invoices.send invoices.payments expenses.record expenses.viewAll reports.money reports.export website.edit website.publish guestapp.edit guestapp.doorCodes guestapp.requests properties.create properties.edit properties.access channels.connect channels.rates channels.sync inventory.in inventory.out inventory.adjust inventory.items inventory.money pricing.change pricing.rules automations.toggle automations.edit owner.statements staff.invite')),
-    housekeeping: roleDefaults({ dashboard: 'view', bookings: 'view', calendar: 'view', inbox: 'edit', tasks: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'edit' },
+    housekeeping: roleDefaults({ team: 'edit', dashboard: 'view', bookings: 'view', calendar: 'view', inbox: 'edit', tasks: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud inbox.send inbox.notes tasks.create expenses.record guestapp.requests properties.access inventory.out')),
-    frontdesk: roleDefaults({ dashboard: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', pricing: 'view', channels: 'view', automations: 'view', invoices: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'view' },
+    frontdesk: roleDefaults({ team: 'edit', dashboard: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', pricing: 'view', channels: 'view', automations: 'view', invoices: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'view' },
       all('dashboard.readAloud bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies inbox.greetings tasks.create tasks.assign tasks.others invoices.send invoices.payments expenses.record guestapp.edit guestapp.doorCodes guestapp.requests properties.access')),
-    maintenance: roleDefaults({ dashboard: 'view', calendar: 'view', inbox: 'view', tasks: 'edit', expenses: 'edit', properties: 'view', inventory: 'edit' },
+    maintenance: roleDefaults({ team: 'edit', dashboard: 'view', calendar: 'view', inbox: 'view', tasks: 'edit', expenses: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud tasks.create expenses.record properties.access inventory.out')),
-    accountant: roleDefaults({ dashboard: 'view', statistics: 'view', bookings: 'view', invoices: 'edit', expenses: 'edit', reports: 'view', owner: 'view', inventory: 'view' },
+    accountant: roleDefaults({ team: 'edit', dashboard: 'view', statistics: 'view', bookings: 'view', invoices: 'edit', expenses: 'edit', reports: 'view', owner: 'view', inventory: 'view' },
       all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.contacts bookings.value bookings.export invoices.send invoices.payments invoices.settings expenses.record expenses.viewAll reports.money reports.export owner.statements inventory.money'))
   };
   D.rolePerms = D.rolePerms || JSON.parse(JSON.stringify(O.DEFAULT_ROLE_PERMS));
@@ -2310,7 +2312,7 @@
      =================================================================== */
   O.NAV = [
     ['overview', ['dashboard', 'bookings', 'calendar', 'reviews']],
-    ['operate', ['inbox', 'greetings', 'tasks']],
+    ['operate', ['inbox', 'team', 'greetings', 'tasks']],
     ['insights', ['statistics', 'reports']],
     ['finance', ['invoices', 'expenses', 'financials']],
     ['grow', ['website', 'livesite', 'guestapp']],
@@ -2374,9 +2376,12 @@
     if (!O.allowed(id)) return '<span class="nav-lock">🔒</span>';
     if (id === 'inbox') { var n = D.conversations.reduce(function (s, c) { return s + (c.archived || c.trashedAt ? 0 : c.unread || 0); }, 0); /* Archived and Deleted chats do not count */ return n ? '<span class="nav-badge">' + n + '</span>' : ''; }
     if (id === 'reviews') { var r = D.reviews.filter(function (x) { return !x.reply; }).length; return r ? '<span class="nav-badge">' + r + '</span>' : ''; }
+    if (O.navBadges && O.navBadges[id]) { var k = 0; try { k = O.navBadges[id]() || 0; } catch (e) { k = 0; } return k ? '<span class="nav-badge">' + (k > 99 ? '99+' : k) + '</span>' : ''; } /* e.g. Team chat (pages/team.js) */
     if (id === 'tasks') { var t = D.tasks.filter(function (x) { return x.status !== 'done' && x.due.slice(0, 10) <= D.TODAY && (O.can('tasks.others') || O.taskwho.has(x, O.state.viewer)); }).length; return t ? '<span class="nav-badge">' + t + '</span>' : ''; }
     return '';
   }
+  O.navBadges = O.navBadges || {};
+  O.paintBadges = function () { if (O._started) { paintBadges(); paintTabs(); } };
   function paintBadges() { O.$$('.nav-item').forEach(function (n) { var b = O.$('.nav-badge, .nav-lock', n); if (b) b.remove(); n.insertAdjacentHTML('beforeend', navBadge(n.dataset.page)); }); }
 
   /* phone: bottom tab bar with the four sections this person uses most, plus More (opens the full menu) */
