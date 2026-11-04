@@ -95,17 +95,17 @@ export const DESTINATIONS = [
 ];
 
 // Real photos of each landmark from our windows, by the suite (in content.json) they were taken from.
-// The Standard suite has none yet.
+// The Superior suite has none yet.
 export const VIEW_PHOTOS: Record<Exclude<View, 'city'>, { key: string; alt: string; from: string; suites: string[] }[]> = {
   petronas: [
-    { key: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk above the city, seen from the Boutique Suite', from: 'From the Boutique Suite, Level 43', suites: ['boutique'] },
-    { key: 'premium-b/10-klcc-window-view', alt: 'The Petronas Twin Towers by day through a Premium Suite window', from: 'From a Premium Suite', suites: ['premium'] },
+    { key: 'boutique/10-klcc-night-view', alt: 'A Petronas tower lit up at dusk above the city, seen from the Deluxe Suite', from: 'From the Deluxe Suite, Level 43', suites: ['boutique'] },
+    { key: 'premium-b/10-klcc-window-view', alt: 'The Petronas Twin Towers by day through a Premier Suite window', from: 'From a Premier Suite', suites: ['premium'] },
   ],
   'kl-tower': [
-    { key: 'premium-a/10-kl-tower-view-night', alt: 'KL Tower lit blue at dusk, seen from a Premium Suite bedroom', from: 'From a Premium Suite', suites: ['premium'] },
+    { key: 'premium-a/10-kl-tower-view-night', alt: 'KL Tower lit blue at dusk, seen from a Premier Suite bedroom', from: 'From a Premier Suite', suites: ['premium'] },
   ],
   merdeka: [
-    { key: 'premium-a/08-master-bedroom-merdeka-118-night', alt: 'Merdeka 118 at dusk outside a Premium Suite bedroom window', from: 'From a Premium Suite', suites: ['premium'] },
+    { key: 'premium-a/08-master-bedroom-merdeka-118-night', alt: 'Merdeka 118 at dusk outside a Premier Suite bedroom window', from: 'From a Premier Suite', suites: ['premium'] },
   ],
 };
 export const LANDMARKS: { id: Exclude<View, 'city'>; name: string; line: string }[] = [

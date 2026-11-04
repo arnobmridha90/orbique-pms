@@ -1,7 +1,8 @@
 /* Orbique service worker: lets the installed app open quickly and show the last loaded app when offline.
  *
  *   page navigations (/, /guest/<token>) and /config.js  network first; offline -> the cached copy (index.html)
- *   /vendor/*, /icons/* and /sounds/*                    cache first, refreshed in the background
+ *   /vendor/*, /icons/*, /sounds/* and /i18n/*           cache first, refreshed in the background (/i18n/<lang>.js: a
+ *                                                       language's translations, loaded when it is chosen)
  *   tiles.openfreemap.org (style, sprites, fonts, tiles)  from a saved guest map ('orbique-maps-<building>') when it is
  *                                                       there, else the network (never stored here)
  *   /api/*, /privacy, Supabase and every other site      never touched (always the network, never cached)
@@ -10,7 +11,7 @@
  * maps work without internet. Those caches are kept when VERSION changes (the page refreshes them every 30 days).
  * Bump VERSION when this file's caching rules change; old app caches are deleted on activate.
  */
-const VERSION = 'orbique-v4-4';
+const VERSION = 'orbique-v4-5';
 const MAPS = 'orbique-maps-';
 const MAP_HOST = 'tiles.openfreemap.org';
 const PRECACHE = ['/index.html', '/config.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/vendor/supabase.js', '/vendor/jspdf.umd.min.js', '/sounds/orbique_alert.wav'];
@@ -49,7 +50,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname === '/privacy' || url.pathname === '/privacy.html') return; // the public privacy page is not the app
   if (req.mode === 'navigate') return event.respondWith(page(event));
   if (url.pathname === '/config.js') return event.respondWith(networkFirst(req, '/config.js'));
-  if (url.pathname.startsWith('/vendor/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/sounds/')) return event.respondWith(cacheFirst(event, req));
+  if (url.pathname.startsWith('/vendor/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/sounds/') || url.pathname.startsWith('/i18n/')) return event.respondWith(cacheFirst(event, req));
 });
 
 function timeout(promise, ms) {
@@ -97,7 +98,8 @@ async function networkFirst(req, key) {
 
 async function cacheFirst(event, req) {
   const cache = await caches.open(VERSION);
-  const cached = await cache.match(req, { ignoreSearch: true });
+  /* /i18n/<lang>.js?v=<hash>: a new version is a new file, so match the whole address */
+  const cached = await cache.match(req, { ignoreSearch: !new URL(req.url).pathname.startsWith('/i18n/') });
   const refresh = fetch(req).then((res) => { if (cacheable(res)) return cache.put(req, res.clone()).then(() => res); return res; }).catch(() => null);
   if (cached) { event.waitUntil(refresh); return cached; }
   // offline and not in the app cache: a saved guest map also holds the map library (/vendor/maplibre-gl.*)

@@ -255,6 +255,7 @@
   function online() { return navigator.onLine !== false && !(CUR.st && CUR.st.offline); }
   function vectorPossible(n) { var ms = mapsState(n); return !!vendorBase() && webgl() && (online() || ms === 'saved' || ms === 'old'); }
 
+  /* i18n:off — guest screens (scripts/i18n-extract.mjs) */
   /* =================================================================
      3. GUEST SCREENS (drawn by guestapp.js)
      ================================================================= */

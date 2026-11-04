@@ -39,28 +39,28 @@ IMAGES = {
 }
 SUITE_PHOTOS = {
     'boutique': [('boutique/2026-10-20/' + f, a) for f, a in [
-        ('02-dining-and-living.jpg', 'Boutique suite dining table and living room'),
-        ('01-living-room.jpg', 'Boutique suite living room with floor-to-ceiling windows'),
-        ('03-bedroom-1-view.jpg', 'Boutique suite bedroom with a city view'),
-        ('04-bedroom-2.jpg', 'Second bedroom in a Boutique suite'),
-        ('05-bedroom-window-view.jpg', 'Kuala Lumpur skyline from a Boutique bedroom window'),
+        ('02-dining-and-living.jpg', 'Deluxe suite dining table and living room'),
+        ('01-living-room.jpg', 'Deluxe suite living room with floor-to-ceiling windows'),
+        ('03-bedroom-1-view.jpg', 'Deluxe suite bedroom with a city view'),
+        ('04-bedroom-2.jpg', 'Second bedroom in a Deluxe suite'),
+        ('05-bedroom-window-view.jpg', 'Kuala Lumpur skyline from a Deluxe bedroom window'),
         ('06-tv-klcc-view.jpg', 'Living room TV with the Petronas Twin Towers behind'),
         ('07-bathroom.jpg', 'Bathroom with a walk-in shower'),
         ('08-kitchen.jpg', 'Kitchen with hob and oven'),
         ('09-coffee-tea.jpg', 'Coffee and tea tray with a kettle'),
-        ('10-klcc-night-view.jpg', 'The Petronas Twin Towers at night from a Boutique suite'),
+        ('10-klcc-night-view.jpg', 'The Petronas Twin Towers at night from a Deluxe suite'),
     ]],
     'premium': [('premium/' + f, a) for f, a in [
-        ('unit-a-2026-10-20/03-dining-living-daylight.jpg', 'Premium suite dining and living room in daylight'),
-        ('unit-b-2026-10-20/07-master-bedroom-wide.jpg', 'Premium suite master bedroom'),
-        ('unit-a-2026-10-20/01-dining-and-living.jpg', 'Premium dining table under rattan lamps'),
+        ('unit-a-2026-10-20/03-dining-living-daylight.jpg', 'Premier suite dining and living room in daylight'),
+        ('unit-b-2026-10-20/07-master-bedroom-wide.jpg', 'Premier suite master bedroom'),
+        ('unit-a-2026-10-20/01-dining-and-living.jpg', 'Premier dining table under rattan lamps'),
         ('unit-b-2026-10-20/06-bed-klcc-view.jpg', 'Bed facing the Petronas Twin Towers'),
         ('unit-a-2026-10-20/08-master-bedroom-merdeka-118-night.jpg', 'Master bedroom at night with Merdeka 118 outside'),
-        ('unit-b-2026-10-20/04-dining-and-living.jpg', 'Premium dining and living area'),
+        ('unit-b-2026-10-20/04-dining-and-living.jpg', 'Premier dining and living area'),
         ('unit-a-2026-10-20/05-twin-bedroom-day.jpg', 'Twin bedroom in daylight'),
-        ('unit-b-2026-10-20/10-klcc-window-view.jpg', 'The Petronas Twin Towers from a Premium window'),
-        ('unit-a-2026-10-20/10-kl-tower-view-night.jpg', 'KL Tower at blue hour from a Premium bedroom'),
-        ('unit-b-2026-10-20/09-dressing-desk.jpg', 'Dressing desk in a Premium bedroom'),
+        ('unit-b-2026-10-20/10-klcc-window-view.jpg', 'The Petronas Twin Towers from a Premier window'),
+        ('unit-a-2026-10-20/10-kl-tower-view-night.jpg', 'KL Tower at blue hour from a Premier bedroom'),
+        ('unit-b-2026-10-20/09-dressing-desk.jpg', 'Dressing desk in a Premier bedroom'),
         ('unit-a-2026-10-20/09-twin-bedroom-night.jpg', 'Twin bedroom at night'),
         ('unit-b-2026-10-20/03-tv-klcc-night.jpg', 'Living room at night with the towers outside'),
     ]],
@@ -230,7 +230,7 @@ def crumbs(items):
 
 
 def check_form(building, suite=None, title='Check availability'):
-    opts = ''.join('<option%s>%s</option>' % (' selected' if suite == s else '', s) for s in ('Standard', 'Boutique', 'Premium'))
+    opts = ''.join('<option%s>%s</option>' % (' selected' if suite == s else '', s) for s in ('Superior', 'Deluxe', 'Premier'))
     return f'''<form class="avail hero-in" id="check" data-building="{e(building)}" autocomplete="off" novalidate>
 <div class="field"><label for="ci">Check-in</label><input id="ci" type="date"></div>
 <div class="field"><label for="co">Check-out</label><input id="co" type="date"></div>
@@ -344,7 +344,7 @@ def my_home(d):
 <p class="eyebrow">Kuala Lumpur · City centre</p>
 <h3>Kozi @ <span class="serif">Vortex KLCC</span></h3>
 <p>Two-bedroom suites high above the city centre on Jalan Sultan Ismail, between KLCC and Bukit Bintang. Choose from three styles of suite.</p>
-<div class="tiers"><span>Standard</span><span>Boutique</span><span>Premium</span></div>
+<div class="tiers"><span>Superior</span><span>Deluxe</span><span>Premier</span></div>
 <div class="go"><a class="btn magnet" href="/kuala-lumpur/vortex-klcc/">Explore Vortex KLCC <span aria-hidden="true">→</span></a></div>
 </div>
 </div>
@@ -368,18 +368,18 @@ def suites_section(d, heading=True):
 <div class="head"><div><p class="eyebrow">Three ways to stay</p><h2 id="h-suites" class="split">Choose your <span class="serif">suite</span></h2></div>
 <p class="lede">Every Kozi suite has two bedrooms, sleeps four, and has a full kitchen. A fifth guest can stay on an extra bed. The difference is the finish and the view.</p></div>
 <div class="cards">
-<article class="card tilt"><div class="media std" aria-hidden="true">{logo('std')}<span class="tag">Standard</span></div>
-<div class="body"><h3>Standard</h3><p>Our simplest two-bedroom suite, with the same building, the same care and the same kitchen. Ask us for photos on WhatsApp.</p>
+<article class="card tilt"><div class="media std" aria-hidden="true">{logo('std')}<span class="tag">Superior</span></div>
+<div class="body"><h3>Superior</h3><p>Our simplest two-bedroom suite, with the same building, the same care and the same kitchen. Ask us for photos on WhatsApp.</p>
 <ul><li>2 bedrooms</li><li>Sleeps 4</li><li>Full kitchen</li></ul>
-<div class="ask"><a href="/kuala-lumpur/vortex-klcc/standard/" class="more">See the Standard suite <span>→</span></a></div></div></article>
-<article class="card tilt"><div class="media">{img(d, b1[0][0], b1[0][1], sizes='(max-width: 640px) 100vw, 33vw')}{img(d, b1[2][0], b1[2][1], sizes='(max-width: 640px) 100vw, 33vw')}<span class="tag">Boutique</span></div>
-<div class="body"><h3>Boutique</h3><p>Warm lighting, soft linen and a living room that opens onto the skyline.</p>
+<div class="ask"><a href="/kuala-lumpur/vortex-klcc/standard/" class="more">See the Superior suite <span>→</span></a></div></div></article>
+<article class="card tilt"><div class="media">{img(d, b1[0][0], b1[0][1], sizes='(max-width: 640px) 100vw, 33vw')}{img(d, b1[2][0], b1[2][1], sizes='(max-width: 640px) 100vw, 33vw')}<span class="tag">Deluxe</span></div>
+<div class="body"><h3>Deluxe</h3><p>Warm lighting, soft linen and a living room that opens onto the skyline.</p>
 <ul><li>2 bedrooms</li><li>Sleeps 4</li><li>City views</li></ul>
-<div class="ask"><a href="/kuala-lumpur/vortex-klcc/boutique/" class="more">See the Boutique suite <span>→</span></a></div></div></article>
-<article class="card tilt"><div class="media">{img(d, p1[0][0], p1[0][1], sizes='(max-width: 640px) 100vw, 33vw')}{img(d, p1[1][0], p1[1][1], sizes='(max-width: 640px) 100vw, 33vw')}<span class="tag">Premium</span></div>
-<div class="body"><h3><span class="serif">Premium</span></h3><p>Our finest suites, higher up, with the best of the night views.</p>
+<div class="ask"><a href="/kuala-lumpur/vortex-klcc/boutique/" class="more">See the Deluxe suite <span>→</span></a></div></div></article>
+<article class="card tilt"><div class="media">{img(d, p1[0][0], p1[0][1], sizes='(max-width: 640px) 100vw, 33vw')}{img(d, p1[1][0], p1[1][1], sizes='(max-width: 640px) 100vw, 33vw')}<span class="tag">Premier</span></div>
+<div class="body"><h3><span class="serif">Premier</span></h3><p>Our finest suites, higher up, with the best of the night views.</p>
 <ul><li>2 bedrooms</li><li>Sleeps 4</li><li>Tower views</li></ul>
-<div class="ask"><a href="/kuala-lumpur/vortex-klcc/premium/" class="more">See the Premium suite <span>→</span></a></div></div></article>
+<div class="ask"><a href="/kuala-lumpur/vortex-klcc/premium/" class="more">See the Premier suite <span>→</span></a></div></div></article>
 </div></div></section>'''
 
 
@@ -410,8 +410,8 @@ def my_city(d):
 <div class="cityname" aria-hidden="true"><span class="fill">Vortex</span> KLCC <span class="fill">Vortex</span> KLCC</div>
 <div class="wrap bldg"><div class="ph">{img(d, IMAGES['bldg'], 'Living room of a Kozi suite at Vortex KLCC')}</div>
 <div><p class="eyebrow">Jalan Sultan Ismail</p><h3>Kozi @ <span class="serif">Vortex KLCC</span></h3>
-<p>Two-bedroom suites in three styles: Standard, Boutique and Premium. Every suite sleeps four and has a full kitchen.</p>
-<div class="tiers"><span>Standard</span><span>Boutique</span><span>Premium</span></div>
+<p>Two-bedroom suites in three styles: Superior, Deluxe and Premier. Every suite sleeps four and has a full kitchen.</p>
+<div class="tiers"><span>Superior</span><span>Deluxe</span><span>Premier</span></div>
 <div class="go"><a class="btn magnet" href="/kuala-lumpur/vortex-klcc/">See Kozi @ Vortex KLCC <span aria-hidden="true">→</span></a></div></div></div></section>
 {near_section()}
 {guides_section()}
@@ -427,7 +427,7 @@ def near_section():
         ('Shopping', 'Pavilion <span class="serif">Kuala Lumpur</span>', 'The big mall on Bukit Bintang, linked to KLCC by a covered walkway.'),
         ('Food', 'Jalan Alor <span class="serif">night market</span>', 'Satay, grilled seafood and late-night stalls after dark.'),
         ('Park', 'TRX City Park <span class="serif">&amp; The Exchange</span>', 'A 10-acre rooftop park on The Exchange TRX mall.'),
-        ('Skyline', 'Merdeka 118 <span class="serif">&amp; KL Tower</span>', 'The two towers you see from the Premium suites.'),
+        ('Skyline', 'Merdeka 118 <span class="serif">&amp; KL Tower</span>', 'The two towers you see from the Premier suites.'),
     ]
     r = ''.join('<div class="row"><span class="k">%s</span><span class="nm">%s</span><span class="d">%s</span></div>' % x for x in rows)
     return f'''<section class="near" id="nearby" aria-labelledby="h-near"><div class="wrap">
@@ -442,7 +442,7 @@ def my_vortex(d):
     frames = [('morning', '07:00', 'Morning', 'Wake up above the city', 'Morning light on the Kuala Lumpur skyline from a bedroom window'),
               ('noon', '13:00', 'Afternoon', 'Long lunches, cool rooms', 'Bright living room with floor-to-ceiling windows'),
               ('dusk', '18:45', 'Dusk', 'The city turns blue', 'Living room at dusk with the city turning blue outside'),
-              ('blue', '19:30', 'Blue hour', 'Blue hour over KL Tower', 'KL Tower at blue hour seen from a Premium bedroom'),
+              ('blue', '19:30', 'Blue hour', 'Blue hour over KL Tower', 'KL Tower at blue hour seen from a Premier bedroom'),
               ('night', '22:00', 'Night', 'Towers in the window', 'The Petronas Twin Towers at night behind the living room TV')]
     fr = ''.join(f'<figure class="frame" data-t="{t}" data-p="{p}"><div class="ph">{img(d, IMAGES[k], a, sizes="(max-width: 760px) 100vw, 40vw")}</div><figcaption><b>{t}</b><span>{c}</span></figcaption></figure>'
                  for k, t, p, c, a in frames)
@@ -483,9 +483,9 @@ def my_vortex(d):
 
 
 SUITES = {
-    'boutique': ('Boutique', 'Boutique suites at Kozi @ Vortex KLCC', 'Warm lighting, soft linen and a living room that opens onto the skyline. Two bedrooms, a full kitchen, and city views, with the Petronas Twin Towers in view from some rooms.'),
-    'premium': ('Premium', 'Premium suites at Kozi @ Vortex KLCC', 'Our finest suites, higher up, with the best of the night views: the Petronas Twin Towers, KL Tower and Merdeka 118 from selected rooms. Two bedrooms and a full kitchen.'),
-    'standard': ('Standard', 'Standard suites at Kozi @ Vortex KLCC', 'Our simplest two-bedroom suite, with the same building, the same care and the same full kitchen. Ask us on WhatsApp and we will send you photos of the suite.'),
+    'boutique': ('Deluxe', 'Deluxe suites at Kozi @ Vortex KLCC', 'Warm lighting, soft linen and a living room that opens onto the skyline. Two bedrooms, a full kitchen, and city views, with the Petronas Twin Towers in view from some rooms.'),
+    'premium': ('Premier', 'Premier suites at Kozi @ Vortex KLCC', 'Our finest suites, higher up, with the best of the night views: the Petronas Twin Towers, KL Tower and Merdeka 118 from selected rooms. Two bedrooms and a full kitchen.'),
+    'standard': ('Superior', 'Superior suites at Kozi @ Vortex KLCC', 'Our simplest two-bedroom suite, with the same building, the same care and the same full kitchen. Ask us on WhatsApp and we will send you photos of the suite.'),
 }
 
 

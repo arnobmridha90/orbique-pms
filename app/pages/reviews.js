@@ -320,10 +320,11 @@
     if (st.stars.length) { var ss = st.stars.slice().sort(function (a, b) { return a - b; }); s += ' with ' + listJoin(ss.map(String)) + (ss.length === 1 && ss[0] === 1 ? ' star' : ' stars'); }
     if (st.reply === 'needs') s += one ? ' needs a reply' : ' need a reply';
     if (st.reply === 'replied') s += one ? ' has a reply' : ' have a reply';
-    var sub = 'Left ' + U.rangeLabel(st.from, st.to);
-    if (st.q) sub += ' · matching "' + st.q + '"';
-    if (st.reply !== 'needs') { var nr = list.filter(function (r) { return !r.reply; }).length; if (nr) sub += ' · ' + nr + ' need' + (nr === 1 ? 's' : '') + ' a reply'; }
-    var low = list.filter(function (r) { return r.stars <= 3; }).length; if (low) sub += ' · ' + low + ' rated 3 stars or lower';
+    var sp = [O.tpl('Left {range}', { range: U.rangeLabel(st.from, st.to) })];
+    if (st.q) sp.push(O.tpl('matching "{q}"', { q: st.q }));
+    if (st.reply !== 'needs') { var nr = list.filter(function (r) { return !r.reply; }).length; if (nr) sp.push(O.tpl(nr === 1 ? '{n} needs a reply' : '{n} need a reply', { n: nr })); }
+    var low = list.filter(function (r) { return r.stars <= 3; }).length; if (low) sp.push(O.tpl('{n} rated 3 stars or lower', { n: low }));
+    var sub = O.i18nKeep(sp.join(' · '));
     var warn = st.reply === 'needs' && n > 0;
     return '<div class="rv-summary" aria-live="polite"><span class="sm-ic' + (warn ? ' warn' : '') + '">' + O.icon(warn ? 'chat' : 'filter') + '</span><div class="grow"><div class="sm-main">' + esc(s) + '</div><div class="sm-sub">' + esc(sub) + '</div></div>' +
       (isDefault() ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-act="clear">' + O.icon('x') + 'Clear filters</button>') + '</div>';
@@ -351,7 +352,7 @@
     var stats = O.allowed('statistics') ? '<div class="rv-statlink"><button type="button" class="btn btn-quiet btn-sm" data-act="stats">' + O.icon('statistics') + 'See statistics</button></div>' : '';
     return '<div class="rv-head">' + U.kpis([
       { label: 'Average rating' + scopeLabel(), value: a == null ? '–' : a.toFixed(2) + '<small>/ 5</small>', sub: prev.length && a != null && pa ? absDelta(a - pa, 2, '') + ' vs previous ' + fmt.plural(len, 'day') + ' · ' + fmt.plural(cur.length, 'review') : 'from ' + fmt.plural(cur.length, 'review'), hl: true, title: 'Reply and star filters narrow the list only. This covers the platform, property and dates you picked.' },
-      { label: 'Needs reply', value: String(needs.length), sub: needs.length ? (lowNeeds ? lowNeeds + ' low rated · ' : '') + 'oldest ' + fmt.plural(oldest, 'day') + (st.reply !== 'needs' ? ' · <button type="button" class="rv-link" data-reply="needs">Show them</button>' : '') : 'All caught up' }
+      { label: 'Needs reply', value: String(needs.length), sub: needs.length ? esc(O.i18nKeep((lowNeeds ? O.tpl('{n} low rated', { n: lowNeeds }) + ' · ' : '') + O.tpl('oldest {age}', { age: fmt.plural(oldest, 'day') }))) + (st.reply !== 'needs' ? ' · <button type="button" class="rv-link" data-reply="needs">Show them</button>' : '') : 'All caught up' }
     ]) + stats + '</div>';
   }
 
@@ -366,20 +367,20 @@
     var subs = '<div class="rv-subs" aria-label="Category scores">' + SUBS.map(function (s) { var v = r.sub[s[0]]; return '<span class="' + (v <= 3 && v === minSub ? 'lo' : '') + '">' + s[1] + ' <b>' + v + '</b></span>'; }).join('') + '</div>';
     var canBk = O.allowed('bookings'), canLink = O.can('reviews', 'edit'), canTask = O.can('tasks.create'), canChat = O.allowed('inbox');
     var meta = '<span>' + esc(p.name) + '</span>' +
-      (b ? '<span class="dotsep">Stayed ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(b.nights, 'night') + '</span><span class="dotsep">' + (canBk ? '<button type="button" class="rv-link" data-open="' + esc(b.id) + '" aria-label="Open booking ' + esc(b.id) + '">' + esc(b.id) + '</button>' : esc(b.id)) + '</span>'
+      (b ? '<span class="dotsep">' + esc(O.tpl('Stayed {range} · {count}', { range: d.fmtRange(b.checkIn, b.checkOut), count: fmt.plural(b.nights, 'night') })) + '</span><span class="dotsep">' + (canBk ? '<button type="button" class="rv-link" data-open="' + esc(b.id) + '" aria-label="Open booking ' + esc(b.id) + '">' + esc(b.id) + '</button>' : esc(b.id)) + '</span>'
         : '<span class="dotsep">Not linked to a booking</span>' + (canLink ? '<span class="dotsep"><button type="button" class="rv-link" data-act="link" data-id="' + r.id + '">Link booking</button></span>' : ''));
     var taskBtn = low && !task && canTask ? '<button type="button" class="btn btn-ghost btn-sm" data-act="task" data-id="' + r.id + '">' + O.icon('tasks') + 'Create follow-up task</button>' : '';
     var chatBtn = conv && canChat ? '<button type="button" class="btn btn-ghost btn-sm" data-act="chat" data-id="' + r.id + '">' + O.icon('chat') + 'Message guest</button>' : '';
     var reply;
     if (r.reply && !st.editing[r.id]) {
-      reply = '<div class="rv-replied"><div class="rh">' + O.icon('check') + '<span>Replied by ' + esc(staffName(r.reply.by)) + ' on ' + esc(d.fmt(r.reply.date)) + (r.reply.date === r.date ? ' (same day)' : ' (' + fmt.plural(d.diff(r.date, r.reply.date), 'day') + ' after the review)') + '</span>' + (canReply() ? '<button type="button" class="btn btn-quiet btn-xs" data-act="edit" data-id="' + r.id + '">' + O.icon('edit') + 'Edit reply</button>' : '') + '</div>' + esc(r.reply.text).replace(/\n/g, '<br>') + '</div>' +
+      reply = '<div class="rv-replied"><div class="rh">' + O.icon('check') + '<span>' + esc(O.tpl(r.reply.date === r.date ? 'Replied by {name} on {date} (same day)' : 'Replied by {name} on {date} ({days} after the review)', { name: staffName(r.reply.by), date: d.fmt(r.reply.date), days: fmt.plural(d.diff(r.date, r.reply.date), 'day') })) + '</span>' + (canReply() ? '<button type="button" class="btn btn-quiet btn-xs" data-act="edit" data-id="' + r.id + '">' + O.icon('edit') + 'Edit reply</button>' : '') + '</div>' + esc(r.reply.text).replace(/\n/g, '<br>') + '</div>' +
         (low && (taskBtn || chatBtn) ? '<div class="rv-after">' + taskBtn + chatBtn + '</div>' : '');
     } else if (!canReply()) {
       reply = '<div class="rv-ro">' + O.icon('lock') + '<span>No reply yet. ' + esc(NO_REPLY) + '</span></div>' + (taskBtn || chatBtn ? '<div class="rv-after">' + taskBtn + chatBtn + '</div>' : '');
     } else {
       var text = st.drafts[r.id] != null ? st.drafts[r.id] : (r.reply ? r.reply.text : suggest(r, st.variant[r.id] || 0));
       var isSug = st.drafts[r.id] == null && !r.reply;
-      reply = '<div class="rv-compose"><div class="rc-head"><label for="rv-t-' + r.id + '">' + (r.reply ? 'Edit your public reply on ' : 'Public reply on ') + esc(U.platName(r.platform)) + '</label>' +
+      reply = '<div class="rv-compose"><div class="rc-head"><label for="rv-t-' + r.id + '">' + esc(O.tpl(r.reply ? 'Edit your public reply on {site}' : 'Public reply on {site}', { site: U.platName(r.platform) })) + '</label>' +
         (isSug ? '<span class="sug">' + O.icon('sparkle') + 'Suggested from the rating and what ' + esc(greetName(r.guest)) + ' wrote</span>' : '') + '<span class="cc" data-cc="' + r.id + '">' + text.length + ' characters</span></div>' +
         '<textarea class="textarea" id="rv-t-' + r.id + '" data-draft="' + r.id + '" rows="4">' + esc(text) + '</textarea>' +
         '<div class="rc-acts"><button type="button" class="btn btn-primary btn-sm" data-act="post" data-id="' + r.id + '"' + (st.busy === r.id ? ' disabled' : '') + '>' + O.icon('send') + (st.busy === r.id ? 'Posting…' : r.reply ? 'Update reply' : 'Post reply') + '</button>' +
@@ -407,7 +408,7 @@
     }
     var shown = list.slice(0, st.shown);
     return shown.map(reviewHTML).join('') +
-      (list.length > shown.length ? '<div class="rv-more"><span>Showing ' + shown.length + ' of ' + list.length + '</span><button type="button" class="btn btn-ghost btn-sm" data-act="more">Show ' + Math.min(PAGE, list.length - shown.length) + ' more</button><button type="button" class="btn btn-quiet btn-sm" data-act="all">Show all</button></div>'
+      (list.length > shown.length ? '<div class="rv-more"><span>' + esc(O.tpl('Showing {n} of {total}', { n: shown.length, total: list.length })) + '</span><button type="button" class="btn btn-ghost btn-sm" data-act="more">' + esc(O.tpl('Show {n} more', { n: Math.min(PAGE, list.length - shown.length) })) + '</button><button type="button" class="btn btn-quiet btn-sm" data-act="all">Show all</button></div>'
         : '<div class="rv-more"><span>All ' + fmt.plural(list.length, 'review') + ' shown</span></div>') +
       '<div class="rv-note">' + O.icon('alert') + 'Replies are saved here. Posting them to Airbnb, Booking.com, Agoda, Vrbo and Google is not connected in this version.</div>';
   }
@@ -431,7 +432,7 @@
     var tags = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
     return '<div class="card"><div class="card-head"><div><h3>What low ratings mention</h3><div class="sub">Tags on reviews of 3 stars or lower</div></div></div><div class="card-body">' +
       (tags.length ? '<div class="mention">' + tags.map(function (t) { var on = st.q.toLowerCase() === t.toLowerCase(); return '<button type="button" class="' + (on ? 'on' : '') + '" data-tag="' + esc(t) + '" aria-pressed="' + on + '">' + esc(t) + ' <span class="c">' + counts[t] + '</span></button>'; }).join('') + '</div>' +
-        '<div class="side-cap">' + esc(tags[0]) + ' comes up most often. Select a tag to read those reviews' + (O.can('tasks.create') ? ', and use "Create follow-up task" on a review to get it fixed' : '') + '.</div>'
+        '<div class="side-cap">' + esc(O.tpl(O.can('tasks.create') ? '{tag} comes up most often. Select a tag to read those reviews, and use "Create follow-up task" on a review to get it fixed.' : '{tag} comes up most often. Select a tag to read those reviews.', { tag: tags[0] })) + '</div>'
         : U.empty('No reviews of 3 stars or lower in this range', '✓')) + '</div></div>';
   }
 
@@ -600,7 +601,7 @@
         if (act === 'post') post(r, ta ? ta.value : '');
         if (act === 'another') {
           st.variant[r.id] = (st.variant[r.id] || 0) + 1; delete st.drafts[r.id];
-          if (ta) { ta.value = suggest(r, st.variant[r.id]); autosize(ta); st.drafts[r.id] = ta.value; var cc = O.$('[data-cc="' + r.id + '"]', page); if (cc) cc.textContent = ta.value.length + ' characters'; ta.focus(); }
+          if (ta) { ta.value = suggest(r, st.variant[r.id]); autosize(ta); st.drafts[r.id] = ta.value; var cc = O.$('[data-cc="' + r.id + '"]', page); if (cc) cc.textContent = O.tpl('{n} characters', { n: ta.value.length }); ta.focus(); }
         }
         if (act === 'edit') { st.editing[r.id] = true; ctx.rerender(); var t2 = O.$('[data-draft="' + r.id + '"]', root); if (t2) t2.focus(); }
         if (act === 'canceledit') { delete st.editing[r.id]; delete st.drafts[r.id]; ctx.rerender(); }
@@ -614,7 +615,7 @@
       });
       page.addEventListener('input', function (e) {
         var t = e.target;
-        if (t.dataset.draft) { autosize(t); st.drafts[t.dataset.draft] = t.value; var cc = O.$('[data-cc="' + t.dataset.draft + '"]', page); if (cc) cc.textContent = t.value.length + ' characters'; return; }
+        if (t.dataset.draft) { autosize(t); st.drafts[t.dataset.draft] = t.value; var cc = O.$('[data-cc="' + t.dataset.draft + '"]', page); if (cc) cc.textContent = O.tpl('{n} characters', { n: t.value.length }); return; }
         if (t.dataset.f === 'q') {
           clearTimeout(st._qt);
           var pos = t.selectionStart;

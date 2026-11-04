@@ -94,6 +94,8 @@
   var st = { sel: null, view: 'list', tab: 'guests', box: 'main', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
   var player = { key: null, audio: null, raf: 0, t0: 0, dur: 0 };
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  /* the full weekday in the chosen language (O.fmtDate uses Intl in the language's locale), English as the fallback */
+  function dayName(day) { try { if (O.state.lang && O.state.lang !== 'en' && O.fmtDate) return O.fmtDate(day, { weekday: 'long' }); } catch (e) {} return DAYS[d.dow(day)]; }
   var VARS = [['guest_first', 'Guest first name'], ['property', 'Property'], ['wifi_name', 'Wi-Fi name'], ['wifi_password', 'Wi-Fi password'], ['parking', 'Parking'], ['checkin_time', 'Check-in time'], ['checkout_time', 'Check-out time'], ['door_code', 'Door code']];
   var PAUSE_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
   var PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>';
@@ -628,16 +630,15 @@
   function listTime(iso) {
     var day = iso.slice(0, 10), n = d.diff(day, D.TODAY);
     if (n === 0) return fmt.time(iso);
-    if (n === 1) return 'Yesterday';
-    if (n < 7) return DAYS[d.dow(day)];
-    return d.fmtDM(day) + '/' + day.slice(0, 4);
+    return d.dowName(day) + ' ' + d.day(day) + ' ' + d.monthName(day) + (day.slice(0, 4) !== D.TODAY.slice(0, 4) ? ' ' + day.slice(0, 4) : ''); /* e.g. "Mon 2 Nov": always the date, not just the weekday */
   }
+  function fullWhen(iso) { return dayName(iso.slice(0, 10)) + ', ' + d.fmtY(iso.slice(0, 10)) + (iso.length >= 16 ? ' · ' + fmt.time(iso) : ''); } /* "Monday, 2 Nov 2026 · 3:15 PM" */
   function dayLabel(day) {
     var n = d.diff(day, D.TODAY);
-    if (n === 0) return 'Today';
-    if (n === 1) return 'Yesterday';
-    if (n < 7) return DAYS[d.dow(day)];
-    return d.dowName(day) + ', ' + d.fmtY(day);
+    var full = dayName(day) + ', ' + d.fmtY(day); /* day, date and year, e.g. "Monday, 2 Nov 2026" */
+    if (n === 0) return 'Today · ' + full;
+    if (n === 1) return 'Yesterday · ' + full;
+    return full;
   }
   function arrivingToday(b) { return b && b.status !== 'cancelled' && b.checkIn === D.TODAY; }
   function inHouse(b) { return b && b.status !== 'cancelled' && b.checkIn < D.TODAY && b.checkOut > D.TODAY; }
@@ -799,9 +800,9 @@
   function rowHTML(c) {
     var b = bk(c), p = b ? prop(b.propertyId) : null, m = lastMsg(c), unread = c.unread > 0;
     var soon = b && (arrivingToday(b) || b.checkIn === d.add(D.TODAY, 1));
-    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc((b ? b.guest.name : 'Guest') + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
+    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(unread ? O.tpl('{name}, {n} unread', { name: b ? b.guest.name : O.tr('Guest'), n: c.unread }) : b ? b.guest.name : O.tr('Guest')) + '">' +
       '<span class="cv-av">' + U.avatar(b ? b.guest.name : '?') + (b ? U.platIcon(b.channel) : '') + '</span>' +
-      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
+      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + (p ? esc(p.short) + ' · ' : '') + '<span class="' + (soon ? 'soon' : '') + '">' + esc(listPhrase(b)) + '</span></span>' + (b && b.sameDay ? '<span class="sd">Same-day</span>' : '') + '</span>' +
       '<span class="cv-l3"><span class="cv-prev">' + previewHTML(c) + '</span>' + marksHTML(c) + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>' + rowMoreHTML(c, b ? b.guest.name : 'the guest') + '</div>';
   }
@@ -892,10 +893,10 @@
     var m = lastMsg(c), unread = c.unread > 0, feed = c.kind === 'feed';
     var av = feed ? '<span class="cv-feed">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c));
     var sub = feed ? 'Notifications' : 'Email' + (c.ota ? ' via ' + c.ota : '');
-    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text)) : '';
-    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(updName(c) + (unread ? ', ' + c.unread + ' unread' : '')) + '">' +
+    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + '<span data-no-i18n>' + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text) + '</span>') : '';
+    return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(unread ? O.tpl('{name}, {n} unread', { name: updName(c), n: c.unread }) : updName(c)) + '">' +
       '<span class="cv-av">' + av + '</span>' +
-      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
+      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
       '<span class="cv-l2"><span class="cv-st">' + esc(sub) + '</span></span>' +
       '<span class="cv-l3"><span class="cv-prev">' + prev + '</span>' + marksHTML(c) + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>' + rowMoreHTML(c, updName(c)) + '</div>';
   }
@@ -969,8 +970,8 @@
       '<div class="ib-hacts">' +
       (canBk ? '<button type="button" class="ib-ic hide-sm" data-act="booking" title="Open booking" aria-label="Open booking">' + O.icon('bookings') + '</button>' : '') +
       (canCodes() ? '<button type="button" class="ib-ic" data-act="lock" title="Change door code" aria-label="Change door code">' + O.icon('key') + '</button>' : '') +
-      (canContacts() && tel ? '<a class="ib-ic" href="tel:' + esc(tel) + '" title="Call ' + esc(b.guest.phone) + '" aria-label="Call ' + esc(b.guest.name) + '">' + O.icon('whatsapp') + '</a>'
-        : '<button type="button" class="ib-ic" disabled title="Your access does not include guest phone numbers" aria-label="Call ' + esc(b.guest.name) + ' (not available)">' + O.icon('whatsapp') + '</button>') +
+      (canContacts() && tel ? '<a class="ib-ic" href="tel:' + esc(tel) + '" title="' + esc(O.tpl('Call {name}', { name: b.guest.phone })) + '" aria-label="' + esc(O.tpl('Call {name}', { name: b.guest.name })) + '">' + O.icon('whatsapp') + '</a>'
+        : '<button type="button" class="ib-ic" disabled title="Your access does not include guest phone numbers" aria-label="' + esc(O.tpl('Call {name} (not available)', { name: b.guest.name })) + '">' + O.icon('whatsapp') + '</button>') +
       (menu ? '<div class="ib-more"><button type="button" class="ib-ic" data-act="more" aria-haspopup="true" aria-label="More options">' + O.icon('more') + '</button><div class="ib-menu" role="menu">' + menu + '</div></div>' : '') +
       '</div></header>';
   }
@@ -1079,7 +1080,7 @@
     }
     var txt = esc(codeSafe(c, m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.text));
     if (m.from === 'note') txt = txt.replace(mentionRe(), '<b class="mention">@$1</b>');
-    return { html: '<span class="txt">' + txt + '</span>' + xlHTML(m, key) + actsHTML(c, m, i) };
+    return { html: '<span class="txt" data-no-i18n>' + txt + '</span>' + xlHTML(m, key) + actsHTML(c, m, i) };
   }
   /* a booking site's answer buttons on a guest message (an Agoda special request: Accepted / Subject to availability /
      Not accepted). Each opens the site's own page, which records the answer; the chat remembers which one was picked. */
@@ -1110,7 +1111,7 @@
     var firstUnread = mark ? mark.i : -1;
     c.messages.forEach(function (m, i) {
       var day = m.time.slice(0, 10);
-      if (day !== prevDay) { out.push('<div class="day">' + esc(dayLabel(day)) + '</div>'); prevDay = day; prevKey = null; }
+      if (day !== prevDay) { out.push('<div class="day">' + esc(dayLabel(day) + ' · ' + fmt.time(m.time)) + '</div>'); prevDay = day; prevKey = null; }
       if (i === firstUnread) { out.push('<div class="unread-div" role="separator">' + fmt.plural(mark.n, 'unread message') + '</div>'); prevKey = null; }
       if (m.from === 'system') {
         var extra = (m.body ? '<details class="sysb"><summary>' + (m.subject ? 'Show the email' : 'Show more') + '</summary><div class="sysb-t">' + linkify(m.body) + '</div></details>' : '') +
@@ -1127,7 +1128,7 @@
       if (side === 'inote') who = '<div class="who">' + O.icon('lock') + 'Internal note · ' + esc((staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       else if (side === 'out' && first) who = '<div class="who">' + esc(m.app && !m.staffId ? 'From the WhatsApp app' : (staff(m.staffId) || { name: 'Team' }).name) + '</div>';
       var status = side === 'out' ? msgStatus(c, i) : null;
-      var meta = '<span class="meta">' + (m.via && VIA[m.via] && side === 'in' ? '<span class="mvia">' + esc(VIA[m.via]) + '</span>' : '') + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
+      var meta = '<span class="meta" title="' + esc(fullWhen(m.time)) + '">' + (m.via && VIA[m.via] && side === 'in' ? '<span class="mvia">' + esc(VIA[m.via]) + '</span>' : '') + fmt.time(m.time) + (status ? tickHTML(status) : '') + '</span>';
       if (m.via === 'email' && side === 'in' && (m.subject || (m.files && m.files.length))) inner = { html: (m.subject ? '<div class="subj">' + esc(m.subject) + '</div>' : '') + inner.html + (m.files && m.files.length ? '<div class="efiles">' + O.icon('clip') + 'In the original email: ' + esc(m.files.join(', ')) + '</div>' : '') };
       var cls = 'bub' + (inner.media ? ' media' + (inner.cap ? ' hascap' : '') + (m.type === 'file' || inner.file ? ' isfile' : '') : '') + (inner.voice ? ' vbub' : '');
       out.push('<div class="msg ' + side + (first ? ' first' : '') + '" data-i="' + i + '"><div class="' + cls + '">' + who + inner.html + (inner.voice ? meta.replace('class="meta"', 'class="meta"') : meta) + '</div>' +
@@ -1155,7 +1156,7 @@
     return '<div class="qr-bar" role="group" aria-label="Quick replies">' + greetBtnHTML(c) + greetSetupHTML(c) + '<span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
       list.map(function (q) {
         var unit = q.propertyIds.length ? '<span class="unit" title="Tagged to ' + esc(q.propertyIds.map(function (x) { return prop(x).short; }).join(', ')) + '">' + O.icon('home') + esc(prop(b.propertyId).short) + (q.propertyIds.length > 1 ? ' +' + (q.propertyIds.length - 1) : '') + '</span>' : '';
-        return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '">' + esc(q.title) + unit + '</button>';
+        return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '" data-no-i18n>' + esc(q.title) + unit + '</button>';
       }).join('') +
       (canQR() ? '<button type="button" class="qr manage" data-act="manage">' + O.icon('edit') + 'Manage</button>' : '') + '</div>';
   }

@@ -72,8 +72,8 @@
     pct: [function (v) { return fmt.pct(v); }, function (v) { return (v * 100).toFixed(1); }, ' (%)'],
     pct1: [function (v) { return fmt.pct(v, 1); }, function (v) { return (v * 100).toFixed(1); }, ' (%)'],
     rating: [function (v) { return v.toFixed(2) + ' ★'; }, function (v) { return v.toFixed(2); }, ' (stars)'],
-    days: [function (v) { return fmt.num(v, 1) + ' days'; }, function (v) { return v.toFixed(1); }, ' (days)'],
-    nights: [function (v) { return fmt.num(v, 1) + ' nights'; }, function (v) { return v.toFixed(1); }, ' (nights)'],
+    days: [function (v) { return O.tpl('{n} days', { n: fmt.num(v, 1) }); }, function (v) { return v.toFixed(1); }, ' (days)'],
+    nights: [function (v) { return O.tpl('{n} nights', { n: fmt.num(v, 1) }); }, function (v) { return v.toFixed(1); }, ' (nights)'],
     dur: [function (v) { return dur(v); }, function (v) { return Math.round(v); }, ' (minutes)']
   };
   function unitTag(type) { return type === 'money' ? ' (' + fmt.cur() + ')' : F[type] ? F[type][2] : ''; } /* CSV header suffix, e.g. ' (RM)' */
@@ -162,11 +162,11 @@
       if (monthly) {
         var ms = d.addMonths(r.from, -k), me = d.monthEnd(ms);
         c = { from: ms, to: whole ? me : d.add(ms, Math.min(d.day(r.to), d.day(me)) - 1) };
-        c.tag = d.monthName(ms); c.long = whole ? d.monthName(ms, true) : 'the same days in ' + d.monthName(ms, true);
+        c.tag = d.monthName(ms); c.long = whole ? d.monthName(ms, true) : O.tpl('the same days in {month}', { month: d.monthName(ms, true) });
       } else {
         c = { from: d.add(r.from, -r.days * k), to: d.add(r.from, -r.days * (k - 1) - 1) };
-        c.tag = k === 1 ? 'previous' : 'before that';
-        c.long = k === 1 ? 'the previous ' + fmt.plural(r.days, 'day') : 'the ' + fmt.plural(r.days, 'day') + ' before that';
+        c.tag = O.tr(k === 1 ? 'previous' : 'before that');
+        c.long = O.tpl(k === 1 ? 'the previous {days}' : 'the {days} before that', { days: fmt.plural(r.days, 'day') });
       }
       c.k = k; c.label = U.rangeLabel(c.from, c.to); c.short = d.fmtRange(c.from, c.to);
       return c.from < s ? null : c;
@@ -334,10 +334,10 @@
     var opts = { kind: m.kind, invert: m.invert, neutral: m.neutral, f: m.f, eps: m.eps };
     var none = cur == null || (typeof cur === 'number' && isNaN(cur));
     if (none && !o.sub) { o.noCmp = true; o.sub = o.none || 'No data in this range'; }
-    var sub = S.c1 && prev !== undefined && !o.noCmp ? dl(cur, prev, opts) + ' vs ' + esc(S.c1.tag) : (o.sub || (S.c1 ? '' : 'No earlier period'));
+    var sub = S.c1 && prev !== undefined && !o.noCmp ? dl(cur, prev, opts) + ' ' + esc(O.tpl('vs {x}', { x: S.c1.tag })) : (o.sub || (S.c1 ? '' : 'No earlier period'));
     if (o.after) sub += '<span class="st-after">' + o.after + '</span>';
     return {
-      key: key, label: o.label || m.label, value: o.value || esc(fv(m.type, cur)), sub: sub, hl: o.hl, title: (o.title || m.title || '') + (S.c1 && !o.noCmp ? '. Compared with ' + S.c1.label + (prev != null ? ' (' + fv(m.type, prev) + ')' : '') + '.' : ''),
+      key: key, label: o.label || m.label, value: o.value || esc(fv(m.type, cur)), sub: sub, hl: o.hl, title: S.c1 && !o.noCmp ? O.tpl(prev != null ? '{what}. Compared with {range} ({value}).' : '{what}. Compared with {range}.', { what: o.title || m.title || '', range: S.c1.label, value: fv(m.type, prev) }) : (o.title || m.title || ''),
       csv: [o.label || m.label, o.text != null ? o.text : fv(m.type, cur).replace(' ★', ''), o.noCmp ? '' : fv(m.type, prev).replace(' ★', ''), o.noCmp ? '' : dlText(cur, prev, opts)]
     };
   }
@@ -354,7 +354,7 @@
   }
   function vals(bk, fn) { return bk ? bk.map(function (x) { return x ? fn(x.a, x.b) : null; }) : null; }
   function chartH() { return window.innerWidth <= 560 ? 210 : 240; }
-  function tipFor(S) { return function (i) { var t = bucketTitle(S.bk[i]); if (S.bk1 && S.bk1[i]) t += ' vs ' + bucketShort(S.bk1[i]); return t; }; }
+  function tipFor(S) { return function (i) { var t = bucketTitle(S.bk[i]); if (S.bk1 && S.bk1[i]) t = O.tpl('{a} vs {b}', { a: t, b: bucketShort(S.bk1[i]) }); return t; }; }
   /* current vs previous period, bars */
   function cmpBars(el, S, fn, o) {
     var cur = vals(S.bk, fn), prev = vals(S.bk1, fn);
@@ -445,14 +445,14 @@
       tile('cancelRate', cur.cancelRate, p1.cancelRate, S)
     ];
     var fn = mon ? function (a, b) { return mRev(a, b, S.pid ? { propertyId: S.pid } : null); } : function (a, b) { return mSold(a, b, S.pid ? { propertyId: S.pid } : null); };
-    var cmpTxt = S.c1 ? ' vs ' + S.c1.short + (S.c2 ? ' and ' + S.c2.short : '') : '';
+    var cmpTxt = S.c1 ? ' ' + O.tpl(S.c2 ? 'vs {range} and {range2}' : 'vs {range}', { range: S.c1.short, range2: S.c2 ? S.c2.short : '' }) : '';
     var u = unitWord(S.bk);
     var chart = !S.c1 ? {
-      title: (mon ? 'Revenue' : 'Nights sold') + ' per ' + u, sub: (mon ? 'Earned on nights stayed, ' : 'Nights stayed, ') + S.r.label, body: chartSlot('per'), cls: 'st-wide',
-      draw: function (el) { cmpBars(el, S, fn, { yFormat: mon ? moneyAxis : countAxis, aria: (mon ? 'Revenue' : 'Nights sold') + ' per ' + u }); }
+      title: O.tpl(mon ? 'Revenue per {unit}' : 'Nights sold per {unit}', { unit: u }), sub: O.tpl(mon ? 'Earned on nights stayed, {range}' : 'Nights stayed, {range}', { range: S.r.label }), body: chartSlot('per'), cls: 'st-wide',
+      draw: function (el) { cmpBars(el, S, fn, { yFormat: mon ? moneyAxis : countAxis, aria: O.tpl(mon ? 'Revenue per {unit}' : 'Nights sold per {unit}', { unit: u }) }); }
     } : {
       title: mon ? 'Revenue, running total' : 'Nights sold, running total',
-      sub: (mon ? 'Earned on nights stayed, ' : 'Nights stayed, ') + S.r.short + cmpTxt,
+      sub: O.i18nKeep(O.tpl(mon ? 'Earned on nights stayed, {range}' : 'Nights stayed, {range}', { range: S.r.short }) + cmpTxt),
       legend: legend(S, 3), body: chartSlot('run'), cls: 'st-wide',
       draw: function (el) {
         var run = function (bk) { if (!bk) return null; var acc = 0; return bk.map(function (x) { if (!x) return null; acc += fn(x.a, x.b); return acc; }); };
@@ -462,14 +462,14 @@
         O.chart.line(el, {
           labels: S.bk.map(function (x) { return x.label; }), series: series, height: window.innerWidth <= 560 ? 230 : 280, area: true,
           yFormat: mon ? moneyAxis : countAxis, markers: S.bk.length <= 16 ? 'all' : 'none', ariaLabel: chart.title,
-          tipTitle: function (i) { var t = 'By ' + bucketShort(S.bk[i]).replace(/^.* – /, ''); if (S.bk1 && S.bk1[i]) t += ' vs ' + bucketShort(S.bk1[i]).replace(/^.* – /, ''); if (S.bk2 && S.bk2[i]) t += ', ' + bucketShort(S.bk2[i]).replace(/^.* – /, ''); return t; }
+          tipTitle: function (i) { var e = function (b) { return bucketShort(b).replace(/^.* – /, ''); }, a = e(S.bk[i]); if (S.bk1 && S.bk1[i]) return S.bk2 && S.bk2[i] ? O.tpl('By {a} vs {b}, {c}', { a: a, b: e(S.bk1[i]), c: e(S.bk2[i]) }) : O.tpl('By {a} vs {b}', { a: a, b: e(S.bk1[i]) }); return O.tpl('By {a}', { a: a }); }
         });
       }
     };
     /* metric table: current, the two comparison periods and the changes */
     var P = [S.r, S.c1, S.c2];
     var cols = [{ label: 'Metric', type: 'text' }].concat(P.map(function (p, i) { return { label: p ? p.short : (i === 1 ? 'Previous' : 'Before that'), type: 'auto', cmp: i === 1, cmp2: i === 2 }; }))
-      .concat([{ label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg' }, { label: 'vs ' + (S.c2 ? S.c2.tag : 'before that'), type: 'chg', cmp2: true }]);
+      .concat([{ label: O.tpl('vs {x}', { x: S.c1 ? S.c1.tag : 'previous' }), type: 'chg' }, { label: O.tpl('vs {x}', { x: S.c2 ? S.c2.tag : 'before that' }), type: 'chg', cmp2: true }]);
     function row(k) {
       var m = MET[k], o = { kind: m.kind, invert: m.invert, neutral: m.neutral, f: m.f, eps: m.eps };
       return [{ html: '<span title="' + esc(m.title || '') + '">' + esc(m.label) + '</span>', text: m.label + unitTag(m.type) }]
@@ -489,7 +489,7 @@
     if (mon) { rows.push({ group: 'Costs' }); ['opex', 'capex', 'opexShare'].forEach(function (k) { rows.push(row(k)); }); }
     return {
       kpis: kpis, cards: [chart],
-      table: { title: 'All metrics', sub: S.c1 ? S.r.short + ' compared with ' + S.c1.long + (S.c2 ? ' and ' + S.c2.long : '') : S.r.label, cols: cols, rows: rows }
+      table: { title: 'All metrics', sub: S.c1 ? O.tpl(S.c2 ? '{range} compared with {prev} and {prev2}' : '{range} compared with {prev}', { range: S.r.short, prev: S.c1.long, prev2: S.c2 ? S.c2.long : '' }) : S.r.label, cols: cols, rows: rows }
     };
   };
 
@@ -502,21 +502,21 @@
     var a0 = get('ahead', S.r, S.pid), a1 = S.c1 && S.c1.to < a0.asOf ? get('ahead', S.c1, S.pid) : null;
     if (!b0.nights && !b0.avail) return { empty: rangeEmpty('available nights') };
     var mon = S.money, f = S.pid ? { propertyId: S.pid } : null;
-    var aheadOpts = { label: 'Next 30 nights booked', title: 'Nights ' + d.fmtRange(a0.from, a0.to) + ' already booked on ' + d.fmt(a0.asOf) + (a1 ? ', compared with what was booked for ' + d.fmtRange(a1.from, a1.to) + ' on ' + d.fmt(a1.asOf) : '') };
+    var aheadOpts = { label: 'Next 30 nights booked', title: O.tpl(a1 ? 'Nights {range} already booked on {date}, compared with what was booked for {range2} on {date2}' : 'Nights {range} already booked on {date}', { range: d.fmtRange(a0.from, a0.to), date: d.fmt(a0.asOf), range2: a1 ? d.fmtRange(a1.from, a1.to) : '', date2: a1 ? d.fmt(a1.asOf) : '' }) };
     var kpis = mon ? [
       tile('revenue', b0.revenue, b1.revenue, S, { hl: true }),
       tile('adr', b0.adr, b1.adr, S),
       tile('revpar', b0.revpar, b1.revpar, S),
       tile('occ', b0.occ, b1.occ, S),
       tile('weekend', w0.weekend, w1.weekend, S),
-      tile('revenue', a0.revenue, a1 ? a1.revenue : undefined, S, Object.assign(a1 ? { after: fmt.pct(a0.occ) + ' full' } : { noCmp: true, sub: fmt.pct(a0.occ) + ' of nights full' }, aheadOpts))
+      tile('revenue', a0.revenue, a1 ? a1.revenue : undefined, S, Object.assign(a1 ? { after: O.tpl('{pct} full', { pct: fmt.pct(a0.occ) }) } : { noCmp: true, sub: O.tpl('{pct} of nights full', { pct: fmt.pct(a0.occ) }) }, aheadOpts))
     ] : [
       tile('occ', b0.occ, b1.occ, S, { hl: true }),
       tile('nights', b0.nights, b1.nights, S),
       tile('weekend', w0.weekend, w1.weekend, S),
       tile('occ', w0.weekday, w1.weekday, S, { label: 'Weekday occupancy', title: 'Occupancy of Sunday to Thursday nights' }),
       tile('alos', b0.alos, b1.alos, S),
-      tile('occ', a0.occ, a1 ? a1.occ : undefined, S, Object.assign(a1 ? { after: fmt.plural(a0.nights, 'night') + ' booked' } : { noCmp: true, sub: fmt.plural(a0.nights, 'night') + ' booked' }, aheadOpts))
+      tile('occ', a0.occ, a1 ? a1.occ : undefined, S, Object.assign(a1 ? { after: O.tpl('{count} booked', { count: fmt.plural(a0.nights, 'night') }) } : { noCmp: true, sub: O.tpl('{count} booked', { count: fmt.plural(a0.nights, 'night') }) }, aheadOpts))
     ];
     var u = unitWord(S.bk);
     /* one unit is either full or empty on a given night, so its occupancy reads better per week */
@@ -531,8 +531,8 @@
     var table;
     if (!S.pid) {
       var cols = [{ label: 'Property', type: 'text' }];
-      if (mon) cols.push({ label: 'Revenue', type: 'money' }, { label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg' });
-      cols.push({ label: 'Nights', type: 'num' }, { label: 'Occupancy', type: 'pct' }, { label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg' });
+      if (mon) cols.push({ label: 'Revenue', type: 'money' }, { label: O.tpl('vs {x}', { x: S.c1 ? S.c1.tag : 'previous' }), type: 'chg' });
+      cols.push({ label: 'Nights', type: 'num' }, { label: 'Occupancy', type: 'pct' }, { label: O.tpl('vs {x}', { x: S.c1 ? S.c1.tag : 'previous' }), type: 'chg' });
       if (mon) cols.push({ label: 'ADR', type: 'money' }, { label: 'RevPAR', type: 'money' });
       cols.push({ label: 'Avg stay', type: 'dec1', title: 'Average nights of stays arriving in the range' }, { label: 'Blocked', type: 'num', title: 'Nights blocked for owner stays or maintenance' });
       var rows = D.properties.filter(function (p) { var x = get('base', S.r, p.id); return O.inCur(p) && (!p.archived || x.nights || x.revenue); }).map(function (p) {
@@ -601,7 +601,7 @@
     }
     var cmpNote = S.c1 ? 'Brackets show the change from ' + S.c1.short + '.' : '';
     var cards = [
-      { title: 'Channel mix', sub: 'Share of the ' + fmt.plural(made.length, 'booking') + ' made, ' + S.r.short, body: hb(chRows, {}) },
+      { title: 'Channel mix', sub: O.tpl('Share of the {count} made, {range}', { count: fmt.plural(made.length, 'booking'), range: S.r.short }), body: hb(chRows, {}) },
       { title: 'Guest countries', sub: 'Arrivals ' + S.r.short + ' (' + b0.arr.length + ')', body: hb(top.map(function (x) { return { label: esc(x.c), value: x.n, display: '<b>' + x.n + '</b> <span class="xs muted">' + shareTxt(x.n, b0.arr.length) + '</span>' }; }), {}) },
       {
         title: 'Booking window and stay length', sub: cmpNote || 'Bookings made and arrivals in the range',
@@ -610,7 +610,7 @@
       }
     ];
     /* table by channel */
-    var cols = [{ label: 'Channel', type: 'text' }, { label: 'Bookings', type: 'num' }, { label: 'Share', type: 'pct' }, { label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg', title: 'Change in share, percentage points' },
+    var cols = [{ label: 'Channel', type: 'text' }, { label: 'Bookings', type: 'num' }, { label: 'Share', type: 'pct' }, { label: O.tpl('vs {x}', { x: S.c1 ? S.c1.tag : 'previous' }), type: 'chg', title: 'Change in share, percentage points' },
       { label: 'Cancelled', type: 'num' }, { label: 'Cancel rate', type: 'pct' }, { label: 'Avg lead', type: 'days' }, { label: 'Avg stay', type: 'dec1' }];
     if (mon) cols.push({ label: 'Value booked', type: 'money' }, { label: 'Fees', type: 'money', title: 'Platform commission and payment fees on the bookings made' });
     var rows = D.channelOrder.map(function (ch) {
@@ -657,7 +657,7 @@
     var weakest = SUBS.slice().sort(function (a, b) { return (r0.subs[a[0]] || 9) - (r0.subs[b[0]] || 9); })[0];
     var cards = [
       {
-        title: 'Rating trend', sub: 'Average stars per ' + (tb[0] && tb[0].kind === 'month' ? 'month' : 'week') + ', ' + d.fmtRange(tr.from, tr.to), body: chartSlot('trend'), cls: 'st-wide2',
+        title: 'Rating trend', sub: O.tpl(tb[0] && tb[0].kind === 'month' ? 'Average stars per month, {range}' : 'Average stars per week, {range}', { range: d.fmtRange(tr.from, tr.to) }), body: chartSlot('trend'), cls: 'st-wide2',
         draw: function (el) {
           O.chart.line(el, {
             labels: trend.map(function (x) { return x.bk.label; }), series: [{ name: 'Average rating', values: trend.map(function (x) { return x.v; }), tone: 'brand', width: 2.4 }],
@@ -668,13 +668,13 @@
         }
       },
       {
-        title: 'Scores and stars', sub: 'Category averages out of 5' + (S.c1 ? ', change vs ' + S.c1.short : '') + '. Weakest: ' + weakest[1].toLowerCase(),
+        title: 'Scores and stars', sub: O.tpl(S.c1 ? 'Category averages out of 5, change vs {range}. Weakest: {category}' : 'Category averages out of 5. Weakest: {category}', { range: S.c1 ? S.c1.short : '', category: O.state.lang === 'en' ? weakest[1].toLowerCase() : O.tr(weakest[1]) }),
         body: '<div class="st-sub-h">Category scores</div>' + hb(subRows, { max: 5 }) + '<div class="st-sub-h">Stars given</div>' + hb(starRows, { max: Math.max(1, r0.n) })
       }
     ];
     var plats = REVIEW_PLATS.slice();
     r0.list.concat(r1.list || []).forEach(function (x) { if (plats.indexOf(x.platform) < 0) plats.push(x.platform); });
-    var cols = [{ label: 'Platform', type: 'text' }, { label: 'Reviews', type: 'num' }, { label: 'Avg rating', type: 'rating' }, { label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg' },
+    var cols = [{ label: 'Platform', type: 'text' }, { label: 'Reviews', type: 'num' }, { label: 'Avg rating', type: 'rating' }, { label: O.tpl('vs {x}', { x: S.c1 ? S.c1.tag : 'previous' }), type: 'chg' },
       { label: '3 stars or lower', type: 'num' }, { label: 'Response rate', type: 'pct' }, { label: 'Avg reply time', type: 'days' }, { label: 'Waiting for reply', type: 'num' }];
     var rows = plats.map(function (pl) {
       var l = r0.list.filter(function (x) { return x.platform === pl; }), l1 = (r1.list || []).filter(function (x) { return x.platform === pl; });
@@ -695,10 +695,10 @@
     if (!i0.n) return { empty: rangeEmpty('invoices') };
     var mon = S.money;
     var kpis = [
-      tile('invoices', i0.n, i1.n, S, { hl: true, after: mon ? esc(fmt.money(i0.billed)) + ' billed' : '' }),
+      tile('invoices', i0.n, i1.n, S, { hl: true, after: mon ? esc(O.tpl('{amount} billed', { amount: fmt.money(i0.billed) })) : '' }),
       tile('sentRate', i0.sentRate, i1.sentRate, S, { after: i0.sameDay + ' sent the same day' }),
-      tile('paidRate', i0.paidRate, i1.paidRate, S, { after: mon ? esc(fmt.money(i0.collected)) + ' collected' : '' }),
-      tile('unpaid', i0.unpaid, i1.unpaid, S, { after: mon ? esc(fmt.money(i0.outstanding)) + ' to collect' : '' }),
+      tile('paidRate', i0.paidRate, i1.paidRate, S, { after: mon ? esc(O.tpl('{amount} collected', { amount: fmt.money(i0.collected) })) : '' }),
+      tile('unpaid', i0.unpaid, i1.unpaid, S, { after: mon ? esc(O.tpl('{amount} to collect', { amount: fmt.money(i0.outstanding) })) : '' }),
       tile('overdue', i0.overdue, i1.overdue, S, { after: mon && i0.overdue ? esc(fmt.money(i0.overdueAmt)) + ' overdue' : '' }),
       tile('collect', i0.collect, i1.collect, S, { label: 'Collection time (direct)', none: 'No direct invoices paid' })
     ];
@@ -712,7 +712,7 @@
     payRows.push({ label: 'Overdue', value: i0.overdueList.length, display: '<b>' + i0.overdueList.length + '</b> <span class="xs muted">' + shareTxt(i0.overdueList.length, i0.n) + '</span>', tone: 'bad' });
     var cards = [
       { title: 'Invoices issued per ' + u, sub: 'One invoice per booking, by invoice date', legend: legend(S, 2, true), body: chartSlot('inv'), draw: function (el) { cmpBars(el, S, byDate, { yFormat: countAxis, aria: 'Invoices issued per ' + u }); } },
-      { title: 'Time to payment', sub: 'From invoice to payment, ' + fmt.plural(i0.n, 'invoice') + ' dated ' + S.r.short, body: hb(payRows, { max: Math.max(1, i0.n) }) }
+      { title: 'Time to payment', sub: O.tpl('From invoice to payment, {count} dated {range}', { count: fmt.plural(i0.n, 'invoice'), range: S.r.short }), body: hb(payRows, { max: Math.max(1, i0.n) }) }
     ];
     var cols = [{ label: 'Channel', type: 'text' }, { label: 'Invoices', type: 'num' }, { label: 'Sent', type: 'pct' }, { label: 'Paid', type: 'pct' }, { label: 'Awaiting', type: 'num' }, { label: 'Overdue', type: 'num' }, { label: 'Avg days to pay', type: 'dec1' }];
     if (mon) cols.push({ label: 'Billed', type: 'money' }, { label: 'Collected', type: 'money' }, { label: 'Outstanding', type: 'money' });
@@ -727,7 +727,7 @@
     var foot = [{ html: 'All channels', text: 'All channels' }, i0.n, i0.sentRate, i0.paidRate, i0.unpaid, i0.overdue, i0.collectAll];
     if (mon) foot.push(i0.billed, i0.collected, i0.outstanding);
     var dueDays = (D.invoiceSettings && +D.invoiceSettings.dueDays) || 7;
-    return { kpis: kpis, cards: cards, table: { title: 'By channel', sub: 'Invoices dated ' + S.r.label, cols: cols, rows: rows, foot: foot, note: 'Direct bookings are due ' + fmt.plural(dueDays, 'day') + ' before arrival; platform bookings are collected by the platform when booked.' } };
+    return { kpis: kpis, cards: cards, table: { title: 'By channel', sub: 'Invoices dated ' + S.r.label, cols: cols, rows: rows, foot: foot, note: O.tpl('Direct bookings are due {days} before arrival; platform bookings are collected by the platform when booked.', { days: fmt.plural(dueDays, 'day') }) } };
   };
 
   /* Operations: turnovers, turnover time, tasks done on time, arrival readiness */
@@ -747,9 +747,9 @@
       tile('deps', o0.deps, o1.deps, S, { hl: true }),
       tile('b2b', o0.b2b, o1.b2b, S, { after: o0.b2bShare != null ? fmt.pct(o0.b2bShare) + ' of turnovers' : '' }),
       tile('turn', o0.turn, o1.turn, S, o0.turnN ? {} : { noCmp: true, sub: 'No finished turnovers yet' }),
-      tile('onTime', o0.onTime, o1.onTime, S, o0.timed.length ? { after: o0.onTimeN + ' of ' + o0.timed.length } : { noCmp: true, sub: 'No tasks done yet' }),
+      tile('onTime', o0.onTime, o1.onTime, S, o0.timed.length ? { after: O.tpl('{n} of {total}', { n: o0.onTimeN, total: o0.timed.length }) } : { noCmp: true, sub: 'No tasks done yet' }),
       tile('tasksDone', o0.tasksDone, o1.tasksDone, S, { label: 'Tasks open', value: esc(String(o0.open.length)), text: String(o0.open.length), noCmp: true, sub: o0.overdueNow ? '<span class="delta bad">' + o0.overdueNow + ' overdue</span>' : 'None overdue', title: 'Tasks due in the range that are not done yet' }),
-      { key: 'ready', label: 'Arrivals on track, 7 days', value: nx.length ? ready + '<small> of ' + nx.length + '</small>' : '–', sub: (!nx.length ? 'No arrivals in the next 7 days' : action ? '<span class="delta bad">' + action + ' need action</span>' : 'All on track') + (nx.length ? '<span class="st-after">' + allOk + ' fully ready now</span>' : ''), title: 'Arrivals in the next 7 days (from today, whatever the range) where the clean, ID check and door code are done or scheduled. Need action: on arrival day the clean is not booked or not started or the door code is held, or a door code has expired.', csv: ['Arrivals on track, next 7 days', nx.length ? ready + ' of ' + nx.length : '', '', ''] }
+      { key: 'ready', label: 'Arrivals on track, 7 days', value: nx.length ? ready + '<small> ' + esc(O.tpl('of {total}', { total: nx.length })) + '</small>' : '–', sub: (!nx.length ? 'No arrivals in the next 7 days' : action ? '<span class="delta bad">' + action + ' need action</span>' : 'All on track') + (nx.length ? '<span class="st-after">' + allOk + ' fully ready now</span>' : ''), title: 'Arrivals in the next 7 days (from today, whatever the range) where the clean, ID check and door code are done or scheduled. Need action: on arrival day the clean is not booked or not started or the door code is held, or a door code has expired.', csv: ['Arrivals on track, next 7 days', nx.length ? ready + ' of ' + nx.length : '', '', ''] }
     ];
     var u = unitWord(S.bk);
     var depsIn = function (a, b) { return bks(S.pid).filter(function (x) { return live(x) && x.checkOut >= a && x.checkOut <= b; }).length; };
@@ -761,11 +761,11 @@
     var pMax = Math.max.apply(null, pList.map(function (p) { return p.n; }).concat([1]));
     var pRows = pList.map(function (p) {
       return { label: '<span class="ellipsis">' + esc(staffName(p.id)) + '</span>', parts: [{ v: p.done, tone: 'brand' }, { v: p.late, tone: 'bad' }, { v: p.open, tone: 'prev2' }],
-        display: '<b>' + p.done + ' of ' + p.n + '</b> <span class="xs muted st-hide-sm">' + (p.timed ? fmt.pct(p.onTime / p.timed) + ' on time' : 'done') + '</span>' };
+        display: '<b>' + esc(O.tpl('{n} of {total}', { n: p.done, total: p.n })) + '</b> <span class="xs muted st-hide-sm">' + esc(p.timed ? O.tpl('{pct} on time', { pct: fmt.pct(p.onTime / p.timed) }) : O.tr('done')) + '</span>' };
     });
     var cards = [
       { title: 'Turnovers per ' + u, sub: 'Check-outs, each one a unit to turn around', legend: legend(S, 2, true), body: chartSlot('dep'), draw: function (el) { cmpBars(el, S, depsIn, { yFormat: countAxis, aria: 'Turnovers per ' + u }); } },
-      { title: 'Tasks by team member', sub: fmt.plural(o0.tasksN, 'task') + ' due ' + S.r.short, legend: O.chart.legend([{ name: 'Done', tone: 'brand', square: true }, { name: 'Overdue', tone: 'bad', square: true }, { name: 'Not due yet', tone: 'prev2', square: true }]), body: pRows.length ? stackHb(pRows, pMax) : U.empty('No tasks due in this range') }
+      { title: 'Tasks by team member', sub: O.tpl('{count} due {range}', { count: fmt.plural(o0.tasksN, 'task'), range: S.r.short }), legend: O.chart.legend([{ name: 'Done', tone: 'brand', square: true }, { name: 'Overdue', tone: 'bad', square: true }, { name: 'Not due yet', tone: 'prev2', square: true }]), body: pRows.length ? stackHb(pRows, pMax) : U.empty('No tasks due in this range') }
     ];
     var cols = [{ label: 'Property', type: 'text' }, { label: 'Turnovers', type: 'num' }, { label: 'Back-to-back', type: 'num' }, { label: 'Avg window', type: 'dur', title: 'Time between check-out and the next check-in on back-to-back days' },
       { label: 'Avg turnover time', type: 'dur', title: 'From check-out to the clean done or the restock logged' }, { label: 'Tasks done', type: 'num' }, { label: 'On time', type: 'pct' }, { label: 'Open tasks', type: 'num' }];
@@ -802,17 +802,17 @@
       : U.empty('No capital spending in this range. Assets such as furniture and appliances show here.');
     var cards = [
       { title: 'Operating costs per ' + u, sub: 'Running costs, by expense date', legend: legend(S, 2, true), body: chartSlot('opex'), draw: function (el) { cmpBars(el, S, opexIn, { yFormat: moneyAxis, aria: 'Operating costs per ' + u }); } },
-      { title: 'Capital spending', sub: (cap.length ? fmt.money(c0.capex) + ' on ' + fmt.plural(cap.length, 'purchase') : 'Assets that last years') + ', kept out of operating profit', body: capBody }
+      { title: 'Capital spending', sub: cap.length ? O.tpl('{amount} on {count}, kept out of operating profit', { amount: fmt.money(c0.capex), count: fmt.plural(cap.length, 'purchase') }) : O.tpl('Assets that last years, kept out of operating profit'), body: capBody }
     ];
     var cols = [{ label: 'Expense type', type: 'text' }, { label: 'Cost type', type: 'text' }, { label: 'Entries', type: 'num' }, { label: 'Amount', type: 'money' }, { label: 'Share', type: 'pct' },
-      { label: S.c1 ? S.c1.short : 'Previous', type: 'money', cmp: true }, { label: 'vs ' + (S.c1 ? S.c1.tag : 'previous'), type: 'chg' }];
+      { label: S.c1 ? S.c1.short : 'Previous', type: 'money', cmp: true }, { label: O.tpl('vs {x}', { x: S.c1 ? S.c1.tag : 'previous' }), type: 'chg' }];
     var types = Object.keys(c0.byType); Object.keys(c1.byType || {}).forEach(function (k) { if (types.indexOf(k) < 0) types.push(k); });
     var rows = types.map(function (k) {
       var p = c1.byType ? c1.byType[k] : null, t = c0.byType[k] || { type: p.type, cls: p.cls, amt: 0, n: 0 };
       return [t.type, { html: t.cls === 'capex' ? U.pill('Capital', 'info') : U.pill('Operating', 'neutral'), text: t.cls === 'capex' ? 'Capital expense' : 'Operating expense' }, t.n, t.amt, ratio(t.amt, c0.spend), S.c1 ? (p ? p.amt : 0) : null, S.c1 ? { cur: t.amt, prev: p ? p.amt : 0, invert: true } : null];
     }).sort(function (a, b) { return b[3] - a[3]; });
     var foot = [{ html: 'All expenses', text: 'All expenses' }, '', c0.n, c0.spend, c0.spend ? 1 : null, S.c1 ? c1.spend : null, S.c1 ? { cur: c0.spend, prev: c1.spend, invert: true } : null];
-    return { kpis: kpis, cards: cards, table: { title: 'By expense type', sub: S.r.label + (S.pid ? ', ' + S.prop.name : ', including company-wide costs'), cols: cols, rows: rows, foot: foot } };
+    return { kpis: kpis, cards: cards, table: { title: 'By expense type', sub: S.pid ? S.r.label + ', ' + S.prop.name : O.tpl('{range}, including company-wide costs', { range: S.r.label }), cols: cols, rows: rows, foot: foot } };
   };
 
   /* ------------------------------------------------------------------ export */
@@ -878,7 +878,7 @@
   function allowedTab(id) { return id !== 'costs' || O.can('statistics.money'); }
   function cmpSentence(S) {
     if (!S.c1) return 'No comparison: the period before this one falls before your records start (' + d.fmtY(dataStart()) + ').';
-    return 'Compared with ' + S.c1.long + ' (' + S.c1.short + ')' + (S.c2 ? ' and ' + S.c2.long + ' (' + S.c2.short + ')' : '') + '.';
+    return O.tpl(S.c2 ? 'Compared with {prev} ({range}) and {prev2} ({range2}).' : 'Compared with {prev} ({range}).', { prev: S.c1.long, range: S.c1.short, prev2: S.c2 ? S.c2.long : '', range2: S.c2 ? S.c2.short : '' });
   }
 
   O.page('statistics', {

@@ -272,7 +272,7 @@
       '<label class="check"><input type="checkbox" name="onlynew" checked><span>Skip documents that were already sent</span></label>' +
       '<div class="bs-list">' + list.map(function (b) {
         return '<div class="bs-row" data-id="' + b.id + '"><div style="min-width:0"><div class="bs-nm">' + esc(b.guest.name) + '<span>' + esc(b.invoiceNo) + '</span></div><div class="bs-sb bs-docs"></div></div>' +
-          '<select class="select" aria-label="Send ' + esc(b.guest.name) + ' by" data-via><option' + (b.channel === 'direct' ? ' selected' : '') + '>WhatsApp</option><option' + (b.channel !== 'direct' ? ' selected' : '') + '>Email</option></select></div>';
+          '<select class="select" aria-label="' + esc(O.tpl('Send {guest} by', { guest: b.guest.name })) + '" data-via><option' + (b.channel === 'direct' ? ' selected' : '') + '>WhatsApp</option><option' + (b.channel !== 'direct' ? ' selected' : '') + '>Email</option></select></div>';
       }).join('') + '</div><div class="small muted bs-sum"></div></div>');
     function docsFor(b) {
       var out = [];
@@ -285,9 +285,9 @@
       O.$$('.bs-row', body).forEach(function (row) {
         var b = D.booking(row.dataset.id), docs = docsFor(b), via = O.$('[data-via]', row).value;
         nDocs += docs.length; if (docs.length) nGuests++;
-        O.$('.bs-docs', row).textContent = docs.length ? (docs.map(function (k) { return k === 'invoice' ? 'Invoice' : 'Receipt ' + b.receiptNo; }).join(' + ') + ' → ' + shownAddr(b, via)) : 'Nothing new to send';
+        O.$('.bs-docs', row).textContent = docs.length ? O.i18nKeep(docs.map(function (k) { return k === 'invoice' ? O.tr('Invoice') : O.tpl('Receipt {no}', { no: b.receiptNo }); }).join(' + ') + ' → ' + shownAddr(b, via)) : O.tr('Nothing new to send');
       });
-      O.$('.bs-sum', body).textContent = nDocs ? nDocs + ' document' + (nDocs === 1 ? '' : 's') + ' to ' + nGuests + ' guest' + (nGuests === 1 ? '' : 's') + '.' : 'Everything selected has already been sent. Untick the box above to send again.';
+      O.$('.bs-sum', body).textContent = nDocs ? O.tpl('{docs} to {guests}.', { docs: fmt.plural(nDocs, 'document'), guests: fmt.plural(nGuests, 'guest') }) : 'Everything selected has already been sent. Untick the box above to send again.';
     }
     body.addEventListener('change', function (e) { if (e.target.name === 'onlynew') onlyNew = e.target.checked; paint(); });
     paint();
@@ -305,8 +305,8 @@
           if (!guests) { U.toast('Nothing to send. Everything selected was already sent.', 'bad'); return false; }
           st.sel = {};
           var parts = []; if (n.invoice) parts.push(fmt.plural(n.invoice, 'invoice')); if (n.receipt) parts.push(fmt.plural(n.receipt, 'receipt'));
-          var vparts = []; if (via.WhatsApp) vparts.push(via.WhatsApp + ' by WhatsApp'); if (via.Email) vparts.push(via.Email + ' by email');
-          U.toast('Sent ' + parts.join(' and ') + ' to ' + fmt.plural(guests, 'guest') + ' (' + vparts.join(', ') + ')');
+          var vparts = []; if (via.WhatsApp) vparts.push(O.tpl('{n} by WhatsApp', { n: via.WhatsApp })); if (via.Email) vparts.push(O.tpl('{n} by email', { n: via.Email }));
+          U.toast(O.tpl('Sent {docs} to {guests} ({how})', { docs: fmt.andList(parts), guests: fmt.plural(guests, 'guest'), how: O.i18nKeep(vparts.join(', ')) }));
           O.emit('data', { type: 'sent' });
         }
       }]
@@ -388,12 +388,12 @@
       '<td class="c-stay"><span class="nowrap">' + d.fmtRange(b.checkIn, b.checkOut) + '</span><div class="inv-sub">' + fmt.plural(b.nights, 'night') + '</div></td>' +
       '<td class="c-total num"><b>' + fmt.money(b.total, { cur: b }) + '</b>' + (b.tourismTax && O.tourismTaxApplies(b) ? '<div class="inv-sub">incl. tax ' + fmt.money(b.tourismTax, { cur: b }) + '</div>' : '') + '</td>' +
       '<td class="c-ist">' + O.invoice.statusHTML(b, 'invoice') + (b.invoiceSent ? '<div class="inv-sub">' + (b.invoiceSent.at === D.TODAY ? 'Today' : d.fmt(b.invoiceSent.at)) + '</div>' : '') + '</td>' +
-      '<td class="c-rst">' + O.invoice.statusHTML(b, 'receipt') + (b.receiptNo ? '<div class="inv-sub">' + esc(b.receiptNo) + ' · paid ' + d.fmt(b.paidAt) + '</div>' : dueHTML(b)) + '</td>' +
+      '<td class="c-rst">' + O.invoice.statusHTML(b, 'receipt') + (b.receiptNo ? '<div class="inv-sub">' + esc(O.tpl('{no} · paid {date}', { no: b.receiptNo, date: d.fmt(b.paidAt) })) + '</div>' : dueHTML(b)) + '</td>' +
       '<td class="c-acts"><div class="inv-acts">' +
       '<button type="button" class="ib" data-act="inv" aria-label="View invoice ' + esc(b.invoiceNo) + '" title="View invoice">' + O.icon('file') + '</button>' +
       (b.paidAt ? '<button type="button" class="ib" data-act="rcp" aria-label="View receipt ' + esc(b.receiptNo) + '" title="View receipt">' + O.icon('check') + '</button>'
         : '<button type="button" class="ib" data-act="rcp" aria-label="Record payment"' + (canPay() ? ' title="Record payment"' : ' disabled title="' + NO_PAY + '"') + '>' + O.icon('card') + '</button>') +
-      '<button type="button" class="ib" data-act="send" aria-label="Send to ' + esc(b.guest.name) + '"' + (canSend() ? ' title="Send to guest"' : ' disabled title="' + NO_SEND + '"') + '>' + O.icon('send') + '</button>' +
+      '<button type="button" class="ib" data-act="send" aria-label="' + esc(O.tpl('Send to {guest}', { guest: b.guest.name })) + '"' + (canSend() ? ' title="Send to guest"' : ' disabled title="' + NO_SEND + '"') + '>' + O.icon('send') + '</button>' +
       '<button type="button" class="ib" data-act="more" aria-label="More actions for ' + esc(b.invoiceNo) + '" title="Download PDF and more">' + O.icon('more') + '</button>' +
       '</div></td></tr>';
   }
@@ -416,7 +416,7 @@
     var selIds = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
     var allOn = list.length && list.every(function (b) { return st.sel[b.id]; });
     var r = range();
-    var head = '<div class="card-head"><div><h3>Invoices and receipts</h3><div class="sub">' + fmt.plural(list.length, 'invoice') + ' dated ' + esc(U.rangeLabel(r.from, r.to)) + (st.status !== 'all' ? ' · ' + esc(STATUSES.filter(function (s) { return s[0] === st.status; })[0][1].toLowerCase()) : '') + '</div></div>' +
+    var head = '<div class="card-head"><div><h3>Invoices and receipts</h3><div class="sub">' + esc(O.tpl('{count} dated {range}', { count: fmt.plural(list.length, 'invoice'), range: U.rangeLabel(r.from, r.to) })) + (st.status !== 'all' ? ' · ' + esc(STATUSES.filter(function (s) { return s[0] === st.status; })[0][1].toLowerCase()) : '') + '</div></div>' +
       '<div class="row-flex wrap">' + (st.status !== 'all' || st.plat || st.prop || st.q ? '<button type="button" class="btn btn-quiet btn-sm" data-act="clear">Clear filters</button>' : '') + '</div></div>';
     var bulk = selIds.length ? '<div class="inv-bulk" role="region" aria-label="Selection"><b>' + selIds.length + ' selected</b><span class="muted">' + fmt.money(sum(selIds.map(D.booking).filter(function (b) { return b && O.inCur(b); }), function (b) { return b.total; })) + '</span>' +
       (canSend() ? '<button type="button" class="btn btn-primary btn-sm" data-act="bulksend">' + O.icon('send') + 'Send selected</button>' : '') +
@@ -430,8 +430,8 @@
       : emptyHTML(b0);
     return '<div class="card inv-list">' + head + filtersHTML(b0) + bulk + body + '</div>';
   }
-  function seg(name, val, opts) {
-    return '<div class="seg" role="group" aria-label="' + esc(name) + '">' + opts.map(function (o) { return '<button type="button" data-set="' + name + '" data-v="' + o[0] + '" class="' + (val === o[0] ? 'on' : '') + '" aria-pressed="' + (val === o[0]) + '">' + esc(o[1]) + '</button>'; }).join('') + '</div>';
+  function seg(name, val, opts, label) {
+    return '<div class="seg" role="group" aria-label="' + esc(label || name) + '">' + opts.map(function (o) { return '<button type="button" data-set="' + name + '" data-v="' + o[0] + '" class="' + (val === o[0] ? 'on' : '') + '" aria-pressed="' + (val === o[0]) + '">' + esc(o[1]) + '</button>'; }).join('') + '</div>';
   }
   function settingsCard() {
     var ws = O.ws();
@@ -440,8 +440,8 @@
     return '<div class="card"><div class="card-head"><div><h3>Invoice settings</h3><div class="sub">Applies to every invoice and receipt created from now on</div></div></div><div class="card-body">' +
       (ro ? '<div class="inv-ro">' + O.icon('lock') + 'You can see these settings. Your access does not include changing them.</div>' : '') +
       '<fieldset class="inv-set"' + (ro ? ' disabled' : '') + '>' +
-      '<div class="set-row"><div><div class="t">Send the invoice automatically</div><div class="s">When a booking is confirmed. Auto uses WhatsApp for direct guests and email for platform guests.</div></div><div class="ctl">' + seg('autoInvoice', S.autoInvoice, sendOpts) + '</div></div>' +
-      '<div class="set-row"><div><div class="t">Send the receipt automatically</div><div class="s">When payment arrives, from the platform payout or a direct payment.</div></div><div class="ctl">' + seg('autoReceipt', S.autoReceipt, sendOpts) + '</div></div>' +
+      '<div class="set-row"><div><div class="t">Send the invoice automatically</div><div class="s">When a booking is confirmed. Auto uses WhatsApp for direct guests and email for platform guests.</div></div><div class="ctl">' + seg('autoInvoice', S.autoInvoice, sendOpts, 'Send the invoice automatically') + '</div></div>' +
+      '<div class="set-row"><div><div class="t">Send the receipt automatically</div><div class="s">When payment arrives, from the platform payout or a direct payment.</div></div><div class="ctl">' + seg('autoReceipt', S.autoReceipt, sendOpts, 'Send the receipt automatically') + '</div></div>' +
       '<div class="set-row" style="display:block"><div class="t">Numbering</div><div class="s">Use {YYYY}, {YY} and {MM} for the date and end with {seq}, the running number. Numbers never repeat or skip.</div>' +
       '<div class="set-num"><div class="field"><label for="inv-pat">Invoices</label><input class="input" id="inv-pat" data-pat="invPattern" value="' + esc(S.invPattern) + '"><span class="hint">Next: <b class="nx-inv">' + esc(nextNo('invoice')) + '</b></span></div>' +
       '<div class="field"><label for="rcp-pat">Receipts</label><input class="input" id="rcp-pat" data-pat="rcpPattern" value="' + esc(S.rcpPattern) + '"><span class="hint">Next: <b class="nx-rcp">' + esc(nextNo('receipt')) + '</b></span></div></div></div>' +
@@ -480,7 +480,7 @@
     ev = ev.filter(function (e) { return e.at <= D.NOW || e.b.invoiceSent && e.b.invoiceSent.time; }).slice(0, 7);
     return '<div class="card"><div class="card-head"><div><h3>Recently sent</h3><div class="sub">Newest first, including automatic sends</div></div></div><div class="card-body" style="padding-top:4px;padding-bottom:4px">' +
       (ev.length ? ev.map(function (e) {
-        return '<div class="log-row"><span class="log-ic" aria-hidden="true">' + O.icon(e.via === 'WhatsApp' ? 'whatsapp' : 'mail') + '</span><div style="min-width:0"><div><b>' + (e.kind === 'invoice' ? 'Invoice ' + esc(e.b.invoiceNo) : 'Receipt ' + esc(e.b.receiptNo)) + '</b> to ' + esc(e.b.guest.name) + '</div><div class="small muted">' + esc(e.via) + ' · ' + esc(prop(e.b.propertyId).short) + '</div></div><span class="when">' + (e.at.slice(0, 10) === D.TODAY ? 'Today, ' + fmt.time(e.at.slice(11, 16)) : d.fmt(e.at.slice(0, 10))) + '</span></div>';
+        return '<div class="log-row"><span class="log-ic" aria-hidden="true">' + O.icon(e.via === 'WhatsApp' ? 'whatsapp' : 'mail') + '</span><div style="min-width:0"><div>' + O.tpl('{doc} to {guest}', { doc: { raw: '<b>' + esc(e.kind === 'invoice' ? O.tpl('Invoice {no}', { no: e.b.invoiceNo }) : O.tpl('Receipt {no}', { no: e.b.receiptNo })) + '</b>' }, guest: { raw: esc(e.b.guest.name) } }) + '</div><div class="small muted">' + esc(e.via) + ' · ' + esc(prop(e.b.propertyId).short) + '</div></div><span class="when">' + esc(e.at.slice(0, 10) === D.TODAY ? O.tpl('Today, {time}', { time: fmt.time(e.at.slice(11, 16)) }) : d.fmt(e.at.slice(0, 10))) + '</span></div>';
       }).join('') : U.empty('Nothing has been sent yet.', '✉')) +
       '</div><div class="card-foot">Email and WhatsApp delivery is not connected in this version. Sending updates the status and this log.</div></div>';
   }

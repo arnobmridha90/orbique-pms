@@ -508,7 +508,7 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
   }
   function rowHTML(c) {
     var last = c.last, who = last ? (last.sender === me() ? t('you') : c.kind === 'direct' ? '' : TC.firstName(nameOf(last.sender))) : '';
-    var prev = last ? (who ? '<span class="who">' + esc(who) + ': </span>' : '') + esc(TC.preview(last)) : '<span class="who">' + esc(c.kind === 'all' ? t('allStaffSub') : t('noMessages')) + '</span>';
+    var prev = last ? (who ? '<span class="who">' + esc(who) + ': </span>' : '') + (last.body ? '<span data-no-i18n>' + esc(TC.preview(last)) + '</span>' : esc(TC.preview(last))) : '<span class="who">' + esc(c.kind === 'all' ? t('allStaffSub') : t('noMessages')) + '</span>';
     return '<button type="button" class="tc-row' + (c.id === U_STATE.openId ? ' on' : '') + (c.unread ? ' unread' : '') + '" data-chat="' + esc(c.id) + '">' + avatarOf(c) +
       '<span class="tc-main"><span class="tc-l1"><span class="tc-name">' + esc(title(c)) + '</span><span class="tc-time">' + (last ? esc(whenText(last.at)) : '') + '</span></span>' +
       '<span class="tc-l2"><span class="tc-prev">' + prev + '</span>' + (c.muted ? '<span class="tc-mute" title="' + esc(t('muted')) + '">' + BELL_OFF + '</span>' : '') +
@@ -547,7 +547,7 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
       prevWho = m.sender; prevAt = TC.ms(m.at);
       var who = !mine && first && c.kind !== 'direct' ? '<div class="who" style="color:' + whoColor(m.sender) + '">' + esc(nameOf(m.sender)) + '</div>' : '';
       out.push('<div class="tc-msg ' + (mine ? 'out' : 'in') + (first ? ' first' : '') + (m.pending ? ' pending' : '') + '" data-mid="' + esc(m.id) + '"><div class="tc-bub">' + who +
-        (m.file ? fileHTML(m) : '') + (m.body ? '<span class="txt">' + linkify(m.body) + '</span>' : '') +
+        (m.file ? fileHTML(m) : '') + (m.body ? '<span class="txt" data-no-i18n>' + linkify(m.body) + '</span>' : '') +
         '<span class="meta">' + esc(m.pending ? t('sending') : O.fmt.time(l)) + '</span></div></div>');
     });
     return out.join('');
@@ -581,7 +581,7 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
       O.$('[data-pane]', body).innerHTML = mode === 'direct' ? '<div class="field"><label>' + esc(t('choosePerson')) + '</label><div class="tc-people">' + peopleRows(ids, false) + '</div></div>'
         : '<div class="field"><label for="tc-gname">' + esc(t('groupName')) + '</label><input class="input" id="tc-gname" maxlength="' + TC.NAME_MAX + '" placeholder="' + esc(t('groupNameHint')) + '"></div>' +
           '<div class="field"><label>' + esc(t('choosePeople')) + '</label><div class="tc-people">' + peopleRows(ids, true) + '</div></div>';
-      var create = O.$$('.modal-foot button', body.closest('.modal') || document).filter(function (b) { return b.textContent === t('create'); })[0];
+      var create = O.$$('.modal-foot button', body.closest('.modal') || document).filter(function (b) { return b.textContent === t('create') || b.textContent === O.tr(t('create')); })[0];
       if (create) create.hidden = mode !== 'group';
     }
     var close = function () {};
