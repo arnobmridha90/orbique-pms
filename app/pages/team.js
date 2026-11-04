@@ -86,6 +86,10 @@
 .pg-team .tc-bub .meta{float:right;margin:8px 0 -5px 12px;font-size:10.5px;line-height:1.2;opacity:0.72;white-space:nowrap;}
 .pg-team .tc-msg.in .tc-bub .meta{color:var(--muted);opacity:1;}
 .pg-team .tc-msg.pending .tc-bub{opacity:0.7;}
+.pg-team .tc-tr{display:flex;align-items:center;gap:4px;margin:4px 0 0;padding:0;background:none;border:none;font:inherit;font-size:11px;line-height:1.3;color:var(--muted);cursor:pointer;text-align:left;}
+.pg-team .tc-tr svg{width:12px;height:12px;}
+.pg-team .tc-tr-link{text-decoration:underline;}
+.pg-team .tc-tr:hover .tc-tr-link{color:var(--text);}
 .pg-team .tc-img{display:block;padding:0;border:none;background:var(--surface-2);border-radius:7px;overflow:hidden;cursor:zoom-in;max-width:280px;min-width:120px;min-height:90px;margin:2px 0 4px;}
 .pg-team .tc-img img{display:block;max-width:280px;width:100%;max-height:320px;object-fit:cover;}
 .pg-team .tc-file{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;background:rgba(127,127,127,0.12);min-width:200px;max-width:300px;margin:2px 0 4px;color:inherit;text-decoration:none;border:none;text-align:left;cursor:pointer;font:inherit;}
@@ -140,7 +144,7 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
 
   /* ------------------------------------------------------------------ where it is kept */
   var S = fresh();
-  function fresh() { return { org: null, loaded: false, loading: null, error: null, level: 'none', chats: [], msgs: {}, msgLoading: {}, urls: {}, ch: null, rtOk: false, poll: null, reloadT: null, me: null }; }
+  function fresh() { return { org: null, loaded: false, loading: null, error: null, level: 'none', chats: [], msgs: {}, msgLoading: {}, urls: {}, ch: null, rtOk: false, poll: null, reloadT: null, me: null, tr: {}, trAsk: {}, trOff: false, orig: {} }; }
   function live() { return !!(O.auth && O.auth.enabled && O.auth.enabled() && O.auth.orgId && O.auth.orgId()); }
   function orgKey() { return live() ? 'live:' + O.auth.orgId() : 'local:' + (O.state.workspace || ''); }
   function sb() { return O.auth.supabase(); }
@@ -286,6 +290,39 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
     S.msgLoading[chatId] = loadMsgsLive(chatId).then(function (l) { delete S.msgLoading[chatId]; return l; }, function (e) { delete S.msgLoading[chatId]; throw e; });
     return S.msgLoading[chatId];
   };
+  /* translation (0025): other people's messages in the reader's app language, kept on the server once per message and
+     language; "See original" shows the words as written. Signed in only; off when the server has no translation key. */
+  function trLang() { var l = String(O.state.lang || 'en').toLowerCase(); return /^[a-z]{2}$/.test(l) ? l : 'en'; }
+  function trKey(id) { return trLang() + ':' + id; }
+  function wantsTr(m) { return live() && !S.trOff && !!m.body && m.sender !== me() && !m.pending && !/^tmp-/.test(m.id); }
+  TCX.translation = function (m) { var r = S.tr[trKey(m.id)]; return r && !r.same && r.text ? r : null; };
+  TCX.showOriginal = function (id, on) { if (on) S.orig[id] = true; else delete S.orig[id]; };
+  TCX.showingOriginal = function (id) { return !!S.orig[id]; };
+  TCX.translate = function (chatId, msgs) {
+    check();
+    var to = trLang(), ids = (msgs || []).filter(function (m) { return wantsTr(m) && !S.tr[to + ':' + m.id] && !S.trAsk[to + ':' + m.id]; })
+      .map(function (m) { return m.id; }).slice(-40);
+    if (!ids.length) return Promise.resolve(false);
+    ids.forEach(function (id) { S.trAsk[to + ':' + id] = true; });
+    var key = S.org;
+    return O.auth.call('/api/alerts', { action: 'team-translate', orgId: O.auth.orgId(), ids: ids, to: to }).then(function (r) {
+      if (S.org !== key) return false;
+      if (!r.configured) S.trOff = true;
+      var items = r.items || {}, got = false;
+      Object.keys(items).forEach(function (id) { S.tr[to + ':' + id] = items[id]; got = got || (!items[id].same && !!items[id].text); });
+      /* what came back neither done nor pending was not translatable (no access, no text): never ask again */
+      ids.forEach(function (id) { if (!items[id] && (r.pending || []).indexOf(id) < 0) S.tr[to + ':' + id] = { same: true, text: '' }; });
+      /* pending ones: ask again a little later */
+      (r.pending || []).forEach(function (id) { setTimeout(function () { delete S.trAsk[to + ':' + id]; if (S.org === key) changed({ thread: chatId }); }, r.error ? 120000 : 4000); });
+      if (got) changed({ thread: chatId });
+      return got;
+    }, function (e) {
+      console.warn('team-translate', e && e.message);
+      setTimeout(function () { ids.forEach(function (id) { delete S.trAsk[to + ':' + id]; }); }, 60000);
+      return false;
+    });
+  };
+
   function softReload() { clearTimeout(S.reloadT); S.reloadT = setTimeout(function () { TCX.load(true).catch(function () {}); }, 350); }
   /* something changed: the menu badge and the page (when open) follow */
   var listeners = [];
@@ -547,10 +584,25 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
       prevWho = m.sender; prevAt = TC.ms(m.at);
       var who = !mine && first && c.kind !== 'direct' ? '<div class="who" style="color:' + whoColor(m.sender) + '">' + esc(nameOf(m.sender)) + '</div>' : '';
       out.push('<div class="tc-msg ' + (mine ? 'out' : 'in') + (first ? ' first' : '') + (m.pending ? ' pending' : '') + '" data-mid="' + esc(m.id) + '"><div class="tc-bub">' + who +
-        (m.file ? fileHTML(m) : '') + (m.body ? '<span class="txt" data-no-i18n>' + linkify(m.body) + '</span>' : '') +
+        (m.file ? fileHTML(m) : '') + (m.body ? bodyHTML(m) : '') +
         '<span class="meta">' + esc(m.pending ? t('sending') : O.fmt.time(l)) + '</span></div></div>');
     });
     return out.join('');
+  }
+  function langLabel(code) {
+    if (!code) return '';
+    try { if (window.Intl && Intl.DisplayNames) { var n = new Intl.DisplayNames([trLangUi()], { type: 'language' }).of(code); if (n && n !== code) return n; } } catch (e) {}
+    return code.toUpperCase();
+  }
+  function trLangUi() { var l = O.state.lang || 'en'; return l === 'zh' ? 'zh-Hans' : l; }
+  function bodyHTML(m) {
+    var tr = TCX.translation(m);
+    if (!tr) return '<span class="txt" data-no-i18n>' + linkify(m.body) + '</span>';
+    var orig = TCX.showingOriginal(m.id), from = langLabel(tr.from);
+    return '<span class="txt" data-no-i18n>' + linkify(orig ? m.body : tr.text) + '</span>' +
+      '<button type="button" class="tc-tr" data-tc-orig="' + esc(m.id) + '">' + O.icon('lang') +
+      '<span>' + esc(orig ? t('seeTranslation') : (from ? t('translatedFrom', { lang: from }) : t('translated'))) + '</span>' +
+      (orig ? '' : '<span class="tc-tr-sep">·</span><span class="tc-tr-link">' + esc(t('seeOriginal')) + '</span>') + '</button>';
   }
   var WHO_COLORS = ['#2F7D6D', '#3B5B8C', '#8A5A2B', '#6D4C9F', '#A0414E', '#3F7F3F', '#1F6A8A', '#8C3E7A'];
   function whoColor(id) { return 'color-mix(in srgb, ' + WHO_COLORS[D.hash(String(id)) % WHO_COLORS.length] + ' 80%, var(--text))'; }
@@ -675,6 +727,7 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
         th.innerHTML = threadHTML(c, msgs);
         loadImages(th, msgs);
         if (stick) th.scrollTop = th.scrollHeight;
+        if (msgs && msgs.length) TCX.translate(c.id, msgs);
       }
       function paintChat() {
         var c = chatById(U_STATE.openId);
@@ -736,6 +789,8 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
         var row = e.target.closest('[data-chat]'); if (row) { openChat(row.dataset.chat); return; }
         var img = e.target.closest('[data-tc-img]');
         if (img) { var mi = msgOf(img.dataset.tcImg), src = O.$('img', img).src; if (mi && src) U.modal({ title: mi.file.name || t('photo'), body: '<div class="tc-lightbox"><img alt="" src="' + esc(src) + '"></div>', actions: [{ label: t('done'), kind: 'primary' }] }); return; }
+        var tb = e.target.closest('[data-tc-orig]');
+        if (tb) { var id = tb.dataset.tcOrig; TCX.showOriginal(id, !TCX.showingOriginal(id)); paintThread(false); return; }
         var fb = e.target.closest('[data-tc-file]');
         if (fb) {
           var mf = msgOf(fb.dataset.tcFile); if (!mf) return;

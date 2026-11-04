@@ -8212,5 +8212,9 @@ O.I18N.ms = {
 "{h}h": "{h} j",
 "{m}m": "{m} min",
 "{n} other guest": "{n} tetamu lain",
+"Translated": "Diterjemah",
+"Translated from {lang}": "Diterjemah daripada {lang}",
+"See original": "Lihat asal",
+"See translation": "Lihat terjemahan",
 "Direct": "Terus"
 };

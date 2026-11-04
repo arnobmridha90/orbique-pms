@@ -277,7 +277,7 @@ them to guests is not supported yet.
 **Booking.com, Airbnb and Expedia messages** would need Channex's paid **Messages** app, which is not used: guests are
 reached on WhatsApp. The code for it is in place but switched off (`CHANNEX_MESSAGES` in `api/messages.js`).
 
-**Translation** uses Claude (Anthropic):
+**Translation** uses Claude (Anthropic), for the guest inbox and for Team chat (other people's messages shown in each reader's app language, with "See original"):
 
 | Name | What it is | Where it comes from |
 |---|---|---|
