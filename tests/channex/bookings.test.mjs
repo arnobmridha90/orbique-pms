@@ -125,6 +125,20 @@ test('revisionToBookings: Trip.com prepaid sends its net rate, so the amount is 
   assert.equal(p.payout, 157.16); assert.equal(p.netRate, undefined);
 });
 
+test('revisionToBookings: Airbnb sends the host earnings with its host fee as ota_commission, so the amount is the payout', () => {
+  // A real Airbnb stay: 2 nights RM814 less a RM20.35 adjustment, RM45 cleaning, host fee RM140.39, host earns RM698.26
+  const room = { checkin_date: '2026-11-06', checkout_date: '2026-11-08', room_type_id: RT_T, rate_plan_id: RP_T, amount: '698.26',
+    days: { '2026-11-06': '326.63', '2026-11-07': '326.63' }, occupancy: { adults: 4 } };
+  const b = revisionToBookings(rev({ unique_id: 'ABB-HM0000TEST', ota_name: 'AirBNB', ota_commission: '140.39', payment_collect: 'ota', amount: '698.26',
+    services: [{ name: 'Cleaning fee', type: 'cleaning', total_price: '45.00' }], rooms: [room] }), ctx()).bookings[0];
+  assert.equal(b.channel, 'airbnb');
+  assert.equal(b.payout, 698.26); assert.equal(b.platformFee, 140.39); assert.equal(b.total, 838.65);
+  assert.equal(b.accommodation, 793.65); assert.equal(b.revenue, 838.65); assert.equal(b.cleaningFee, 45);
+  // collected at the property: unchanged
+  const p = revisionToBookings(rev({ unique_id: 'ABB-X', ota_name: 'AirBNB', ota_commission: '140.39', payment_collect: 'property', amount: '698.26', services: [], rooms: [room] }), ctx()).bookings[0];
+  assert.equal(p.total, 698.26); assert.equal(p.payout, 698.26);
+});
+
 test('stripRevision and revisionAttrs: no card data kept; API shape unwrapped', () => {
   const s = stripRevision(rev());
   assert.equal(s.guarantee, undefined);
