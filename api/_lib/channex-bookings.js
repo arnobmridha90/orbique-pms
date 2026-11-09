@@ -191,6 +191,14 @@ export function revisionToBookings(rev, ctx = {}) {
     // Its guest price is not in the booking, so no fee is taken off and none is guessed.
     const tripNet = channel === 'trip' && collect === 'ota' && commission === null;
     if (tripNet) { payout = total; platformFee = 0; }
+    // Airbnb sends the host's earnings (after its host service fee) as the amount, with that fee as ota_commission:
+    // the amount is the payout, and the price before the fee is the amount plus the fee.
+    const airbnbNet = channel === 'airbnb' && collect === 'ota' && commission !== null && platformFee > 0;
+    if (airbnbNet) {
+      payout = total;
+      total = money(total + platformFee);
+      accommodation = money(accommodation + platformFee);
+    }
     if (sellRatio) {
       payout = total;
       accommodation = money(accommodation * sellRatio);
