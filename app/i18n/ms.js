@@ -8216,5 +8216,21 @@ O.I18N.ms = {
 "Translated from {lang}": "Diterjemah daripada {lang}",
 "See original": "Lihat asal",
 "See translation": "Lihat terjemahan",
-"Direct": "Terus"
+"Direct": "Terus",
+"Guest reviewed · Airbnb is showing the review": "Tetamu telah diulas · Airbnb sedang memaparkan ulasan",
+"Hidden until you review the guest": "Tersembunyi sehingga anda mengulas tetamu",
+"You reviewed {name} on {date}. Airbnb now shows their review; it appears here when Airbnb sends it, and then you can reply.": "Anda telah mengulas {name} pada {date}. Airbnb kini memaparkan ulasan mereka; ia akan muncul di sini apabila Airbnb menghantarnya, dan kemudian anda boleh membalas.",
+"Airbnb hides this review until the guest is reviewed.": "Airbnb menyembunyikan ulasan ini sehingga tetamu diulas.",
+"Airbnb hides this review until the guest is reviewed. {x}": "Airbnb menyembunyikan ulasan ini sehingga tetamu diulas. {x}",
+"Review {name} to see their review": "Ulas {name} untuk melihat ulasan mereka",
+"Airbnb keeps a guest's review hidden until you review the guest (or 14 days pass). Once you submit this, Airbnb shows their review and you can reply here.": "Airbnb menyembunyikan ulasan tetamu sehingga anda mengulas tetamu itu (atau selepas 14 hari). Selepas anda menghantar ini, Airbnb memaparkan ulasan mereka dan anda boleh membalas di sini.",
+"Public review of the guest": "Ulasan awam tentang tetamu",
+"{name} was a great guest: tidy, friendly and easy to talk to. Welcome back any time!": "{name} tetamu yang hebat: kemas, mesra dan mudah berbincang. Dialu-alukan kembali bila-bila masa!",
+"Private note to the guest (optional)": "Nota peribadi kepada tetamu (pilihan)",
+"I would host this guest again": "Saya akan menerima tetamu ini lagi",
+"Submit guest review": "Hantar ulasan tetamu",
+"Write a public review of at least 10 characters first": "Tulis ulasan awam sekurang-kurangnya 10 aksara dahulu",
+"Reviewing guests works in a live workspace only": "Mengulas tetamu hanya berfungsi dalam ruang kerja langsung",
+"Review of {name} sent to Airbnb": "Ulasan tentang {name} dihantar ke Airbnb",
+"The guest review was not sent. Please try again.": "Ulasan tetamu tidak dihantar. Sila cuba lagi."
 };

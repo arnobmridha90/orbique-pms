@@ -8216,5 +8216,21 @@ O.I18N.bn = {
 "Translated from {lang}": "{lang} থেকে অনূদিত",
 "See original": "মূল লেখা দেখুন",
 "See translation": "অনুবাদ দেখুন",
-"Direct": "ডাইরেক্ট"
+"Direct": "ডাইরেক্ট",
+"Guest reviewed · Airbnb is showing the review": "অতিথিকে রিভিউ দেওয়া হয়েছে · Airbnb রিভিউটি দেখাচ্ছে",
+"Hidden until you review the guest": "অতিথিকে রিভিউ না দেওয়া পর্যন্ত লুকানো",
+"You reviewed {name} on {date}. Airbnb now shows their review; it appears here when Airbnb sends it, and then you can reply.": "আপনি {date} তারিখে {name}-কে রিভিউ দিয়েছেন। Airbnb এখন তাদের রিভিউ দেখাবে; Airbnb পাঠালে এটি এখানে আসবে, তখন আপনি উত্তর দিতে পারবেন।",
+"Airbnb hides this review until the guest is reviewed.": "অতিথিকে রিভিউ না দেওয়া পর্যন্ত Airbnb এই রিভিউটি লুকিয়ে রাখে।",
+"Airbnb hides this review until the guest is reviewed. {x}": "অতিথিকে রিভিউ না দেওয়া পর্যন্ত Airbnb এই রিভিউটি লুকিয়ে রাখে। {x}",
+"Review {name} to see their review": "{name}-এর রিভিউ দেখতে তাকে রিভিউ দিন",
+"Airbnb keeps a guest's review hidden until you review the guest (or 14 days pass). Once you submit this, Airbnb shows their review and you can reply here.": "আপনি অতিথিকে রিভিউ না দেওয়া পর্যন্ত (বা ১৪ দিন না যাওয়া পর্যন্ত) Airbnb অতিথির রিভিউ লুকিয়ে রাখে। এটি জমা দিলে Airbnb তাদের রিভিউ দেখাবে এবং আপনি এখানে উত্তর দিতে পারবেন।",
+"Public review of the guest": "অতিথির পাবলিক রিভিউ",
+"{name} was a great guest: tidy, friendly and easy to talk to. Welcome back any time!": "{name} একজন চমৎকার অতিথি ছিলেন: পরিপাটি, বন্ধুসুলভ এবং সহজে কথা বলা যায়। যেকোনো সময় আবার স্বাগতম!",
+"Private note to the guest (optional)": "অতিথির জন্য ব্যক্তিগত নোট (ঐচ্ছিক)",
+"I would host this guest again": "আমি এই অতিথিকে আবার রাখব",
+"Submit guest review": "অতিথির রিভিউ জমা দিন",
+"Write a public review of at least 10 characters first": "আগে কমপক্ষে ১০ অক্ষরের একটি পাবলিক রিভিউ লিখুন",
+"Reviewing guests works in a live workspace only": "অতিথিকে রিভিউ দেওয়া শুধু লাইভ ওয়ার্কস্পেসে কাজ করে",
+"Review of {name} sent to Airbnb": "{name}-এর রিভিউ Airbnb-তে পাঠানো হয়েছে",
+"The guest review was not sent. Please try again.": "অতিথির রিভিউ পাঠানো যায়নি। আবার চেষ্টা করুন।"
 };
