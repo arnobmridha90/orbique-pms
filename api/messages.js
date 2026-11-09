@@ -38,6 +38,9 @@
  *                                                              Messaging & Reviews app) for every connected building, then
  *                                                              fetch the reviews and recent conversations already there
  *   review-reply        {reviewId, text}        reviews.reply  the public reply to a booking-site review
+ *   review-guest        {reviewId, scores: {cleanliness, communication, respect_house_rules} 1-5, publicReview, privateNote, recommend}
+ *                                               reviews.reply  review the guest of a hidden Airbnb review (double-blind),
+ *                                                              which makes Airbnb show the guest's review
  *   greeting    {conversationId, greetingId, via}
  *                                               inbox viewer   send the building's greeting message, filled here for the
  *                                                              chat's booking (api/_lib/shared/greeting.cjs) at the server's
@@ -75,7 +78,7 @@ import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from 
 import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt, routes, VIA_NAME, MEDIA_BUCKET, checkMedia, mediaKind, mediaPath, ownsPath, signedUrl, sendMediaReply, markConv, purgeTrash, forgetConv, noteUpload, uploadSent } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
-import { pullReviews, replyReview } from './_lib/reviews.js';
+import { pullReviews, replyReview, reviewGuest } from './_lib/reviews.js';
 import GREETING from './_lib/shared/greeting.cjs';
 
 export const SITES_BUDGET_MS = 15000; // Vercel stops api functions at 20 s (vercel.json)
@@ -541,11 +544,20 @@ async function reviewReplyAction(sb, body, me) {
   return { review: { id: review.id, data: review } };
 }
 
+async function reviewGuestAction(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'reviews.reply');
+  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is posted to the booking sites.');
+  const cx = channexConfig();
+  if (!channexMessages(cx, ws.org.id)) throw forbidden('Booking-site reviews are not switched on for this workspace yet.');
+  const review = await reviewGuest(sb, cx, ws.org.id, body.reviewId, body, ws.member.staff_id || null, { userId: me.id });
+  return { review: { id: review.id, data: review } };
+}
+
 const ACTIONS = {
   config, send: sendAction, translate: translateAction, preview, media,
   'media-upload': mediaUpload, 'send-media': sendMediaAction, organize, purge, lists: listsAction,
   'whatsapp-connect': connectNumber, 'whatsapp-signup': signupNumberAction, 'whatsapp-disconnect': disconnectNumber,
-  'sites-on': sitesOn, 'review-reply': reviewReplyAction,
+  'sites-on': sitesOn, 'review-reply': reviewReplyAction, 'review-guest': reviewGuestAction,
   greeting: greetingAction, 'greeting-preview': greetingPreview
 };
 

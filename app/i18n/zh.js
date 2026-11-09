@@ -8216,5 +8216,21 @@ O.I18N.zh = {
 "Translated from {lang}": "譯自{lang}",
 "See original": "查看原文",
 "See translation": "查看譯文",
-"Direct": "直接預訂"
+"Direct": "直接預訂",
+"Guest reviewed · Airbnb is showing the review": "已評價房客 · Airbnb 正在顯示評價",
+"Hidden until you review the guest": "評價房客後才會顯示",
+"You reviewed {name} on {date}. Airbnb now shows their review; it appears here when Airbnb sends it, and then you can reply.": "您已於 {date} 評價 {name}。Airbnb 現在會顯示對方的評價；Airbnb 傳來後會出現在這裡，屆時即可回覆。",
+"Airbnb hides this review until the guest is reviewed.": "在評價房客之前，Airbnb 會隱藏這則評價。",
+"Airbnb hides this review until the guest is reviewed. {x}": "在評價房客之前，Airbnb 會隱藏這則評價。{x}",
+"Review {name} to see their review": "評價 {name} 以查看對方的評價",
+"Airbnb keeps a guest's review hidden until you review the guest (or 14 days pass). Once you submit this, Airbnb shows their review and you can reply here.": "在您評價房客之前（或 14 天後），Airbnb 會隱藏房客的評價。提交後，Airbnb 會顯示對方的評價，您即可在此回覆。",
+"Public review of the guest": "對房客的公開評價",
+"{name} was a great guest: tidy, friendly and easy to talk to. Welcome back any time!": "{name} 是很棒的房客：整潔、友善又好溝通。歡迎隨時再來！",
+"Private note to the guest (optional)": "給房客的私人留言（選填）",
+"I would host this guest again": "我願意再次接待這位房客",
+"Submit guest review": "提交房客評價",
+"Write a public review of at least 10 characters first": "請先寫至少 10 個字元的公開評價",
+"Reviewing guests works in a live workspace only": "只有在正式工作區才能評價房客",
+"Review of {name} sent to Airbnb": "已將對 {name} 的評價送至 Airbnb",
+"The guest review was not sent. Please try again.": "房客評價未送出，請再試一次。"
 };

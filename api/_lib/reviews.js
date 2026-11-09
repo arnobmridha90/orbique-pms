@@ -94,6 +94,7 @@ export function reviewRecord(cx, ctx = {}) {
     reservationCode: clip(a.ota_reservation_id, 80) || null,
     hidden: a.is_hidden === true
   };
+  if (old && old.guestReviewed) rec.guestReviewed = old.guestReviewed;
   if (a.expired_at) rec.replyBy = clip(a.expired_at, 10);
   return rec;
 }
@@ -205,3 +206,53 @@ export async function replyReview(sb, cfg, orgId, reviewId, text, by, opts = {})
   return Object.assign({ id: r.id }, next);
 }
 
+
+/* Airbnb's double-blind reviews: the guest's review stays hidden (is_hidden) until the host reviews the guest. */
+const GUEST_CATS = ['cleanliness', 'communication', 'respect_house_rules'];
+
+/** Check and shape the host's review of an Airbnb guest -> the Channex body {review: {...}}. */
+export function guestReviewBody(input) {
+  const i = input && typeof input === 'object' ? input : {};
+  const sc = i.scores && typeof i.scores === 'object' ? i.scores : {};
+  const scores = GUEST_CATS.map((c) => {
+    const v = Number(sc[c]);
+    if (!Number.isInteger(v) || v < 1 || v > 5) throw bad('bad-score', 'Give every category 1 to 5 stars.');
+    return { category: c, rating: v };
+  });
+  const pub = String(i.publicReview || '').trim();
+  if (pub.length < 10) throw bad('too-short', 'Write a public review of at least 10 characters.');
+  if (pub.length > 1000) throw bad('too-long', 'The public review is too long for Airbnb (1,000 characters at most).');
+  const priv = String(i.privateNote || '').trim().slice(0, 1000);
+  return { review: { scores, public_review: pub, private_review: priv, is_reviewee_recommended: i.recommend !== false, tags: [] } };
+}
+
+/**
+ * Review the guest of an Airbnb review (POST /reviews/:id/guest_review). Airbnb then shows the guest's review and
+ * Channex sends it again, unhidden, so the reply composer opens. -> the saved review record
+ */
+export async function reviewGuest(sb, cfg, orgId, reviewId, input, by, opts = {}) {
+  const r = await record(sb, orgId, 'reviews', String(reviewId || '').slice(0, 80));
+  if (!r) throw bad('not-found', 'This review is no longer there. Refresh the page.');
+  if (!isUuid(r.cx) || r.platform !== 'airbnb') throw bad('not-airbnb', 'Only Airbnb asks you to review the guest.');
+  if (r.guestReviewed) throw bad('already', 'You have already reviewed this guest.');
+  const body = guestReviewBody(input);
+  try {
+    await tracked(sb, cfg, {
+      method: 'POST', path: '/reviews/' + r.cx + '/guest_review', body,
+      logPayload: { review: { scores: body.review.scores, public_review: '[' + body.review.public_review.length + ' characters]', is_reviewee_recommended: body.review.is_reviewee_recommended } },
+      orgId, propertyId: null, source: 'reviews', byUser: opts.userId, request: opts.request
+    });
+  } catch (e) {
+    if (e instanceof ChannexError) {
+      if (e.status === 403) throw bad('reviews-off', 'Reviews are not switched on for this building in Channex yet (the Messaging & Reviews app). Turn it on in Inbox, Settings.');
+      if (e.status === 422) throw bad('guest-review-refused', 'Airbnb did not take the guest review: ' + e.message + '. It may already be reviewed in the Airbnb app, or the 14 days to review have passed.');
+      if (e.retryable) throw new ApiError(502, 'channex-unavailable', 'Airbnb did not answer. Please try again in a minute.');
+      throw new ApiError(502, 'channex-refused', 'Airbnb refused the guest review: ' + e.message);
+    }
+    throw e;
+  }
+  const next = Object.assign({}, r, { guestReviewed: { date: todayMY(), by: by || null } });
+  delete next.id;
+  must(await sb.from('records').update({ data: Object.assign({ id: r.id }, next) }).eq('org_id', orgId).eq('coll', 'reviews').eq('id', r.id), 'save guest review');
+  return Object.assign({ id: r.id }, next);
+}

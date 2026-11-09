@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { verifySvix, classify, htmlText, bodyText, codeIn, stripQuoted, matchBooking, slugOf, addresses, receiveEmail, inboundConfig, addressFor, agodaMessage, agodaActions, agodaUrl } from '../../api/_lib/email-in.js';
 import * as AG from './agoda-emails.mjs';
-import { reviewRecord, starsOf, platformOf } from '../../api/_lib/reviews.js';
+import { reviewRecord, starsOf, platformOf, guestReviewBody } from '../../api/_lib/reviews.js';
 import { postNotice, receiveChannex, sendReply, canInbox } from '../../api/_lib/inbox.js';
 import { handleEvent } from '../../api/email-inbound.js';
 import { fakeSb, op } from './fake-sb.mjs';
@@ -348,4 +348,21 @@ test('email in: an Agoda special request is stored as the request with its answe
   const k4 = convStub();
   await receiveEmail(noBookings, ORG, { id: 'e12', from: 'Guest <x@guest.booking.com>', subject: 'Hi', text: 'New inquiry from Bob\nBob 10:00 AM ICT\nHello\nDid you know?' }, { conv: k4 });
   assert.match(k4.log.find((x) => x[0] === 'append')[2].text, /Did you know\?/);
+});
+
+test('Airbnb double-blind: the host review of the guest is checked and shaped for Channex, and kept on the record', () => {
+  const b = guestReviewBody({ scores: { cleanliness: 5, communication: 4, respect_house_rules: 5 }, publicReview: '  Lovely guest, left the suite spotless.  ', privateNote: 'Thanks!', recommend: true });
+  assert.deepEqual(b.review.scores, [{ category: 'cleanliness', rating: 5 }, { category: 'communication', rating: 4 }, { category: 'respect_house_rules', rating: 5 }]);
+  assert.equal(b.review.public_review, 'Lovely guest, left the suite spotless.');
+  assert.equal(b.review.private_review, 'Thanks!');
+  assert.equal(b.review.is_reviewee_recommended, true);
+  assert.throws(() => guestReviewBody({ scores: { cleanliness: 6, communication: 4, respect_house_rules: 5 }, publicReview: 'Lovely guest here' }), /1 to 5/);
+  assert.throws(() => guestReviewBody({ scores: { cleanliness: 5, communication: 4 }, publicReview: 'Lovely guest here' }), /1 to 5/);
+  assert.throws(() => guestReviewBody({ scores: { cleanliness: 5, communication: 5, respect_house_rules: 5 }, publicReview: 'short' }), /10 characters/);
+  const hidden = reviewRecord({ id: 'cccccccc-1111-4111-8111-111111111111', ota: 'AirBNB', overall_score: 10, is_hidden: true }, {});
+  assert.equal(hidden.hidden, true);
+  assert.deepEqual(hidden.sub, {});
+  const shown = reviewRecord({ id: hidden.cx, ota: 'AirBNB', overall_score: 10, is_hidden: false, content: 'Great stay' }, { old: Object.assign({}, hidden, { guestReviewed: { date: '2026-11-09', by: 'S1' } }) });
+  assert.equal(shown.hidden, false);
+  assert.deepEqual(shown.guestReviewed, { date: '2026-11-09', by: 'S1' });
 });

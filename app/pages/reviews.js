@@ -36,7 +36,7 @@
     var p = U.preset(DEFAULT_PRESET);
     return { platform: 'all', reply: 'all', stars: [], prop: '', q: '', from: p.from, to: p.to, preset: p.preset };
   }
-  var st = { platform: 'all', reply: 'all', stars: [], prop: '', q: '', from: null, to: null, preset: DEFAULT_PRESET, sort: 'newest', shown: PAGE, drafts: {}, variant: {}, editing: {}, keep: {} };
+  var st = { platform: 'all', reply: 'all', stars: [], prop: '', q: '', from: null, to: null, preset: DEFAULT_PRESET, sort: 'newest', shown: PAGE, drafts: {}, variant: {}, editing: {}, keep: {}, gr: {} };
   function syncDates() { if (st.preset) { var p = U.preset(st.preset); if (p) { st.from = p.from; st.to = p.to; } } if (!st.from || !st.to) { var dp = U.preset(DEFAULT_PRESET); st.from = dp.from; st.to = dp.to; st.preset = DEFAULT_PRESET; } }
 
   /* ------------------------------------------------------------------ styles */
@@ -98,6 +98,10 @@
 .pg-reviews .rv-subs{display:flex;gap:4px 12px;flex-wrap:wrap;margin-left:auto;font-size:11.5px;color:var(--muted);}
 .pg-reviews .rv-subs b{color:var(--text);font-variant-numeric:tabular-nums;}
 .pg-reviews .rv-subs .lo b{color:var(--bad);}
+.pg-reviews .rg-scores{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;}
+.pg-reviews .rg-score{display:flex;flex-direction:column;gap:4px;font-size:13px;}
+.pg-reviews .rv-guest textarea{margin:4px 0 8px;}
+.pg-reviews .rv-guest .check{display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0 8px;}
 .pg-reviews .rv-reply{margin-top:12px;border-top:1px dashed var(--border);padding-top:12px;}
 .pg-reviews .rv-replied{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5;}
 .pg-reviews .rv-replied .rh{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:4px;flex-wrap:wrap;}
@@ -363,8 +367,11 @@
     if (!r.reply) flags.push(U.pill('Needs reply · waiting ' + (a === 0 ? 'since today' : fmt.plural(a, 'day')), a >= 3 || low ? 'bad' : 'warn'));
     if (low) flags.push(U.pill(r.stars <= 2 ? 'Low rating' : 'Below average', 'bad'));
     if (task) flags.push('<span class="pill info" title="' + esc(task.title) + '">Task ' + esc(task.id) + ': ' + esc(task.title.replace(/ \(.*\)$/, '')) + ' · ' + esc(task.status === 'done' ? 'done' : O.taskPeople(task, { none: 'unassigned' })) + '</span>');
-    var minSub = Math.min.apply(null, SUBS.map(function (s) { return r.sub[s[0]]; }));
-    var subs = '<div class="rv-subs" aria-label="Category scores">' + SUBS.map(function (s) { var v = r.sub[s[0]]; return '<span class="' + (v <= 3 && v === minSub ? 'lo' : '') + '">' + s[1] + ' <b>' + v + '</b></span>'; }).join('') + '</div>';
+    var hasSubs = SUBS.filter(function (s) { return typeof r.sub[s[0]] === 'number'; });
+    var minSub = Math.min.apply(null, hasSubs.map(function (s) { return r.sub[s[0]]; }));
+    var subs = hasSubs.length ? '<div class="rv-subs" aria-label="Category scores">' + hasSubs.map(function (s) { var v = r.sub[s[0]]; return '<span class="' + (v <= 3 && v === minSub ? 'lo' : '') + '">' + s[1] + ' <b>' + v + '</b></span>'; }).join('') + '</div>' : '';
+    var blind = r.hidden && r.platform === 'airbnb' && !r.reply;
+    if (blind) flags.push(U.pill(r.guestReviewed ? 'Guest reviewed · Airbnb is showing the review' : 'Hidden until you review the guest', 'info'));
     var canBk = O.allowed('bookings'), canLink = O.can('reviews', 'edit'), canTask = O.can('tasks.create'), canChat = O.allowed('inbox');
     var meta = '<span>' + esc(p.name) + '</span>' +
       (b ? '<span class="dotsep">' + esc(O.tpl('Stayed {range} · {count}', { range: d.fmtRange(b.checkIn, b.checkOut), count: fmt.plural(b.nights, 'night') })) + '</span><span class="dotsep">' + (canBk ? '<button type="button" class="rv-link" data-open="' + esc(b.id) + '" aria-label="Open booking ' + esc(b.id) + '">' + esc(b.id) + '</button>' : esc(b.id)) + '</span>'
@@ -372,7 +379,25 @@
     var taskBtn = low && !task && canTask ? '<button type="button" class="btn btn-ghost btn-sm" data-act="task" data-id="' + r.id + '">' + O.icon('tasks') + 'Create follow-up task</button>' : '';
     var chatBtn = conv && canChat ? '<button type="button" class="btn btn-ghost btn-sm" data-act="chat" data-id="' + r.id + '">' + O.icon('chat') + 'Message guest</button>' : '';
     var reply;
-    if (r.reply && !st.editing[r.id]) {
+    if (blind && r.guestReviewed) {
+      reply = '<div class="rv-ro">' + O.icon('check') + '<span>' + esc(O.tpl('You reviewed {name} on {date}. Airbnb now shows their review; it appears here when Airbnb sends it, and then you can reply.', { name: greetName(r.guest), date: d.fmt(r.guestReviewed.date) })) + '</span></div>';
+    } else if (blind && !canReply()) {
+      reply = '<div class="rv-ro">' + O.icon('lock') + '<span>Airbnb hides this review until the guest is reviewed. ' + esc(NO_REPLY) + '</span></div>';
+    } else if (blind) {
+      var gv = st.gr[r.id] || (st.gr[r.id] = { cleanliness: 5, communication: 5, respect_house_rules: 5, text: O.tpl('{name} was a great guest: tidy, friendly and easy to talk to. Welcome back any time!', { name: greetName(r.guest) }), note: '', rec: true });
+      var starSel = function (k, label) {
+        return '<label class="rg-score"><span>' + label + '</span><select class="select" data-gr="' + r.id + '" data-k="' + k + '">' + [5, 4, 3, 2, 1].map(function (n) { return '<option value="' + n + '"' + (gv[k] === n ? ' selected' : '') + '>' + n + ' ★</option>'; }).join('') + '</select></label>';
+      };
+      reply = '<div class="rv-compose rv-guest"><div class="rc-head"><b>' + esc(O.tpl('Review {name} to see their review', { name: greetName(r.guest) })) + '</b></div>' +
+        '<p class="muted small">' + esc('Airbnb keeps a guest\'s review hidden until you review the guest (or 14 days pass). Once you submit this, Airbnb shows their review and you can reply here.') + '</p>' +
+        '<div class="rg-scores">' + starSel('cleanliness', 'Cleanliness') + starSel('communication', 'Communication') + starSel('respect_house_rules', 'House rules') + '</div>' +
+        '<label class="small" for="rg-t-' + r.id + '">Public review of the guest</label>' +
+        '<textarea class="textarea" id="rg-t-' + r.id + '" data-gr="' + r.id + '" data-k="text" rows="3">' + esc(gv.text) + '</textarea>' +
+        '<label class="small" for="rg-n-' + r.id + '">Private note to the guest (optional)</label>' +
+        '<textarea class="textarea" id="rg-n-' + r.id + '" data-gr="' + r.id + '" data-k="note" rows="2">' + esc(gv.note) + '</textarea>' +
+        '<label class="check"><input type="checkbox" data-gr="' + r.id + '" data-k="rec"' + (gv.rec ? ' checked' : '') + '> I would host this guest again</label>' +
+        '<div class="rc-acts"><button type="button" class="btn btn-primary btn-sm" data-act="greview" data-id="' + r.id + '"' + (st.busy === r.id ? ' disabled' : '') + '>' + O.icon('send') + (st.busy === r.id ? 'Sending…' : 'Submit guest review') + '</button><span class="grow"></span>' + taskBtn + chatBtn + '</div></div>';
+    } else if (r.reply && !st.editing[r.id]) {
       reply = '<div class="rv-replied"><div class="rh">' + O.icon('check') + '<span>' + esc(O.tpl(r.reply.date === r.date ? 'Replied by {name} on {date} (same day)' : 'Replied by {name} on {date} ({days} after the review)', { name: staffName(r.reply.by), date: d.fmt(r.reply.date), days: fmt.plural(d.diff(r.date, r.reply.date), 'day') })) + '</span>' + (canReply() ? '<button type="button" class="btn btn-quiet btn-xs" data-act="edit" data-id="' + r.id + '">' + O.icon('edit') + 'Edit reply</button>' : '') + '</div>' + esc(r.reply.text).replace(/\n/g, '<br>') + '</div>' +
         (low && (taskBtn || chatBtn) ? '<div class="rv-after">' + taskBtn + chatBtn + '</div>' : '');
     } else if (!canReply()) {
@@ -461,6 +486,19 @@
     if (st.reply === 'needs') st.keep[r.id] = true; /* stays on screen (as replied) until the filters change */
     U.toast((was ? 'Reply updated on ' : 'Reply posted on ') + U.platName(r.platform) + ' for ' + r.guest);
     O.emit('data', { type: 'review', id: r.id });
+  }
+  /* Airbnb double-blind: review the guest so Airbnb shows their review (api/messages.js review-guest) */
+  function reviewGuest(r) {
+    var g = st.gr[r.id];
+    if (!g || !canReply() || st.busy) return;
+    if ((g.text || '').trim().length < 10) { U.toast('Write a public review of at least 10 characters first', 'bad'); return; }
+    if (!(O.auth && O.auth.inbox && O.sync.adapter && O.sync.adapter.name === 'server')) { U.toast('Reviewing guests works in a live workspace only', 'bad'); return; }
+    st.busy = r.id; ctx0 && ctx0.rerender && ctx0.rerender();
+    O.auth.inbox('review-guest', { reviewId: r.id, scores: { cleanliness: g.cleanliness, communication: g.communication, respect_house_rules: g.respect_house_rules }, publicReview: g.text, privateNote: g.note, recommend: g.rec }).then(function (res) {
+      if (res && res.review) O.sync.remote([{ coll: 'reviews', id: res.review.id, data: res.review.data, deleted: false }], []);
+      delete st.gr[r.id];
+      U.toast(O.tpl('Review of {name} sent to Airbnb', { name: r.guest }));
+    }, function (e) { U.toast(e.message || 'The guest review was not sent. Please try again.', 'bad'); }).then(function () { st.busy = null; if (ctx0 && ctx0.rerender) ctx0.rerender(); });
   }
   /* what a follow-up task is called and who gets it, from what the guest wrote: [pattern, title, type, who] */
   var TASK_FOR = [
@@ -599,6 +637,7 @@
         if (!r) return;
         var ta = O.$('[data-draft="' + r.id + '"]', page);
         if (act === 'post') post(r, ta ? ta.value : '');
+        if (act === 'greview') reviewGuest(r);
         if (act === 'another') {
           st.variant[r.id] = (st.variant[r.id] || 0) + 1; delete st.drafts[r.id];
           if (ta) { ta.value = suggest(r, st.variant[r.id]); autosize(ta); st.drafts[r.id] = ta.value; var cc = O.$('[data-cc="' + r.id + '"]', page); if (cc) cc.textContent = O.tpl('{n} characters', { n: ta.value.length }); ta.focus(); }
@@ -615,6 +654,7 @@
       });
       page.addEventListener('input', function (e) {
         var t = e.target;
+        if (t.dataset.gr && st.gr[t.dataset.gr] && (t.dataset.k === 'text' || t.dataset.k === 'note')) { st.gr[t.dataset.gr][t.dataset.k] = t.value; return; }
         if (t.dataset.draft) { autosize(t); st.drafts[t.dataset.draft] = t.value; var cc = O.$('[data-cc="' + t.dataset.draft + '"]', page); if (cc) cc.textContent = O.tpl('{n} characters', { n: t.value.length }); return; }
         if (t.dataset.f === 'q') {
           clearTimeout(st._qt);
@@ -624,6 +664,7 @@
       });
       page.addEventListener('change', function (e) {
         var t = e.target;
+        if (t.dataset.gr && st.gr[t.dataset.gr]) { var g = st.gr[t.dataset.gr]; if (t.dataset.k === 'rec') g.rec = t.checked; else if (t.dataset.k !== 'text' && t.dataset.k !== 'note') g[t.dataset.k] = Number(t.value); return; }
         if (t.dataset.f === 'prop') { st.prop = t.value; refilter(); }
         if (t.dataset.f === 'sort') { st.sort = t.value; ctx.rerender(); }
       });
