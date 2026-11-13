@@ -640,6 +640,8 @@
       (O.nearbyStaff ? mf('ll', 'Map location', O.nearbyStaff.locFieldHTML('ll', f.lat, f.lng, { id: 'bt-ll' }), { full: true, opt: true, hint: 'Pins the building on the guest app maps, so guests can find nearby places and the way back, also without internet.' }) : '') +
       mf('email', 'Email for booking sites', mi('email', f.email, ' type="email" inputmode="email" maxlength="80" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.email) || 'e.g. stay@example.com') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business email in Brand.' }) +
       mf('phone', 'Phone for booking sites', mi('phone', f.phone, ' type="tel" inputmode="tel" maxlength="24" placeholder="' + esc((D.workspaceBrand && D.workspaceBrand.phone) || '+60 3-1234 5678') + '"'), { opt: true, hint: 'Needed before connecting channels. Left empty, we use the business phone in Brand.' }) +
+      mf('contactName', 'On-site contact', mi('contactName', f.contactName, ' maxlength="40" placeholder="e.g. Wati"'), { opt: true, hint: 'Printed on booking confirmations and receipts.' }) +
+      mf('contactPhone', 'On-site contact phone', mi('contactPhone', f.contactPhone, ' type="tel" inputmode="tel" maxlength="24" placeholder="+60 12-345 6789"'), { opt: true, hint: 'Left empty, the building phone is printed.' }) +
       mf('currency', 'Currency', '<select class="select" id="bt-currency" name="currency"' + (curLocked ? ' disabled' : '') + '>' + cur.map(function (c) { return '<option' + (c === (f.currency || 'MYR') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>', curLocked ? { hint: 'Fixed while this building is connected to channels: booking sites keep the currency it was connected with.' } : null) +
       mf('checkInTime', 'Check-in from', mi('checkInTime', f.checkInTime || '15:00', ' type="time" step="900"')) +
       mf('checkOutTime', 'Check-out by', mi('checkOutTime', f.checkOutTime || '11:00', ' type="time" step="900"')) +
@@ -647,9 +649,10 @@
     var actions = [{ label: 'Cancel' }];
     if (!isNew && O.can('properties.archive')) actions.push({ label: 'Archive', onClick: function (close) { archiveBuilding(bd, close); return false; } });
     actions.push({ label: isNew ? 'Add building' : 'Save changes', kind: 'primary', onClick: function (close, el) {
-      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: O.places.read(el).city, state: O.places.read(el).state, zip: mval(el, 'zip'), email: mval(el, 'email'), phone: mval(el, 'phone'), country: O.places.read(el).country || fCountry, currency: curLocked ? (bd.currency || 'MYR') : mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
+      var v = { name: mval(el, 'name'), address: mval(el, 'address'), city: O.places.read(el).city, state: O.places.read(el).state, zip: mval(el, 'zip'), email: mval(el, 'email'), phone: mval(el, 'phone'), contactName: mval(el, 'contactName'), contactPhone: mval(el, 'contactPhone'), country: O.places.read(el).country || fCountry, currency: curLocked ? (bd.currency || 'MYR') : mval(el, 'currency') || 'MYR', checkInTime: mval(el, 'checkInTime'), checkOutTime: mval(el, 'checkOutTime') }, E = {};
       if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) E.email = 'Check the email address.';
       if (v.phone && !/^\+?[\d\s()-]{7,20}$/.test(v.phone)) E.phone = 'Check the phone number. Use digits, spaces and +.';
+      if (v.contactPhone && !/^\+?[\d\s()-]{7,20}$/.test(v.contactPhone)) E.contactPhone = 'Check the phone number. Use digits, spaces and +.';
       if (!v.name) E.name = 'Give the building a name.';
       else if (O.raw('buildings').some(function (x) { return x !== bd && low(x.name) === low(v.name); })) E.name = 'Another building is already called "' + v.name + '".';
       if (!v.address) E.address = 'Add the street address. Guests see it before their unit number.';

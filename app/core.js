@@ -1292,6 +1292,7 @@
       '</div><div class="doc-foot">' + O.esc(ws.legal || ws.name) + ' · ' + O.esc(ws.regNo || '') + ' · ' + O.esc(ws.address) + ' · ' + O.esc(ws.phone) + '<br>Stay at ' + O.esc(p.name) + (p.area ? ', ' + O.esc(p.area) : '') + '. Check-in ' + O.fmt.time(b.checkInTime) + ', check-out ' + O.fmt.time(b.checkOutTime) + '.</div></div>';
   };
   O.invoice.pdf = function (b, kind) {
+    if (kind === 'receipt' && O.formal) return O.formal.pdf(b, 'receipt');
     var isR = kind === 'receipt', no = isR ? b.receiptNo : b.invoiceNo;
     if (isR && !b.paidAt) { U.toast('No payment recorded yet, so there is no receipt', 'bad'); return Promise.resolve(false); }
     return O.pdf.start(isR ? 'Payment receipt' : 'Invoice', no + ' · ' + d.fmtY(isR ? b.paidAt : b.invoiceDate)).then(function (r) {
@@ -1307,6 +1308,128 @@
       O.pdf.text(doc, y + 4, 'Check-in ' + O.fmt.time(b.checkInTime) + ' on ' + d.fmtY(b.checkIn) + ', check-out ' + O.fmt.time(b.checkOutTime) + ' on ' + d.fmtY(b.checkOut) + '. Thank you for staying with ' + O.ws().name + '.', { muted: true, size: 8.5 });
       return O.pdf.save(doc, (isR ? 'Receipt-' : 'Invoice-') + no + '.pdf');
     }).catch(function () { return false; });
+  };
+  /* Formal A4 documents for a booking (letterhead with the brand logo and business details):
+     O.formal.pdf(b, 'confirmation' | 'receipt'). The building's on-site contact (contactName / contactPhone in Properties)
+     is printed on both; without one, the building phone, then the business phone. */
+  O.formal = {};
+  O.formal.contact = function (b) {
+    var t = O.unitType(b.unitTypeId), p = D.propById[b.propertyId], bd = (t && O.building(t.buildingId)) || (p && O.buildingOf(p)) || {}, ws = O.ws();
+    var phone = bd.contactPhone || bd.phone || ws.phone || '';
+    return { name: bd.contactPhone ? (bd.contactName || '') : '', phone: phone, building: bd };
+  };
+  O.formal.pdf = function (b, kind) {
+    var isR = kind === 'receipt';
+    if (isR && !b.paidAt) { U.toast('No payment recorded yet, so there is no receipt', 'bad'); return Promise.resolve(false); }
+    if (!O.pdf.ready()) { U.toast('The PDF library did not load. Check your connection and try again.', 'bad'); return Promise.resolve(false); }
+    var ws = O.ws(), brandHex = (D.workspaceBrand && D.workspaceBrand.brand && D.workspaceBrand.brand.primary) || (O.theme.current && O.theme.current.primary) || '#8A6A2F';
+    var A = C.hexToRgb(brandHex), INK = [34, 32, 28], MUTED = [107, 101, 91], LINE = [217, 210, 195];
+    var asc = function (s) { return String(s == null ? '' : s).replace(/[−–—]/g, '-').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/→/g, 'to').replace(/[^\x20-\x7e\xa0-\xff]/g, ''); };
+    var regNo = /^add your/i.test(ws.regNo || '') ? '' : ws.regNo;
+    var place = O.guestPlace(b), ct = O.formal.contact(b), bd = ct.building, cur = O.curOf ? O.curOf(b) : 'RM';
+    var sym = O.fmt.cur(b); if (!/^[\x20-\x7e]+$/.test(sym)) sym = cur;
+    var money = function (n) { return (Number(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+    var dl = function (iso) { return iso ? asc(d.fmtY(String(iso).slice(0, 10))) : '-'; };
+    var dw = function (iso) { var x = new Date(String(iso).slice(0, 10) + 'T00:00:00Z'); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][x.getUTCDay()] + ', ' + dl(iso); };
+    var no = isR ? b.receiptNo : b.id, issued = isR ? b.paidAt : D.TODAY;
+    var site = U.platName(b.channel), direct = b.channel === 'direct';
+    return O.theme.logoPNG(ws, 480).then(function (png) {
+      var doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), X0 = 18, X1 = 192, W = X1 - X0;
+      function color(c) { doc.setTextColor(c[0], c[1], c[2]); }
+      function font(f, s, size) { doc.setFont(f, s); doc.setFontSize(size); }
+      /* letterhead */
+      if (png) doc.addImage(png, 'PNG', X0, 12, 32, 32);
+      var y = 16;
+      font('helvetica', 'bold', 10.5); color(INK); doc.text(asc(ws.legal || ws.name), X1, y, { align: 'right' }); y += 4.6;
+      font('helvetica', 'normal', 8.5); color(MUTED);
+      var lines = [];
+      if (regNo) lines.push('Registration No. ' + regNo);
+      String(ws.address || '').split(/\n|,\s*(?=\d{5}\b)/).forEach(function (l) { l = l.trim(); if (l) lines = lines.concat(doc.splitTextToSize(asc(l), 90)); });
+      var web = [ws.email, ws.domain].filter(Boolean).join('  ·  '); if (web) lines.push(web);
+      if (ws.phone) lines.push(ws.phone);
+      lines.forEach(function (l) { doc.text(asc(l), X1, y, { align: 'right' }); y += 4; });
+      y = Math.max(y, 46) + 2;
+      doc.setDrawColor(A[0], A[1], A[2]); doc.setLineWidth(0.6); doc.line(X0, y, X1, y); doc.setLineWidth(0.2); doc.line(X0, y + 1.2, X1, y + 1.2);
+      /* title */
+      y += 13; var title = isR ? 'OFFICIAL RECEIPT' : 'BOOKING CONFIRMATION', cs = 1.4;
+      font('times', 'normal', 20); color(INK);
+      var tw = doc.getTextWidth(title) + cs * (title.length - 1); doc.text(title, 105 - tw / 2, y, { charSpace: cs });
+      y += 6; font('helvetica', 'normal', 9); color(MUTED);
+      doc.text(asc((isR ? 'Receipt no. ' : 'Booking reference ') + no + '  ·  Issued ' + dl(issued)), 105, y, { align: 'center' });
+      y += 9;
+      /* two boxes */
+      function box(x, y0, w, head, rows) {
+        var yy = y0 + 7; font('helvetica', 'bold', 7); color(A); doc.text(head.toUpperCase(), x + 5, yy, { charSpace: 0.6 }); yy += 6;
+        rows.forEach(function (r) {
+          font('helvetica', 'normal', 9); color(MUTED); doc.text(asc(r[0]), x + 5, yy);
+          font('helvetica', r[2] ? 'bold' : 'normal', 9); color(INK); var v = doc.splitTextToSize(asc(r[1] || '-'), w - 40); doc.text(v, x + 35, yy); yy += 5.2 * v.length;
+        });
+        return yy + 1.5;
+      }
+      var guestRows = [['Name', b.guest.name], ['Nationality', b.guest.countryName || ''], ['Email', b.guest.email || ''], ['Phone', b.guest.phone || '']];
+      if (b.guest.passport) guestRows.splice(1, 0, ['Passport no.', b.guest.passport]);
+      var payTxt = b.paidAt ? 'Paid in full' : direct ? 'Awaiting payment' : 'Collected by ' + site;
+      var right = isR ? [['Receipt no.', b.receiptNo], ['Date received', dl(b.paidAt)], ['Method', b.payMethod || ''], ['Booking ref.', b.id], ['Booked via', site]]
+        : [['Reference', b.id], ['Booked via', direct ? 'Direct' + (ws.domain ? ' (' + ws.domain + ')' : '') : site], ['Booking date', dl(b.createdAt)], ['Status', b.status === 'pending' ? 'Pending' : 'Confirmed', true], ['Payment', payTxt]];
+      var bw = (W - 6) / 2;
+      /* measure first (draw text, then frame with the taller height) */
+      var h1 = box(X0, y, bw, isR ? 'Received from' : 'Guest', guestRows) - y, h2 = box(X0 + bw + 6, y, bw, isR ? 'Payment' : 'Reservation', right) - y, h = Math.max(h1, h2);
+      doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.25); doc.rect(X0, y, bw, h); doc.rect(X0 + bw + 6, y, bw, h);
+      y += h + 8;
+      /* table */
+      function table(cols, rows, total) {
+        doc.setFillColor(244, 239, 228); doc.rect(X0, y, W, 8, 'F'); doc.setDrawColor(A[0], A[1], A[2]); doc.setLineWidth(0.35); doc.line(X0, y + 8, X1, y + 8);
+        font('helvetica', 'bold', 7); color([74, 70, 63]);
+        var x = X0; cols.forEach(function (c) { doc.text(c.label.toUpperCase(), c.r ? x + c.w - 3 : x + 3, y + 5.2, c.r ? { align: 'right' } : { charSpace: 0.4 }); x += c.w; });
+        y += 8;
+        rows.forEach(function (r) {
+          var cells = r.map(function (v, i) { return [].concat(v).map(function (s, j) { return { t: doc.splitTextToSize(asc(s), cols[i].w - 6), sub: j > 0 }; }); });
+          var hgt = 0; cells.forEach(function (c) { var n = 0; c.forEach(function (p) { n += p.t.length * (p.sub ? 3.8 : 4.6); }); hgt = Math.max(hgt, n); });
+          var xx = X0; cells.forEach(function (c, i) {
+            var yy = y + 5.6; c.forEach(function (p) { font('helvetica', 'normal', p.sub ? 8 : 9.5); color(p.sub ? MUTED : INK); doc.text(p.t, cols[i].r ? xx + cols[i].w - 3 : xx + 3, yy, { align: cols[i].r ? 'right' : 'left' }); yy += p.t.length * (p.sub ? 3.8 : 4.6); });
+            xx += cols[i].w;
+          });
+          y += hgt + 3.5; doc.setDrawColor(235, 229, 216); doc.setLineWidth(0.2); doc.line(X0, y, X1, y);
+        });
+        if (total) {
+          doc.setDrawColor(INK[0], INK[1], INK[2]); doc.setLineWidth(0.45); doc.line(X0, y, X1, y);
+          font('helvetica', 'bold', 10.5); color(INK); doc.text(total[0], X0 + 3, y + 6.5); doc.text(total[1], X1 - 3, y + 6.5, { align: 'right' }); y += 10;
+        }
+        y += 6;
+      }
+      var stay = [place.name, [bd.name, bd.address].filter(Boolean).join(', ')].filter(Boolean);
+      if (isR) {
+        table([{ label: 'Description', w: 104 }, { label: 'Qty', w: 36, r: true }, { label: 'Amount (' + sym + ')', w: 34, r: true }],
+          O.invoice.lines(b).map(function (l, i) { return [i === 0 ? ['Accommodation · ' + place.name, dl(b.checkIn) + ' to ' + dl(b.checkOut)] : l[0], l[1] || '1', money(l[2])]; }),
+          ['Total amount received', sym + ' ' + money(b.total)]);
+      } else {
+        table([{ label: 'Accommodation', w: 70 }, { label: 'Check-in', w: 36 }, { label: 'Check-out', w: 36 }, { label: 'Nights', w: 15, r: true }, { label: 'Guests', w: 17, r: true }],
+          [[stay, [dw(b.checkIn), 'from ' + O.fmt.time(b.checkInTime || bd.checkInTime || '15:00')], [dw(b.checkOut), 'by ' + O.fmt.time(b.checkOutTime || bd.checkOutTime || '11:00')], String(b.nights), String(b.guests || '')]]);
+      }
+      /* notes and contact */
+      var colW = (W - 6) / 2, ny = y;
+      function section(x, head, items, numbered) {
+        var yy = ny; font('helvetica', 'bold', 7); color(A); doc.text(head.toUpperCase(), x, yy, { charSpace: 0.6 }); yy += 5.5;
+        font('helvetica', 'normal', 8.5); color([74, 70, 63]);
+        items.forEach(function (t, i) { var ls = doc.splitTextToSize(asc((numbered ? (i + 1) + '. ' : '') + t), colW); doc.text(ls, x, yy); yy += ls.length * 4 + 0.6; });
+        return yy;
+      }
+      var notes = isR ? ['Payment received in full for the booking above.', 'Booking ' + b.id + ', ' + dl(b.checkIn) + ' to ' + dl(b.checkOut) + '.']
+        : ['Door code and Wi-Fi details are sent 24 hours before check-in.', 'Please bring the passport or ID of the guest named on this booking.'];
+      var contact = []; if (ct.name) contact.push(ct.name); if (ct.phone) contact.push(ct.phone + ' (call or WhatsApp)'); if (ws.email) contact.push('Reservations: ' + ws.email);
+      var e1 = section(X0, isR ? 'Notes' : 'Arrival', notes, true), e2 = contact.length ? section(X0 + colW + 6, 'On-site contact', contact, false) : ny;
+      y = Math.max(e1, e2) + 6;
+      /* status stamp */
+      var stamp = isR ? 'PAID IN FULL' : b.status === 'pending' ? 'PENDING' : 'CONFIRMED', G = b.status === 'pending' ? [176, 112, 20] : [45, 110, 71];
+      font('helvetica', 'bold', 10); var sw = doc.getTextWidth(stamp) + 1.6 * (stamp.length - 1) + 12;
+      doc.setDrawColor(G[0], G[1], G[2]); doc.setLineWidth(0.6); doc.rect(X1 - sw, y, sw, 9); color(G); doc.text(stamp, X1 - sw + 6, y + 6.1, { charSpace: 1.6 });
+      /* footer */
+      doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.25); doc.line(X0, 283, X1, 283);
+      font('helvetica', 'normal', 7.5); color(MUTED);
+      doc.text(asc((bd.name ? ws.name + ' @ ' + bd.name : ws.name) + ' is operated by ' + String(ws.legal || ws.name).replace(/\.$/, '') + '.'), X0, 287.5);
+      doc.text('This is a computer-generated document. No signature is required.', X1, 287.5, { align: 'right' });
+      return O.download((isR ? 'Receipt-' : 'Confirmation-') + no + '.pdf', doc.output('arraybuffer'), 'application/pdf');
+    }).catch(function (e) { console.error(e); U.toast('Could not make the PDF. Try again.', 'bad'); return false; });
   };
   O.invoice.markPaid = function (b, method) {
     if (b.paidAt) return;
@@ -1407,6 +1530,7 @@
         (b.status !== 'cancelled' && canInv && canMoney ? '<div><div class="section-title" style="margin-top:0">Invoice &amp; receipt</div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Invoice ' + O.esc(b.invoiceNo || '') + '</div><div class="lr-sub">Created automatically ' + d.fmtY(b.invoiceDate || b.checkIn) + '</div></div>' + O.invoice.statusHTML(b, 'invoice') + '<button class="btn btn-ghost btn-xs" data-act="inv">View</button></div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Receipt ' + O.esc(b.receiptNo || '') + '</div><div class="lr-sub">' + (b.paidAt ? 'Created automatically when paid, ' + d.fmtY(b.paidAt) : 'Created automatically when payment arrives') + '</div></div>' + O.invoice.statusHTML(b, 'receipt') + (b.paidAt || canPay ? '<button class="btn btn-ghost btn-xs" data-act="rcp">' + (b.paidAt ? 'View' : 'Record payment') + '</button>' : '') + '</div>' +
+          '<div class="list-row"><div class="lr-main"><div class="lr-title">Booking confirmation</div><div class="lr-sub">A4 letter with the stay, guest and on-site contact</div></div><button class="btn btn-ghost btn-xs" data-act="conf">Download PDF</button></div>' +
           (canSend ? '<button class="btn btn-primary btn-sm" data-act="sendboth" style="margin-top:8px">' + O.icon('send') + (b.paidAt ? 'Send invoice and receipt to guest' : 'Send invoice to guest') + '</button>' : '') + '</div>' : '') +
         '</div>';
     }
@@ -1440,6 +1564,7 @@
           if (a === 'addtask' && O.taskHelpers) { dr.close(); O.taskHelpers.newTask({ bookingId: b.id }); }
           if (a === 'inv') O.invoice.preview(b, 'invoice');
           if (a === 'rcp') O.invoice.preview(b, 'receipt');
+          if (a === 'conf') O.formal.pdf(b, 'confirmation');
           if (a === 'sendboth') O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']);
         };
       });

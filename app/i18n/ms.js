@@ -8232,5 +8232,12 @@ O.I18N.ms = {
 "Write a public review of at least 10 characters first": "Tulis ulasan awam sekurang-kurangnya 10 aksara dahulu",
 "Reviewing guests works in a live workspace only": "Mengulas tetamu hanya berfungsi dalam ruang kerja langsung",
 "Review of {name} sent to Airbnb": "Ulasan tentang {name} dihantar ke Airbnb",
-"The guest review was not sent. Please try again.": "Ulasan tetamu tidak dihantar. Sila cuba lagi."
+"The guest review was not sent. Please try again.": "Ulasan tetamu tidak dihantar. Sila cuba lagi.",
+"On-site contact": "Kenalan di lokasi",
+"Could not make the PDF. Try again.": "PDF tidak dapat dibuat. Cuba lagi.",
+"Booking confirmation": "Pengesahan tempahan",
+"A4 letter with the stay, guest and on-site contact": "Surat A4 dengan penginapan, tetamu dan kenalan di lokasi",
+"Printed on booking confirmations and receipts.": "Dicetak pada pengesahan tempahan dan resit.",
+"On-site contact phone": "Telefon kenalan di lokasi",
+"Left empty, the building phone is printed.": "Jika dibiarkan kosong, telefon bangunan dicetak."
 };

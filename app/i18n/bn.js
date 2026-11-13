@@ -8232,5 +8232,12 @@ O.I18N.bn = {
 "Write a public review of at least 10 characters first": "আগে কমপক্ষে ১০ অক্ষরের একটি পাবলিক রিভিউ লিখুন",
 "Reviewing guests works in a live workspace only": "অতিথিকে রিভিউ দেওয়া শুধু লাইভ ওয়ার্কস্পেসে কাজ করে",
 "Review of {name} sent to Airbnb": "{name}-এর রিভিউ Airbnb-তে পাঠানো হয়েছে",
-"The guest review was not sent. Please try again.": "অতিথির রিভিউ পাঠানো যায়নি। আবার চেষ্টা করুন।"
+"The guest review was not sent. Please try again.": "অতিথির রিভিউ পাঠানো যায়নি। আবার চেষ্টা করুন।",
+"On-site contact": "সাইটে যোগাযোগ",
+"Could not make the PDF. Try again.": "PDF তৈরি করা যায়নি। আবার চেষ্টা করুন।",
+"Booking confirmation": "বুকিং নিশ্চিতকরণ",
+"A4 letter with the stay, guest and on-site contact": "থাকা, অতিথি ও সাইটে যোগাযোগসহ A4 চিঠি",
+"Printed on booking confirmations and receipts.": "বুকিং নিশ্চিতকরণ ও রসিদে ছাপা হয়।",
+"On-site contact phone": "সাইটে যোগাযোগের ফোন",
+"Left empty, the building phone is printed.": "খালি রাখলে ভবনের ফোন নম্বর ছাপা হয়।"
 };
