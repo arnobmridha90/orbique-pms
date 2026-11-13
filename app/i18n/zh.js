@@ -8232,5 +8232,12 @@ O.I18N.zh = {
 "Write a public review of at least 10 characters first": "請先寫至少 10 個字元的公開評價",
 "Reviewing guests works in a live workspace only": "只有在正式工作區才能評價房客",
 "Review of {name} sent to Airbnb": "已將對 {name} 的評價送至 Airbnb",
-"The guest review was not sent. Please try again.": "房客評價未送出，請再試一次。"
+"The guest review was not sent. Please try again.": "房客評價未送出，請再試一次。",
+"On-site contact": "现场联系人",
+"Could not make the PDF. Try again.": "无法生成 PDF，请重试。",
+"Booking confirmation": "预订确认函",
+"A4 letter with the stay, guest and on-site contact": "包含入住信息、住客和现场联系人的 A4 文件",
+"Printed on booking confirmations and receipts.": "印在预订确认函和收据上。",
+"On-site contact phone": "现场联系人电话",
+"Left empty, the building phone is printed.": "留空则打印大楼电话。"
 };
