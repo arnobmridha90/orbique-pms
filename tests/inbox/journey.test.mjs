@@ -225,3 +225,13 @@ test('processJourney: no welcome before a unit is assigned, and nothing for a wo
   const off = world({ bookings: [noUnit], cfg: { steps: {} } });
   assert.deepEqual(await processJourney(off.sb, deps([])), { sent: 0, skipped: 0, failed: 0 });
 });
+
+test('doorCodeOf: the unit lock code wins everywhere (greetings too), else the booking code', () => {
+  const GM = require('../../api/_lib/shared/guestmsg.cjs');
+  const GR = require('../../api/_lib/shared/greeting.cjs');
+  assert.equal(GM.doorCodeOf({ doorCode: '1111' }, { lockCode: ' 9988 ' }), '9988');
+  assert.equal(GM.doorCodeOf({ doorCode: '1111' }, { lockCode: '' }), '1111');
+  assert.equal(GM.doorCodeOf({ doorCode: 1111 }, null), '1111');
+  const r = GR.fill({ id: 'g', text: 'Door {door_code}', fields: [] }, { booking: BK({ doorCode: '1111' }), unit: { id: 'u1', unitNo: '12-3', lockCode: '9988' } }, { now: '2026-11-15T15:00' });
+  assert.equal(r.text, 'Door 9988');
+});

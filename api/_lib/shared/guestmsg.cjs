@@ -69,5 +69,12 @@ function fillTemplate(text, vars, o) {
   return String(text || '').replace(/\{([a-z_]+)\}/g, function (m, key) { return g.vars[key] != null ? String(g.vars[key]) : m; });
 }
 
-var API = { ciTimeOf: ciTimeOf, revealAt: revealAt, stepSendAt: stepSendAt, guardVars: guardVars, fillTemplate: fillTemplate, heldText: heldText };
+/* the door code a guest uses: the unit's own lock code when it has one (a fixed code on the door; owner, 2026-11-14:
+   "All units will have the door codes ... No different door codes"), else the booking's own code */
+function doorCodeOf(b, unit) {
+  var l = unit && unit.lockCode != null ? String(unit.lockCode).trim() : '';
+  return l || (b && b.doorCode != null ? String(b.doorCode) : '');
+}
+
+var API = { ciTimeOf: ciTimeOf, doorCodeOf: doorCodeOf, revealAt: revealAt, stepSendAt: stepSendAt, guardVars: guardVars, fillTemplate: fillTemplate, heldText: heldText };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
