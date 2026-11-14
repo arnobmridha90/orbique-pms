@@ -8239,5 +8239,19 @@ O.I18N.bn = {
 "A4 letter with the stay, guest and on-site contact": "থাকা, অতিথি ও সাইটে যোগাযোগসহ A4 চিঠি",
 "Printed on booking confirmations and receipts.": "বুকিং নিশ্চিতকরণ ও রসিদে ছাপা হয়।",
 "On-site contact phone": "সাইটে যোগাযোগের ফোন",
-"Left empty, the building phone is printed.": "খালি রাখলে ভবনের ফোন নম্বর ছাপা হয়।"
+"Left empty, the building phone is printed.": "খালি রাখলে ভবনের ফোন নম্বর ছাপা হয়।",
+"Draft an answer to the guest's latest message from the booking, house rules and prices. You check it before sending.": "বুকিং, বাড়ির নিয়ম ও দাম থেকে অতিথির সর্বশেষ বার্তার একটি উত্তরের খসড়া। পাঠানোর আগে আপনি এটি দেখে নেবেন।",
+"Writing a reply…": "উত্তর লেখা হচ্ছে…",
+"Suggest reply": "উত্তর প্রস্তাব করুন",
+"The suggested reply is in that chat's message box": "প্রস্তাবিত উত্তরটি সেই চ্যাটের বার্তা বাক্সে আছে",
+"Check before sending": "পাঠানোর আগে দেখে নিন",
+"The assistant thinks the owner should decide this one, so its draft only says the team will come back to the guest.": "সহকারী মনে করে এটি মালিকের সিদ্ধান্ত নেওয়া উচিত, তাই খসড়াটি শুধু বলে যে দল অতিথিকে পরে জানাবে।",
+"The assistant could not write a reply. Please try again.": "সহকারী উত্তর লিখতে পারেনি। আবার চেষ্টা করুন।",
+"In a guest chat, Suggest reply drafts an answer from the booking, the house rules, the prices and free dates, and the notes below. You always check it before sending. Refunds, discounts, late check-out, complaints and damage are left for you to decide.": "অতিথির চ্যাটে, উত্তর প্রস্তাব করুন বুকিং, বাড়ির নিয়ম, দাম ও খালি তারিখ এবং নিচের নোট থেকে একটি উত্তরের খসড়া তৈরি করে। পাঠানোর আগে আপনি সবসময় এটি দেখে নেন। রিফান্ড, ছাড়, দেরিতে চেক-আউট, অভিযোগ ও ক্ষতির বিষয় আপনার সিদ্ধান্তের জন্য রাখা হয়।",
+"The reply assistant is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).": "উত্তর সহকারী এখনও সার্ভারে সেট আপ করা হয়নি (Vercel-এ ANTHROPIC_API_KEY)।",
+"What the assistant should know": "সহকারীর যা জানা উচিত",
+"For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes' walk.": "উদাহরণ: বিল্ডিংয়ের কার পার্কে B2 তলায় পার্কিং দিনে RM20। ৯ তলার সুইমিং পুল ও জিম সকাল ৭টা থেকে রাত ১০টা খোলা। নিকটতম ট্রেন: KLCC LRT, হেঁটে ১০ মিনিট।",
+"Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.": "বিল্ডিং ও আপনার সেবা সম্পর্কে অতিথিরা প্রায়ই যা জিজ্ঞেস করেন। এখানে দরজার কোড বা Wi-Fi পাসওয়ার্ড লিখবেন না।",
+"Reply assistant": "উত্তর সহকারী",
+"Saved what the assistant should know": "সহকারীর জন্য তথ্য সংরক্ষিত হয়েছে"
 };

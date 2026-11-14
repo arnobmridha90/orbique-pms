@@ -1151,9 +1151,17 @@
   }
   /* the row above the composer: quick replies for people who may message guests, else only the greeting */
   function qrWrapHTML(c) { return canSend() ? qrBarHTML(c) : greetBtnHTML(c) ? '<div class="qr-bar" role="group" aria-label="Greeting">' + greetBtnHTML(c) + '</div>' : ''; }
+  /* "Suggest reply": the reply assistant (api/_lib/assistant.js) drafts an answer to the guest's latest message into the
+     composer; a person reads it and presses Send. Live inbox only, once ANTHROPIC_API_KEY is set on the server. */
+  function aiBtnHTML(c) {
+    var cfg = liveCfg();
+    if (!cfg || !cfg.assistant || !canSend() || !(c.messages || []).some(function (m) { return m && m.from === 'guest'; })) return '';
+    var busy = live.ai && live.ai[c.id];
+    return '<button type="button" class="qr greet" data-act="suggest"' + (busy ? ' disabled' : '') + ' title="Draft an answer to the guest\'s latest message from the booking, house rules and prices. You check it before sending.">' + O.icon('sparkle') + (busy ? 'Writing a reply…' : 'Suggest reply') + '</button>';
+  }
   function qrBarHTML(c) {
     var b = bk(c), list = repliesFor(b.propertyId);
-    return '<div class="qr-bar" role="group" aria-label="Quick replies">' + greetBtnHTML(c) + greetSetupHTML(c) + '<span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
+    return '<div class="qr-bar" role="group" aria-label="Quick replies">' + aiBtnHTML(c) + greetBtnHTML(c) + greetSetupHTML(c) + '<span class="lbl">' + O.icon('sparkle') + 'Quick replies</span>' +
       list.map(function (q) {
         var unit = q.propertyIds.length ? '<span class="unit" title="Tagged to ' + esc(q.propertyIds.map(function (x) { return prop(x).short; }).join(', ')) + '">' + O.icon('home') + esc(prop(b.propertyId).short) + (q.propertyIds.length > 1 ? ' +' + (q.propertyIds.length - 1) : '') + '</span>' : '';
         return '<button type="button" class="qr" data-qr="' + q.id + '" title="' + esc(fill(q.text, b)) + '" data-no-i18n>' + esc(q.title) + unit + '</button>';
@@ -1752,6 +1760,25 @@
           });
         })();
       }
+      function suggestReply(c) {
+        live.ai = live.ai || {};
+        if (live.ai[c.id]) return;
+        live.ai[c.id] = true;
+        var qw = O.$('.qr-wrap', chat); if (qw) qw.innerHTML = qrWrapHTML(c);
+        var id = c.id;
+        function done() { delete live.ai[id]; var cv = conv(st.sel); var q2 = O.$('.qr-wrap', chat); if (cv && q2) q2.innerHTML = qrWrapHTML(cv); }
+        O.auth.inbox('suggest', { conversationId: id }).then(function (res) {
+          done();
+          if (st.sel !== id) { st.drafts[id] = (st.drafts[id] || '').trim() ? st.drafts[id] + '\n' + res.reply : res.reply; U.toast('The suggested reply is in that chat\'s message box'); return; }
+          if (st.mode !== 'reply') { st.mode = 'reply'; rebuildComposer(); }
+          var ta = O.$('#ib-input', chat); if (!ta) return;
+          var cur = ta.value.trim();
+          ta.value = cur ? cur + '\n' + res.reply : res.reply; st.drafts[id] = ta.value;
+          autosize(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); paintSendBtn();
+          if (res.needsHuman) U.modal({ title: 'Check before sending', body: O.html('<div class="stack"><p>The assistant thinks the owner should decide this one, so its draft only says the team will come back to the guest.</p>' + (res.reason ? '<div class="note">' + esc(res.reason) + '</div>' : '') + '</div>'), actions: [{ label: 'OK', kind: 'primary' }] });
+          else if (res.reason) U.toast(res.reason);
+        }, function (er) { done(); U.toast(er.message || 'The assistant could not write a reply. Please try again.', 'bad'); });
+      }
       function settingsModal() {
         var cfg = liveCfg() || { whatsapp: {} }, owner = O.auth.role && O.auth.role() === 'owner', wa = cfg.whatsapp || {};
         var setv = D.inboxSettings || {}, lang = setv.lang || cfg.lang || 'en', auto = setv.autoTranslate !== false;
@@ -1767,8 +1794,13 @@
         var trHTML = cfg.translate ? '<div class="field"><label for="ib-lang">Show guest messages in</label><select id="ib-lang" class="select"' + (canEdit() ? '' : ' disabled') + '>' + LANGS.map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === lang ? ' selected' : '') + '>' + esc(l[1]) + '</option>'; }).join('') + '</select></div>' +
             '<label class="row-flex"><input type="checkbox" id="ib-auto"' + (auto ? ' checked' : '') + (canEdit() ? '' : ' disabled') + '> <span>Translate new guest messages as they arrive</span></label>'
           : '<div class="note">Translation is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).</div>';
+        var notes = D.assistantNotes && typeof D.assistantNotes.text === 'string' ? D.assistantNotes.text : '';
+        var aiHTML = (cfg.assistant ? '<div class="small">In a guest chat, Suggest reply drafts an answer from the booking, the house rules, the prices and free dates, and the notes below. You always check it before sending. Refunds, discounts, late check-out, complaints and damage are left for you to decide.</div>'
+            : '<div class="note">The reply assistant is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).</div>') +
+          '<div class="field"><label for="ib-ainotes">What the assistant should know</label><textarea id="ib-ainotes" class="input" rows="6" maxlength="6000"' + (canEdit() ? '' : ' disabled') + ' placeholder="For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes\' walk.">' + esc(notes) + '</textarea><div class="small muted">Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.</div></div>';
         var body = O.html('<div class="stack"><div class="section-title" style="margin-top:0">WhatsApp</div>' + waHTML +
           '<div class="section-title">Translation</div>' + trHTML +
+          '<div class="section-title">Reply assistant</div>' + aiHTML +
           (cfg.channex ? '<div class="section-title">Booking sites</div>' + sitesHTML() : '') +
           '<div class="section-title">Booking email</div>' + emailHTML() + '</div>');
         var mod = U.modal({ title: 'Inbox settings', body: body, autofocus: false, actions: [{ label: 'Done', kind: 'primary' }] });
@@ -1808,6 +1840,13 @@
           call.then(function (r) { U.toast(r.number ? 'WhatsApp connected: ' + (r.number.phone || '') : 'WhatsApp disconnected'); mod.close(); reload(); }, function (er) { x.disabled = false; U.toast(er.message, 'bad'); });
         });
         body.addEventListener('change', function (e) {
+          if (canEdit() && e.target.id === 'ib-ainotes') {
+            var txt = String(e.target.value || '').slice(0, 6000);
+            D.assistantNotes = { text: txt };
+            O.emit('data', { type: 'assistant-notes' });
+            U.toast('Saved what the assistant should know');
+            return;
+          }
           if (!canEdit() || (e.target.id !== 'ib-lang' && e.target.id !== 'ib-auto')) return;
           D.inboxSettings = { lang: O.$('#ib-lang', body).value, autoTranslate: O.$('#ib-auto', body).checked };
           if (live.cfg) { live.cfg.lang = D.inboxSettings.lang; live.cfg.autoTranslate = D.inboxSettings.autoTranslate; }
@@ -2387,6 +2426,7 @@
         if (act === 'invoice') { if (O.can('invoices.send')) O.invoice.send(b, b.paidAt ? ['invoice', 'receipt'] : ['invoice']); else U.toast('Your access does not include sending invoices and receipts', 'bad'); return; }
         if (act === 'attach') { O.$('.att-menu', chat).classList.toggle('open'); return; }
         if (act === 'greet') { openGreeting(c); return; }
+        if (act === 'suggest') { suggestReply(c); return; }
         if (act === 'greetsetup') { var gbd = O.greet && O.greet.buildingOf(b); O.go('greetings', gbd ? { buildingId: gbd.id } : {}); return; }
         if (act === 'xltoggle') { live.xl[c.id] = !live.xl[c.id]; var tx = O.$('#ib-input', chat); if (tx) st.drafts[c.id] = tx.value; rebuildComposer(); var ty = O.$('#ib-input', chat); if (ty) ty.focus(); return; }
         if (act === 'send') { send(); return; }

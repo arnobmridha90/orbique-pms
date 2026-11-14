@@ -8239,5 +8239,19 @@ O.I18N.ms = {
 "A4 letter with the stay, guest and on-site contact": "Surat A4 dengan penginapan, tetamu dan kenalan di lokasi",
 "Printed on booking confirmations and receipts.": "Dicetak pada pengesahan tempahan dan resit.",
 "On-site contact phone": "Telefon kenalan di lokasi",
-"Left empty, the building phone is printed.": "Jika dibiarkan kosong, telefon bangunan dicetak."
+"Left empty, the building phone is printed.": "Jika dibiarkan kosong, telefon bangunan dicetak.",
+"Draft an answer to the guest's latest message from the booking, house rules and prices. You check it before sending.": "Draf jawapan kepada mesej terbaru tetamu berdasarkan tempahan, peraturan rumah dan harga. Anda menyemaknya sebelum menghantar.",
+"Writing a reply…": "Sedang menulis balasan…",
+"Suggest reply": "Cadangkan balasan",
+"The suggested reply is in that chat's message box": "Balasan yang dicadangkan ada dalam kotak mesej sembang itu",
+"Check before sending": "Semak sebelum menghantar",
+"The assistant thinks the owner should decide this one, so its draft only says the team will come back to the guest.": "Pembantu berpendapat pemilik patut membuat keputusan ini, jadi drafnya hanya memberitahu bahawa pasukan akan menghubungi tetamu semula.",
+"The assistant could not write a reply. Please try again.": "Pembantu tidak dapat menulis balasan. Sila cuba lagi.",
+"In a guest chat, Suggest reply drafts an answer from the booking, the house rules, the prices and free dates, and the notes below. You always check it before sending. Refunds, discounts, late check-out, complaints and damage are left for you to decide.": "Dalam sembang tetamu, Cadangkan balasan mendraf jawapan berdasarkan tempahan, peraturan rumah, harga dan tarikh kosong, serta nota di bawah. Anda sentiasa menyemaknya sebelum menghantar. Bayaran balik, diskaun, daftar keluar lewat, aduan dan kerosakan diserahkan kepada anda untuk diputuskan.",
+"The reply assistant is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).": "Pembantu balasan belum disediakan di pelayan (ANTHROPIC_API_KEY dalam Vercel).",
+"What the assistant should know": "Perkara yang patut diketahui oleh pembantu",
+"For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes' walk.": "Contohnya: parkir RM20 sehari di tempat letak kereta bangunan, aras B2. Kolam renang dan gim di aras 9 dibuka 7 pagi hingga 10 malam. Stesen kereta api terdekat: LRT KLCC, 10 minit berjalan kaki.",
+"Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.": "Fakta tentang bangunan dan perkhidmatan anda yang sering ditanya oleh tetamu. Jangan letakkan kod pintu atau kata laluan Wi-Fi di sini.",
+"Reply assistant": "Pembantu balasan",
+"Saved what the assistant should know": "Maklumat untuk pembantu telah disimpan"
 };
