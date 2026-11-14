@@ -52,6 +52,9 @@
  *                                                              Only a greeting last saved by someone who may write greetings
  *                                                              (inbox.greetings) is sent. Without inbox.send the same greeting
  *                                                              goes to a chat at most once in GREETING_REPEAT_MS.
+ *   suggest     {conversationId}               inbox.send     the reply assistant's draft answer to the guest's latest
+ *                                                              message -> {reply, needsHuman, reason, lang}; nothing is
+ *                                                              sent (api/_lib/assistant.js)
  *   greeting-preview {conversationId, greetingId}
  *                                               inbox viewer   the text as it would go now ->
  *                                                              {id, name, text, parts, checkInAt, early, missing, masked};
@@ -70,13 +73,14 @@
 import { ApiError, ok, fail, send, cors, readJson, bearer, bad, forbidden, conflict, tooMany, id as idField, uuid as uuidField } from './_lib/http.js';
 import { requireAdminClient, caller, getOrg, membership } from './_lib/supabase.js';
 import { channexConfig } from './_lib/channex.js';
-import { must, record, blob, tracked } from './_lib/channex-db.js';
+import { must, record, records, blob, tracked } from './_lib/channex-db.js';
 import { waConfig, withToken, fetchMedia, phoneNumberInfo, WhatsAppError } from './_lib/whatsapp.js';
 import { connectWithSignup } from './_lib/whatsapp-connect.js';
 import { appUrl } from './_lib/alerts.js';
 import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from './_lib/translate.js';
 import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt, routes, VIA_NAME, MEDIA_BUCKET, checkMedia, mediaKind, mediaPath, ownsPath, signedUrl, sendMediaReply, markConv, purgeTrash, forgetConv, noteUpload, uploadSent } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
+import { assistantConfig, facts as assistantFacts, transcript, secretsOf, suggest, lookUp, AssistantError } from './_lib/assistant.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
 import { pullReviews, replyReview, reviewGuest } from './_lib/reviews.js';
 import GREETING from './_lib/shared/greeting.cjs';
@@ -150,6 +154,7 @@ async function config(sb, body, me) {
     },
     channex: channexMessages(cx, ws.org.id),
     translate: translateConfig().configured,
+    assistant: assistantConfig().configured,
     lang: settings.lang, autoTranslate: settings.autoTranslate,
     email: { configured: em.configured, address, reply: !!em.key && !!address },
     sites: sites && typeof sites === 'object' ? { on: !!sites.on, at: sites.at || null, buildings: Array.isArray(sites.buildings) ? sites.buildings : [] } : null,
@@ -279,6 +284,32 @@ async function preview(sb, body, me) {
   } catch (e) {
     throw translateFailure(e);
   }
+}
+
+/* ---------- the reply assistant (api/_lib/assistant.js) ---------- */
+
+/** A suggested reply to the guest's latest message, for a person to check and send. Nothing is sent here. */
+export async function suggestAction(sb, body, me, opts = {}) {
+  const ws = await workspace(sb, body, me, 'inbox.send');
+  const cfg = opts.config || assistantConfig();
+  if (!cfg.configured) throw new ApiError(503, 'not-configured', 'The reply assistant is not set up on the server yet.');
+  const conv = await conversation(sb, ws.org.id, body.conversationId);
+  const list = Array.isArray(conv.messages) ? conv.messages : [];
+  if (!list.some((m) => m && m.from === 'guest')) throw bad('no-guest', 'The guest has not written anything yet, so there is nothing to answer.');
+  const f = await assistantFacts(sb, ws.org.id, conv, { today: opts.today });
+  const greetings = f.buildingId ? (await records(sb, ws.org.id, 'greetings')).filter((g) => g.buildingId === f.buildingId) : [];
+  const secrets = secretsOf(f.booking, f.unit, greetings);
+  const lines = transcript(conv, secrets);
+  let r;
+  try {
+    r = await suggest(cfg, { facts: f, lines, lookUp: (input) => lookUp(sb, ws.org.id, input, { today: f.today }) }, { fetch: opts.fetch, deadline: Date.now() + 16000 });
+  } catch (e) {
+    if (e instanceof AssistantError) throw new ApiError(e.retryable ? 502 : 400, 'assistant', e.message);
+    throw e;
+  }
+  let reply = r.reply;
+  for (const s of secrets) reply = reply.split(s).join('[hidden]');
+  return { reply, needsHuman: r.needsHuman, reason: r.reason, lang: r.lang };
 }
 
 /* only photos and videos the inbox-media bucket takes (0022) go through Storage; other large files (PDFs, voice notes,
@@ -558,7 +589,7 @@ const ACTIONS = {
   'media-upload': mediaUpload, 'send-media': sendMediaAction, organize, purge, lists: listsAction,
   'whatsapp-connect': connectNumber, 'whatsapp-signup': signupNumberAction, 'whatsapp-disconnect': disconnectNumber,
   'sites-on': sitesOn, 'review-reply': reviewReplyAction, 'review-guest': reviewGuestAction,
-  greeting: greetingAction, 'greeting-preview': greetingPreview
+  greeting: greetingAction, 'greeting-preview': greetingPreview, suggest: suggestAction
 };
 
 export default async function handler(req, res) {

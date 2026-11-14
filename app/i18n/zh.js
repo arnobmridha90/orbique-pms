@@ -8239,5 +8239,19 @@ O.I18N.zh = {
 "A4 letter with the stay, guest and on-site contact": "包含入住信息、住客和现场联系人的 A4 文件",
 "Printed on booking confirmations and receipts.": "印在预订确认函和收据上。",
 "On-site contact phone": "现场联系人电话",
-"Left empty, the building phone is printed.": "留空则打印大楼电话。"
+"Left empty, the building phone is printed.": "留空则打印大楼电话。",
+"Draft an answer to the guest's latest message from the booking, house rules and prices. You check it before sending.": "根据预订、住宿规则和价格起草对客人最新消息的回复。发送前由您检查。",
+"Writing a reply…": "正在撰写回复…",
+"Suggest reply": "建议回复",
+"The suggested reply is in that chat's message box": "建议的回复已放在该聊天的消息框中",
+"Check before sending": "发送前请检查",
+"The assistant thinks the owner should decide this one, so its draft only says the team will come back to the guest.": "助手认为此事应由业主决定，因此草稿只告诉客人团队稍后会回复。",
+"The assistant could not write a reply. Please try again.": "助手无法撰写回复。请重试。",
+"In a guest chat, Suggest reply drafts an answer from the booking, the house rules, the prices and free dates, and the notes below. You always check it before sending. Refunds, discounts, late check-out, complaints and damage are left for you to decide.": "在客人聊天中，“建议回复”会根据预订、住宿规则、价格和空房日期以及下面的备注起草回复。发送前您总会先检查。退款、折扣、延迟退房、投诉和损坏由您决定。",
+"The reply assistant is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).": "回复助手尚未在服务器上设置（Vercel 中的 ANTHROPIC_API_KEY）。",
+"What the assistant should know": "助手应了解的信息",
+"For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes' walk.": "例如：大楼停车场 B2 层停车每天 RM20。9 楼的泳池和健身房早上 7 点至晚上 10 点开放。最近的火车站：KLCC LRT，步行 10 分钟。",
+"Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.": "客人常问的关于大楼和您服务的信息。请勿在此填写门锁密码或 Wi-Fi 密码。",
+"Reply assistant": "回复助手",
+"Saved what the assistant should know": "已保存助手应了解的信息"
 };
