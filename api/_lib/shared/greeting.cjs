@@ -131,7 +131,7 @@ function builtins(ctx) {
   vars.guest_name = name;
   vars.building = (bd && bd.name) || (p && p.name) || '';
   vars.unit_no = p ? String(p.unitNo || '') : '';
-  vars.door_code = b.doorCode != null ? String(b.doorCode) : '';
+  vars.door_code = GM.doorCodeOf(b, p);
   vars.checkin_date = fmtDate(b.checkIn);
   vars.checkin_time = fmtTime(ciTime);
   vars.checkout_date = fmtDate(b.checkOut);

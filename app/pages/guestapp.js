@@ -263,7 +263,7 @@
       if (on(c, 'requireCheckin') && !done) waiting.push('checkin');
       if (on(c, 'requireId') && !idOk) waiting.push('id');
       if (now < reveal) waiting.push('time');
-      if (b.codeStatus === 'cancelled' || b.codeStatus === 'expired' || !b.doorCode) waiting.push('host');
+      if (b.codeStatus === 'cancelled' || b.codeStatus === 'expired' || !O.guestmsg.doorCodeOf(b, D.propById[b.propertyId])) waiting.push('host');
     } else waiting.push('ended');
     return { state: state, ciTime: ciT, coTime: coT, ciAt: ciAt, coAt: coAt, revealAt: reveal, unitAt: unitAt, checkinDone: done, idVerified: idOk, waiting: waiting, visible: !waiting.length };
   }
@@ -377,7 +377,7 @@
       booking: { ref: b.id, guestName: (b.guest && b.guest.name) || 'Guest', guests: +b.guests || 1, nights: +b.nights || d.diff(b.checkIn, b.checkOut), checkIn: b.checkIn, checkOut: b.checkOut, checkInTime: s.ciTime, checkOutTime: s.coTime, channel: b.channel || 'direct', status: b.status || 'confirmed' },
       property: guestProperty(b, p, s),
       checkin: { done: s.checkinDone, at: gc ? nz(gc.at) : ra ? nz(ra.at) : null, names: gc && Array.isArray(gc.names) ? gc.names : [], arrivalTime: gc ? nz(gc.arrivalTime) : null, signedName: gc ? nz(gc.signedName) : ra ? nz(ra.name) : null, idSubmitted: !!b.idSubmittedAt, idVerified: s.idVerified },
-      door: { visible: s.visible, code: s.visible ? String(b.doorCode) : null, from: s.revealAt, until: s.coAt, waitingFor: s.waiting, helpOpen: (D.guestRequests || []).some(function (r) { return r.bookingId === b.id && r.type === 'code' && r.status === 'new'; }) },
+      door: { visible: s.visible, code: s.visible ? O.guestmsg.doorCodeOf(b, D.propById[b.propertyId]) : null, from: s.revealAt, until: s.coAt, waitingFor: s.waiting, helpOpen: (D.guestRequests || []).some(function (r) { return r.bookingId === b.id && r.type === 'code' && r.status === 'new'; }) },
       app: appFor(c, b.propertyId, (O.ws() || {}).phone),
       messages: msgs,
       requests: reqs.map(function (r) { return { id: r.id, type: nz(r.type), summary: nz(r.summary), note: r.note || null, status: nz(r.status), at: nz(r.at) }; }),
@@ -463,7 +463,7 @@
     if (action === 'codehelp') {
       if (!s.visible) return errRes('not_now');
       if (D.guestRequests.some(function (x) { return x.bookingId === b.id && x.type === 'code' && x.status === 'new'; })) return { ok: true };
-      var code = String(b.doorCode), cr = { id: O.uid('GR'), bookingId: b.id, type: 'code', summary: 'Guest says code ' + code + ' is not opening the door', code: code, status: 'new', at: now };
+      var code = O.guestmsg.doorCodeOf(b, D.propById[b.propertyId]), cr = { id: O.uid('GR'), bookingId: b.id, type: 'code', summary: 'Guest says code ' + code + ' is not opening the door', code: code, status: 'new', at: now };
       D.guestRequests.unshift(cr);
       sysNote(b, 'Guest app: door code ' + code + ' reported as not working.', now);
       return { ok: true, id: cr.id };
@@ -1599,7 +1599,7 @@
     if (!pl || pl.type !== 'lock') return;
     (D.guestRequests || []).forEach(function (r) {
       var bk = r.type === 'code' && (r.status === 'new' || r.status === 'confirmed') && D.booking(r.bookingId);
-      if (bk && r.code && String(bk.doorCode) !== String(r.code)) { r.status = 'delivered'; r.by = O.state.viewer; r.handledAt = D.NOW; r.summary = 'Code did not open the door · a new code was set'; }
+      if (bk && r.code && O.guestmsg.doorCodeOf(bk, D.propById[bk.propertyId]) !== String(r.code)) { r.status = 'delivered'; r.by = O.state.viewer; r.handledAt = D.NOW; r.summary = 'Code did not open the door · a new code was set'; }
     });
   });
 

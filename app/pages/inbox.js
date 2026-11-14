@@ -606,7 +606,7 @@
   /* door codes already sent in a chat stay hidden from people without door-code access */
   function codeSafe(c, text) {
     var raw = String(text || ''), b = bk(c);
-    if (!canCodes() && b && b.doorCode && String(b.doorCode).length >= 3) raw = raw.split(String(b.doorCode)).join('••••');
+    if (!canCodes() && b) [b.doorCode, O.guestmsg.doorCodeOf(b, D.propById[b.propertyId])].forEach(function (dc) { if (dc != null && String(dc).length >= 3) raw = raw.split(String(dc)).join('••••'); });
     if (!canCodes() && b && O.greet) O.greet.secretsFor(b).forEach(function (v) { raw = raw.split(v).join('••••'); }); /* private greeting fields (pages/greetings.js) */
     return raw;
   }
@@ -710,10 +710,11 @@
     var p = prop(b.propertyId), held = !b.idVerified || b.codeStatus === 'held', gp = O.guestPlace(b), t = O.unitType(b.unitTypeId) || O.typeOf(D.propById[b.propertyId]);
     var ci = O.guestmsg.ciTimeOf(b, D.propById[b.propertyId], t && O.building(t.buildingId)), link = O.guestLink && b.guestToken ? O.guestLink(b) : ''; /* never creates a token while previewing */
     var wifi = p.wifi || ['', ''];
-    var g = O.guestmsg.guardVars({ door_code: b.doorCode, unit_no: gp.typed ? p.unitNo || '' : '', wifi_name: wifi[0], wifi_password: wifi[1] }, { b: b, sendAt: D.NOW, ciTime: ci, typed: gp.typed, link: link }).vars;
+    var door = O.guestmsg.doorCodeOf(b, D.propById[b.propertyId]);
+    var g = O.guestmsg.guardVars({ door_code: door, unit_no: gp.typed ? p.unitNo || '' : '', wifi_name: wifi[0], wifi_password: wifi[1] }, { b: b, sendAt: D.NOW, ciTime: ci, typed: gp.typed, link: link }).vars;
     wifi = [g.wifi_name, g.wifi_password];
-    var timeHeld = g.door_code !== b.doorCode;
-    var map = { guest_first: guestFirst(b.guest.name), property: gp.name, unit_no: g.unit_no, wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: !canCodes() ? '[door code left out]' : timeHeld ? g.door_code : held ? '[sent after the ID check]' : b.doorCode };
+    var timeHeld = g.door_code !== door;
+    var map = { guest_first: guestFirst(b.guest.name), property: gp.name, unit_no: g.unit_no, wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking, checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), door_code: !canCodes() ? '[door code left out]' : timeHeld ? g.door_code : held ? '[sent after the ID check]' : door };
     return text.replace(/\{([a-z_]+)\}/g, function (m0, k) { return map[k] != null ? map[k] : m0; });
   }
 

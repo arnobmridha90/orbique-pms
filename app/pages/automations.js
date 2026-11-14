@@ -184,7 +184,7 @@
     var p = D.propById[b.propertyId] || {}, gp = O.guestPlace(b), wifi = p.wifi || [], link = O.ws().domain + '/stay/' + b.id.toLowerCase();
     var v = {
       property: gp.name, guest_first: /^The /.test(b.guest.name) ? b.guest.name.replace(/^The /, '') : b.guest.name.split(' ')[0],
-      door_code: b.doorCode, unit_no: gp.typed ? p.unitNo || '' : '', checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking,
+      door_code: O.guestmsg.doorCodeOf(b, p), unit_no: gp.typed ? p.unitNo || '' : '', checkin_time: fmt.time(b.checkInTime), checkout_time: fmt.time(b.checkOutTime), wifi_name: wifi[0], wifi_password: wifi[1], parking: p.parking,
       id_link: O.ws().domain + '/id/' + b.id.toLowerCase(), guest_app_link: link
     };
     if (gp.typed && v.parking) v.parking = 'the building car park (your bay is in the guest app)';
