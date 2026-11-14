@@ -10,6 +10,8 @@
  *   4. setup queue (edits to buildings, unit types and rate plans of connected buildings)
  *   5. every property with marks or a full-sync request: availability, then rates and restrictions
  *   6. booking alerts that are due (email, WhatsApp, phone app; api/_lib/alerts.js)
+ *   7. timed guest messages that are due (api/_lib/journey.js), then booking-site chats not linked to their booking
+ *      yet (api/_lib/inbox.js relinkChats), each only with the time that is left
  * nightly:
  *   mark the day that just came into the 500-day window (a delta, never a full sync), the nights inside a last-minute
  *   deal's window (blob lastMinuteDeal), today's exchange rates for plans sold in another currency (blob fxRates),
@@ -31,7 +33,8 @@ import { processOutbox } from './_lib/alerts.js';
 import { releaseHolds } from './_lib/website.js';
 import { renewTokens } from './_lib/whatsapp-connect.js';
 import { waConfig } from './_lib/whatsapp.js';
-import { purgeTrash } from './_lib/inbox.js';
+import { purgeTrash, relinkChats } from './_lib/inbox.js';
+import { processJourney } from './_lib/journey.js';
 
 export const TICK_BUDGET_MS = 15000;
 const PRUNE_DAYS = 60;
@@ -46,7 +49,9 @@ export const bookingHooks = {
   alerts: (sb, opts) => processOutbox(sb, opts),
   holds: (sb, opts) => releaseHolds(sb, opts),
   waTokens: (sb, opts) => renewTokens(sb, Object.assign({ config: waConfig() }, opts)),
-  inboxTrash: (sb) => purgeTrash(sb, null)
+  inboxTrash: (sb) => purgeTrash(sb, null),
+  journey: (sb, opts) => processJourney(sb, opts),
+  relink: (sb, opts) => relinkChats(sb, opts)
 };
 
 /** Run a hook; a failure is logged and reported, never stops the tick (ARI still goes out). */
@@ -70,6 +75,10 @@ export async function tick(sb, opts = {}) {
   out.ari = summary(await runWorker(sb, { config: cfg, budgetMs: budget, request: opts.request, quietMs: opts.quietMs }));
   // the bookings above may have queued alerts: send them in the same tick
   out.alerts = await safely('alerts', () => bookingHooks.alerts(sb, { budgetMs: 6000 }));
+  // timed guest messages (api/_lib/journey.js) and booking-site chats not linked to their booking yet, with what is left
+  const left = () => 22000 - (Date.now() - start);
+  if (left() > 4000) out.journey = await safely('timed messages', () => bookingHooks.journey(sb, { channexConfig: cfg, deadline: Date.now() + Math.min(8000, left() - 2000) }));
+  if (left() > 3000) out.relink = await safely('link chats', () => bookingHooks.relink(sb, { config: cfg, deadline: Date.now() + Math.min(4000, left() - 1500) }));
   return out;
 }
 

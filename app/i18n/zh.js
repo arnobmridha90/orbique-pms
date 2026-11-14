@@ -8253,5 +8253,14 @@ O.I18N.zh = {
 "For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes' walk.": "例如：大楼停车场 B2 层停车每天 RM20。9 楼的泳池和健身房早上 7 点至晚上 10 点开放。最近的火车站：KLCC LRT，步行 10 分钟。",
 "Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.": "客人常问的关于大楼和您服务的信息。请勿在此填写门锁密码或 Wi-Fi 密码。",
 "Reply assistant": "回复助手",
-"Saved what the assistant should know": "已保存助手应了解的信息"
+"Saved what the assistant should know": "已保存助手应了解的信息",
+"Timed messages": "定时消息",
+"Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.": "预订进来后立即发送。如果预订没有电话号码，{phone_ask} 会向客人索取。",
+"24 hours before check-in, with the unit, door code and Wi-Fi. Skipped when the team already sent the door code by hand.": "入住前 24 小时发送，包含房号、门锁密码和 Wi-Fi。如果团队已手动发送门锁密码则跳过。",
+"At 6 PM the evening before check-out.": "退房前一晚下午 6 点。",
+"These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site's chat, for Agoda, Trip.com and direct bookings by email. Guests' questions are always answered by your team. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.": "每个预订都会自动发送：Airbnb、Booking.com 和 Expedia 通过该网站的聊天发送，Agoda、Trip.com 和直接预订通过电子邮件发送。客人的问题始终由您的团队回答。文本中可使用 {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} 和 {checkout_time}。",
+"Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)": "Airbnb 版本（Airbnb 不允许在 Airbnb 之外收取押金）",
+"Leave empty to send the text above to Airbnb guests too.": "留空则 Airbnb 客人也会收到上面的文本。",
+"Ask for the guest's WhatsApp number when the booking has none, and save it when the guest sends it": "预订没有号码时向客人索取 WhatsApp 号码，并在客人发送后保存",
+"Saved the timed messages": "已保存定时消息"
 };
