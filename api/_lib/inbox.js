@@ -37,6 +37,9 @@ import { ChannexError } from './channex.js';
 import { waConfig, withToken, sendText, sendMedia, WINDOW_MS, WhatsAppError } from './whatsapp.js';
 import { translateConfig, translate, langCode } from './translate.js';
 import { inboundConfig, sendEmail } from './email-in.js';
+import { createRequire } from 'node:module';
+
+const JOURNEY = createRequire(import.meta.url)('./shared/journey.cjs');
 
 export const myt = (ms) => new Date(ms + 8 * 3600000).toISOString().slice(0, 16);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -408,7 +411,109 @@ export async function receiveChannex(sb, prop, event, p, opts = {}) {
     await appendMsg(sb, orgId, convId, m, fromGuest && first ? 1 : 0, m.lang ? { lang: m.lang } : null);
     first = false;
   }
+  if (fromGuest && b && text) await capturePhone(sb, orgId, b, text, convId, at).catch((e) => console.error('[inbox] phone:', e && e.message));
   return { status: 'stored', conversationId: convId };
+}
+
+/* ---------- a guest's phone number from their message ---------- */
+
+/**
+ * A WhatsApp number the guest wrote in the chat (journey.cjs phoneIn) goes on the booking when it has none. When the
+ * booking already has another number, the new one is kept as guest.phone2 and the team gets a note in the chat to
+ * check which is right; the booking's number is never replaced. -> 'saved' | 'other' | null
+ */
+export async function capturePhone(sb, orgId, booking, text, convId, at) {
+  const phone = JOURNEY.phoneIn(text);
+  if (!phone || !booking || !booking.id) return null;
+  const row = must(await sb.from('records').select('data').eq('org_id', orgId).eq('coll', 'bookings').eq('id', booking.id).eq('deleted', false).maybeSingle(), 'load booking');
+  const b = row && isObj(row.data) ? row.data : null;
+  if (!b) return null;
+  const guest = isObj(b.guest) ? Object.assign({}, b.guest) : {};
+  const have = String(guest.phone || '').trim();
+  if (have && (JOURNEY.samePhone(have, phone) || JOURNEY.samePhone(guest.phone2, phone))) return null;
+  let note, kind;
+  if (!have || have.replace(/\D/g, '').length < 8) {
+    guest.phone = phone; guest.phoneFrom = 'chat'; kind = 'saved';
+    note = 'Saved ' + phone + ' as the guest\'s phone number, from this chat.';
+  } else {
+    guest.phone2 = phone; kind = 'other';
+    note = 'The guest sent another number, ' + phone + '. The booking has a different one. Please check which is right.';
+  }
+  must(await sb.from('records').update({ data: Object.assign({}, b, { guest }), updated_by: null }).eq('org_id', orgId).eq('coll', 'bookings').eq('id', booking.id), 'save phone');
+  await appendMsg(sb, orgId, convId, { from: 'note', text: note, time: myt(at || Date.now()), auto: 'phone' }, 0, null);
+  return kind;
+}
+
+/* ---------- booking-site chats that are not linked to their booking ---------- */
+
+const relBooking = (t) => (t && t.relationships && t.relationships.booking && t.relationships.booking.data ? t.relationships.booking.data.id : null);
+export const RELINK_CALLS = 5;
+
+/** The booking an inquiry's notice names ("... from Jasper, 2026-11-12 to 2026-11-15"): one live booking with those
+ *  dates whose guest name starts with that name, or null. */
+export function bookingFromInquiry(conv, bookings) {
+  for (const m of Array.isArray(conv && conv.messages) ? conv.messages : []) {
+    const r = m && m.from === 'system' && /from (.+?), (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/.exec(String(m.text || ''));
+    if (!r) continue;
+    const first = r[1].trim().toLowerCase().split(/\s+/)[0];
+    const hits = bookings.filter((b) => b && b.checkIn === r[2] && b.checkOut === r[3] && b.status !== 'cancelled' && isObj(b.guest)
+      && String(b.guest.name || '').trim().toLowerCase().split(/\s+/).includes(first));
+    if (hits.length === 1) return hits[0];
+  }
+  return null;
+}
+
+/**
+ * Link booking-site chats that came in without their booking: the Channex booking id the chat already has, then the
+ * thread's booking on Channex, then an inquiry's name and dates. A chat is looked at again only when a new message came
+ * or a day has passed (conv.linkTry), and at most RELINK_CALLS Channex calls go out per run.
+ * opts {config (channexConfig), deadline, now, request} -> {linked, tried}
+ */
+export async function relinkChats(sb, opts = {}) {
+  const cfg = opts.config;
+  const now = opts.now || Date.now();
+  const deadline = opts.deadline || now + 4000;
+  const out = { linked: 0, tried: 0 };
+  if (!cfg || !cfg.key) return out;
+  const props = must(await sb.from('channex_properties').select('org_id').eq('env', cfg.env).neq('status', 'disconnected'), 'load buildings') || [];
+  let calls = 0;
+  for (const orgId of [...new Set(props.map((p) => p.org_id))]) {
+    if (Date.now() > deadline) break;
+    const convs = (await records(sb, orgId, 'conversations', (q) => q.is('data->>bookingId', null)))
+      .filter((c) => isUuid(c.cx) && !c.trashedAt);
+    const due = convs.filter((c) => {
+      const last = (Array.isArray(c.messages) && c.messages.length ? c.messages[c.messages.length - 1].time : c.createdAt) || '';
+      if (last < myt(now - 120 * 86400000)) return false;
+      return !c.linkTry || c.linkTry < last || c.linkTry < myt(now - 86400000);
+    });
+    if (!due.length) continue;
+    let bookings = null;
+    for (const c of due) {
+      if (Date.now() > deadline - 800) break;
+      out.tried++;
+      let b = isUuid(c.cxBooking) ? await bookingForChannex(sb, orgId, c.cxBooking) : null;
+      let cxBooking = b ? c.cxBooking : null;
+      if (!b && calls < RELINK_CALLS) {
+        calls++;
+        try {
+          const t = await tracked(sb, cfg, { method: 'GET', path: '/message_threads/' + c.cx, orgId, source: 'messages', request: opts.request });
+          const id = relBooking(t && t.data);
+          if (isUuid(id)) { b = await bookingForChannex(sb, orgId, id); if (b) cxBooking = id; }
+        } catch (e) { /* the thread is gone or Channex is busy: the next run tries again */ }
+      }
+      if (!b) {
+        bookings = bookings || await records(sb, orgId, 'bookings', (q) => q.gte('data->>checkOut', todayMY(now - 365 * 86400000)));
+        b = bookingFromInquiry(c, bookings);
+      }
+      if (b) {
+        await findConv(sb, orgId, 'cx', c.cx, b.id, cxBooking ? { cxBooking } : {}, now);
+        out.linked++;
+      } else {
+        await markConv(sb, orgId, c.id, { set: { linkTry: myt(now) } });
+      }
+    }
+  }
+  return out;
 }
 
 /* ---------- permissions (the same rules as O.can in app/core.js) ---------- */
@@ -501,6 +606,7 @@ export async function sendReply(sb, ctx) {
   if (ctx.orig && ctx.orig !== text) { msg.orig = clip(ctx.orig, MAX_TEXT); if (langCode(ctx.origLang)) msg.origLang = langCode(ctx.origLang); }
   if (langCode(ctx.lang)) msg.lang = langCode(ctx.lang);
   if (ctx.greeting) msg.greeting = clip(ctx.greeting, 80); // sent as a greeting message (api/messages.js 'greeting')
+  if (ctx.journey) msg.journey = clip(ctx.journey, 20); // a timed message the worker sent (api/_lib/journey.js)
   const patch = {};
   if (ctx.via === 'whatsapp') {
     const { cfg, num } = await waRoute(sb, ctx, r);
@@ -513,7 +619,7 @@ export async function sendReply(sb, ctx) {
     channexSent(ctx, r, res, msg, patch, now, text);
   } else if (ctx.via === 'email') {
     const { to, cfg } = emailRoute(ctx);
-    const id = await sendEmail(cfg, { fromName: ctx.fromName, from: ctx.fromAddress, to, subject: ctx.conv.emSubject, text, inReplyTo: ctx.conv.emRef }, { fetch: ctx.fetch });
+    const id = await sendEmail(cfg, { fromName: ctx.fromName, from: ctx.fromAddress, to, subject: ctx.conv.emSubject, text, inReplyTo: ctx.conv.emRef, fresh: !!ctx.fresh && !ctx.conv.emRef }, { fetch: ctx.fetch });
     msg.via = 'email';
     msg.xid = 'em:out:' + (id || createHash('sha256').update(to + now + text).digest('hex').slice(0, 32));
   } else {

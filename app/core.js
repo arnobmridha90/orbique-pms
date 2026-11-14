@@ -1760,7 +1760,7 @@
   REG.channelLog = { type: 'blob', kind: 'demo', cap: 500 };
   REG.channelSim = { type: 'blob', kind: 'demo' };
   /* lastMinuteDeal: the workspace's last-minute deal, which the channel manager applies (the Profit planner reads it) */
-  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings', 'ratePlanner', 'lastMinuteDeal', 'assistantNotes'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
+  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings', 'ratePlanner', 'lastMinuteDeal', 'assistantNotes', 'guestJourney'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
   /* inboxLists: the workspace's named chat lists [{id, name}] (pages/inbox.js; live, the server writes it: api/messages.js 'lists') */
   REG.inboxLists = { type: 'blob', kind: 'demo' };
 

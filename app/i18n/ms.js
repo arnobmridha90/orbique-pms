@@ -8253,5 +8253,14 @@ O.I18N.ms = {
 "For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes' walk.": "Contohnya: parkir RM20 sehari di tempat letak kereta bangunan, aras B2. Kolam renang dan gim di aras 9 dibuka 7 pagi hingga 10 malam. Stesen kereta api terdekat: LRT KLCC, 10 minit berjalan kaki.",
 "Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.": "Fakta tentang bangunan dan perkhidmatan anda yang sering ditanya oleh tetamu. Jangan letakkan kod pintu atau kata laluan Wi-Fi di sini.",
 "Reply assistant": "Pembantu balasan",
-"Saved what the assistant should know": "Maklumat untuk pembantu telah disimpan"
+"Saved what the assistant should know": "Maklumat untuk pembantu telah disimpan",
+"Timed messages": "Mesej berjadual",
+"Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.": "Sejurus selepas tempahan masuk. Jika tempahan tiada nombor telefon, {phone_ask} memintanya.",
+"24 hours before check-in, with the unit, door code and Wi-Fi. Skipped when the team already sent the door code by hand.": "24 jam sebelum daftar masuk, dengan unit, kod pintu dan Wi-Fi. Dilangkau jika pasukan sudah menghantar kod pintu secara manual.",
+"At 6 PM the evening before check-out.": "Pada 6 petang, malam sebelum daftar keluar.",
+"These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site's chat, for Agoda, Trip.com and direct bookings by email. Guests' questions are always answered by your team. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.": "Mesej ini dihantar sendiri untuk setiap tempahan: untuk Airbnb, Booking.com dan Expedia melalui sembang laman itu, untuk Agoda, Trip.com dan tempahan terus melalui e-mel. Soalan tetamu sentiasa dijawab oleh pasukan anda. Gunakan {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} dan {checkout_time} dalam teks.",
+"Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)": "Versi Airbnb (Airbnb tidak membenarkan deposit diambil di luar Airbnb)",
+"Leave empty to send the text above to Airbnb guests too.": "Biarkan kosong untuk menghantar teks di atas kepada tetamu Airbnb juga.",
+"Ask for the guest's WhatsApp number when the booking has none, and save it when the guest sends it": "Minta nombor WhatsApp tetamu jika tempahan tiada nombor, dan simpan apabila tetamu menghantarnya",
+"Saved the timed messages": "Mesej berjadual telah disimpan"
 };

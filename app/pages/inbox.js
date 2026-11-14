@@ -148,6 +148,10 @@
 .pg-inbox .cv.unread .cv-time{color:var(--brand-text);font-weight:700;}
 .pg-inbox .cv-l2{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);margin-top:1px;white-space:nowrap;min-width:0;}
 .pg-inbox .cv-l2 .cv-st{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.ib-jr{border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;}
+.ib-jr textarea{font-size:13px;line-height:1.45;}
+.pg-inbox .cv-unit{flex-shrink:0;font-size:11px;font-weight:800;line-height:16px;padding:0 6px;border-radius:6px;background:var(--brand-soft);color:var(--brand-text);white-space:nowrap;letter-spacing:.02em;}
+.pg-inbox .ib-who-n .cv-unit{font-size:12px;line-height:18px;margin:0 6px 0 2px;}
 .pg-inbox .cv-l2 .sd{flex-shrink:0;}
 .pg-inbox .cv-l2 .soon{color:var(--brand-text);font-weight:700;}
 .pg-inbox .cv-l2 .sd{font-size:10px;font-weight:800;padding:0 6px;border-radius:10px;background:var(--warn-soft);color:var(--warn);}
@@ -797,13 +801,18 @@
     return (isFav(c) ? '<span class="cv-fav" title="Favourite" aria-label="Favourite">' + O.icon('star') + '</span>' : '') +
       (ls.length ? '<span class="cv-lists">' + ls.slice(0, 2).map(function (l) { return '<span title="On the list ' + esc(l.name) + '">' + esc(l.name) + '</span>'; }).join('') + (ls.length > 2 ? '<span>+' + (ls.length - 2) + '</span>' : '') + '</span>' : '');
   }
+  /* the unit a guest is in, as a badge (Arnob 2026-11-14: "the inbox needs to show the unit number for each guest") */
+  function unitBadge(p) {
+    var no = p && p.unitNo != null ? String(p.unitNo).trim() : '';
+    return no ? '<span class="cv-unit" title="' + esc(p.short || p.name || '') + '" data-no-i18n>' + esc(no) + '</span>' : '';
+  }
   function rowHTML(c) {
     var b = bk(c), p = b ? prop(b.propertyId) : null, m = lastMsg(c), unread = c.unread > 0;
     var soon = b && (arrivingToday(b) || b.checkIn === d.add(D.TODAY, 1));
     return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(unread ? O.tpl('{name}, {n} unread', { name: b ? b.guest.name : O.tr('Guest'), n: c.unread }) : b ? b.guest.name : O.tr('Guest')) + '">' +
       '<span class="cv-av">' + U.avatar(b ? b.guest.name : '?') + (b ? U.platIcon(b.channel) : '') + '</span>' +
-      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
-      '<span class="cv-l2"><span class="cv-st">' + (p ? esc(p.short) + ' · ' : '') + '<span class="' + (soon ? 'soon' : '') + '">' + esc(listPhrase(b)) + '</span></span>' + (b && b.sameDay ? '<span class="sd">Same-day</span>' : '') + '</span>' +
+      '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(b ? b.guest.name : 'Guest') + '</span>' + unitBadge(p) + '<span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
+      '<span class="cv-l2"><span class="cv-st">' + (p && !(p.unitNo && String(p.unitNo).trim()) ? esc(p.short) + ' · ' : '') + '<span class="' + (soon ? 'soon' : '') + '">' + esc(listPhrase(b)) + '</span></span>' + (b && b.sameDay ? '<span class="sd">Same-day</span>' : '') + '</span>' +
       '<span class="cv-l3"><span class="cv-prev">' + previewHTML(c) + '</span>' + marksHTML(c) + (c.pinned ? '<span class="cv-pin" title="Pinned" aria-label="Pinned">' + PIN_SVG + '</span>' : '') + (unread ? '<span class="cv-badge">' + c.unread + '</span>' : '') + '</span></span></button>' + rowMoreHTML(c, b ? b.guest.name : 'the guest') + '</div>';
   }
   function listHTML() {
@@ -957,7 +966,7 @@
   function headHTML(c) {
     var b = bk(c), p = prop(b.propertyId), canBk = O.allowed('bookings');
     var who = U.avatar(b.guest.name, 'lg') +
-      '<span class="ib-who-t"><span class="ib-who-n"><span class="ib-nm">' + esc(b.guest.name) + '</span>' + U.status(b.status) + '</span>' +
+      '<span class="ib-who-t"><span class="ib-who-n"><span class="ib-nm">' + esc(b.guest.name) + '</span>' + unitBadge(p) + U.status(b.status) + '</span>' +
       '<span class="ib-who-s">' + U.platIcon(b.channel) + '<span>' + esc(p.name) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest') + '</span></span></span>';
     var tel = (b.guest.phone || '').replace(/[^+\d]/g, '');
     var menu = (canBk ? '<button type="button" data-act="booking" class="sm-only">' + O.icon('bookings') + 'Open booking ' + esc(b.id) + '</button>' : '') +
@@ -1800,6 +1809,7 @@
           '<div class="field"><label for="ib-ainotes">What the assistant should know</label><textarea id="ib-ainotes" class="input" rows="6" maxlength="6000"' + (canEdit() ? '' : ' disabled') + ' placeholder="For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes\' walk.">' + esc(notes) + '</textarea><div class="small muted">Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.</div></div>';
         var body = O.html('<div class="stack"><div class="section-title" style="margin-top:0">WhatsApp</div>' + waHTML +
           '<div class="section-title">Translation</div>' + trHTML +
+          '<div class="section-title">Timed messages</div>' + journeyHTML() +
           '<div class="section-title">Reply assistant</div>' + aiHTML +
           (cfg.channex ? '<div class="section-title">Booking sites</div>' + sitesHTML() : '') +
           '<div class="section-title">Booking email</div>' + emailHTML() + '</div>');
@@ -1840,6 +1850,7 @@
           call.then(function (r) { U.toast(r.number ? 'WhatsApp connected: ' + (r.number.phone || '') : 'WhatsApp disconnected'); mod.close(); reload(); }, function (er) { x.disabled = false; U.toast(er.message, 'bad'); });
         });
         body.addEventListener('change', function (e) {
+          if (canEdit() && e.target.closest('[data-jr]')) { saveJourney(body); return; }
           if (canEdit() && e.target.id === 'ib-ainotes') {
             var txt = String(e.target.value || '').slice(0, 6000);
             D.assistantNotes = { text: txt };
@@ -1852,6 +1863,31 @@
           if (live.cfg) { live.cfg.lang = D.inboxSettings.lang; live.cfg.autoTranslate = D.inboxSettings.autoTranslate; }
           O.emit('data', { type: 'inbox-settings' });
         });
+      }
+      /* the three timed messages (api/_lib/shared/journey.cjs; the worker sends them): a switch and the wording each */
+      var JR_HINT = { confirm: 'Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.', welcome: '24 hours before check-in, with the unit, door code and Wi-Fi. Skipped when the team already sent the door code by hand.', checkout: 'At 6 PM the evening before check-out.' };
+      function journeyHTML() {
+        var J = O.journey, cfg = J.settings(D.guestJourney) || J.settings({}), ro = canEdit() ? '' : ' disabled';
+        return '<div class="small">These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site\'s chat, for Agoda, Trip.com and direct bookings by email. Guests\' questions are always answered by your team. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.</div>' +
+          J.STEPS.map(function (k) {
+            var st0 = cfg.steps[k];
+            return '<div class="ib-jr" data-jr="' + k + '"><label class="row-flex"><input type="checkbox" data-jf="on"' + (st0.on ? ' checked' : '') + ro + '> <b>' + esc(J.NAMES[k]) + '</b></label>' +
+              '<div class="small muted">' + esc(JR_HINT[k]) + '</div>' +
+              '<textarea class="input" rows="7" maxlength="' + J.MAX_TEXT + '" data-jf="text" aria-label="' + esc(J.NAMES[k]) + '"' + ro + '>' + esc(st0.text) + '</textarea>' +
+              '<details' + (st0.airbnb ? ' open' : '') + '><summary class="small">Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)</summary><textarea class="input" rows="7" maxlength="' + J.MAX_TEXT + '" data-jf="airbnb" aria-label="' + esc(J.NAMES[k] + ', Airbnb') + '" placeholder="Leave empty to send the text above to Airbnb guests too."' + ro + '>' + esc(st0.airbnb) + '</textarea></details></div>';
+          }).join('') +
+          '<label class="row-flex" data-jr="ask"><input type="checkbox" data-jf="ask"' + (cfg.askPhone ? ' checked' : '') + ro + '> <span>Ask for the guest\'s WhatsApp number when the booking has none, and save it when the guest sends it</span></label>';
+      }
+      function saveJourney(body) {
+        var J = O.journey, before = J.settings(D.guestJourney), next = { since: before && before.since ? before.since : D.NOW, askPhone: true, steps: {} };
+        J.STEPS.forEach(function (k) {
+          var box = O.$('[data-jr="' + k + '"]', body);
+          next.steps[k] = { on: O.$('[data-jf="on"]', box).checked, text: O.$('[data-jf="text"]', box).value.slice(0, J.MAX_TEXT), airbnb: O.$('[data-jf="airbnb"]', box).value.slice(0, J.MAX_TEXT) };
+        });
+        next.askPhone = O.$('[data-jf="ask"]', body).checked;
+        D.guestJourney = next;
+        O.emit('data', { type: 'guest-journey' });
+        U.toast('Saved the timed messages');
       }
       function repaintLive() {
         if (!document.body.contains(page)) return;

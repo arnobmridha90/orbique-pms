@@ -438,7 +438,7 @@ export async function sendEmail(cfg, msg, opts = {}) {
   const subject = String(msg.subject || '').replace(/[\r\n]+/g, ' ').slice(0, 250);
   const body = {
     from: name + ' <' + msg.from + '>', to: [msg.to], reply_to: msg.from,
-    subject: /^re:/i.test(subject) ? subject : 'Re: ' + (subject || 'Your stay'),
+    subject: msg.fresh ? subject || 'Your stay' : /^re:/i.test(subject) ? subject : 'Re: ' + (subject || 'Your stay'), // fresh: a first email of ours, not an answer
     text: String(msg.text || '')
   };
   const files = (Array.isArray(msg.attachments) ? msg.attachments : []).filter((a) => a && typeof a.path === 'string' && /^https:\/\//.test(a.path)).slice(0, 5);

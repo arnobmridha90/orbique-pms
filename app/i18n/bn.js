@@ -8253,5 +8253,14 @@ O.I18N.bn = {
 "For example: parking is RM20 a day at the building car park, level B2. The pool and gym on level 9 open 7 AM to 10 PM. Nearest train: KLCC LRT, 10 minutes' walk.": "উদাহরণ: বিল্ডিংয়ের কার পার্কে B2 তলায় পার্কিং দিনে RM20। ৯ তলার সুইমিং পুল ও জিম সকাল ৭টা থেকে রাত ১০টা খোলা। নিকটতম ট্রেন: KLCC LRT, হেঁটে ১০ মিনিট।",
 "Facts about the building and your service that guests often ask about. Do not put door codes or Wi-Fi passwords here.": "বিল্ডিং ও আপনার সেবা সম্পর্কে অতিথিরা প্রায়ই যা জিজ্ঞেস করেন। এখানে দরজার কোড বা Wi-Fi পাসওয়ার্ড লিখবেন না।",
 "Reply assistant": "উত্তর সহকারী",
-"Saved what the assistant should know": "সহকারীর জন্য তথ্য সংরক্ষিত হয়েছে"
+"Saved what the assistant should know": "সহকারীর জন্য তথ্য সংরক্ষিত হয়েছে",
+"Timed messages": "নির্ধারিত সময়ের বার্তা",
+"Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.": "বুকিং আসার ঠিক পরে। বুকিংয়ে ফোন নম্বর না থাকলে {phone_ask} সেটি চেয়ে নেয়।",
+"24 hours before check-in, with the unit, door code and Wi-Fi. Skipped when the team already sent the door code by hand.": "চেক-ইনের ২৪ ঘণ্টা আগে, ইউনিট, দরজার কোড ও Wi-Fi সহ। দল যদি নিজে দরজার কোড পাঠিয়ে থাকে তবে পাঠানো হয় না।",
+"At 6 PM the evening before check-out.": "চেক-আউটের আগের দিন সন্ধ্যা ৬টায়।",
+"These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site's chat, for Agoda, Trip.com and direct bookings by email. Guests' questions are always answered by your team. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.": "এগুলো প্রতিটি বুকিংয়ের জন্য নিজে থেকেই যায়: Airbnb, Booking.com ও Expedia-তে সাইটের চ্যাটে, Agoda, Trip.com ও সরাসরি বুকিংয়ে ইমেলে। অতিথিদের প্রশ্নের উত্তর সবসময় আপনার দল দেয়। লেখায় {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} ও {checkout_time} ব্যবহার করুন।",
+"Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)": "Airbnb সংস্করণ (Airbnb-এর বাইরে জমা নেওয়া Airbnb অনুমতি দেয় না)",
+"Leave empty to send the text above to Airbnb guests too.": "Airbnb অতিথিদেরও উপরের লেখাটি পাঠাতে ফাঁকা রাখুন।",
+"Ask for the guest's WhatsApp number when the booking has none, and save it when the guest sends it": "বুকিংয়ে নম্বর না থাকলে অতিথির WhatsApp নম্বর চান, এবং অতিথি পাঠালে তা সংরক্ষণ করুন",
+"Saved the timed messages": "নির্ধারিত সময়ের বার্তা সংরক্ষিত হয়েছে"
 };
