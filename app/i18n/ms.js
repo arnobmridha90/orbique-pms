@@ -8262,5 +8262,8 @@ O.I18N.ms = {
 "Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)": "Versi Airbnb (Airbnb tidak membenarkan deposit diambil di luar Airbnb)",
 "Leave empty to send the text above to Airbnb guests too.": "Biarkan kosong untuk menghantar teks di atas kepada tetamu Airbnb juga.",
 "Ask for the guest's WhatsApp number when the booking has none, and save it when the guest sends it": "Minta nombor WhatsApp tetamu jika tempahan tiada nombor, dan simpan apabila tetamu menghantarnya",
-"Saved the timed messages": "Mesej berjadual telah disimpan"
+"Saved the timed messages": "Mesej berjadual telah disimpan",
+"Here you would connect Booking.com, Airbnb, Agoda, Vrbo and other booking sites to this building and match their rooms and rates to your unit types and rate plans.": "Di sini anda akan menyambungkan Booking.com, Airbnb, Agoda, Vrbo dan laman tempahan lain ke bangunan ini serta memadankan bilik dan kadar mereka dengan jenis unit dan pelan kadar anda.",
+"connect booking sites and map rooms and rates": "sambungkan laman tempahan dan padankan bilik serta kadar",
+"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "Booking.com, Airbnb, Agoda, Vrbo dan laman tempahan lain melalui satu pengurus saluran"
 };
