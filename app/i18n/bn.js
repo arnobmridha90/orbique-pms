@@ -8262,5 +8262,8 @@ O.I18N.bn = {
 "Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)": "Airbnb সংস্করণ (Airbnb-এর বাইরে জমা নেওয়া Airbnb অনুমতি দেয় না)",
 "Leave empty to send the text above to Airbnb guests too.": "Airbnb অতিথিদেরও উপরের লেখাটি পাঠাতে ফাঁকা রাখুন।",
 "Ask for the guest's WhatsApp number when the booking has none, and save it when the guest sends it": "বুকিংয়ে নম্বর না থাকলে অতিথির WhatsApp নম্বর চান, এবং অতিথি পাঠালে তা সংরক্ষণ করুন",
-"Saved the timed messages": "নির্ধারিত সময়ের বার্তা সংরক্ষিত হয়েছে"
+"Saved the timed messages": "নির্ধারিত সময়ের বার্তা সংরক্ষিত হয়েছে",
+"Here you would connect Booking.com, Airbnb, Agoda, Vrbo and other booking sites to this building and match their rooms and rates to your unit types and rate plans.": "এখানে আপনি Booking.com, Airbnb, Agoda, Vrbo ও অন্যান্য বুকিং সাইট এই বিল্ডিংয়ের সাথে যুক্ত করবেন এবং তাদের রুম ও রেট আপনার ইউনিটের ধরন ও রেট প্ল্যানের সাথে মেলাবেন।",
+"connect booking sites and map rooms and rates": "বুকিং সাইট যুক্ত করুন এবং রুম ও রেট মেলান",
+"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "একটি চ্যানেল ম্যানেজারের মাধ্যমে Booking.com, Airbnb, Agoda, Vrbo ও অন্যান্য বুকিং সাইট"
 };

@@ -22,7 +22,8 @@ import { must, record, blob, tracked } from './_lib/channex-db.js';
 import { setupBuilding, loadBuilding, buildingProblems, brandContact } from './_lib/channex-setup.js';
 import { runWorker, forceMarks, resendRejected, CONNECTED } from './_lib/channex-sync.js';
 
-export const IFRAME_CHANNELS = 'BDC,AGO,ABB,EXP,CTP';
+/** Channel codes the Channex screen offers; empty = every channel Channex has for the account (Arnob, 2026-11-15). */
+export const IFRAME_CHANNELS = '';
 // bookings, channel changes and errors; guest messages, inquiries, requests and reviews (the Messaging & Reviews app);
 // the booking sites' warnings. 'booking' already covers booking_new / booking_modification / booking_cancellation.
 export const WEBHOOK_EVENTS = 'booking;booking_unmapped_room;booking_unmapped_rate;non_acked_booking;sync_error;sync_warning;rate_error;new_channel;updated_channel;disconnect_channel;disconnect_listing;channel_removal_warning;property_removal_warning;message;inquiry;reservation_request;alteration_request;accepted_reservation;declined_reservation;review;updated_review;message_thread_booking_assigned';
@@ -151,7 +152,7 @@ async function iframe(sb, body, me) {
   if (!token) throw new ApiError(502, 'channex', 'Channex did not answer with a sign-in token. Please try again.');
   const q = new URLSearchParams({ oauth_session_key: token, app_mode: 'headless', redirect_to: '/channels', property_id: p.channex_property_id });
   if (g) q.set('group_id', g.group_id);
-  q.set('channels', IFRAME_CHANNELS);
+  if (IFRAME_CHANNELS) q.set('channels', IFRAME_CHANNELS);
   // availability is only ever set from Orbique: the Channex inventory screen shows it but cannot change it
   q.set('read_only_availability', 'true');
   q.set('lng', 'en');

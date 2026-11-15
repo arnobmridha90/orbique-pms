@@ -95,6 +95,9 @@ test('revisionToBookings: cancelled status, estimated fee without ota_commission
   assert.equal(b.status, 'cancelled'); assert.equal(b.cancelledAt, '2026-10-15');
   assert.equal(b.channel, 'expedia'); assert.equal(b.feeEstimated, true); assert.equal(b.platformFee, 54);
   assert.equal(channelOf({ unique_id: 'ABB-x' }), 'airbnb');
+  assert.equal(channelOf({ unique_id: 'VRBO-x', ota_name: 'Vrbo' }), 'vrbo');
+  assert.equal(channelOf({ ota_name: 'HomeAway' }), 'vrbo');
+  assert.equal(channelOf({ ota_name: 'Hostelworld' }), 'other');
   assert.equal(channelOf({ unique_id: 'AGO-x' }), 'agoda');
   assert.equal(channelOf({ unique_id: 'CTP-x' }), 'trip');
   assert.equal(channelOf({ unique_id: 'XYZ-1', ota_name: 'Trip.com' }), 'trip');

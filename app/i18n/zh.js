@@ -8262,5 +8262,8 @@ O.I18N.zh = {
 "Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)": "Airbnb 版本（Airbnb 不允许在 Airbnb 之外收取押金）",
 "Leave empty to send the text above to Airbnb guests too.": "留空则 Airbnb 客人也会收到上面的文本。",
 "Ask for the guest's WhatsApp number when the booking has none, and save it when the guest sends it": "预订没有号码时向客人索取 WhatsApp 号码，并在客人发送后保存",
-"Saved the timed messages": "已保存定时消息"
+"Saved the timed messages": "已保存定时消息",
+"Here you would connect Booking.com, Airbnb, Agoda, Vrbo and other booking sites to this building and match their rooms and rates to your unit types and rate plans.": "您可以在这里将 Booking.com、Airbnb、Agoda、Vrbo 和其他预订网站连接到此楼宇，并将其房间和价格与您的房型和价格方案匹配。",
+"connect booking sites and map rooms and rates": "连接预订网站并匹配房间和价格",
+"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "通过一个渠道管理器连接 Booking.com、Airbnb、Agoda、Vrbo 和其他预订网站"
 };

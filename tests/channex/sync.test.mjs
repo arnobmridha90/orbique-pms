@@ -273,7 +273,7 @@ test('webhook body per plan: global, active, data, token header, signing key whe
   assert.equal('is_signed' in webhookBody({ webhookToken: '' }, 'https://x', {}), false);
   assert.equal(appUrl({ APP_URL: 'https://a.example/' }), 'https://a.example');
   assert.equal(appUrl({ VERCEL_PROJECT_PRODUCTION_URL: 'orbique.vercel.app' }), 'https://orbique.vercel.app');
-  assert.equal(IFRAME_CHANNELS, 'BDC,AGO,ABB,EXP,CTP');
+  assert.equal(IFRAME_CHANNELS, '');
 });
 
 test('todayMY: Malaysia date; CHANNEX_TODAY is honoured only against a local mock', () => {

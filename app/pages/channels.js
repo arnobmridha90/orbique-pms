@@ -1,5 +1,5 @@
 /* Channels (Manage → Channels): the channel manager. One Channex property per building, one room type per unit type,
-   rate plans per unit type. Booking.com, Agoda, Airbnb, Expedia and Trip.com are connected inside the Channex screen
+   rate plans per unit type. Booking sites (every channel Channex offers the account) are connected inside the Channex screen
    (Manage channels); Orbique sends availability, rates and restrictions and receives the bookings.
    Live mode: a production workspace that the server allows (POST /api/channex config). Practice mode (the test copy
    on this device, demo workspaces, workspaces not switched on yet): the same screens, fake ids, nothing leaves Orbique;
@@ -589,7 +589,7 @@
     if (!c.live) {
       U.modal({
         title: 'Manage channels', sub: (b ? b.name : '') + ' · practice mode', size: 'sm',
-        body: '<p style="margin:0 0 10px;line-height:1.5">Here you would connect Booking.com, Agoda, Airbnb, Expedia and Trip.com to this building and match their rooms and rates to your unit types and rate plans.</p><div class="note">Practice mode: the channel screen opens once this workspace is switched on for real channels.</div>',
+        body: '<p style="margin:0 0 10px;line-height:1.5">Here you would connect Booking.com, Airbnb, Agoda, Vrbo and other booking sites to this building and match their rooms and rates to your unit types and rate plans.</p><div class="note">Practice mode: the channel screen opens once this workspace is switched on for real channels.</div>',
         actions: [{ label: 'Close', kind: 'primary' }]
       });
       return;
@@ -599,7 +599,7 @@
       busy(btn, false);
       if (O.native && O.native.browser && O.native.platform && O.native.platform !== 'web') { if (O.native.browser(r.url)) return; }
       U.modal({
-        title: 'Manage channels', sub: (b ? b.name : '') + ' · connect Booking.com, Agoda, Airbnb, Expedia and Trip.com, and map rooms and rates', cls: 'ch-frame', autofocus: false,
+        title: 'Manage channels', sub: (b ? b.name : '') + ' · connect booking sites and map rooms and rates', cls: 'ch-frame', autofocus: false,
         body: '<iframe title="Channel manager" src="' + esc(r.url) + '" allow="clipboard-write" referrerpolicy="no-referrer"></iframe>',
         onClose: function () { O.auth.channex('channels', { buildingId: bid }).then(function () { reload(); }, function () {}); }
       });
@@ -847,7 +847,7 @@
   }
 
   O.page('channels', {
-    desc: 'Booking.com, Agoda, Airbnb, Expedia and Trip.com through one channel manager',
+    desc: 'Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager',
     render: function (root, ctx) {
       if (ctx.fresh && ctx.params && ctx.params.tab) st.tab = ctx.params.tab;
       var m = mode();
