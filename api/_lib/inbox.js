@@ -37,9 +37,8 @@ import { ChannexError } from './channex.js';
 import { waConfig, withToken, sendText, sendMedia, WINDOW_MS, WhatsAppError } from './whatsapp.js';
 import { translateConfig, translate, langCode } from './translate.js';
 import { inboundConfig, sendEmail } from './email-in.js';
-import { createRequire } from 'node:module';
-
-const JOURNEY = createRequire(import.meta.url)('./shared/journey.cjs');
+// a static import, so Vercel bundles the file with every function that uses the inbox (a createRequire call is not traced)
+import JOURNEY from './shared/journey.cjs';
 
 export const myt = (ms) => new Date(ms + 8 * 3600000).toISOString().slice(0, 16);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
