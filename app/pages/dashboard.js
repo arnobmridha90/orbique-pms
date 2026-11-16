@@ -1,7 +1,7 @@
 /* Orbique PMS v4 — Dashboard
    "A glimpse of the whole scenario, immediately important things only."
    Hero: greeting, date and time, a one-line summary, the "Brief me" read-aloud button, one money line (dashboard.money).
-   Cards: same-day bookings, check-ins today (readiness), check-outs today (turnover), in-house guests,
+   Cards: new bookings today (every booking created today, any stay dates), same-day bookings, check-ins today (readiness), check-outs today (turnover), in-house guests,
    today's open and overdue tasks, "needs attention" (unread messages, reviews to answer, inventory alerts) and, for
    people with properties.file, "Due soon" (rent, bills and tenancy ends from the unit files, app/pages/unitfile.js).
    Everything analytical lives in Statistics (O.go('statistics')).
@@ -11,7 +11,7 @@
   var O = window.O, D = O.data, M = O.metrics, d = O.d, U = O.ui, esc = O.esc, fmt = O.fmt;
   var st = { more: {}, brief: null };          /* UI state that survives re-renders */
   var B = { run: 0, reading: false, dirty: false, ctx: null, page: null, timer: null }; /* read-aloud runtime */
-  var CAP = { arrivals: 6, tasks: 6, inhouse: 4 };
+  var CAP = { arrivals: 6, tasks: 6, inhouse: 4, newtoday: 6 };
 
   O.css('dashboard', `
 .pg-dashboard{display:flex;flex-direction:column;gap:14px;max-width:1320px;}
@@ -78,6 +78,7 @@
 .pg-dashboard .dsh-act{display:flex;gap:6px;align-items:center;justify-content:flex-end;}
 .pg-dashboard .dsh-act .btn{min-height:34px;}
 .pg-dashboard .dsh-r.sd{box-shadow:inset 3px 0 0 var(--accent);}
+.pg-dashboard .dsh-r.nx .dsh-nm, .pg-dashboard .dsh-r.nx .dsh-sb{opacity:.6;text-decoration:line-through;}
 .pg-dashboard .dsh-r.od{box-shadow:inset 3px 0 0 var(--bad);}
 .pg-dashboard .dsh-r .select{padding:5px 28px 5px 8px;font-size:12px;width:auto;max-width:100%;margin-top:5px;}
 .pg-dashboard .select.unassigned{border-color:var(--warn);background-color:var(--warn-soft);color:var(--warn);font-weight:700;}
@@ -214,7 +215,10 @@
     };
     m.arrivals = []; m.sameDay = []; m.departures = []; m.inHouse = []; m.allArrivals = []; m.gone = []; m.nextArrival = null;
     m.ready = { noClean: [], prep: [], id: [] };
+    m.newToday = []; /* every booking created or received today, whatever its stay dates (cancelled ones too, marked) */
     if (p.stays) {
+      m.newToday = D.bookings.filter(function (b) { return b && b.createdAt && b.createdAt.slice(0, 10) === t && b.createdAt <= now; })
+        .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0; });
       D.bookings.forEach(function (b) {
         if (!live(b) || !b.createdAt || b.createdAt > now) return; /* nothing booked "later today" yet */
         if (b.checkIn === t) (b.createdAt.slice(0, 10) === t ? m.sameDay : m.arrivals).push(b);
@@ -567,7 +571,7 @@
   function rowAttr(b, m) { return m.perm.openBooking ? ' data-row="' + esc(b.id) + '"' : ''; }
   function moreBtn(key, total, shown, noun) {
     if (total <= (CAP[key] || 6) + 1) return '';
-    return '<button type="button" class="dsh-more" data-more="' + key + '" aria-expanded="' + !!st.more[key] + '">' + esc(st.more[key] ? O.tr('Show fewer') : O.tpl({ 'check-ins': 'Show {n} more check-ins', guests: 'Show {n} more guests', tasks: 'Show {n} more tasks' }[noun] || 'Show {n} more', { n: total - shown })) + '</button>';
+    return '<button type="button" class="dsh-more" data-more="' + key + '" aria-expanded="' + !!st.more[key] + '">' + esc(st.more[key] ? O.tr('Show fewer') : O.tpl({ 'check-ins': 'Show {n} more check-ins', guests: 'Show {n} more guests', tasks: 'Show {n} more tasks', bookings: 'Show {n} more bookings' }[noun] || 'Show {n} more', { n: total - shown })) + '</button>';
   }
   function cut(list, key) { var n = CAP[key] || 6; return st.more[key] || list.length <= n + 1 ? list : list.slice(0, n); }
   function cleanNeeded(b) { return safe(function () { return O.readiness(b); }, []).some(function (r) { return r.key === 'clean' && r.label === 'No clean booked'; }); }
@@ -595,6 +599,21 @@
     var cal = O.allowed('calendar') ? '<button type="button" class="btn btn-quiet btn-sm" data-go="calendar">' + O.icon('calendar') + 'Calendar</button>' : '';
     return '<section class="card" data-card="arrivals">' + head('Check-ins today', list.length, sub, cal) +
       (list.length ? shown.map(function (b) { return arrivalRow(b, m, false); }).join('') + moreBtn('arrivals', list.length, shown.length, 'check-ins') : '<div class="dsh-quiet">No check-ins were expected today.</div>') + '</section>';
+  }
+  function newTodayHTML(m) {
+    var list = m.newToday, shown = cut(list, 'newtoday'), live_ = list.filter(live).length;
+    var rows = shown.map(function (b) {
+      var p = prop(b.propertyId), gone = !live(b);
+      var tag = gone ? '<span class="bad">' + esc(O.tr('Cancelled')) + '</span>' : b.checkIn === m.t ? '<span class="warn">' + esc(O.tr('Arrives today')) + '</span>' : '<span>' + esc(U.platName(b.channel)) + '</span>';
+      var stay = d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest');
+      var money = m.perm.money && b.total ? ' · ' + fmt.money(b.total, { cur: b }) : '';
+      return '<div class="dsh-r' + (gone ? ' nx' : '') + '"' + rowAttr(b, m) + '><div class="dsh-tm"><b>' + esc(fmt.time(b.createdAt)) + '</b>' + tag + '</div>' +
+        '<div style="min-width:0"><div class="dsh-nm">' + U.platIcon(b.channel) + guestName(b, m) + '<span class="u">' + esc(p.short) + '</span></div>' +
+        '<div class="dsh-sb">' + esc(stay) + money + '</div></div><div class="dsh-act"></div></div>';
+    }).join('');
+    var sub = list.length ? (list.length > live_ ? O.tpl('Booked today, any stay dates · {n} cancelled', { n: list.length - live_ }) : 'Booked today, any stay dates') : '';
+    return '<section class="card" data-card="newtoday">' + head('New bookings today', live_, sub) +
+      (rows ? rows + moreBtn('newtoday', list.length, shown.length, 'bookings') : '<div class="dsh-quiet">No new bookings have come in today yet.</div>') + '</section>';
   }
   function turnoverFor(b) {
     var list = D.tasks.filter(function (x) { return x.propertyId === b.propertyId && x.type === 'Turnover' && x.due && x.due.slice(0, 10) === b.checkOut; });
@@ -765,13 +784,13 @@
         var alerts = attentionList(m);
         var mineFirst = p.tasks && !p.others; /* housekeepers and maintenance: their own tasks come first on a phone */
         var cards = {
-          sameday: p.stays ? sameDayHTML(m) : '', arrivals: p.stays ? arrivalsHTML(m) : '', departures: p.stays ? departuresHTML(m) : '',
+          newtoday: p.stays ? newTodayHTML(m) : '', sameday: p.stays ? sameDayHTML(m) : '', arrivals: p.stays ? arrivalsHTML(m) : '', departures: p.stays ? departuresHTML(m) : '',
           inhouse: p.stays ? inHouseHTML(m) : '', tasks: p.tasks ? tasksHTML(m) : '', attention: attentionHTML(m, alerts),
           duesoon: O.unitFile ? safe(function () { return O.unitFile.dueSoonHTML(head); }, '') : ''
         };
-        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'attention', 'duesoon', 'inhouse'] : ['sameday', 'arrivals', 'tasks', 'departures', 'attention', 'duesoon', 'inhouse'];
+        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'duesoon', 'inhouse'] : ['newtoday', 'sameday', 'arrivals', 'tasks', 'departures', 'attention', 'duesoon', 'inhouse'];
         var styled = function (k) { return cards[k] ? cards[k].replace('<section class="card', '<section style="order:' + (order.indexOf(k) + 1) + '" class="card') : ''; };
-        var left = ['sameday', 'arrivals', 'departures'].map(styled).join('');
+        var left = ['newtoday', 'sameday', 'arrivals', 'departures'].map(styled).join('');
         var right = ['tasks', 'attention', 'duesoon', 'inhouse'].map(styled).join('');
         if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['attention', 'duesoon'].map(styled).join(''); }
         html = heroHTML(m) + '<div class="dsh-brief-slot">' + (st.brief ? briefPanelHTML() : '') + '</div>' +

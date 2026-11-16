@@ -8265,5 +8265,10 @@ O.I18N.bn = {
 "Saved the timed messages": "নির্ধারিত সময়ের বার্তা সংরক্ষিত হয়েছে",
 "Here you would connect Booking.com, Airbnb, Agoda, Vrbo and other booking sites to this building and match their rooms and rates to your unit types and rate plans.": "এখানে আপনি Booking.com, Airbnb, Agoda, Vrbo ও অন্যান্য বুকিং সাইট এই বিল্ডিংয়ের সাথে যুক্ত করবেন এবং তাদের রুম ও রেট আপনার ইউনিটের ধরন ও রেট প্ল্যানের সাথে মেলাবেন।",
 "connect booking sites and map rooms and rates": "বুকিং সাইট যুক্ত করুন এবং রুম ও রেট মেলান",
-"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "একটি চ্যানেল ম্যানেজারের মাধ্যমে Booking.com, Airbnb, Agoda, Vrbo ও অন্যান্য বুকিং সাইট"
+"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "একটি চ্যানেল ম্যানেজারের মাধ্যমে Booking.com, Airbnb, Agoda, Vrbo ও অন্যান্য বুকিং সাইট",
+"Show {n} more bookings": "আরও {n}টি বুকিং দেখান",
+"Booked today, any stay dates · {n} cancelled": "আজ বুক করা, যেকোনো থাকার তারিখ · {n}টি বাতিল",
+"Booked today, any stay dates": "আজ বুক করা, যেকোনো থাকার তারিখ",
+"New bookings today": "আজকের নতুন বুকিং",
+"No new bookings have come in today yet.": "আজ এখনও কোনো নতুন বুকিং আসেনি।"
 };

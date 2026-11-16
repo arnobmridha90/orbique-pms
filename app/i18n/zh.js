@@ -8265,5 +8265,10 @@ O.I18N.zh = {
 "Saved the timed messages": "已保存定时消息",
 "Here you would connect Booking.com, Airbnb, Agoda, Vrbo and other booking sites to this building and match their rooms and rates to your unit types and rate plans.": "您可以在这里将 Booking.com、Airbnb、Agoda、Vrbo 和其他预订网站连接到此楼宇，并将其房间和价格与您的房型和价格方案匹配。",
 "connect booking sites and map rooms and rates": "连接预订网站并匹配房间和价格",
-"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "通过一个渠道管理器连接 Booking.com、Airbnb、Agoda、Vrbo 和其他预订网站"
+"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "通过一个渠道管理器连接 Booking.com、Airbnb、Agoda、Vrbo 和其他预订网站",
+"Show {n} more bookings": "再显示 {n} 个预订",
+"Booked today, any stay dates · {n} cancelled": "今天预订，任何入住日期 · {n} 个已取消",
+"Booked today, any stay dates": "今天预订，任何入住日期",
+"New bookings today": "今日新预订",
+"No new bookings have come in today yet.": "今天还没有新预订。"
 };

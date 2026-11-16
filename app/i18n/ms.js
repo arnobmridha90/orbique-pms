@@ -8265,5 +8265,10 @@ O.I18N.ms = {
 "Saved the timed messages": "Mesej berjadual telah disimpan",
 "Here you would connect Booking.com, Airbnb, Agoda, Vrbo and other booking sites to this building and match their rooms and rates to your unit types and rate plans.": "Di sini anda akan menyambungkan Booking.com, Airbnb, Agoda, Vrbo dan laman tempahan lain ke bangunan ini serta memadankan bilik dan kadar mereka dengan jenis unit dan pelan kadar anda.",
 "connect booking sites and map rooms and rates": "sambungkan laman tempahan dan padankan bilik serta kadar",
-"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "Booking.com, Airbnb, Agoda, Vrbo dan laman tempahan lain melalui satu pengurus saluran"
+"Booking.com, Airbnb, Agoda, Vrbo and other booking sites through one channel manager": "Booking.com, Airbnb, Agoda, Vrbo dan laman tempahan lain melalui satu pengurus saluran",
+"Show {n} more bookings": "Tunjuk {n} lagi tempahan",
+"Booked today, any stay dates · {n} cancelled": "Ditempah hari ini, sebarang tarikh penginapan · {n} dibatalkan",
+"Booked today, any stay dates": "Ditempah hari ini, sebarang tarikh penginapan",
+"New bookings today": "Tempahan baharu hari ini",
+"No new bookings have come in today yet.": "Belum ada tempahan baharu masuk hari ini."
 };
