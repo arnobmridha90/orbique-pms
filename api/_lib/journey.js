@@ -10,14 +10,12 @@
  * sent, so two worker runs at the same moment never send it twice. A failed send is tried again after RETRY_MIN
  * minutes, at most MAX_TRIES times. A welcome is not sent when the team already sent that guest the door code.
  */
-import { createRequire } from 'node:module';
 import { must, records, blob, todayMY, addDays } from './channex-db.js';
 import { findConv, sendReply, myt, OTA_VIA, VIA_NAME } from './inbox.js';
 import { inboundConfig, addressFor } from './email-in.js';
 
-const require = createRequire(import.meta.url);
-const J = require('./shared/journey.cjs');
-const GM = require('./shared/guestmsg.cjs');
+import J from './shared/journey.cjs';
+import GM from './shared/guestmsg.cjs';
 
 export const BOOKINGS_PER_TICK = 8; // sends per worker run, so a run stays inside its budget
 const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
