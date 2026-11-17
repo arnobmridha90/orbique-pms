@@ -8381,5 +8381,6 @@ O.I18N.zh = {
 "net revenue minus rent": "净收入减去租金",
 "no rent in unit file": "单位档案无租金",
 "rent from the unit files": "来自单位档案的租金",
-"{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.": "{cost} 成本中已覆盖 {pct}（净收入 {earned}）。仍需覆盖 {left}。"
+"{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.": "{cost} 成本中已覆盖 {pct}（净收入 {earned}）。仍需覆盖 {left}。",
+"Option {n} of {total}": "第 {n} 个，共 {total} 个"
 };
