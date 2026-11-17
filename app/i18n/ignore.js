@@ -2,6 +2,9 @@
    codes, brand names, technical words, and words that only go into messages and documents for guests (which keep the
    operator's wording). They are shown as they are in every language. */
 O.I18N_IGNORE = [
+  "Hi {x}, thank you for the lovely review! We are so glad you enjoyed your stay with {x}",
+  "The {x} Team",
+  "thank you for the lovely review! We are so glad you enjoyed your stay with",
   "Registration No.",
   "OFFICIAL RECEIPT",
   "BOOKING CONFIRMATION",
