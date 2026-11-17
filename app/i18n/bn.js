@@ -8314,7 +8314,7 @@ O.I18N.bn = {
 "Cost coverage": "খরচ কভারেজ",
 "Costs come from each unit’s file (rent and bills). Your access does not include unit files.": "খরচ আসে প্রতিটি ইউনিটের ফাইল থেকে (ভাড়া ও বিল)। আপনার অ্যাক্সেসে ইউনিট ফাইল নেই।",
 "Costs that stay the same every month, on top of the rent and bills in the unit files: salaries, software, accounting, insurance": "প্রতি মাসে একই থাকা খরচ, ইউনিট ফাইলের ভাড়া ও বিলের বাইরে: বেতন, সফটওয়্যার, হিসাবরক্ষণ, বিমা",
-"Costs this month: {month}": "এই মাসের খরচ: {month}",
+"Financials this month: {month}": "এই মাসের আর্থিক হিসাব: {month}",
 "Covered so far": "এ পর্যন্ত কভার হয়েছে",
 "Each cost counts from this month on. Removing one stops it from next month; earlier months keep it.": "প্রতিটি খরচ এই মাস থেকে গোনা হয়। মুছে দিলে পরের মাস থেকে বন্ধ হয়; আগের মাসগুলোতে থেকে যায়।",
 "Expected for the month": "মাসের প্রত্যাশিত",

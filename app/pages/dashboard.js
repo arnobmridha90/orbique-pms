@@ -580,7 +580,7 @@
       '<div style="grid-column:1/-1;min-width:0">' + cell('Net revenue so far', fmt.money(P.earned), esc(O.tpl('{pct} of the projected cost covered', { pct: fmt.pct(pct) }))) + bar + '</div>' +
       cell('Gross profit so far', sg(P.profit), esc(O.tr('net revenue minus cost so far')), P.profit < 0 ? 'bad' : null) +
       cell('Expected for the month', sg(P.expected), esc(O.tpl('with {x} net on the books', { x: fmt.moneyShort(P.booked) })), P.expected < 0 ? 'bad' : null) + '</div>';
-    return '<section class="card" data-card="costs">' + head(O.tpl('Costs this month: {month}', { month: d.monthName(m.t, true) }), null, esc(P.history.length ? O.tpl('Projection learned from {months} of expenses', { months: fmt.plural(P.history.length, 'month') }) : O.tr('Projection from the unit files until expenses are recorded')), O.allowed('reports') ? '<button type="button" class="btn btn-ghost btn-sm" data-go-costs>' + esc(O.tr('Open report')) + '</button>' : '') + body + '</section>';
+    return '<section class="card" data-card="costs">' + head(O.tpl('Financials this month: {month}', { month: d.monthName(m.t, true) }), null, esc(P.history.length ? O.tpl('Projection learned from {months} of expenses', { months: fmt.plural(P.history.length, 'month') }) : O.tr('Projection from the unit files until expenses are recorded')), O.allowed('reports') ? '<button type="button" class="btn btn-ghost btn-sm" data-go-costs>' + esc(O.tr('Open report')) + '</button>' : '') + body + '</section>';
   }
   function head(title, n, sub, extra, hot) {
     return '<div class="card-head"><div class="hd"><h3>' + esc(title) + (n != null ? '<span class="n' + (hot ? ' hot' : '') + '">' + n + '</span>' : '') + '</h3>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' + (extra || '') + '</div>';
@@ -809,11 +809,11 @@
           duesoon: O.unitFile ? safe(function () { return O.unitFile.dueSoonHTML(head); }, '') : '',
           costs: m.money ? safe(function () { return costsHTML(m); }, '') : ''
         };
-        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'costs', 'duesoon', 'inhouse'] : ['attention', 'costs', 'newtoday', 'sameday', 'arrivals', 'tasks', 'departures', 'duesoon', 'inhouse'];
+        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'costs', 'duesoon', 'inhouse'] : ['attention', 'arrivals', 'sameday', 'costs', 'departures', 'duesoon', 'newtoday', 'tasks', 'inhouse'];
         var styled = function (k) { return cards[k] ? cards[k].replace('<section class="card', '<section style="order:' + (order.indexOf(k) + 1) + '" class="card') : ''; };
-        /* Needs attention is 1 and Costs this month 2 (Arnob): top of the left and right columns on a desktop, first and second on a phone */
-        var left = (mineFirst ? ['newtoday', 'sameday', 'arrivals', 'departures'] : ['attention', 'newtoday', 'sameday', 'arrivals', 'departures']).map(styled).join('');
-        var right = (mineFirst ? ['costs', 'tasks', 'attention', 'duesoon', 'inhouse'] : ['costs', 'tasks', 'duesoon', 'inhouse']).map(styled).join('');
+        /* Arnob 2026-11-18. Left: check-ins, check-outs, new bookings, in-house (same-day bookings sit under check-ins). Right: needs attention, financials, due soon, tasks. On a phone the two columns alternate. */
+        var left = (mineFirst ? ['newtoday', 'sameday', 'arrivals', 'departures'] : ['arrivals', 'sameday', 'departures', 'newtoday', 'inhouse']).map(styled).join('');
+        var right = (mineFirst ? ['costs', 'tasks', 'attention', 'duesoon', 'inhouse'] : ['attention', 'costs', 'duesoon', 'tasks']).map(styled).join('');
         if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['costs', 'attention', 'duesoon'].map(styled).join(''); if (!mineFirst) { left = ['attention', 'tasks'].map(styled).join(''); right = ['costs', 'duesoon'].map(styled).join(''); } }
         html = heroHTML(m) + '<div class="dsh-brief-slot">' + (st.brief ? briefPanelHTML() : '') + '</div>' +
           (left || right ? '<div class="dsh-main"><div class="dsh-col">' + left + '</div><div class="dsh-col">' + right + '</div></div>' : '');

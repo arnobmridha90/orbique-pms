@@ -8314,7 +8314,7 @@ O.I18N.ms = {
 "Cost coverage": "Liputan kos",
 "Costs come from each unit’s file (rent and bills). Your access does not include unit files.": "Kos diambil daripada fail setiap unit (sewa dan bil). Akses anda tidak termasuk fail unit.",
 "Costs that stay the same every month, on top of the rent and bills in the unit files: salaries, software, accounting, insurance": "Kos yang sama setiap bulan, selain sewa dan bil dalam fail unit: gaji, perisian, perakaunan, insurans",
-"Costs this month: {month}": "Kos bulan ini: {month}",
+"Financials this month: {month}": "Kewangan bulan ini: {month}",
 "Covered so far": "Dilindungi setakat ini",
 "Each cost counts from this month on. Removing one stops it from next month; earlier months keep it.": "Setiap kos dikira mulai bulan ini. Membuangnya menghentikannya mulai bulan depan; bulan sebelumnya kekal.",
 "Expected for the month": "Jangkaan untuk bulan ini",
