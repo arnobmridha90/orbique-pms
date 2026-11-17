@@ -274,11 +274,13 @@
     return out;
   }
   function suggest(r, v) {
-    var name = greetName(r.guest), p = prop(r.propertyId).name, team = 'The ' + O.ws().name + ' team';
+    /* replies name the business and the building ("Kozi @ Vortex KLCC"), never the listing title */
+    var ws = O.ws().name, bd = O.buildingOf ? O.buildingOf(prop(r.propertyId)) : null;
+    var name = greetName(r.guest), p = bd && bd.name ? ws + ' @ ' + bd.name : ws, team = 'The ' + ws + ' Team';
     v = v || 0;
     if (r.stars >= 5) {
       var pr = r.tags.map(function (t) { return PRAISE[t]; }).filter(Boolean)[0];
-      if (v % 2 === 0) return 'Hi ' + name + ', thank you for the lovely review! We are so glad you enjoyed ' + p + (pr ? ' ' + pr[0] : '') + '. You are welcome back any time.\n\n' + team;
+      if (v % 2 === 0) return 'Hi ' + name + ', thank you for the lovely review! We are so glad you enjoyed your stay with ' + p + (pr ? ' ' + pr[0] : '') + '. You are welcome back any time.\n\n' + team;
       return 'Thank you, ' + name + '! Reviews like this make our day. ' + (pr ? pr[1] + ' ' : '') + 'We hope to host you at ' + p + ' again soon.\n\n' + team;
     }
     var fx = fixesFor(r);
