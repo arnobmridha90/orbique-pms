@@ -8419,5 +8419,6 @@ O.I18N.bn = {
 "Month by month": "মাস অনুযায়ী",
 "The forecast is what was expected at the start of the month from the months before; compare it with the cost spent to see how close it gets.": "পূর্বাভাস হলো আগের মাসগুলো থেকে মাসের শুরুতে যা প্রত্যাশিত ছিল; এটি কতটা কাছাকাছি তা দেখতে ব্যয় হওয়া খরচের সাথে তুলনা করুন।",
 "Forecast": "পূর্বাভাস",
-"Based on": "ভিত্তি"
+"Based on": "ভিত্তি",
+"Option {n} of {total}": "{total}টির মধ্যে {n} নম্বর বিকল্প"
 };

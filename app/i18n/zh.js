@@ -8419,5 +8419,6 @@ O.I18N.zh = {
 "Month by month": "逐月",
 "The forecast is what was expected at the start of the month from the months before; compare it with the cost spent to see how close it gets.": "预测是月初根据之前月份预计的金额；与已花费成本比较，看看有多接近。",
 "Forecast": "预测",
-"Based on": "依据"
+"Based on": "依据",
+"Option {n} of {total}": "第 {n} 个，共 {total} 个"
 };

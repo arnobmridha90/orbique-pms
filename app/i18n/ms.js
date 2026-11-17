@@ -8419,5 +8419,6 @@ O.I18N.ms = {
 "Month by month": "Bulan demi bulan",
 "The forecast is what was expected at the start of the month from the months before; compare it with the cost spent to see how close it gets.": "Ramalan ialah apa yang dijangka pada awal bulan daripada bulan-bulan sebelumnya; bandingkan dengan kos dibelanjakan untuk melihat sejauh mana ia tepat.",
 "Forecast": "Ramalan",
-"Based on": "Berdasarkan"
+"Based on": "Berdasarkan",
+"Option {n} of {total}": "Pilihan {n} daripada {total}"
 };

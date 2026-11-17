@@ -112,6 +112,7 @@
 .pg-reviews .rv-compose .rc-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px;flex-wrap:wrap;}
 .pg-reviews .rv-compose .rc-head .sug{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--brand-text);background:var(--brand-soft);padding:2px 8px;border-radius:20px;}
 .pg-reviews .rv-compose .rc-head .sug svg{width:12px;height:12px;}
+.pg-reviews .rv-compose .rc-head .opt{font-size:11px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums;}
 .pg-reviews .rv-compose .rc-head .cc{margin-left:auto;font-weight:600;color:var(--faint);font-size:11px;font-variant-numeric:tabular-nums;}
 .pg-reviews .rv-compose .textarea{min-height:84px;font-size:13px;overflow-y:auto;}
 .pg-reviews .rv-compose .rc-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center;}
@@ -264,7 +265,6 @@
     [/bigger|photos make/i, 'We have updated the listing photos and floor size so they match the space.']
   ];
   var TAG_FIX = { Maintenance: 'Our maintenance team has fixed the problem and added it to our pre-arrival checklist.', Cleanliness: 'We went through the clean with our housekeeping team and added a supervisor check before every arrival.', Noise: 'We have added blackout curtains and earplugs to help with noise at night.', 'Check-in': 'We have made our check-in steps clearer.', 'Door code': 'We now test every door code remotely before it is sent.', Parking: 'We have added photos to our parking instructions so the bay is easier to find.' };
-  var PRAISE = { Cleanliness: ['and found it spotless', 'We will pass your kind words to our housekeeping team.'], 'Check-in': ['and that check-in went smoothly', 'We work hard to make arrival easy, so this is great to hear.'], Location: ['and its location', 'It really is a great base for exploring.'], Communication: ['and found us easy to reach', 'Our team is always a message away.'], Guidebook: ['and the guidebook tips', 'We are glad the local recommendations were useful.'], Value: ['and found it good value', 'We keep our rates fair all week.'] };
   function fixesFor(r) {
     var out = [], task = taskFor(r), open = task && task.status !== 'done';
     /* while the linked task is still open, say what is booked instead of claiming it is already fixed */
@@ -273,23 +273,98 @@
     if (!out.length) r.tags.forEach(function (t) { if (out.length < 2 && TAG_FIX[t] && out.indexOf(TAG_FIX[t]) < 0) out.push(TAG_FIX[t]); });
     return out;
   }
+  /* what guests liked, read from the review text: [pattern, what they enjoyed, a line back] */
+  var LIKES = [
+    [/view|twin tower|petronas|skyline|klcc tower/i, 'the view', 'Those city views never get old, even for us.'],
+    [/pool/i, 'the pool', 'The pool is one of our favourite spots in the building too.'],
+    [/clean|spotless|tidy|neat|hygien/i, 'how clean everything was', 'We will pass your kind words to our housekeeping team.'],
+    [/location|walking distance|close to|near(by)? |convenient|\bmrt\b|\blrt\b|monorail|pavilion|bukit bintang|mall/i, 'the location', 'It really is a great base for exploring the city.'],
+    [/host|responsive|helpful|friendly|quick to (reply|respond)|communicat|support/i, 'our team\'s help', 'Our team is always just a message away.'],
+    [/check-?in|self check|easy to find|easy access/i, 'the easy check-in', 'We work hard to make arrival simple, so this is great to hear.'],
+    [/comfortable|comfy|cosy|cozy|\bbeds?\b|slept/i, 'the comfortable beds', 'A good night\'s sleep matters, so we are glad you rested well.'],
+    [/spacious|roomy|plenty of (space|room)|big apartment|large apartment/i, 'the space', 'We wanted the apartment to feel roomy and relaxed.'],
+    [/family|kids|children|parents/i, 'a stay that suited your family', 'We love hosting families and are happy it worked so well.'],
+    [/kitchen|washing machine|washer|amenit|facilit|well equipped|well-equipped/i, 'the facilities', 'We try to stock everything you need, so it is lovely to hear it helped.'],
+    [/value|worth|price|affordable/i, 'the value', 'We keep our rates fair, so we are glad it felt worth it.'],
+    [/design|decor|stylish|beautiful|modern|cozy/i, 'the look of the apartment', 'We put a lot of care into the design, so thank you for noticing.']
+  ];
+  var TAG_LIKE = { Cleanliness: 2, 'Check-in': 5, Location: 3, Communication: 4, Value: 10 };
+  /* a short name for each problem in FIXES, in the same order, used to acknowledge it */
+  var ISSUE = ['the hot water', 'the air conditioning', 'getting in with the door code', 'the cleaning', 'the Wi-Fi', 'the parking', 'the towels', 'finding the lockbox', 'the noise', 'the lifts', 'the photos and floor size'];
+  var TAG_ISSUE = { Maintenance: 'the maintenance issue', Cleanliness: 'the cleaning', Noise: 'the noise', 'Check-in': 'check-in', 'Door code': 'getting in with the door code', Parking: 'the parking' };
+  var NEG = /\b(not|no|never|didn'?t|wasn'?t|weren'?t|couldn'?t|but|however|although|unfortunately|except|dirty|broken|issue|problem|disappoint\w*|noisy|smell\w*|slow|poor|bad|worse|worst|could be better|wish|lack\w*|missing)\b/i;
+  function readReview(r) {
+    var parts = String(r.text || '').split(/[.!?\n]+|\bbut\b|\bhowever\b/i).map(function (s) { return s.trim(); }).filter(Boolean);
+    var likes = [], issues = [];
+    parts.forEach(function (s) {
+      var bad = NEG.test(s);
+      LIKES.forEach(function (l, i) { if (!bad && l[0].test(s) && likes.indexOf(i) < 0) likes.push(i); });
+      FIXES.forEach(function (f, i) { if (f[0].test(s) && issues.indexOf(ISSUE[i]) < 0) issues.push(ISSUE[i]); });
+    });
+    (r.tags || []).forEach(function (t) {
+      if (TAG_LIKE[t] != null && r.stars >= 4 && likes.indexOf(TAG_LIKE[t]) < 0) likes.push(TAG_LIKE[t]);
+      if (TAG_ISSUE[t] && r.stars <= 4 && !issues.length) issues.push(TAG_ISSUE[t]);
+    });
+    var negative = issues.length > 0 || r.stars <= 3 || parts.some(function (s) { return r.stars < 5 && NEG.test(s); });
+    return { likes: likes.map(function (i) { return LIKES[i]; }), issues: issues.slice(0, 2), negative: negative };
+  }
+  function andList(a) { return a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
+  function lower(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
+  /* openings, middles and closings have 5, 6 and 7 choices, so stepping one at a time gives 210 different replies before any repeats */
+  var REPLY_OPTIONS = 5 * 6 * 7;
   function suggest(r, v) {
     /* replies name the business and the building ("Kozi @ Vortex KLCC"), never the listing title */
     var ws = O.ws().name, bd = O.buildingOf ? O.buildingOf(prop(r.propertyId)) : null;
     var name = greetName(r.guest), p = bd && bd.name ? ws + ' @ ' + bd.name : ws, team = 'The ' + ws + ' Team';
-    v = v || 0;
-    if (r.stars >= 5) {
-      var pr = r.tags.map(function (t) { return PRAISE[t]; }).filter(Boolean)[0];
-      if (v % 2 === 0) return 'Hi ' + name + ', thank you for the lovely review! We are so glad you enjoyed your stay with ' + p + (pr ? ' ' + pr[0] : '') + '. You are welcome back any time.\n\n' + team;
-      return 'Thank you, ' + name + '! Reviews like this make our day. ' + (pr ? pr[1] + ' ' : '') + 'We hope to host you at ' + p + ' again soon.\n\n' + team;
+    v = Math.abs(v || 0) % REPLY_OPTIONS;
+    var rd = readReview(r), lk = rd.likes.length ? rd.likes[v % rd.likes.length] : null, lk2 = rd.likes.length > 1 ? rd.likes[(v + 1) % rd.likes.length] : null;
+    var fx = fixesFor(r), iss = rd.issues.length ? andList(rd.issues) : 'what could have been better';
+    var fixText = fx.length ? fx.join(' ') : 'We have shared your feedback with our team and are already working on it.';
+    var o = v % 5, m = v % 6, c = v % 7, open, mid, close;
+    if (r.stars >= 5 && !rd.issues.length) {
+      open = ['Hi ' + name + ', thank you for the lovely review!', 'Thank you so much, ' + name + '!', 'Dear ' + name + ', what a wonderful review to read.', 'Hi ' + name + ', thank you for taking the time to write such kind words.', name + ', thank you for staying with us and for the five stars!'][o];
+      mid = [
+        'We are so glad you enjoyed your stay with ' + p + (lk ? ', especially ' + lk[1] : '') + '.',
+        lk ? 'It means a lot that you loved ' + lk[1] + ' at ' + p + '. ' + lk[2] : 'It means a lot that you loved your time at ' + p + '.',
+        'We are delighted that ' + p + ' felt like home' + (lk ? ' and that you enjoyed ' + lk[1] : '') + '.',
+        lk ? 'Hearing that you enjoyed ' + (lk2 ? lk[1] + ' and ' + lk2[1] : lk[1]) + ' at ' + p + ' makes our day.' : 'Reviews like this make our day at ' + p + '.',
+        'Thank you for choosing ' + p + '. ' + (lk ? lk[2] : 'We are happy everything went smoothly.'),
+        'We are happy everything went well during your stay at ' + p + '.' + (lk2 ? ' ' + lk2[2] : lk ? ' ' + lk[2] : '')
+      ][m];
+      close = ['You are welcome back any time.', 'We hope to host you again soon.', 'We would love to welcome you back on your next trip.', 'Safe travels, and see you next time!', 'Our door is always open for your next stay.', 'We look forward to welcoming you back.', 'Until next time, take care!'][c];
+    } else if (r.stars >= 4) {
+      open = ['Hi ' + name + ', thank you for staying with us and for the helpful feedback.', 'Thank you for the great review, ' + name + '!', 'Dear ' + name + ', thank you for choosing ' + p + '.', 'Hi ' + name + ', we really appreciate you sharing your stay with us.', 'Thanks for the kind words, ' + name + '!'][o];
+      var good = lk ? 'We are glad you enjoyed ' + lk[1] + '. ' : 'We are glad you enjoyed your stay at ' + p + '. ';
+      mid = !rd.negative && !fx.length ? [
+        good + (lk ? lk[2] : ''),
+        'It is great to hear your stay at ' + p + ' went well' + (lk ? ', and that ' + lk[1] + ' stood out' : '') + '.',
+        good + 'We are always looking for ways to make the next stay even better.',
+        'Thank you for the lovely feedback about ' + (lk ? lk[1] : 'your stay') + '.' + (lk2 ? ' ' + lk2[2] : ''),
+        good + 'If there is anything that would have made it five stars, just send us a message.',
+        'We are happy ' + p + ' worked well for you.' + (lk ? ' ' + lk[2] : '')
+      ][m] : [
+        good + 'Thank you as well for mentioning ' + iss + '. ' + fixText,
+        good + 'You are right to point out ' + iss + ', and we have acted on it. ' + fixText,
+        'Thank you for the honest feedback about ' + iss + '. ' + fixText,
+        good + 'We appreciate the note about ' + iss + '. ' + fixText,
+        'Your comment about ' + iss + ' really helps us improve. ' + fixText,
+        good + 'We want every detail to be right, so thank you for telling us about ' + iss + '. ' + fixText
+      ][m];
+      close = ['We hope to welcome you back soon.', 'We would love to host you again and show you the improvements.', 'We look forward to your next stay at ' + p + '.', 'Thank you again, and see you next time!', 'Our door is always open for your next visit.', 'We hope your next stay with us is a five-star one.', 'Safe travels, and we hope to see you again.'][c];
+    } else {
+      open = ['Hi ' + name + ', thank you for taking the time to share your experience.', 'Dear ' + name + ', thank you for your honest review.', 'Hi ' + name + ', we really appreciate your feedback.', name + ', thank you for staying at ' + p + ' and for telling us how it went.', 'Hi ' + name + ', we are sorry your stay was not as good as it should have been.'][o];
+      var plus = lk ? ' We are glad you enjoyed ' + lk[1] + ', and we want the rest of the stay to match it.' : '';
+      mid = [
+        (rd.issues.length ? 'We are sorry about ' + iss + '.' : 'We are sorry the stay fell short of what you expected.') + ' ' + fixText + plus,
+        'You are right to mention ' + iss + ', and we have taken action. ' + fixText,
+        'Thank you for pointing out ' + iss + '. ' + fixText + plus,
+        'We take comments about ' + iss + ' seriously, and your review has helped us improve. ' + fixText,
+        'This is not the standard we aim for at ' + p + '. ' + fixText + plus,
+        'Your feedback about ' + iss + ' went straight to our team. ' + fixText
+      ][m];
+      close = ['We would love the chance to give you a better stay next time.', 'We hope to welcome you back and show you the improvements.', 'If you stay with us again, message us directly and we will make it right.', 'Thank you again, your feedback helps us get better.', 'We hope you will give us another chance.', 'Please reach out to us directly any time, we are always happy to help.', 'We would be glad to host you again and make it up to you.'][c];
     }
-    var fx = fixesFor(r);
-    if (r.stars === 4) {
-      if (v % 2 === 0) return 'Hi ' + name + ', thank you for staying at ' + p + ' and for the helpful feedback. ' + (fx.length ? fx.join(' ') + ' ' : '') + 'We hope to welcome you back soon.\n\n' + team;
-      return 'Thanks for the four stars, ' + name + '! ' + (fx.length ? 'You are right to mention it: ' + fx[0].charAt(0).toLowerCase() + fx[0].slice(1) + ' ' : 'We are glad you enjoyed the stay. ') + 'We would love to host you again.\n\n' + team;
-    }
-    if (v % 2 === 0) return 'Hi ' + name + ', thank you for telling us, and we are sorry this affected your stay at ' + p + '. ' + (fx.length ? fx.join(' ') + ' ' : 'We have shared your feedback with the team and are fixing it. ') + 'If you stay with us again, message us directly and we will make it right.\n\n' + team;
-    return name + ', we are sorry we let you down on this stay. ' + (fx.length ? fx.join(' ') + ' ' : 'Your feedback has gone straight to the team responsible. ') + 'Thank you for the honest review, it helps us get better.\n\n' + team;
+    return (open + ' ' + mid).replace(/\s+/g, ' ').trim() + ' ' + close + '\n\n' + team;
   }
 
   /* ------------------------------------------------------------------ pieces */
@@ -410,7 +485,7 @@
       var text = st.drafts[r.id] != null ? st.drafts[r.id] : (r.reply ? r.reply.text : suggest(r, st.variant[r.id] || 0));
       var isSug = st.drafts[r.id] == null && !r.reply;
       reply = '<div class="rv-compose"><div class="rc-head"><label for="rv-t-' + r.id + '">' + esc(O.tpl(r.reply ? 'Edit your public reply on {site}' : 'Public reply on {site}', { site: U.platName(r.platform) })) + '</label>' +
-        (isSug ? '<span class="sug">' + O.icon('sparkle') + 'Suggested from the rating and what ' + esc(greetName(r.guest)) + ' wrote</span>' : '') + '<span class="cc" data-cc="' + r.id + '">' + text.length + ' characters</span></div>' +
+        (isSug ? '<span class="sug">' + O.icon('sparkle') + 'Suggested from the rating and what ' + esc(greetName(r.guest)) + ' wrote</span><span class="opt" data-opt="' + r.id + '">' + esc(O.tpl('Option {n} of {total}', { n: ((st.variant[r.id] || 0) % REPLY_OPTIONS) + 1, total: REPLY_OPTIONS })) + '</span>' : '') + '<span class="cc" data-cc="' + r.id + '">' + text.length + ' characters</span></div>' +
         '<textarea class="textarea" id="rv-t-' + r.id + '" data-draft="' + r.id + '" rows="4">' + esc(text) + '</textarea>' +
         '<div class="rc-acts"><button type="button" class="btn btn-primary btn-sm" data-act="post" data-id="' + r.id + '"' + (st.busy === r.id ? ' disabled' : '') + '>' + O.icon('send') + (st.busy === r.id ? 'Posting…' : r.reply ? 'Update reply' : 'Post reply') + '</button>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-act="another" data-id="' + r.id + '">' + O.icon('refresh') + 'Another suggestion</button>' +
@@ -700,7 +775,7 @@
         }
         if (act === 'another') {
           st.variant[r.id] = (st.variant[r.id] || 0) + 1; delete st.drafts[r.id];
-          if (ta) { ta.value = suggest(r, st.variant[r.id]); autosize(ta); st.drafts[r.id] = ta.value; var cc = O.$('[data-cc="' + r.id + '"]', page); if (cc) cc.textContent = O.tpl('{n} characters', { n: ta.value.length }); ta.focus(); }
+          if (ta) { ta.value = suggest(r, st.variant[r.id]); autosize(ta); st.drafts[r.id] = ta.value; var cc = O.$('[data-cc="' + r.id + '"]', page); if (cc) cc.textContent = O.tpl('{n} characters', { n: ta.value.length }); var op = O.$('[data-opt="' + r.id + '"]', page); if (op) op.textContent = O.tpl('Option {n} of {total}', { n: (st.variant[r.id] % REPLY_OPTIONS) + 1, total: REPLY_OPTIONS }); ta.focus(); }
         }
         if (act === 'edit') { st.editing[r.id] = true; ctx.rerender(); var t2 = O.$('[data-draft="' + r.id + '"]', root); if (t2) t2.focus(); }
         if (act === 'canceledit') { delete st.editing[r.id]; delete st.drafts[r.id]; ctx.rerender(); }
