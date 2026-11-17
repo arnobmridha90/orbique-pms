@@ -72,6 +72,8 @@ export async function translate(cfg, text, to, opts = {}) {
   const target = langCode(to);
   if (!cfg.key) throw new TranslateError('Translation is not set up on the server yet (ANTHROPIC_API_KEY is missing).');
   if (!target) throw new TranslateError('Choose a language to translate to.');
+  /* a key pasted with a line break, a space inside it or a curly quote cannot go in an HTTP header: say so, not "network" */
+  if (!/^[\x21-\x7E]+$/.test(cfg.key)) throw new TranslateError('The translation key in Vercel has a stray space, line break or odd character. Paste ANTHROPIC_API_KEY again, then redeploy.');
   const src = String(text || '').trim();
   if (!src) return { lang: '', text: '', same: true };
   if (src.length > MAX_CHARS) throw new TranslateError('This message is too long to translate in one go.');
@@ -91,7 +93,8 @@ export async function translate(cfg, text, to, opts = {}) {
     try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
   } catch (e) {
     const timedOut = ctl.signal.aborted;
-    console.error('[translate]', timedOut ? 'timeout' : 'network');
+    /* the error's kind and code only: its text could echo the request */
+    console.error('[translate]', timedOut ? 'timeout' : 'network', e && e.name, e && e.code, e && e.cause && e.cause.code);
     throw new TranslateError(timedOut ? 'Translation took too long. Please try again.' : 'Could not reach the translation service. Please try again.', { retryable: true });
   } finally {
     clearTimeout(timer);
