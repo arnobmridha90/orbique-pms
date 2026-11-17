@@ -171,6 +171,7 @@
 .pg-inbox .ib-lfoot svg{width:13px;height:13px;}
 /* ---------- right: chat ---------- */
 .pg-inbox .ib-chat{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;}
+.pg-inbox .ib-chat.drop-over{outline:2px dashed var(--accent,#c9892b);outline-offset:-4px;}
 .pg-inbox .ib-head{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;border-bottom:1px solid var(--border);background:var(--surface);min-height:60px;}
 .pg-inbox .ib-back{display:none;}
 .pg-inbox .ib-who{flex:1;min-width:0;display:flex;align-items:center;gap:11px;background:none;border:none;padding:4px;border-radius:10px;text-align:left;}
@@ -1470,9 +1471,34 @@
       function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; }
       function wireComposer() {
         var ta = O.$('#ib-input', chat);
+        wireDrop();
         if (ta) { autosize(ta); }
         O.$$('input[type=file][data-in]', chat).forEach(function (inp) {
           inp.addEventListener('change', function () { addFiles(inp.dataset.in, inp.files); inp.value = ''; });
+        });
+      }
+      /* paste a picture or drop files anywhere in the open chat: same as the attach button */
+      var dropWired = false;
+      function wireDrop() {
+        if (dropWired) return; dropWired = true;
+        var kindOf = function (f) { var t = f.type || ''; return /^image\//.test(t) ? 'photo' : /^video\//.test(t) ? 'video' : /^audio\//.test(t) ? 'audio' : 'doc'; };
+        var give = function (files) {
+          var c = conv(st.sel); if (!c || !files.length) return false;
+          if (isUpd(c)) files = files.filter(function (f) { return /^(image|video)\//.test(f.type || ''); });
+          files.forEach(function (f) { addFiles(kindOf(f), [f]); });
+          return files.length > 0;
+        };
+        var hasFiles = function (e) { var t = e.dataTransfer && e.dataTransfer.types; return !!t && Array.prototype.indexOf.call(t, 'Files') >= 0; };
+        chat.addEventListener('paste', function (e) {
+          var items = (e.clipboardData && e.clipboardData.files) || [], files = Array.prototype.slice.call(items);
+          if (files.length && give(files)) e.preventDefault();
+        });
+        chat.addEventListener('dragover', function (e) { if (hasFiles(e) && O.$('.ib-compose', chat)) { e.preventDefault(); chat.classList.add('drop-over'); } });
+        chat.addEventListener('dragleave', function (e) { if (!chat.contains(e.relatedTarget)) chat.classList.remove('drop-over'); });
+        chat.addEventListener('drop', function (e) {
+          chat.classList.remove('drop-over');
+          if (!hasFiles(e)) return; e.preventDefault();
+          give(Array.prototype.slice.call(e.dataTransfer.files));
         });
       }
       function rebuildComposer() {

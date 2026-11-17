@@ -26,6 +26,7 @@
 import { createSign } from 'node:crypto';
 import { must, records, blob } from './channex-db.js';
 import { waConfig, withToken, graph } from './whatsapp.js';
+import TONES from './shared/tones.cjs';
 
 export const MAX_ATTEMPTS = 6;
 export const MAX_AGE_MS = 2 * 86400000;           // an alert that could not go out for 2 days is dropped, not sent late
@@ -36,8 +37,11 @@ export const PUSH_SOUND = 'orbique_alert';        // scripts/alert-sound.py; And
 export const CHANGE_CHANNEL = 'alerts_change';    // cancellations and date changes: their own tone (app/native/bridge.js)
 export const CHANGE_SOUND = 'orbique_change';
 /** The phone channel and sound for a booking alert kind ('new', 'cancelled', 'changed', 'test'). */
-export function pushTone(kind) {
-  return kind === 'cancelled' || kind === 'changed' ? { channel: CHANGE_CHANNEL, sound: CHANGE_SOUND } : { channel: PUSH_CHANNEL, sound: PUSH_SOUND };
+export function pushTone(kind, tones) {
+  const type = kind === 'cancelled' || kind === 'changed' ? 'change' : 'booking';
+  if (!tones) return type === 'change' ? { channel: CHANGE_CHANNEL, sound: CHANGE_SOUND } : { channel: PUSH_CHANNEL, sound: PUSH_SOUND };
+  const tune = TONES.tuneFor(type, tones);
+  return { channel: TONES.channelId(type, tune), sound: TONES.TUNES[tune].file };
 }
 const CHANNEL_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', expedia: 'Expedia', trip: 'Trip.com', vrbo: 'Vrbo', direct: 'Direct', other: 'Another site' };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -270,13 +274,21 @@ export async function googleAccessToken(cfg, opts = {}) {
 }
 export const resetTokenCache = () => { tokenCache = null; };
 
+/* The phones a query picks, with each phone's tunes (0026 push_devices.tones). Until that column exists the phones
+   come without tunes, so they get the default tunes. */
+async function phones(sb, where) {
+  const r = await where(sb.from('push_devices').select('token, tones'));
+  if (r.error && /tones/.test(String(r.error.message || ''))) return must(await where(sb.from('push_devices').select('token')), 'load phones') || [];
+  return must(r, 'load phones') || [];
+}
+
 export async function sendPush(sb, cfg, orgId, msg, data, opts = {}) {
   if (!cfg.configured) return cfg.invalid ? 'skipped: FIREBASE_SERVICE_ACCOUNT is not a valid service account key' : 'skipped: phone alerts are not set up (FIREBASE_SERVICE_ACCOUNT)';
   // phones of owners and ops managers (0024: other members' phones register for Team chat alerts only)
-  const devices = must(await sb.from('push_devices').select('token').eq('org_id', orgId).eq('booking_alerts', true), 'load phones') || [];
+  const devices = await phones(sb, (q) => q.eq('org_id', orgId).eq('booking_alerts', true));
   if (!devices.length) return 'skipped: no phone has turned on alerts yet';
-  const tone = pushTone(data && data.kind);
-  const r = await fcmSend(sb, cfg, devices, (token) => ({
+  // each phone's own tune for this kind of alert (Booking alerts card; api/_lib/shared/tones.cjs)
+  const r = await fcmSend(sb, cfg, devices, (token, d) => { const tone = pushTone(data && data.kind, d && d.tones); return {
     token,
     notification: { title: msg.title, body: msg.lines.join('\n') },
     data: dataStrings(data),
@@ -284,7 +296,7 @@ export async function sendPush(sb, cfg, orgId, msg, data, opts = {}) {
     android: { priority: 'high', notification: { channel_id: tone.channel, sound: tone.sound, notification_priority: 'PRIORITY_MAX', default_vibrate_timings: false, vibrate_timings: ['0s', '0.4s', '0.2s', '0.4s'] } },
     // iPhone: the same sound from the app bundle (ios/App/App/<sound>.wav), delivered straight away
     apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: tone.sound + '.wav' } } }
-  }), opts);
+  }; }, opts);
   if (r.sent || !r.failed.length) return r.sent ? 'sent' : 'skipped: no phone has turned on alerts yet';
   throw new AlertError('Firebase: ' + r.failed[0], { permanent: false });
 }
@@ -297,16 +309,20 @@ export const TEAM_SOUND = 'orbique_team';
 export async function sendTeamPush(sb, cfg, orgId, userIds, text, data, opts = {}) {
   const users = [...new Set((userIds || []).filter((u) => typeof u === 'string' && u))];
   if (!cfg.configured || !users.length) return { sent: 0, failed: [], phones: 0, skipped: !cfg.configured ? 'phone alerts are not set up' : 'nobody to alert' };
-  const devices = must(await sb.from('push_devices').select('token').eq('org_id', orgId).in('user_id', users), 'load phones') || [];
+  const devices = await phones(sb, (q) => q.eq('org_id', orgId).in('user_id', users));
   if (!devices.length) return { sent: 0, failed: [], phones: 0 };
   const tag = 'team-' + clean(data && data.chatId, 60);
-  const r = await fcmSend(sb, cfg, devices, (token) => ({
-    token,
-    notification: { title: clean(text.title, 80), body: clean(text.body, 180) },
-    data: dataStrings(data),
-    android: { priority: 'high', notification: { channel_id: TEAM_CHANNEL, tag, sound: TEAM_SOUND } },
-    apns: { headers: { 'apns-priority': '10', 'apns-collapse-id': tag }, payload: { aps: { sound: TEAM_SOUND + '.wav', 'thread-id': tag } } }
-  }), opts);
+  const r = await fcmSend(sb, cfg, devices, (token, d) => {
+    const tune = TONES.tuneFor('team', d && d.tones), channel = d && d.tones ? TONES.channelId('team', tune) : TEAM_CHANNEL;
+    const sound = d && d.tones ? TONES.TUNES[tune].file : TEAM_SOUND;
+    return {
+      token,
+      notification: { title: clean(text.title, 80), body: clean(text.body, 180) },
+      data: dataStrings(data),
+      android: { priority: 'high', notification: { channel_id: channel, tag, sound } },
+      apns: { headers: { 'apns-priority': '10', 'apns-collapse-id': tag }, payload: { aps: { sound: sound + '.wav', 'thread-id': tag } } }
+    };
+  }, opts);
   return Object.assign(r, { phones: devices.length });
 }
 
@@ -324,7 +340,7 @@ async function fcmSend(sb, cfg, devices, build, opts = {}) {
     const r = await fetchJson(opts.fetch || fetch, url, {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: build(d.token) })
+      body: JSON.stringify({ message: build(d.token, d) })
     });
     if (r.ok) { sent++; continue; }
     const status = r.body && r.body.error && (r.body.error.status || (r.body.error.details || []).map((x) => x.errorCode).join(','));

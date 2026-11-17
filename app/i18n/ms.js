@@ -8426,5 +8426,16 @@ O.I18N.ms = {
 "New task for you": "Tugasan baharu untuk anda",
 "Sounds in the app": "Bunyi dalam aplikasi",
 "On for this device: a different tone for each kind of alert while Orbique is open": "Hidup untuk peranti ini: nada berbeza bagi setiap jenis amaran semasa Orbique dibuka",
-"Your device's volume still applies. Phone notifications use the same tones.": "Kelantangan peranti anda masih terpakai. Pemberitahuan telefon menggunakan nada yang sama."
+"Your device's volume still applies. Phone notifications use the same tones.": "Kelantangan peranti anda masih terpakai. Pemberitahuan telefon menggunakan nada yang sama.",
+"Chime": "Loceng",
+"Falling bells": "Loceng menurun",
+"Ding ding": "Ding ding",
+"Bloop": "Blup",
+"Marimba": "Marimba",
+"Sparkle": "Kilauan",
+"Doorbell": "Loceng pintu",
+"Harp": "Harpa",
+"Three beeps": "Tiga bip",
+"Glass": "Kaca",
+"Soft chord": "Kord lembut"
 };

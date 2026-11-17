@@ -703,6 +703,7 @@ O.I18N_IGNORE = [
   "input,button,select,a",
   "input[name=qr-scope][value=some]",
   "input[type=file][data-in]",
+  "Files",
   "inventory stock supplies toiletries consumables products items usage",
   "invoice and payment receipt are",
   "invoice is",

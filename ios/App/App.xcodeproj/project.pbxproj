@@ -21,6 +21,13 @@
 		A1E7A0122E00000100C0FFEE /* orbique_message.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0132E00000100C0FFEE /* orbique_message.wav */; };
 		A1E7A0142E00000100C0FFEE /* orbique_team.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0152E00000100C0FFEE /* orbique_team.wav */; };
 		A1E7A0162E00000100C0FFEE /* orbique_task.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0172E00000100C0FFEE /* orbique_task.wav */; };
+		A1E7A0202E00000100C0FFEE /* orbique_sparkle.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0212E00000100C0FFEE /* orbique_sparkle.wav */; };
+		A1E7A0222E00000100C0FFEE /* orbique_doorbell.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0232E00000100C0FFEE /* orbique_doorbell.wav */; };
+		A1E7A0242E00000100C0FFEE /* orbique_harp.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0252E00000100C0FFEE /* orbique_harp.wav */; };
+		A1E7A0262E00000100C0FFEE /* orbique_beep.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0272E00000100C0FFEE /* orbique_beep.wav */; };
+		A1E7A0282E00000100C0FFEE /* orbique_glass.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0292E00000100C0FFEE /* orbique_glass.wav */; };
+		A1E7A0302E00000100C0FFEE /* orbique_pad.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0312E00000100C0FFEE /* orbique_pad.wav */; };
+		A1E7A0322E00000100C0FFEE /* orbique_urgent.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1E7A0332E00000100C0FFEE /* orbique_urgent.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +47,13 @@
 		A1E7A0132E00000100C0FFEE /* orbique_message.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_message.wav; sourceTree = "<group>"; };
 		A1E7A0152E00000100C0FFEE /* orbique_team.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_team.wav; sourceTree = "<group>"; };
 		A1E7A0172E00000100C0FFEE /* orbique_task.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_task.wav; sourceTree = "<group>"; };
+		A1E7A0212E00000100C0FFEE /* orbique_sparkle.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_sparkle.wav; sourceTree = "<group>"; };
+		A1E7A0232E00000100C0FFEE /* orbique_doorbell.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_doorbell.wav; sourceTree = "<group>"; };
+		A1E7A0252E00000100C0FFEE /* orbique_harp.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_harp.wav; sourceTree = "<group>"; };
+		A1E7A0272E00000100C0FFEE /* orbique_beep.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_beep.wav; sourceTree = "<group>"; };
+		A1E7A0292E00000100C0FFEE /* orbique_glass.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_glass.wav; sourceTree = "<group>"; };
+		A1E7A0312E00000100C0FFEE /* orbique_pad.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_pad.wav; sourceTree = "<group>"; };
+		A1E7A0332E00000100C0FFEE /* orbique_urgent.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = orbique_urgent.wav; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +102,13 @@
 				A1E7A0132E00000100C0FFEE /* orbique_message.wav */,
 				A1E7A0152E00000100C0FFEE /* orbique_team.wav */,
 				A1E7A0172E00000100C0FFEE /* orbique_task.wav */,
+				A1E7A0212E00000100C0FFEE /* orbique_sparkle.wav */,
+				A1E7A0232E00000100C0FFEE /* orbique_doorbell.wav */,
+				A1E7A0252E00000100C0FFEE /* orbique_harp.wav */,
+				A1E7A0272E00000100C0FFEE /* orbique_beep.wav */,
+				A1E7A0292E00000100C0FFEE /* orbique_glass.wav */,
+				A1E7A0312E00000100C0FFEE /* orbique_pad.wav */,
+				A1E7A0332E00000100C0FFEE /* orbique_urgent.wav */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -168,6 +189,13 @@
 				A1E7A0122E00000100C0FFEE /* orbique_message.wav in Resources */,
 				A1E7A0142E00000100C0FFEE /* orbique_team.wav in Resources */,
 				A1E7A0162E00000100C0FFEE /* orbique_task.wav in Resources */,
+				A1E7A0202E00000100C0FFEE /* orbique_sparkle.wav in Resources */,
+				A1E7A0222E00000100C0FFEE /* orbique_doorbell.wav in Resources */,
+				A1E7A0242E00000100C0FFEE /* orbique_harp.wav in Resources */,
+				A1E7A0262E00000100C0FFEE /* orbique_beep.wav in Resources */,
+				A1E7A0282E00000100C0FFEE /* orbique_glass.wav in Resources */,
+				A1E7A0302E00000100C0FFEE /* orbique_pad.wav in Resources */,
+				A1E7A0322E00000100C0FFEE /* orbique_urgent.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

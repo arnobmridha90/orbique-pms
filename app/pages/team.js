@@ -56,6 +56,7 @@
 .pg-team .tc-mute svg{width:14px;height:14px;}
 .pg-team .tc-empty{padding:24px 16px;text-align:center;color:var(--muted);font-size:13px;}
 .pg-team .tc-chat{display:flex;flex-direction:column;min-width:0;min-height:0;}
+.pg-team .tc-chat.drop-over{outline:2px dashed var(--accent,#c9892b);outline-offset:-4px;}
 .pg-team .tc-head{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;border-bottom:1px solid var(--border);min-height:60px;}
 .pg-team .tc-head .avatar, .pg-team .tc-head .tc-av{width:40px;height:40px;font-size:14px;}
 .pg-team .tc-who{flex:1;min-width:0;display:flex;align-items:center;gap:11px;background:none;border:none;padding:4px;border-radius:10px;text-align:left;color:var(--text);cursor:pointer;}
@@ -770,11 +771,22 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
         ta.addEventListener('input', function () { U_STATE.drafts[c.id] = ta.value; grow(); });
         ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !isPhone()) { e.preventDefault(); submit(); } });
         form.addEventListener('submit', function (e) { e.preventDefault(); submit(); });
-        file.addEventListener('change', function () {
-          var f = file.files && file.files[0]; file.value = ''; if (!f) return;
+        function sendFiles(list) {
+          list = list.slice(); if (!list.length) return;
           var text = ta.value; sendBtn.disabled = true;
-          TCX.send(c.id, text, f).then(function () { if (text) { ta.value = ''; U_STATE.drafts[c.id] = ''; grow(); } }, function (e) { U.toast(errText(e, t('sendFailed')), 'bad'); }).then(function () { sendBtn.disabled = false; });
+          list.reduce(function (p, f, i) {
+            return p.then(function () { return TCX.send(c.id, i === 0 ? text : '', f); });
+          }, Promise.resolve()).then(function () { if (text) { ta.value = ''; U_STATE.drafts[c.id] = ''; grow(); } }, function (e) { U.toast(errText(e, t('sendFailed')), 'bad'); }).then(function () { sendBtn.disabled = false; });
+        }
+        file.addEventListener('change', function () {
+          var f = file.files && file.files[0]; file.value = ''; if (f) sendFiles([f]);
         });
+        /* paste a picture or drop files anywhere in the open chat: same as the attach button */
+        var zone = chatEl, hasFiles = function (e) { var ty = e.dataTransfer && e.dataTransfer.types; return !!ty && Array.prototype.indexOf.call(ty, 'Files') >= 0; };
+        zone.onpaste = function (e) { var fs = Array.prototype.slice.call((e.clipboardData && e.clipboardData.files) || []); if (fs.length) { e.preventDefault(); sendFiles(fs); } };
+        zone.ondragover = function (e) { if (hasFiles(e)) { e.preventDefault(); zone.classList.add('drop-over'); } };
+        zone.ondragleave = function (e) { if (!zone.contains(e.relatedTarget)) zone.classList.remove('drop-over'); };
+        zone.ondrop = function (e) { zone.classList.remove('drop-over'); if (!hasFiles(e)) return; e.preventDefault(); sendFiles(Array.prototype.slice.call(e.dataTransfer.files)); };
         function submit() {
           var text = ta.value; if (!TC.cleanBody(text)) return;
           ta.value = ''; U_STATE.drafts[c.id] = ''; grow();

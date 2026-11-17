@@ -8426,5 +8426,16 @@ O.I18N.bn = {
 "New task for you": "আপনার জন্য নতুন কাজ",
 "Sounds in the app": "অ্যাপে শব্দ",
 "On for this device: a different tone for each kind of alert while Orbique is open": "এই ডিভাইসে চালু: Orbique খোলা থাকাকালীন প্রতিটি ধরনের সতর্কতার জন্য আলাদা সুর",
-"Your device's volume still applies. Phone notifications use the same tones.": "আপনার ডিভাইসের ভলিউম প্রযোজ্য থাকবে। ফোনের নোটিফিকেশনেও একই সুর ব্যবহার হয়।"
+"Your device's volume still applies. Phone notifications use the same tones.": "আপনার ডিভাইসের ভলিউম প্রযোজ্য থাকবে। ফোনের নোটিফিকেশনেও একই সুর ব্যবহার হয়।",
+"Chime": "চাইম",
+"Falling bells": "নামা ঘণ্টা",
+"Ding ding": "ডিং ডিং",
+"Bloop": "ব্লুপ",
+"Marimba": "মারিম্বা",
+"Sparkle": "ঝিলমিল",
+"Doorbell": "দরজার ঘণ্টা",
+"Harp": "হার্প",
+"Three beeps": "তিনটি বিপ",
+"Glass": "কাচ",
+"Soft chord": "নরম কর্ড"
 };

@@ -288,19 +288,50 @@
        made with a sound file the installed app does not have would keep the wrong sound for good, so older builds keep
        the old Team chat channel and get no change channel until they update (those alerts then use the phone's
        default channel). */
-    var TONES_BUILD = 17601;
-    var hasTones = function () {
-      if (!App || !App.getInfo) return Promise.resolve(false);
-      return App.getInfo().then(function (i) { return parseInt(i && i.build, 10) >= TONES_BUILD; }, function () { return false; });
+    var TONES_BUILD = 17601, TUNES_BUILD = 17801, buildNo = null;
+    var build = function () {
+      if (buildNo !== null) return Promise.resolve(buildNo);
+      if (!App || !App.getInfo) return Promise.resolve(0);
+      return App.getInfo().then(function (i) { buildNo = parseInt(i && i.build, 10) || 0; return buildNo; }, function () { return 0; });
+    };
+    var hasTones = function () { return build().then(function (b) { return b >= TONES_BUILD; }); };
+    /* The whole tune library (O.tones, api/_lib/shared/tones.cjs) is inside builds from TUNES_BUILD on. Only those send
+       the tunes picked on the Booking alerts card to the server and make a channel for each picked tune: Android fixes a
+       channel's sound, so a type with a non-default tune gets its own channel (tone_<type>_<tune>), and channels for
+       tunes no longer picked are removed. Older builds keep the default tunes. */
+    var hasTunes = function () { return build().then(function (b) { return b >= TUNES_BUILD && !!O.tones && !!O.alertSound; }); };
+    var tuneChannels = function () {
+      if (platform !== 'android' || !Push.createChannel) return Promise.resolve();
+      return hasTunes().then(function (ok) {
+        if (!ok) return;
+        var TN = O.tones, ch = O.alertSound.choice(), want = {};
+        var make = TN.TYPE_ORDER.filter(function (t) { return TN.TYPES[t].channel && ch[t] !== TN.TYPES[t].tune; }).map(function (t) {
+          var id = TN.channelId(t, ch[t]); want[id] = 1;
+          return Push.createChannel({ id: id, name: TN.TYPES[t].name + ' (' + TN.TUNES[ch[t]].name + ')', description: TN.TYPES[t].name + ' alerts with the ' + TN.TUNES[ch[t]].name + ' tune',
+            importance: t === 'team' ? 4 : 5, visibility: t === 'team' ? 0 : 1, sound: TN.TUNES[ch[t]].file, vibration: true, lights: true, lightColor: '#14B8A6' }).catch(function () {});
+        });
+        return Promise.all(make).then(function () {
+          if (!Push.listChannels || !Push.deleteChannel) return;
+          return Push.listChannels().then(function (r) {
+            return Promise.all(((r && r.channels) || []).filter(function (c) { return /^tone_/.test(c.id) && !want[c.id]; })
+              .map(function (c) { return Push.deleteChannel({ id: c.id }).catch(function () {}); }));
+          }).catch(function () {});
+        });
+      });
     };
     /* every member's phone registers: the server gives booking alerts only to owners and ops managers (api/alerts.js) */
     var canAlert = function () { return !!O.auth.orgId(); };
     var settle = function (r) { var w = waiting; waiting = []; w.forEach(function (fn) { fn(r); }); };
     var sendToken = function (token) {
       if (!canAlert()) return Promise.resolve({ ok: false, message: 'Open a workspace first.' });
-      return O.auth.call('/api/alerts', { action: 'register-device', orgId: O.auth.orgId(), token: token, platform: platform })
-        .then(function () { return { ok: true }; }, function (e) { return { ok: false, message: (e && e.message) || 'This phone could not be signed up for alerts.' }; });
+      return hasTunes().then(function (tunes) {
+        var body = { action: 'register-device', orgId: O.auth.orgId(), token: token, platform: platform };
+        if (tunes) body.tones = O.alertSound.choice(); /* this phone's tune per alert type */
+        return O.auth.call('/api/alerts', body);
+      }).then(function () { return { ok: true }; }, function (e) { return { ok: false, message: (e && e.message) || 'This phone could not be signed up for alerts.' }; });
     };
+    /* a tune picked on the Booking alerts card: make its channel, then tell the server */
+    O.on('alert-tones', function () { if (pushToken) tuneChannels().then(function () { return sendToken(pushToken); }); });
     Push.addListener('registration', function (t) { pushToken = t && t.value; sendToken(pushToken).then(settle); });
     Push.addListener('registrationError', function (e) { settle({ ok: false, message: 'The phone could not sign up for notifications' + (e && e.error ? ': ' + e.error : '.') }); });
     Push.addListener('pushNotificationReceived', function (n) { /* the app is open: the tone and a toast instead of a system notification */
@@ -338,7 +369,7 @@
           if (!tones) return Push.createChannel(TEAM_OLD).catch(function () {});
           return Push.createChannel(CHANGE).catch(function () {}).then(function () { return Push.createChannel(TEAM).catch(function () {}); })
             .then(function () { return Push.deleteChannel ? Push.deleteChannel({ id: TEAM_OLD.id }).catch(function () {}) : null; });
-        }).then(function () {
+        }).then(tuneChannels).then(function () {
           /* the first test apps made a quiet "bookings" channel; channels cannot change, so it goes and LOUD replaces it */
           return Push.deleteChannel ? Push.deleteChannel({ id: 'bookings' }).catch(function () {}) : null;
         }) : Promise.resolve();

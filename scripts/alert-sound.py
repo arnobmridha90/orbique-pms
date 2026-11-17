@@ -47,12 +47,27 @@ MARIMBA = [(1.0, 1.00, 0.16), (4.0, 0.30, 0.03), (9.8, 0.10, 0.012)]
 BLOOP = [(1.0, 1.00, 0.12), (2.0, 0.12, 0.06)]
 
 # name -> (file, length in seconds, notes); a note is (start s, frequency Hz, loudness, partials, glide to Hz or None)
+PLUCK = [(1.0, 1.00, 0.30), (2.0, 0.45, 0.12), (3.0, 0.20, 0.06), (4.0, 0.10, 0.03)]
+BEEP = [(1.0, 1.00, 0.06), (3.0, 0.15, 0.03)]
+GLASS = [(1.0, 1.00, 0.60), (2.76, 0.30, 0.25), (5.4, 0.12, 0.10)]
+PAD = [(1.0, 1.00, 0.55), (2.0, 0.20, 0.30)]
+
+# The tune library: name -> (file, length in seconds, notes); a note is (start s, frequency Hz, loudness, partials,
+# glide to Hz or None). Every alert type can use any tune (Automations, Booking alerts); the defaults per type are the
+# first five, so phones that have not chosen keep their first channels.
 TONES = {
-    'booking': ('orbique_alert', 1.3, [(0.00, 783.99, 0.80, BELL, None), (0.14, 1046.50, 0.90, BELL, None), (0.28, 1318.51, 1.00, BELL, None)]),
-    'change':  ('orbique_change', 1.1, [(0.00, 1318.51, 1.00, BELL, None), (0.20, 987.77, 0.95, BELL, None)]),
-    'message': ('orbique_message', 0.9, [(0.00, 1567.98, 0.90, SHORT_BELL, None), (0.16, 1567.98, 1.00, SHORT_BELL, None)]),
-    'team':    ('orbique_team', 0.5, [(0.00, 520.00, 1.00, BLOOP, 880.00)]),
-    'task':    ('orbique_task', 0.7, [(0.00, 440.00, 0.90, MARIMBA, None), (0.15, 659.25, 1.00, MARIMBA, None)]),
+    'chime':    ('orbique_alert', 1.3, [(0.00, 783.99, 0.80, BELL, None), (0.14, 1046.50, 0.90, BELL, None), (0.28, 1318.51, 1.00, BELL, None)]),
+    'falling':  ('orbique_change', 1.1, [(0.00, 1318.51, 1.00, BELL, None), (0.20, 987.77, 0.95, BELL, None)]),
+    'dingding': ('orbique_message', 0.9, [(0.00, 1567.98, 0.90, SHORT_BELL, None), (0.16, 1567.98, 1.00, SHORT_BELL, None)]),
+    'bloop':    ('orbique_team', 0.5, [(0.00, 520.00, 1.00, BLOOP, 880.00)]),
+    'marimba':  ('orbique_task', 0.7, [(0.00, 440.00, 0.90, MARIMBA, None), (0.15, 659.25, 1.00, MARIMBA, None)]),
+    'sparkle':  ('orbique_sparkle', 0.9, [(0.00, 2093.00, 0.8, SHORT_BELL, None), (0.07, 1760.00, 0.8, SHORT_BELL, None), (0.14, 1567.98, 0.85, SHORT_BELL, None), (0.21, 1318.51, 1.0, SHORT_BELL, None)]),
+    'doorbell': ('orbique_doorbell', 1.4, [(0.00, 659.25, 1.00, BELL, None), (0.42, 523.25, 1.00, BELL, None)]),
+    'harp':     ('orbique_harp', 1.2, [(0.00, 523.25, 0.7, PLUCK, None), (0.06, 659.25, 0.75, PLUCK, None), (0.12, 783.99, 0.8, PLUCK, None), (0.18, 1046.50, 0.9, PLUCK, None), (0.24, 1318.51, 1.0, PLUCK, None)]),
+    'beeps':    ('orbique_beep', 0.7, [(0.00, 1760.00, 1.0, BEEP, None), (0.18, 1760.00, 1.0, BEEP, None), (0.36, 1760.00, 1.0, BEEP, None)]),
+    'glass':    ('orbique_glass', 1.4, [(0.00, 1174.66, 1.0, GLASS, None), (0.25, 1567.98, 0.9, GLASS, None)]),
+    'pad':      ('orbique_pad', 1.3, [(0.00, 523.25, 0.8, PAD, None), (0.00, 783.99, 0.6, PAD, None), (0.30, 659.25, 0.8, PAD, None)]),
+    'urgent':   ('orbique_urgent', 1.0, [(0.00, 880.00, 1.0, SHORT_BELL, None), (0.15, 1318.51, 1.0, SHORT_BELL, None), (0.30, 880.00, 1.0, SHORT_BELL, None), (0.45, 1318.51, 1.0, SHORT_BELL, None)]),
 }
 FOLDERS = ['android/app/src/main/res/raw', 'ios/App/App', 'public/sounds']
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -101,7 +116,7 @@ def main():
         for folder in FOLDERS:
             write(os.path.join(ROOT, folder, name + '.wav'), samples)
         rms = math.sqrt(sum(x * x for x in samples) / len(samples))
-        print('%-8s %s.wav  %.2f s, RMS %.1f dBFS' % (kind, name, len(samples) / RATE, 20 * math.log10(rms)))
+        print('%-9s %s.wav  %.2f s, RMS %.1f dBFS' % (kind, name, len(samples) / RATE, 20 * math.log10(rms)))
 
 
 if __name__ == '__main__':

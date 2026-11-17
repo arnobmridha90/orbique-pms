@@ -17,6 +17,7 @@ import { ok, fail, send, cors, readJson, bearer, bad, forbidden, uuid as uuidFie
 import { requireAdminClient, check, caller, membership } from './_lib/supabase.js';
 import { channelStatus, queueTest, pushConfig, sendTeamPush } from './_lib/alerts.js';
 import TC from './_lib/shared/teamchat.cjs';
+import TONES from './_lib/shared/tones.cjs';
 import { teamTranslate } from './_lib/team-translate.js';
 
 const ALERT_ROLES = ['owner', 'ops'];
@@ -49,7 +50,13 @@ const ACTIONS = {
     const token = deviceToken(body.token);
     const platform = ['android', 'ios'].includes(body.platform) ? body.platform : 'android';
     const bookingAlerts = ALERT_ROLES.includes(m.role);
-    check(await sb.from('push_devices').upsert({ token, org_id: orgId, user_id: me.id, platform, booking_alerts: bookingAlerts, updated_at: new Date().toISOString() }, { onConflict: 'token' }), 'save phone');
+    const row = { token, org_id: orgId, user_id: me.id, platform, booking_alerts: bookingAlerts, updated_at: new Date().toISOString() };
+    // the tune per alert type picked on this phone (only sent by app builds that have every tune's sound file)
+    if (body.tones && typeof body.tones === 'object') row.tones = TONES.changes(body.tones);
+    let saved = await sb.from('push_devices').upsert(row, { onConflict: 'token' });
+    // before 0026 (push_devices.tones) the phone is saved without its tunes
+    if (saved.error && row.tones && /tones/.test(String(saved.error.message || ''))) { delete row.tones; saved = await sb.from('push_devices').upsert(row, { onConflict: 'token' }); }
+    check(saved, 'save phone');
     return { registered: true, bookingAlerts };
   },
   'unregister-device': async (sb, body, me) => {
