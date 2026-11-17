@@ -8314,7 +8314,7 @@ O.I18N.zh = {
 "Cost coverage": "成本覆盖",
 "Costs come from each unit’s file (rent and bills). Your access does not include unit files.": "成本来自每个单位的档案（租金和账单）。您的权限不包括单位档案。",
 "Costs that stay the same every month, on top of the rent and bills in the unit files: salaries, software, accounting, insurance": "每月固定不变的成本（单位档案中的租金和账单之外）：薪水、软件、会计、保险",
-"Costs this month: {month}": "本月成本：{month}",
+"Financials this month: {month}": "本月財務：{month}",
 "Covered so far": "目前已覆盖",
 "Each cost counts from this month on. Removing one stops it from next month; earlier months keep it.": "每项成本从本月起计算。删除后从下个月停止；之前的月份保留。",
 "Expected for the month": "本月预计",
