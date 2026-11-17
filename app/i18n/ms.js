@@ -8420,5 +8420,11 @@ O.I18N.ms = {
 "The forecast is what was expected at the start of the month from the months before; compare it with the cost spent to see how close it gets.": "Ramalan ialah apa yang dijangka pada awal bulan daripada bulan-bulan sebelumnya; bandingkan dengan kos dibelanjakan untuk melihat sejauh mana ia tepat.",
 "Forecast": "Ramalan",
 "Based on": "Berdasarkan",
-"Option {n} of {total}": "Pilihan {n} daripada {total}"
+"Option {n} of {total}": "Pilihan {n} daripada {total}",
+"Cancellation or new dates": "Pembatalan atau tarikh baharu",
+"Guest message": "Mesej tetamu",
+"New task for you": "Tugasan baharu untuk anda",
+"Sounds in the app": "Bunyi dalam aplikasi",
+"On for this device: a different tone for each kind of alert while Orbique is open": "Hidup untuk peranti ini: nada berbeza bagi setiap jenis amaran semasa Orbique dibuka",
+"Your device's volume still applies. Phone notifications use the same tones.": "Kelantangan peranti anda masih terpakai. Pemberitahuan telefon menggunakan nada yang sama."
 };

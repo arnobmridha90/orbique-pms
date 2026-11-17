@@ -190,8 +190,8 @@ async function buildMobile() {
   fs.mkdirSync(www, { recursive: true });
   fs.writeFileSync(path.join(www, 'index.html'), page());
   writeI18n(www);
-  /* the alert chime (scripts/alert-sound.py) is played by O.alertSound from sounds/ next to index.html */
-  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'sounds/orbique_alert.wav']) {
+  /* the alert tones (scripts/alert-sound.py) are played by O.alertSound from sounds/ next to index.html */
+  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'sounds/orbique_alert.wav', 'sounds/orbique_change.wav', 'sounds/orbique_message.wav', 'sounds/orbique_team.wav', 'sounds/orbique_task.wav']) {
     const src = path.join(ROOT, 'public', f);
     if (fs.existsSync(src)) copy(src, path.join(www, f));
   }

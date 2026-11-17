@@ -499,7 +499,7 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
     if (TC.ms(m.at) >= TC.ms(c.lastAt)) { c.last = m; c.lastAt = m.at; }
     if (!mine && !open) c.unread = (c.unread || 0) + 1;
     TC.sortChats(S.chats);
-    if (!mine && !c.muted && O.alertSound) O.alertSound.play();
+    if (!mine && !c.muted && O.alertSound) O.alertSound.play('team');
     if (!mine && open) TCX.markRead(m.chatId).catch(function () {});
     if (!mine && !open && O.state.page !== 'team') U.toast(TC.pushText(c, nameOf(m.sender), m).title + ': ' + TC.pushText(c, nameOf(m.sender), m).body);
     changed({ thread: m.chatId, list: true });

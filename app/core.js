@@ -5,7 +5,7 @@
    O.chart (line, bars, spark, hbars) · O.download / O.csv / O.pdf
    O.booking.open · O.invoice · O.lock · O.checklist
    O.clock (real Malaysia time) · O.sync (saved data) · O.PERMS / O.can (staff access)
-   O.automation (background jobs) · O.voice (read aloud) · O.alertSound (alert chime) · O.guestApi (guest app data)
+   O.automation (background jobs) · O.voice (read aloud) · O.alertSound (alert tones) · O.guestApi (guest app data)
    Loaded after data.js and before every pages/*.js file.
    =================================================================== */
 (function () {
@@ -1974,68 +1974,86 @@
   };
 
   /* ===================================================================
-     ALERT SOUND: O.alertSound.play() / .test() / .muted() / .setMuted(on)
-     Orbique's own loud chime (scripts/alert-sound.py -> sounds/orbique_alert.wav) at full volume, for a new booking
-     from a booking site or a new guest message while the app is open (web and phone app). Muted per device
-     (O.store 'alertSoundMuted'; the switch is on the Booking alerts card in Automations). Browsers only allow sound
-     after the person has tapped or typed on the page once, so that first tap unlocks it and earlier calls stay silent.
-     A call within 3 seconds of the last sound is skipped, so a phone alert and the live update for the same booking
-     ring once. Without the file (the single-file test copy, or offline before it loaded) the same three notes are
+     ALERT SOUND: O.alertSound.play(kind) / .test(kind) / .muted() / .setMuted(on) / .kinds
+     A different tone for each kind of alert (Arnob: "need different notification tone for new booking, new guest
+     message, new team chat, new task"), at full volume, while the app is open (web and phone app):
+       booking  new booking from a booking site          rising bell chime   sounds/orbique_alert.wav
+       change   booking cancelled or dates changed       two falling bells   sounds/orbique_change.wav
+       message  new guest message                        quick "ding ding"   sounds/orbique_message.wav
+       team     new Team chat message                    soft "bloop"        sounds/orbique_team.wav
+       task     new task given to you                    marimba knocks      sounds/orbique_task.wav
+     The files come from scripts/alert-sound.py; the phone app's notifications use the same files (app/native/bridge.js).
+     Muted per device (O.store 'alertSoundMuted'; the switch is on the Booking alerts card in Automations). Browsers only
+     allow sound after the person has tapped or typed on the page once, so that first tap unlocks it and earlier calls
+     stay silent. A call within 3 seconds of the last sound is skipped, so a phone alert and the live update for the same
+     booking ring once. Without a file (the single-file test copy, or offline before it loaded) the same notes are
      played with the browser's oscillators. The device's own volume (and an iPhone's silent switch) still applies.
-     play() -> true when it rang. test() rings even when muted (the "Play" button).
+     play(kind) -> true when it rang (an unknown kind plays 'booking'). test(kind) rings even when muted ("Play").
      =================================================================== */
   O.alertSound = (function () {
-    var KEY = 'alertSoundMuted', GAP = 3000, ctx = null, buf = null, loading = null, last = 0, unlocked = false;
-    var NOTES = [[0, 783.99, 0.8], [0.14, 1046.5, 0.9], [0.28, 1318.51, 1]], PARTIALS = [[1, 1, 0.42], [2, 0.38, 0.2], [3, 0.16, 0.1]];
+    var KEY = 'alertSoundMuted', GAP = 3000, ctx = null, bufs = {}, loading = {}, last = 0, unlocked = false;
+    var BELL = [[1, 1, 0.42], [2, 0.38, 0.2], [3, 0.16, 0.1]], SHORT = [[1, 1, 0.22], [2, 0.3, 0.1]], WOOD = [[1, 1, 0.16], [4, 0.3, 0.03]], BLOOP = [[1, 1, 0.12], [2, 0.12, 0.06]];
+    /* kind -> [file, [[start s, Hz, loudness, partials, glide to Hz]]]; the same notes as scripts/alert-sound.py */
+    var TONES = {
+      booking: ['orbique_alert', [[0, 783.99, 0.8, BELL], [0.14, 1046.5, 0.9, BELL], [0.28, 1318.51, 1, BELL]]],
+      change: ['orbique_change', [[0, 1318.51, 1, BELL], [0.2, 987.77, 0.95, BELL]]],
+      message: ['orbique_message', [[0, 1567.98, 0.9, SHORT], [0.16, 1567.98, 1, SHORT]]],
+      team: ['orbique_team', [[0, 520, 1, BLOOP, 880]]],
+      task: ['orbique_task', [[0, 440, 0.9, WOOD], [0.15, 659.25, 1, WOOD]]]
+    };
+    function kindOf(k) { return TONES[k] ? k : 'booking'; }
     function Ctor() { return window.AudioContext || window.webkitAudioContext; }
     function context() { if (!ctx && Ctor()) { try { ctx = new (Ctor())(); } catch (e) { ctx = null; } } return ctx; }
-    /* the web app serves it at /sounds/ (also inside the phone app when its screens come from the live site); the
-       phone app's bundled copy (config.js native: true) and a local file have it next to index.html */
-    function url() { return (/^https?:$/.test(location.protocol) && !(O.native && (window.ORBIQUE_CONFIG || {}).native) ? '/' : '') + 'sounds/orbique_alert.wav'; }
-    function load() {
+    /* the web app serves them at /sounds/ (also inside the phone app when its screens come from the live site); the
+       phone app's bundled copy (config.js native: true) and a local file have them next to index.html */
+    function url(k) { return (/^https?:$/.test(location.protocol) && !(O.native && (window.ORBIQUE_CONFIG || {}).native) ? '/' : '') + 'sounds/' + TONES[k][0] + '.wav'; }
+    function load(k) {
       var c = context();
-      if (buf || loading || !c || !window.fetch || /^file:/.test(location.href)) return;
-      loading = fetch(url()).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      if (bufs[k] || loading[k] || !c || !window.fetch || /^file:/.test(location.href)) return;
+      loading[k] = fetch(url(k)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
         .then(function (ab) { return new Promise(function (ok, bad) { var p = c.decodeAudioData(ab, ok, bad); if (p && p.then) p.then(ok, bad); }); })
-        .then(function (b) { buf = b; }, function () { loading = null; /* try again next time */ });
+        .then(function (b) { bufs[k] = b; }, function () { loading[k] = null; /* try again next time */ });
     }
-    function synth(c) {
+    function synth(c, k) {
       var t0 = c.currentTime + 0.02, master = c.createGain();
       master.gain.value = 0.42; master.connect(c.destination);
-      NOTES.forEach(function (n) {
-        PARTIALS.forEach(function (p) {
+      TONES[k][1].forEach(function (n) {
+        n[3].forEach(function (p) {
           var o = c.createOscillator(), g = c.createGain(), t = t0 + n[0];
-          o.type = 'sine'; o.frequency.value = n[1] * p[0];
+          o.type = 'sine'; o.frequency.setValueAtTime(n[1] * p[0], t);
+          if (n[4]) o.frequency.linearRampToValueAtTime(n[4] * p[0], t + 0.12);
           g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(n[2] * p[1], t + 0.004); g.gain.setTargetAtTime(0, t + 0.004, p[2] / 2.5);
           o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.3);
         });
       });
     }
-    function ring(force) {
+    function ring(k, force) {
+      k = kindOf(k);
       if (!force && (muted() || Date.now() - last < GAP)) return false;
       var c = context(); if (!c) return false;
       if (c.state === 'suspended' && c.resume) c.resume().catch(function () {});
       if (!force && !unlocked) return false;
       last = Date.now();
       try {
-        if (buf) { var s = c.createBufferSource(), g = c.createGain(); g.gain.value = 1; s.buffer = buf; s.connect(g); g.connect(c.destination); s.start(0); }
-        else { load(); synth(c); }
+        if (bufs[k]) { var s = c.createBufferSource(), g = c.createGain(); g.gain.value = 1; s.buffer = bufs[k]; s.connect(g); g.connect(c.destination); s.start(0); }
+        else { load(k); synth(c, k); }
       } catch (e) { return false; }
       return true;
     }
     function muted() { return O.store.get(KEY, false) === true; }
-    /* the first tap or key press: wake the audio (a silent sample for older iPhones) and fetch the sound */
+    /* the first tap or key press: wake the audio (a silent sample for older iPhones) and fetch the sounds */
     function unlock() {
       var c = context(); if (!c) return;
       if (c.state === 'suspended' && c.resume) c.resume().catch(function () {});
       try { var s = c.createBufferSource(); s.buffer = c.createBuffer(1, 1, 22050); s.connect(c.destination); s.start(0); } catch (e) {}
-      unlocked = true; load();
+      unlocked = true; Object.keys(TONES).forEach(load);
       ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { document.removeEventListener(ev, unlock, true); });
     }
     if (!O.guestToken()) ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlock, true); });
     return {
-      play: function () { return ring(false); },
-      test: function () { unlock(); return ring(true); },
+      kinds: Object.keys(TONES),
+      play: function (kind) { return ring(kind, false); },
+      test: function (kind) { unlock(); return ring(kind, true); },
       muted: muted,
       setMuted: function (on) { O.store.set(KEY, !!on); }
     };

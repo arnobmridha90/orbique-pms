@@ -113,7 +113,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png sounds/orbique_alert.wav vendor/supabase.js vendor/jspdf.umd.min.js vendor/maplibre-gl.js vendor/maplibre-gl.css vendor/maplibre-gl.LICENSE.txt vendor/native.js i18n/bn.js i18n/ms.js i18n/zh.js; do
+          for f in index.html privacy.html config.js sw.js manifest.webmanifest icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png sounds/orbique_alert.wav sounds/orbique_change.wav sounds/orbique_message.wav sounds/orbique_team.wav sounds/orbique_task.wav vendor/supabase.js vendor/jspdf.umd.min.js vendor/maplibre-gl.js vendor/maplibre-gl.css vendor/maplibre-gl.LICENSE.txt vendor/native.js i18n/bn.js i18n/ms.js i18n/zh.js; do
             test -s "dist/$f" || { echo "::error::dist/$f is missing"; exit 1; }
           done
           grep -q 'O.geo' dist/index.html || { echo "::error::api/_lib/shared/geo.cjs missing from the production page"; exit 1; }

@@ -8420,5 +8420,11 @@ O.I18N.zh = {
 "The forecast is what was expected at the start of the month from the months before; compare it with the cost spent to see how close it gets.": "预测是月初根据之前月份预计的金额；与已花费成本比较，看看有多接近。",
 "Forecast": "预测",
 "Based on": "依据",
-"Option {n} of {total}": "第 {n} 个，共 {total} 个"
+"Option {n} of {total}": "第 {n} 个，共 {total} 个",
+"Cancellation or new dates": "取消或日期變更",
+"Guest message": "房客訊息",
+"New task for you": "你的新任務",
+"Sounds in the app": "應用程式內的提示音",
+"On for this device: a different tone for each kind of alert while Orbique is open": "此裝置已開啟：Orbique 開啟時，每種提醒都有不同的提示音",
+"Your device's volume still applies. Phone notifications use the same tones.": "仍以裝置音量為準。手機通知也使用相同的提示音。"
 };

@@ -193,7 +193,8 @@ test('the Team chat phone alert: only the chosen people\'s phones, the Team chat
   assert.deepEqual(sent[0].data, { kind: 'team', chatId: 'g123' });
   assert.equal(sent[0].android.notification.channel_id, TEAM_CHANNEL);
   assert.equal(sent[0].android.notification.tag, 'team-g123');
-  assert.equal(sent[0].apns.payload.aps.sound, 'default');
+  assert.equal(sent[0].apns.payload.aps.sound, 'orbique_team.wav');
+  assert.equal(sent[0].android.notification.sound, 'orbique_team');
   // nobody, or not set up: nothing is sent
   assert.equal((await sendTeamPush(sb, cfg, 'org-1', [], text, {}, { fetch })).sent, 0);
   assert.equal((await sendTeamPush(sb, pushConfig({}), 'org-1', ['user-a'], text, {}, { fetch })).sent, 0);
@@ -208,7 +209,8 @@ test('the bridge opens a Team chat alert and the app registers every member\'s p
   const src = fs.readFileSync(new URL('../app/native/bridge.js', import.meta.url), 'utf8');
   assert.match(src, /kind === 'team'/);
   assert.match(src, /O\.go\('team', \{ chatId: nd\.chatId \}\)/);
-  assert.match(src, /id: 'team_chat'/);
+  assert.match(src, /id: 'team_tone'/);
+  assert.match(src, /id: 'team_chat'/, 'older app builds keep the first Team chat channel');
   const api = fs.readFileSync(new URL('../api/alerts.js', import.meta.url), 'utf8');
   assert.match(api, /booking_alerts: bookingAlerts/);
 });

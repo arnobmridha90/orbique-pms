@@ -3,13 +3,14 @@
  *
  *   node --test tests/alerts.test.mjs
  */
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, createVerify } from 'node:crypto';
 import { fakeSb, op } from './inbox/fake-sb.mjs';
 import {
   normalizeSettings, describe, moneyText, shortDate, emailConfig, pushConfig, sendEmail, sendWhatsApp, serviceJwt,
-  googleAccessToken, resetTokenCache, sendPush, sendRow, processOutbox, MAX_ATTEMPTS, PUSH_CHANNEL, PUSH_SOUND
+  googleAccessToken, resetTokenCache, sendPush, sendRow, processOutbox, MAX_ATTEMPTS, PUSH_CHANNEL, PUSH_SOUND, pushTone
 } from '../api/_lib/alerts.js';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
@@ -178,6 +179,17 @@ test('push: signs in once, sends to every phone, forgets phones that were remove
   assert.equal(sent[0].android.notification.notification_priority, 'PRIORITY_MAX');
   assert.equal(sent[0].apns.payload.aps.sound, 'orbique_alert.wav');
   assert.equal(sent[0].apns.headers['apns-priority'], '10');
+  // a cancellation or new dates: their own channel and tone (scripts/alert-sound.py orbique_change)
+  sent.length = 0;
+  assert.equal(await sendPush(sb, cfg, ORG, msg, { bookingId: 'B1', kind: 'cancelled' }, { fetch }), 'sent');
+  assert.equal(sent[0].android.notification.channel_id, 'alerts_change');
+  assert.equal(sent[0].android.notification.sound, 'orbique_change');
+  assert.equal(sent[0].apns.payload.aps.sound, 'orbique_change.wav');
+  assert.deepEqual(pushTone('changed'), { channel: 'alerts_change', sound: 'orbique_change' });
+  assert.deepEqual(pushTone('test'), { channel: PUSH_CHANNEL, sound: PUSH_SOUND });
+  for (const f of ['orbique_alert', 'orbique_change', 'orbique_message', 'orbique_team', 'orbique_task']) {
+    for (const dir of ['public/sounds', 'android/app/src/main/res/raw', 'ios/App/App']) assert.ok(fs.statSync(new URL('../' + dir + '/' + f + '.wav', import.meta.url)).size > 10000, dir + '/' + f);
+  }
   const none = fakeSb({ handler: () => ({ data: [], error: null }) });
   assert.match(await sendPush(none, cfg, ORG, msg, {}, { fetch }), /^skipped: no phone/);
   assert.match(await sendPush(none, pushConfig({}), ORG, msg, {}, { fetch }), /^skipped: phone alerts are not set up/);

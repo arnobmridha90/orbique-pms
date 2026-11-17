@@ -16,10 +16,10 @@
      screens come from the live site), not at the app's own files
    - booking alerts (Firebase Cloud Messaging): everyone is asked once to allow notifications; the phone's token goes to
      /api/alerts (register-device), which gives owners' and ops managers' phones booking alerts and everyone's phone
-     Team chat alerts (on their own "Team chat" channel, the phone's usual sound); tapping a booking alert opens the
-     booking, tapping a Team chat alert opens that chat; signing out removes the phone
-     alerts ring Orbique's own chime (res/raw/orbique_alert.wav on Android, orbique_alert.wav in the iPhone app); with the
-     app open, O.alertSound plays it instead
+     Team chat alerts (on their own "Team chat" channel); tapping a booking alert opens the booking, tapping a Team
+     chat alert opens that chat; signing out removes the phone
+     each kind of alert has its own Orbique tone (scripts/alert-sound.py; res/raw/<name>.wav on Android, <name>.wav in
+     the iPhone app): new booking, cancellation or new dates, Team chat; with the app open, O.alertSound plays it instead
    Loaded after app/server/*.js and before O.boot().
    =================================================================== */
 (function () {
@@ -277,8 +277,22 @@
        first made, so a new sound needs a new id here and in alerts.js. */
     var LOUD = { id: 'alerts_loud', name: 'Booking and message alerts', description: 'New bookings, cancellations, date changes and guest messages, with the Orbique chime',
       importance: 5, visibility: 1, sound: 'orbique_alert', vibration: true, lights: true, lightColor: '#14B8A6' };
-    /* Team chat (pages/team.js): its own channel, the phone's usual notification sound (api/_lib/alerts.js TEAM_CHANNEL) */
-    var TEAM = { id: 'team_chat', name: 'Team chat', description: 'Messages from your team in Orbique', importance: 4, visibility: 0, vibration: true, lights: true, lightColor: '#14B8A6' };
+    /* Cancellations and date changes (api/_lib/alerts.js CHANGE_CHANNEL): their own tone, res/raw/orbique_change.wav */
+    var CHANGE = { id: 'alerts_change', name: 'Cancellations and date changes', description: 'Bookings cancelled or moved to new dates, with their own tone',
+      importance: 5, visibility: 1, sound: 'orbique_change', vibration: true, lights: true, lightColor: '#14B8A6' };
+    /* Team chat (pages/team.js; api/_lib/alerts.js TEAM_CHANNEL): its own channel and tone, res/raw/orbique_team.wav.
+       It replaces the first "team_chat" channel, which had the phone's usual sound (a channel's sound cannot change). */
+    var TEAM = { id: 'team_tone', name: 'Team chat', description: 'Messages from your team in Orbique, with their own tone', importance: 4, visibility: 0, sound: 'orbique_team', vibration: true, lights: true, lightColor: '#14B8A6' };
+    var TEAM_OLD = { id: 'team_chat', name: 'Team chat', description: 'Messages from your team in Orbique', importance: 4, visibility: 0, vibration: true, lights: true, lightColor: '#14B8A6' };
+    /* The tones other than the booking chime are inside app builds from TONES_BUILD on (CI's build number). A channel
+       made with a sound file the installed app does not have would keep the wrong sound for good, so older builds keep
+       the old Team chat channel and get no change channel until they update (those alerts then use the phone's
+       default channel). */
+    var TONES_BUILD = 17601;
+    var hasTones = function () {
+      if (!App || !App.getInfo) return Promise.resolve(false);
+      return App.getInfo().then(function (i) { return parseInt(i && i.build, 10) >= TONES_BUILD; }, function () { return false; });
+    };
     /* every member's phone registers: the server gives booking alerts only to owners and ops managers (api/alerts.js) */
     var canAlert = function () { return !!O.auth.orgId(); };
     var settle = function (r) { var w = waiting; waiting = []; w.forEach(function (fn) { fn(r); }); };
@@ -289,9 +303,10 @@
     };
     Push.addListener('registration', function (t) { pushToken = t && t.value; sendToken(pushToken).then(settle); });
     Push.addListener('registrationError', function (e) { settle({ ok: false, message: 'The phone could not sign up for notifications' + (e && e.error ? ': ' + e.error : '.') }); });
-    Push.addListener('pushNotificationReceived', function (n) { /* the app is open: the chime and a toast instead of a system notification */
+    Push.addListener('pushNotificationReceived', function (n) { /* the app is open: the tone and a toast instead of a system notification */
       if (n && n.data && n.data.kind === 'team') { if (O.teamChat && O.teamChat.onPush) O.teamChat.onPush(n); return; } /* Team chat rings and shows it itself */
-      if (O.alertSound) O.alertSound.play();
+      var k = n && n.data && n.data.kind;
+      if (O.alertSound) O.alertSound.play(k === 'cancelled' || k === 'changed' ? 'change' : 'booking');
       if (n && n.title) U.toast(n.title + (n.body ? ': ' + String(n.body).split('\n')[0] : ''));
     });
     Push.addListener('pushNotificationActionPerformed', function (a) {
@@ -319,8 +334,10 @@
         return Push.requestPermissions();
       }).then(function (p) {
         if (p.receive !== 'granted') return { ok: false, message: 'Notifications are off for Orbique. Turn them on in the phone\'s settings (Apps, Orbique, Notifications).' };
-        var channel = platform === 'android' && Push.createChannel ? Push.createChannel(LOUD).catch(function () {}).then(function () {
-          return Push.createChannel(TEAM).catch(function () {});
+        var channel = platform === 'android' && Push.createChannel ? Push.createChannel(LOUD).catch(function () {}).then(hasTones).then(function (tones) {
+          if (!tones) return Push.createChannel(TEAM_OLD).catch(function () {});
+          return Push.createChannel(CHANGE).catch(function () {}).then(function () { return Push.createChannel(TEAM).catch(function () {}); })
+            .then(function () { return Push.deleteChannel ? Push.deleteChannel({ id: TEAM_OLD.id }).catch(function () {}) : null; });
         }).then(function () {
           /* the first test apps made a quiet "bookings" channel; channels cannot change, so it goes and LOUD replaces it */
           return Push.deleteChannel ? Push.deleteChannel({ id: 'bookings' }).catch(function () {}) : null;

@@ -1,64 +1,80 @@
 #!/usr/bin/env python3
-"""Make Orbique's alert sound: a bright three-note rising chime (G5, C6, E6), about 1.3 seconds.
+"""Make Orbique's alert sounds: one tone for each kind of alert, so a glance at the phone is not needed to know what came in.
 
     python3 scripts/alert-sound.py
 
-Standard library only (math, struct, wave), so anyone can re-run it and get the same file byte for byte.
-The sound is made from sine waves here, so there is no copyright to worry about. Writes the same
-16-bit mono 44.1 kHz WAV to:
+Standard library only (math, struct, wave), so anyone can re-run it and get the same files byte for byte.
+The sounds are made from sine waves here, so there is no copyright to worry about. Each tone is 16-bit mono 44.1 kHz:
 
-  android/app/src/main/res/raw/orbique_alert.wav   the phone notification channel "alerts_loud" (app/native/bridge.js)
-                                                   and the FCM payload's android sound "orbique_alert" (api/_lib/alerts.js)
-  ios/App/App/orbique_alert.wav                    the APNs sound "orbique_alert.wav" (in the Xcode project's resources)
-  public/sounds/orbique_alert.wav                  the in-app player O.alertSound (app/core.js); the phone app gets a
-                                                   copy in mobile/www/sounds/ (scripts/build.mjs --mobile)
+  booking   orbique_alert.wav    new booking: a bright rising bell chime (G5, C6, E6). Unchanged since the first build,
+                                  so phones keep their "alerts_loud" channel.
+  change    orbique_change.wav   cancellation or date change: two falling bells (E6, B5), a "heads up"
+  message   orbique_message.wav  new guest message: a quick double "ding ding" (G6, G6)
+  team      orbique_team.wav     new Team chat message: a soft rising "bloop", like a chat app
+  task      orbique_task.wav     new task for you: two short wooden marimba knocks (A4, E5)
 
-How it is made, so it cuts through a noisy room without being harsh:
+Each file is written to:
+  android/app/src/main/res/raw/<name>.wav   the phone notification channels (app/native/bridge.js) and the FCM sound
+                                            (api/_lib/alerts.js)
+  ios/App/App/<name>.wav                    the APNs sound (in the Xcode project's resources)
+  public/sounds/<name>.wav                  the in-app player O.alertSound (app/core.js); the phone app gets a copy in
+                                            mobile/www/sounds/ (scripts/build.mjs --mobile)
+
+How the bells are made, so they cut through a noisy room without being harsh:
   - each note is a bell: the fundamental plus a soft octave and fifth above it, each fading at its own rate
   - a 3 ms attack gives a clear "ding" start; a 25 ms fade at the very end stops any click
   - a gentle tanh saturation lifts the quieter tail, then the whole sound is normalised to -0.5 dBFS (no clipping)
-Change NOTES or the constants below and re-run to change the sound. Android notification channels cannot change
-their sound once made, so a new sound file under the same name only reaches phones that install the app fresh.
+Change TONES below and re-run to change a sound. Android notification channels cannot change their sound once made,
+so a changed file under the same name only reaches phones that install the app fresh: give it a new name and channel.
+The same notes are in O.alertSound (app/core.js TONES) for when the file cannot be loaded; keep them in step.
 """
 import math, os, struct, wave
 
 RATE = 44100
-LENGTH = 1.3                     # seconds
 PEAK = 10 ** (-0.5 / 20)         # -0.5 dBFS
-NOTES = [                        # (start in seconds, frequency in Hz, loudness)
-    (0.00, 783.99, 0.80),        # G5
-    (0.14, 1046.50, 0.90),       # C6
-    (0.28, 1318.51, 1.00),       # E6, rings out longest
-]
-PARTIALS = [                     # (frequency ratio, level, decay in seconds)
+ATTACK = 0.003
+TAIL_FADE = 0.025
+DRIVE = 1.6                      # tanh saturation: higher is louder but rougher
+
+BELL = [                         # (frequency ratio, level, decay in seconds)
     (1.0, 1.00, 0.42),
     (2.0, 0.38, 0.20),
     (3.0, 0.16, 0.10),
     (4.2, 0.07, 0.05),           # a slightly inharmonic shimmer, like a small bell
 ]
-ATTACK = 0.003
-TAIL_FADE = 0.025
-DRIVE = 1.6                      # tanh saturation: higher is louder but rougher
+SHORT_BELL = [(1.0, 1.00, 0.22), (2.0, 0.30, 0.10), (3.0, 0.12, 0.06)]
+MARIMBA = [(1.0, 1.00, 0.16), (4.0, 0.30, 0.03), (9.8, 0.10, 0.012)]
+BLOOP = [(1.0, 1.00, 0.12), (2.0, 0.12, 0.06)]
 
+# name -> (file, length in seconds, notes); a note is (start s, frequency Hz, loudness, partials, glide to Hz or None)
+TONES = {
+    'booking': ('orbique_alert', 1.3, [(0.00, 783.99, 0.80, BELL, None), (0.14, 1046.50, 0.90, BELL, None), (0.28, 1318.51, 1.00, BELL, None)]),
+    'change':  ('orbique_change', 1.1, [(0.00, 1318.51, 1.00, BELL, None), (0.20, 987.77, 0.95, BELL, None)]),
+    'message': ('orbique_message', 0.9, [(0.00, 1567.98, 0.90, SHORT_BELL, None), (0.16, 1567.98, 1.00, SHORT_BELL, None)]),
+    'team':    ('orbique_team', 0.5, [(0.00, 520.00, 1.00, BLOOP, 880.00)]),
+    'task':    ('orbique_task', 0.7, [(0.00, 440.00, 0.90, MARIMBA, None), (0.15, 659.25, 1.00, MARIMBA, None)]),
+}
+FOLDERS = ['android/app/src/main/res/raw', 'ios/App/App', 'public/sounds']
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-OUTPUTS = [
-    'android/app/src/main/res/raw/orbique_alert.wav',
-    'ios/App/App/orbique_alert.wav',
-    'public/sounds/orbique_alert.wav',
-]
 
 
-def render():
-    n = int(RATE * LENGTH)
+def render(length, notes):
+    n = int(RATE * length)
     out = [0.0] * n
-    for start, freq, level in NOTES:
+    for start, freq, level, partials, glide in notes:
         s0 = int(start * RATE)
+        phase = [0.0] * len(partials)
         for i in range(s0, n):
             t = (i - s0) / RATE
             env = min(1.0, t / ATTACK)
+            f = freq if glide is None else freq + (glide - freq) * min(1.0, t / 0.12)
             v = 0.0
-            for ratio, amp, decay in PARTIALS:
-                v += amp * math.exp(-t / decay) * math.sin(2 * math.pi * freq * ratio * t)
+            for k, (ratio, amp, decay) in enumerate(partials):
+                if glide is None:
+                    v += amp * math.exp(-t / decay) * math.sin(2 * math.pi * freq * ratio * t)
+                else:            # a sliding pitch: add up the phase step by step
+                    phase[k] += 2 * math.pi * f * ratio / RATE
+                    v += amp * math.exp(-t / decay) * math.sin(phase[k])
             out[i] += level * env * v
     # soft saturation, then fade the last few ms to silence
     out = [math.tanh(DRIVE * x) for x in out]
@@ -80,13 +96,12 @@ def write(path, samples):
 
 
 def main():
-    samples = render()
-    for rel in OUTPUTS:
-        write(os.path.join(ROOT, rel), samples)
-        print('wrote', rel)
-    peak = max(abs(x) for x in samples)
-    rms = math.sqrt(sum(x * x for x in samples) / len(samples))
-    print('%.2f s, peak %.2f dBFS, RMS %.1f dBFS' % (len(samples) / RATE, 20 * math.log10(peak), 20 * math.log10(rms)))
+    for kind, (name, length, notes) in TONES.items():
+        samples = render(length, notes)
+        for folder in FOLDERS:
+            write(os.path.join(ROOT, folder, name + '.wav'), samples)
+        rms = math.sqrt(sum(x * x for x in samples) / len(samples))
+        print('%-8s %s.wav  %.2f s, RMS %.1f dBFS' % (kind, name, len(samples) / RATE, 20 * math.log10(rms)))
 
 
 if __name__ == '__main__':
