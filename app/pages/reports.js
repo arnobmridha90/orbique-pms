@@ -105,7 +105,7 @@
   ];
   var REPORTS = [
     { id: 'revenue', need: 'bookings', group: 'financial', name: 'Revenue', icon: 'financials', money: true, desc: 'Net revenue, ADR, RevPAR and platform fees by property', kw: 'income sales adr revpar fees commission earnings' },
-    { id: 'costs', need: 'bookings', group: 'financial', name: 'Cost coverage', icon: 'financials', money: true, desc: 'Monthly costs, how much net revenue has covered so far and the gross profit', kw: 'cost coverage break even rent bills gross profit margin month' },
+    { id: 'costs', need: 'bookings', group: 'financial', name: 'Cost coverage', icon: 'financials', money: true, desc: 'Projected cost for the month, cost spent, how much net revenue has covered and the gross profit so far', kw: 'cost coverage break even rent bills gross profit margin month' },
     { id: 'expenses', need: 'expenses', group: 'financial', name: 'Expenses', icon: 'expenses', money: true, desc: 'Spending by type and person, operating costs and capital spending', kw: 'costs spend opex capex claims receipts' },
     { id: 'tax', need: 'bookings', group: 'financial', name: 'Tourism tax', icon: 'invoices', money: true, desc: 'Tax collected from foreign guests and the monthly returns', kw: 'ttx customs myttx foreign levy' },
     { id: 'occupancy', need: 'bookings', group: 'bookings', name: 'Occupancy', icon: 'calendar', desc: 'Nights sold against nights available, weekends and length of stay', kw: 'nights sold available blocked weekend' },
@@ -649,89 +649,89 @@
   };
 
 
-  /* ---------- Cost coverage: fixed costs (rent and bills from the unit files, plus the monthly fixed costs entered below)
-     and variable costs (running expenses recorded) against net revenue; gross profit = net revenue - fixed - variable ---------- */
+  /* ---------- Cost coverage, one month at a time (the month the chosen dates end in), in four parts:
+     1 projected cost for the month (learns from the months before), 2 cost actually spent (expenses),
+     3 net revenue so far and the share of the projected cost it covers, 4 gross profit so far. Plus every month of the
+     chosen dates (at least the last 6) side by side, so you can see the projection getting closer to the real cost. ---------- */
   function signed(v) { return (v < 0 ? '−' : '') + fmt.money(Math.abs(v)); }
-  function canEditFixed() { return O.can('reports.money') && (O.isOwner ? O.isOwner() : true); }
-  function fixedCard() {
-    var items = (D.fixedCosts && Array.isArray(D.fixedCosts.items) ? D.fixedCosts.items : []).filter(function (x) { return x && !x.to; });
-    var ed = canEditFixed(), tot = sum(items, function (x) { return +x.amount || 0; });
-    var rows = items.map(function (x) {
-      return '<tr><td>' + esc(x.name) + '</td><td class="num">' + fmt.money(+x.amount || 0) + '</td><td class="xs muted">' + esc(O.tpl('since {month}', { month: d.monthName(x.from + '-01', true) + ' ' + x.from.slice(0, 4) })) + '</td><td class="num">' + (ed ? '<button type="button" class="btn btn-ghost btn-xs" data-fc-del="' + esc(x.id) + '">' + esc(O.tr('Remove')) + '</button>' : '') + '</td></tr>';
-    }).join('');
-    return '<div class="card" style="margin-top:14px"><div class="card-head"><div class="hd"><h3>' + esc(O.tr('Monthly fixed costs')) + '</h3><div class="sub">' + esc(O.tr('Costs that stay the same every month, on top of the rent and bills in the unit files: salaries, software, accounting, insurance')) + '</div></div></div>' +
-      '<div class="card-body flush"><div class="table-wrap"><table class="table mini-table"><thead><tr><th>' + esc(O.tr('Cost')) + '</th><th class="num">' + esc(O.tr('A month')) + '</th><th></th><th></th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="4" class="muted">' + esc(O.tr('None added yet.')) + '</td></tr>') +
-      (items.length ? '<tr><td><b>' + esc(O.tr('Total a month')) + '</b></td><td class="num"><b>' + fmt.money(tot) + '</b></td><td></td><td></td></tr>' : '') + '</tbody></table></div></div>' +
-      (ed ? '<div class="card-foot"><form class="row-flex" data-fc-add style="gap:8px;flex-wrap:wrap;align-items:center"><input class="input" name="name" maxlength="60" placeholder="' + esc(O.tr('What it is, e.g. Cleaner salary')) + '" style="flex:2;min-width:180px" required><input class="input" name="amount" type="number" min="1" step="1" inputmode="decimal" placeholder="' + esc(O.tpl('{cur} a month', { cur: fmt.cur() })) + '" style="flex:1;min-width:120px" required><button type="submit" class="btn btn-primary btn-sm">' + O.icon('plus') + esc(O.tr('Add fixed cost')) + '</button></form><div class="xs muted" style="margin-top:6px">' + esc(O.tr('Each cost counts from this month on. Removing one stops it from next month; earlier months keep it.')) + '</div></div>' : '') + '</div>';
-  }
-  function addFixed(name, amount) {
-    if (!D.fixedCosts || typeof D.fixedCosts !== 'object' || Array.isArray(D.fixedCosts)) D.fixedCosts = { items: [] };
-    if (!Array.isArray(D.fixedCosts.items)) D.fixedCosts.items = [];
-    D.fixedCosts.items.push({ id: O.uid('FC'), name: name.slice(0, 60), amount: Math.round(amount * 100) / 100, from: D.TODAY.slice(0, 7), at: D.NOW, by: O.state.viewer });
-    O.emit('data', { type: 'fixedCosts' });
-  }
-  function removeFixed(id) {
-    var it = ((D.fixedCosts || {}).items || []).filter(function (x) { return x.id === id; })[0]; if (!it) return;
-    var cur = D.TODAY.slice(0, 7);
-    if (it.from >= cur) D.fixedCosts.items = D.fixedCosts.items.filter(function (x) { return x.id !== id; }); /* added this month: gone */
-    else it.to = cur; /* counted up to the end of this month */
-    O.emit('data', { type: 'fixedCosts' });
+  function monthLabel(ms) { return d.monthName(ms, true) + ' ' + ms.slice(0, 4); }
+  function basisText(P) {
+    var n = P.history.length;
+    return n ? O.tpl('Based on {months} of recorded expenses ({list}).', { months: fmt.plural(n, 'month'), list: P.history.map(function (h) { return d.monthName(h.ms, true); }).join(', ') })
+      : O.tr('No earlier month has expenses yet, so the projection is the rent and bills from the unit files. It gets more accurate as expenses are recorded each month.');
   }
   BUILD.costs = function (r) {
     var UF = O.unitFile;
     if (!UF || !UF.allowed()) return { empty: 'Costs come from each unit’s file (rent and bills). Your access does not include unit files.' };
     var ufs = UF.state();
     if (!ufs.loaded) { UF.load().catch(function () {}); return { empty: ufs.error || 'Loading the unit files…' }; }
-    var pid = st.pid, C = UF.coverage(r.from, r.to, pid), t = C.t, T = D.TODAY;
-    var future = r.to > T;
-    var noFile = props().filter(function (p) { return !(C.units[p.id] || {}).hasFile; });
+    var pid = st.pid, T = D.TODAY, ms = d.monthStart(r.to), P = UF.monthPlan(ms, pid), pj = P.projected, ac = P.actual;
+    var mName = monthLabel(ms), noFile = props().filter(function (p) { return !(P.units[p.id] || {}).hasFile; });
     var kpis = [
-      { label: 'Total cost', value: fmt.money(t.cost), sub: O.tpl('fixed {fixed}, variable {variable}', { fixed: fmt.moneyShort(t.fixed), variable: fmt.moneyShort(t.variable) }), hl: true },
-      { label: 'Net revenue earned', value: fmt.money(t.earned), sub: future ? O.tpl('nights up to {date}', { date: d.fmt(C.earnTo) }) : 'after platform fees' },
-      { label: 'Covered so far', value: t.covered == null ? '–' : fmt.pct(t.covered), sub: t.profit >= 0 ? 'all costs covered' : O.tpl('{x} still to cover', { x: fmt.money(-t.profit) }) },
-      { label: 'Gross profit so far', value: signed(t.profit), sub: 'net revenue minus all costs' },
-      { label: 'Expected gross profit', value: signed(t.expected), sub: future ? O.tpl('with {x} on the books', { x: fmt.moneyShort(t.booked) }) : 'for these dates' }
+      { label: 'Projected cost', value: fmt.money(pj.total), sub: O.tpl('{month}: fixed {fixed}, variable {variable}', { month: d.monthName(ms, true), fixed: fmt.moneyShort(pj.sched + pj.fixed), variable: fmt.moneyShort(pj.variable) }), hl: true, title: basisText(P) },
+      { label: 'Cost so far', value: fmt.money(ac.total), sub: O.tpl('fixed {fixed}, variable {variable}', { fixed: fmt.moneyShort(ac.fixed), variable: fmt.moneyShort(ac.variable) }) },
+      { label: 'Net revenue so far', value: fmt.money(P.earned), sub: P.done ? 'after platform fees' : O.tpl('nights up to {date}', { date: d.fmt(P.earnTo) }) },
+      { label: 'Cost covered', value: P.covered == null ? '–' : fmt.pct(P.covered), sub: P.covered == null ? 'no costs yet' : P.earned >= pj.total ? 'projected cost covered' : O.tpl('{x} still to cover', { x: fmt.money(pj.total - P.earned) }) },
+      { label: 'Gross profit so far', value: signed(P.profit), sub: P.done ? 'net revenue minus cost spent' : O.tpl('expected {x} by month end', { x: signed(P.expected) }) }
     ];
-    var ids = pid ? [pid] : curIds(), days = d.range(r.from, r.to), run = 0, earnedLine = [], bookedLine = [];
-    days.forEach(function (x) { run += sum(ids, function (id) { return M.netRevenue(x, x, { propertyId: id }); }); earnedLine.push(x <= T ? run : null); bookedLine.push(x >= T ? run : null); });
-    var costLine = days.map(function () { return t.cost; });
-    var chart = {
+    /* the chart: net revenue and cost spent building up day by day against the projected cost */
+    var ids = pid ? [pid] : curIds(), days = d.range(ms, P.me), run = 0, runC = 0, earnedLine = [], bookedLine = [], spentLine = [];
+    var spentByDay = {};
+    M.expenses(ms, P.me, 'opex').forEach(function (e) { if (e.propertyId ? ids.indexOf(e.propertyId) >= 0 : !pid) spentByDay[e.date] = (spentByDay[e.date] || 0) + (+e.amount || 0); });
+    days.forEach(function (x) {
+      run += sum(ids, function (id) { return M.netRevenue(x, x, { propertyId: id }); }); runC += spentByDay[x] || 0;
+      earnedLine.push(x <= T ? run : null); bookedLine.push(x >= T ? run : null); spentLine.push(x <= T ? runC : null);
+    });
+    var future = P.me > T, chart = {
       unit: '',
-      legend: O.chart.legend([{ name: O.tr('Net revenue earned'), tone: 'brand' }].concat(future ? [{ name: O.tr('On the books'), tone: 'info' }] : []).concat([{ name: O.tr('Total cost'), tone: 'bad' }])),
+      legend: O.chart.legend([{ name: O.tr('Net revenue'), tone: 'brand' }].concat(future ? [{ name: O.tr('On the books'), tone: 'info' }] : []).concat([{ name: O.tr('Cost spent'), tone: 'accent' }, { name: O.tr('Projected cost'), tone: 'bad' }])),
       draw: function (el) {
         O.chart.line(el, {
-          labels: days.map(function (x) { return d.fmt(x); }), height: chartH(el), yFormat: moneyAxis, padLeft: 62, yMin: 0, ariaLabel: 'Net revenue against total cost',
+          labels: days.map(function (x) { return d.fmt(x); }), height: chartH(el), yFormat: moneyAxis, padLeft: 62, yMin: 0, ariaLabel: 'Net revenue and cost spent against the projected cost',
           tipTitle: function (i) { return d.dowName(days[i]) + ' ' + d.fmtY(days[i]); },
-          series: [{ name: O.tr('Total cost'), values: costLine, tone: 'bad', dash: true }].concat(future ? [{ name: O.tr('On the books'), values: bookedLine, tone: 'info', dash: true }] : []).concat([{ name: O.tr('Net revenue earned'), values: earnedLine, tone: 'brand', width: 2.4 }])
+          series: [{ name: O.tr('Projected cost'), values: days.map(function () { return pj.total; }), tone: 'bad', dash: true }, { name: O.tr('Cost spent'), values: spentLine, tone: 'accent' }]
+            .concat(future ? [{ name: O.tr('On the books'), values: bookedLine, tone: 'info', dash: true }] : []).concat([{ name: O.tr('Net revenue'), values: earnedLine, tone: 'brand', width: 2.4 }])
         });
       }
     };
     var rows = props().map(function (p) {
-      var x = C.units[p.id] || { rent: 0, bills: 0, expenses: 0, cost: 0, earned: 0, booked: 0 };
-      return { pid: p.id, v: [p.name, x.rent, x.bills, 0, x.expenses, x.cost, x.earned, x.cost > 0 ? Math.min(1, x.earned / x.cost) : null, x.earned - x.cost, x.booked - x.cost], h: { 0: propCell(p) + (x.hasFile ? '' : ' <span class="xs muted">(' + esc(O.tr('no unit file')) + ')</span>') } };
+      var x = P.units[p.id] || { rent: 0, bills: 0, fixed: 0, variable: 0, spent: 0, earned: 0, booked: 0 };
+      return { pid: p.id, v: [p.name, x.rent + x.bills, x.fixed, x.variable, x.spent, x.earned, x.earned - x.spent], h: { 0: propCell(p) + (x.hasFile ? '' : ' <span class="xs muted">(' + esc(O.tr('no unit file')) + ')</span>') } };
     });
-    if (!pid && (t.other || C.general)) rows.push({ v: [O.tr('General / company'), 0, 0, t.other, C.general, t.other + C.general, 0, 0, -(t.other + C.general), -(t.other + C.general)] });
-    var cols = [{ label: 'Property', type: 'text', w: 40 }, { label: 'Rent', type: 'money', w: 16 }, { label: 'Bills', type: 'money', w: 15 }, { label: 'Other fixed', type: 'money', w: 17 }, { label: 'Variable', type: 'money', w: 17 }, { label: 'Total cost', type: 'money', w: 18 }, { label: 'Net earned', type: 'money', w: 18 }, { label: 'Covered', type: 'pct', w: 15 }, { label: 'Profit so far', type: 'money', w: 19 }, { label: 'Expected', type: 'money', w: 18 }];
-    var tot = ['All properties', t.rent, t.bills, t.other, t.variable, t.cost, t.earned, t.covered, t.profit, t.expected];
-    var side = { title: 'Gross profit', sub: rangeText(r), html: '<dl class="kv"><dt>Rent</dt><dd>' + fmt.money(t.rent) + '</dd><dt>Bills we pay</dt><dd>' + fmt.money(t.bills) + '</dd><dt>Other fixed costs</dt><dd>' + fmt.money(t.other) + '</dd><dt class="tot">Fixed costs</dt><dd class="tot">' + fmt.money(t.fixed) + '</dd>' +
-      '<dt>Variable costs (expenses)</dt><dd>' + fmt.money(t.variable) + '</dd><dt class="tot">Total cost</dt><dd class="tot">' + fmt.money(t.cost) + '</dd>' +
-      '<dt>Net revenue earned</dt><dd>' + fmt.money(t.earned) + '</dd><dt class="tot">Gross profit so far</dt><dd class="tot">' + signed(t.profit) + '</dd>' +
-      (future ? '<dt>Net revenue on the books</dt><dd>' + fmt.money(t.booked) + '</dd><dt class="tot">Expected gross profit</dt><dd class="tot">' + signed(t.expected) + '</dd>' : '') + '</dl>' +
+    if (!pid && ac.general) {
+      var g = (P.units[''] || {}); /* company costs not tied to a unit */
+      rows.push({ v: [O.tr('General / company'), 0, ac.general - (g.variable || 0), g.variable || 0, ac.general, 0, -ac.general] });
+    }
+    var cols = [{ label: 'Property', type: 'text', w: 40 }, { label: 'Rent and bills due', type: 'money', w: 20 }, { label: 'Fixed spent', type: 'money', w: 18 }, { label: 'Variable spent', type: 'money', w: 18 }, { label: 'Cost spent', type: 'money', w: 18 }, { label: 'Net revenue', type: 'money', w: 18 }, { label: 'Profit so far', type: 'money', w: 19 }];
+    var tot = ['All properties', P.rent + P.bills, ac.fixed, ac.variable, ac.total, P.earned, P.profit];
+    var side = { title: 'Projected cost', sub: mName, html: '<dl class="kv"><dt>Rent and bills (unit files)</dt><dd>' + fmt.money(pj.sched) + '</dd><dt>Other fixed costs</dt><dd>' + fmt.money(pj.fixed) + '</dd><dt>Variable costs</dt><dd>' + fmt.money(pj.variable) + '</dd><dt class="tot">Projected cost</dt><dd class="tot">' + fmt.money(pj.total) + '</dd>' +
+      '<dt>Cost spent so far</dt><dd>' + fmt.money(ac.total) + '</dd><dt>Net revenue so far</dt><dd>' + fmt.money(P.earned) + '</dd><dt class="tot">Gross profit so far</dt><dd class="tot">' + signed(P.profit) + '</dd>' +
+      (future ? '<dt>Net revenue on the books</dt><dd>' + fmt.money(P.booked) + '</dd><dt class="tot">Expected gross profit</dt><dd class="tot">' + signed(P.expected) + '</dd>' : '') + '</dl>' +
+      '<div class="xs muted rp-sfoot">' + esc(basisText(P)) + (P.perNight != null ? ' ' + esc(O.tpl('Variable costs run at {x} per night sold ({n} nights sold this month).', { x: fmt.money(P.perNight), n: fmt.num(P.nights) })) : '') + '</div>' +
       (noFile.length ? '<div class="xs muted rp-sfoot">' + esc(O.tpl('No rent or bills yet for {units}. Add them in the unit file.', { units: noFile.map(function (p) { return p.unitNo || p.short || p.name; }).join(', ') })) + '</div>' : '') };
-    var insight = t.cost <= 0 ? O.tr('No costs are recorded for these dates yet. Add rent and bills in each unit’s file, and monthly fixed costs below.') :
-      t.profit >= 0 ? O.tpl('Costs of {cost} are covered. Net revenue so far is {earned}, a gross profit of {profit}.', { cost: B(fmt.money(t.cost)), earned: fmt.money(t.earned), profit: B(fmt.money(t.profit)) }) :
-      O.tpl('{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.', { pct: B(fmt.pct(t.covered || 0)), cost: fmt.money(t.cost), earned: fmt.money(t.earned), left: B(fmt.money(-t.profit)) });
-    if (future && t.cost > 0) insight = O.i18nKeep(insight + (O.state.lang === 'zh' ? '' : ' ') + O.tpl('With the bookings on the books, the expected gross profit is {x}.', { x: signed(t.expected) }));
+    var insight = pj.total <= 0 ? O.tr('No costs yet for this month. Add rent and bills in each unit’s file and record expenses as they are paid.') :
+      P.earned >= pj.total ? O.tpl('{month}: the projected cost of {cost} is covered. Net revenue so far is {earned}, and {spent} has been spent, a gross profit of {profit} so far.', { month: mName, cost: B(fmt.money(pj.total)), earned: fmt.money(P.earned), spent: fmt.money(ac.total), profit: B(signed(P.profit)) }) :
+      O.tpl('{month}: {pct} of the projected cost of {cost} is covered by net revenue so far ({earned}). {spent} has been spent, so the gross profit so far is {profit}.', { month: mName, pct: B(fmt.pct(P.covered || 0)), cost: fmt.money(pj.total), earned: fmt.money(P.earned), spent: fmt.money(ac.total), profit: B(signed(P.profit)) });
     return {
-      kpis: kpis, chartTitle: 'Net revenue against costs', chartSub: 'Running total of net revenue (after platform fees) against the total cost', chart: chart, side: side,
-      table: { title: 'By property', sub: 'Fixed and variable costs, net revenue and gross profit', cols: cols, rows: rows, total: { v: tot } },
-      summary: [['Total cost', fmt.money(t.cost)], ['Net revenue earned', fmt.money(t.earned)], ['Covered so far', t.covered == null ? '–' : fmt.pct(t.covered)], ['Gross profit so far', signed(t.profit)]],
-      notes: 'Fixed costs are the rent and the bills you pay from each unit’s file plus the monthly fixed costs below, spread evenly over each month. Variable costs are the running expenses recorded for these dates. Gross profit is net revenue (after platform fees) minus both.',
-      extra: pid ? '' : fixedCard(),
+      kpis: kpis, chartTitle: O.tpl('{month}: net revenue against costs', { month: mName }), chartSub: 'Running totals of net revenue (after platform fees) and cost spent, against the projected cost', chart: chart, side: side,
+      table: { title: 'By property', sub: O.tpl('{month}: rent and bills due, cost spent, net revenue and profit so far', { month: mName }), cols: cols, rows: rows, total: { v: tot } },
+      summary: [['Month', mName], ['Projected cost', fmt.money(pj.total)], ['Cost so far', fmt.money(ac.total)], ['Net revenue so far', fmt.money(P.earned)], ['Cost covered', P.covered == null ? '–' : fmt.pct(P.covered)], ['Gross profit so far', signed(P.profit)]],
+      notes: 'The projected cost is worked out automatically: rent and the bills you pay from each unit’s file, plus other fixed costs at the average of the last 3 months with expenses, plus variable costs at their average cost per night sold times the nights sold this month. It is never less than what has already been spent. Expenses are fixed or variable by type (rent, salaries, internet, software and insurance are fixed); paying rent or a bill in the unit file records it as a fixed cost. Gross profit so far is net revenue so far minus the cost spent so far.',
+      extra: monthsCard(r, pid, ms),
       insight: insight
     };
   };
+  function monthsCard(r, pid, ms) {
+    var UF = O.unitFile, list = [], first = d.monthStart(r.from), start = d.addMonths(ms, -5), floor = d.monthStart(dataStart());
+    if (start < first) first = start; if (first < floor) first = floor;
+    for (var m = ms, i = 0; m >= first && i < 24; m = d.addMonths(m, -1), i++) list.push(m);
+    var rows = list.map(function (m) {
+      var P = UF.monthPlan(m, pid), cur = m === d.monthStart(D.TODAY);
+      return '<tr><td>' + esc(monthLabel(m)) + (cur ? ' <span class="xs muted">(' + esc(O.tr('so far')) + ')</span>' : '') + '</td><td class="num">' + fmt.money(P.forecast.total) + '</td><td class="num">' + fmt.money(P.projected.total) + '</td><td class="num">' + fmt.money(P.actual.total) + '</td><td class="num">' + fmt.money(P.earned) + '</td><td class="num">' + (P.covered == null ? '–' : fmt.pct(P.covered)) + '</td><td class="num">' + signed(P.profit) + '</td><td class="num xs muted">' + (P.history.length ? fmt.plural(P.history.length, 'month') : esc(O.tr('unit files only'))) + '</td></tr>';
+    }).join('');
+    return '<div class="card" style="margin-top:14px"><div class="card-head"><div class="hd"><h3>' + esc(O.tr('Month by month')) + '</h3><div class="sub">' + esc(O.tr('The forecast is what was expected at the start of the month from the months before; compare it with the cost spent to see how close it gets.')) + '</div></div></div>' +
+      '<div class="card-body flush"><div class="table-wrap"><table class="table mini-table"><thead><tr><th>' + esc(O.tr('Month')) + '</th><th class="num">' + esc(O.tr('Forecast')) + '</th><th class="num">' + esc(O.tr('Projected cost')) + '</th><th class="num">' + esc(O.tr('Cost spent')) + '</th><th class="num">' + esc(O.tr('Net revenue')) + '</th><th class="num">' + esc(O.tr('Covered')) + '</th><th class="num">' + esc(O.tr('Gross profit')) + '</th><th class="num">' + esc(O.tr('Based on')) + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
+  }
   function curIdsOr(pid) { return pid ? [pid] : curIds(); }
 
   BUILD.expenses = function (r, c) {
@@ -1284,19 +1284,10 @@
       if (t && built) { var i = +t.dataset.sort, s = st.sort, k = sortKey(); st.sort = { key: k, col: i, dir: s && s.key === k && s.col === i ? -s.dir : (isNum(built.table.cols[i]) ? -1 : 1) }; O.$('.tbl', root).innerHTML = tableHTML(built); return; }
       t = e.target.closest('[data-act]');
       if (t && built && !t.disabled) { if (t.dataset.act === 'csv') doCSV(built, r); else doPDF(built, r, c); return; }
-      t = e.target.closest('[data-fc-del]');
-      if (t) { removeFixed(t.dataset.fcDel); render(root, ctx); return; }
       t = e.target.closest('[data-go-owner]');
       if (t) { O.go('owner', { owner: t.dataset.goOwner }); return; }
       t = e.target.closest('[data-go]');
       if (t) O.go(t.dataset.go);
-    };
-    var fcf = O.$('[data-fc-add]', root);
-    if (fcf) fcf.onsubmit = function (e) {
-      e.preventDefault();
-      var nm = String(fcf.elements.name.value || '').trim(), am = parseFloat(fcf.elements.amount.value);
-      if (!nm || !(am > 0)) { U.toast(O.tr('Add a name and a monthly amount above zero.'), 'bad'); return; }
-      addFixed(nm, am); U.toast(O.tpl('Added {name}: {amount} a month.', { name: nm, amount: fmt.money(am) })); render(root, ctx);
     };
     O.$('[data-switch]', root).onchange = function (e) { openReport(e.target.value, root, ctx); };
     O.curSwitchWire(root);

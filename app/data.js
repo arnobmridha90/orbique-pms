@@ -431,7 +431,10 @@
   ];
 
   /* ---------------- expenses ---------------- */
-  var expenseTypes = ['Cleaning supplies', 'Laundry', 'Repairs & maintenance', 'Utilities', 'Internet & TV', 'Toiletries & amenities', 'Furniture & equipment', 'Transport', 'Marketing', 'Software & subscriptions', 'Others'];
+  var expenseTypes = ['Rent', 'Salaries & wages', 'Cleaning supplies', 'Laundry', 'Repairs & maintenance', 'Utilities', 'Internet & TV', 'Toiletries & amenities', 'Furniture & equipment', 'Transport', 'Marketing', 'Software & subscriptions', 'Insurance', 'Others'];
+  /* expense types that count as fixed costs (the same every month whatever the occupancy); every other type is variable.
+     An expense's own costKind ('fixed' | 'variable') wins, e.g. a bill paid from the unit file is always fixed. */
+  var fixedExpenseTypes = ['Rent', 'Salaries & wages', 'Internet & TV', 'Software & subscriptions', 'Insurance'];
   var payMethods = ['Company card', 'Cash (petty cash)', 'Bank transfer', 'Paid personally (claim)'];
   var expenses = [];
   var er = rng(777), eseq = 300;
@@ -811,6 +814,7 @@
       });
     },
     /* rejected claims are not company spend; cls = 'opex' | 'capex' | undefined (both) */
+    costKind: function (e) { return e.costKind === 'fixed' || e.costKind === 'variable' ? e.costKind : (O.data.fixedExpenseTypes || []).indexOf(e.type) >= 0 ? 'fixed' : 'variable'; },
     expenses: function (from, to, cls) { return O.data.expenses.filter(function (e) { return e.date >= from && e.date <= to && e.claimStatus !== 'rejected' && (!cls || (e.costClass || 'opex') === cls); }); },
     expenseTotal: function (from, to, cls) { return M.expenses(from, to, cls).reduce(function (s, e) { return s + e.amount; }, 0); },
     platformFees: function (from, to) {
@@ -834,7 +838,7 @@
     bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies, greetings: greetings,
     /* the inbox's named chat lists, shared by the team (conversations[].lists holds their ids) */
     inboxLists: [{ id: 'L-vip', name: 'VIP guests' }, { id: 'L-follow', name: 'Follow up' }],
-    expenses: expenses, expenseTypes: expenseTypes, payMethods: payMethods, events: events,
+    expenses: expenses, expenseTypes: expenseTypes, fixedExpenseTypes: fixedExpenseTypes, payMethods: payMethods, events: events,
     rateFor: rateFor, eventFor: eventFor, compSet: compSet, compPrice: compPrice, countryName: COUNTRY,
     staffById: function (id) { return staff.filter(function (s) { return s.id === id; })[0] || null; },
     booking: function (id) { return bookings.filter(function (b) { return b.id === id; })[0] || null; },

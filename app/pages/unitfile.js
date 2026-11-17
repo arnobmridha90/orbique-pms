@@ -174,7 +174,7 @@
   UF.markPaid = function (pid, item) {
     return serial(pid, function () {
       var cur = UF.get(pid); if (!cur) throw new Error('This unit has no unit file yet.');
-      return saveNow(pid, F.markPaid(cur, item, D.TODAY));
+      return saveNow(pid, F.markPaid(cur, item, D.TODAY)).then(function (data) { try { recordPaid(pid, item, cur); } catch (e) { /* the payment is saved either way */ } return data; });
     });
   };
   /* what is due soon across the workspace's active units (needs load() first) */
@@ -199,7 +199,6 @@
     }
     return s;
   }
-  UF.fixedItems = function () { var b = D.fixedCosts; return b && Array.isArray(b.items) ? b.items.filter(function (x) { return x && x.name && +x.amount > 0; }) : []; };
   UF.spread = spread;
   UF.costs = function (from, to, pid) {
     check();
@@ -215,40 +214,83 @@
     return out;
   };
 
-  /* cost coverage for from..to: fixed costs (unit files) plus running expenses recorded for those dates, against net
-     revenue (after platform fees) earned on nights up to today and already on the books for the whole range.
-     Shared by the Cost coverage report and the Dashboard card. */
-  UF.coverage = function (from, to, pid) {
-    var M = O.metrics, c = UF.costs(from, to, pid), T = D.TODAY;
-    var ids = D.properties.filter(function (p) { return !p.archived && (pid ? p.id === pid : (!O.inCur || O.inCur(p))); }).map(function (p) { return p.id; });
-    var exp = {}, expGeneral = 0;
-    M.expenses(from, to, 'opex').forEach(function (e) {
-      if (e.propertyId) { if (ids.indexOf(e.propertyId) >= 0) exp[e.propertyId] = (exp[e.propertyId] || 0) + (+e.amount || 0); }
-      else if (!pid && (!O.inCur || O.inCur(e))) expGeneral += +e.amount || 0;
+  /* The month's cost plan, worked out from the data on its own so it gets more accurate every month:
+       projected cost = rent and bills from the unit files
+                      + other fixed costs: the average of the last (up to) 3 months with expenses recorded
+                      + variable costs: the average variable cost per night sold in those months x nights sold this month
+       (each part is never less than what has actually been spent this month)
+       actual cost    = the operating expenses recorded this month, split into fixed and variable (M.costKind)
+       earned         = net revenue (after platform fees) for nights up to today; booked = for the whole month
+     Archived units are left out. ms is the month's first day; pid limits it to one unit (company costs then left out). */
+  var HISTORY = 3;
+  function monthCosts(ms, pid, ids) {
+    var M = O.metrics, me = d.monthEnd(ms), out = { sched: 0, fixed: 0, variable: 0, units: {}, general: 0, n: 0, types: {} };
+    var files = S.files;
+    M.expenses(ms, me, 'opex').forEach(function (e) {
+      if (e.propertyId ? ids.indexOf(e.propertyId) < 0 : pid) return;
+      if (!e.propertyId && O.inCur && !O.inCur(e)) return;
+      var a = +e.amount || 0, kind = M.costKind(e);
+      /* a rent or unit-file bill payment is the scheduled cost itself, so it is not counted again as another fixed cost */
+      var sched = e.source === 'unitfile' || (e.type === 'Rent' && e.propertyId && files[e.propertyId] && +((files[e.propertyId].data || {}).lease || {}).rent > 0);
+      if (sched) out.sched += a; else if (kind === 'fixed') out.fixed += a; else out.variable += a;
+      out.n++; out.types[e.type || 'Others'] = (out.types[e.type || 'Others'] || 0) + a;
+      var k = e.propertyId || ''; if (!out.units[k]) out.units[k] = { fixed: 0, variable: 0 };
+      out.units[k][kind === 'fixed' || sched ? 'fixed' : 'variable'] += a;
+      if (!e.propertyId) out.general += a;
     });
-    var earnTo = to < T ? to : T, units = {};
-    /* other fixed costs the owner enters for the whole business (D.fixedCosts.items: {id, name, amount a month, from 'YYYY-MM', to 'YYYY-MM' once removed}) */
-    var other = 0, otherItems = [];
-    if (!pid) UF.fixedItems().forEach(function (it) {
-      var a = it.from ? it.from + '-01' : null, z = it.to ? d.monthEnd(it.to + '-01') : null, v = spread(+it.amount || 0, from, to, a, z);
-      if (v > 0) { other += v; otherItems.push({ name: it.name, amount: v, monthly: +it.amount || 0 }); }
-    });
-    var t = { rent: 0, bills: 0, other: other, expenses: expGeneral, cost: 0, earned: 0, booked: 0 };
+    out.total = out.sched + out.fixed + out.variable;
+    return out;
+  }
+  UF.monthPlan = function (ms, pid) {
+    check();
+    var M = O.metrics, T = D.TODAY; ms = d.monthStart(ms);
+    var me = d.monthEnd(ms), ids = D.properties.filter(function (p) { return !p.archived && (pid ? p.id === pid : (!O.inCur || O.inCur(p))); }).map(function (p) { return p.id; });
+    var nightsOf = function (a, z) { return ids.reduce(function (s, id) { return s + M.nightsSold(a, z, { propertyId: id }); }, 0); };
+    var revOf = function (a, z) { return ids.reduce(function (s, id) { return s + M.netRevenue(a, z, { propertyId: id }); }, 0); };
+    /* history: the most recent earlier months that have any expenses, looking back up to a year */
+    var hist = [], m = d.addMonths(ms, -1);
+    for (var i = 0; i < 12 && hist.length < HISTORY; i++, m = d.addMonths(m, -1)) {
+      var c = monthCosts(m, pid, ids); if (c.n) hist.push({ ms: m, fixed: c.fixed, variable: c.variable, nights: nightsOf(m, d.monthEnd(m)) });
+    }
+    var hFixed = hist.length ? hist.reduce(function (s, h) { return s + h.fixed; }, 0) / hist.length : 0;
+    var hNights = hist.reduce(function (s, h) { return s + h.nights; }, 0), hVar = hist.reduce(function (s, h) { return s + h.variable; }, 0);
+    var perNight = hNights > 0 ? hVar / hNights : null;
+    var uc = UF.costs(ms, me, pid), act = monthCosts(ms, pid, ids), nights = nightsOf(ms, me);
+    var fc = { sched: uc.total, fixed: hFixed, variable: perNight != null ? perNight * nights : 0 };
+    fc.total = fc.sched + fc.fixed + fc.variable;
+    var pj = { sched: Math.max(fc.sched, act.sched), fixed: Math.max(fc.fixed, act.fixed), variable: Math.max(fc.variable, act.variable) };
+    pj.total = pj.sched + pj.fixed + pj.variable;
+    var earnTo = me < T ? me : T, earned = ms <= earnTo ? revOf(ms, earnTo) : 0, booked = revOf(ms, me);
+    var units = {};
     ids.forEach(function (id) {
-      var u = c.units[id] || { rent: 0, bills: 0 }, x = {
-        rent: u.rent, bills: u.bills, expenses: exp[id] || 0, hasFile: !!c.units[id],
-        earned: from <= earnTo ? M.netRevenue(from, earnTo, { propertyId: id }) : 0,
-        booked: M.netRevenue(from, to, { propertyId: id })
-      };
-      x.cost = x.rent + x.bills + x.expenses; units[id] = x;
-      ['rent', 'bills', 'expenses', 'cost', 'earned', 'booked'].forEach(function (k) { t[k] += x[k]; });
+      var u = uc.units[id] || { rent: 0, bills: 0 }, a = act.units[id] || { fixed: 0, variable: 0 };
+      units[id] = { rent: u.rent, bills: u.bills, hasFile: !!uc.units[id], fixed: a.fixed, variable: a.variable, spent: a.fixed + a.variable,
+        earned: ms <= earnTo ? M.netRevenue(ms, earnTo, { propertyId: id }) : 0, booked: M.netRevenue(ms, me, { propertyId: id }) };
     });
-    t.cost += expGeneral + other;
-    t.fixed = t.rent + t.bills + t.other; t.variable = t.expenses;
-    t.covered = t.cost > 0 ? Math.min(1, t.earned / t.cost) : null;
-    t.profit = t.earned - t.cost; t.expected = t.booked - t.cost;
-    return { from: from, to: to, earnTo: earnTo, units: units, t: t, general: expGeneral, other: otherItems, files: c.files };
+    return {
+      ms: ms, me: me, earnTo: earnTo, started: ms <= T, done: me < T, history: hist, perNight: perNight, nights: nights,
+      forecast: fc, projected: pj, actual: { sched: act.sched, fixed: act.sched + act.fixed, otherFixed: act.fixed, variable: act.variable, total: act.total, types: act.types, general: act.general },
+      rent: uc.rent, bills: uc.bills, files: uc.files, units: units,
+      earned: earned, booked: booked,
+      covered: pj.total > 0 ? earned / pj.total : null,
+      profit: earned - act.total, expected: booked - pj.total
+    };
   };
+
+  /* paying rent or a bill from the unit file also records it as an expense (a fixed cost), once per due date. It is dated
+     on the due date so it counts in the month it is for, even when paid a few days early or late. */
+  function recordPaid(pid, item, file) {
+    if (!(+item.amount > 0) || !Array.isArray(D.expenses)) return;
+    var key = item.key + ':' + item.date;
+    if (D.expenses.some(function (e) { return e.sourceKey === key; })) return;
+    var bill = item.kind === 'bill' ? ((file && file.bills) || []).filter(function (b) { return b && b.id === item.billId; })[0] : null;
+    var type = item.kind === 'rent' ? 'Rent' : bill && bill.type === 'internet' ? 'Internet & TV' : 'Utilities';
+    var v = O.state.viewer, e = { id: O.uid('EX'), date: item.date || D.TODAY, paidOn: D.TODAY, propertyId: pid, type: type, costClass: 'opex', costKind: 'fixed', amount: Math.round(+item.amount * 100) / 100,
+      paidBy: v, method: (D.payMethods || []).indexOf('Bank transfer') >= 0 ? 'Bank transfer' : (D.payMethods || [])[0], receipt: false, receiptImg: null, receiptName: '',
+      note: item.title + ', due ' + item.date, recordedBy: v, createdAt: D.NOW, source: 'unitfile', sourceKey: key };
+    D.expenses.unshift(e);
+    O.emit('data', { type: 'expense', id: e.id });
+  }
 
   /* ---------------- documents (signed in only) ---------------- */
   function bucket() { return sb().storage.from(BUCKET); }
