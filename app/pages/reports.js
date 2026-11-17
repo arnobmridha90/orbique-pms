@@ -105,6 +105,7 @@
   ];
   var REPORTS = [
     { id: 'revenue', need: 'bookings', group: 'financial', name: 'Revenue', icon: 'financials', money: true, desc: 'Net revenue, ADR, RevPAR and platform fees by property', kw: 'income sales adr revpar fees commission earnings' },
+    { id: 'costs', need: 'bookings', group: 'financial', name: 'Cost coverage', icon: 'financials', money: true, desc: 'Monthly costs, how much net revenue has covered so far and the gross profit', kw: 'cost coverage break even rent bills gross profit margin month' },
     { id: 'expenses', need: 'expenses', group: 'financial', name: 'Expenses', icon: 'expenses', money: true, desc: 'Spending by type and person, operating costs and capital spending', kw: 'costs spend opex capex claims receipts' },
     { id: 'tax', need: 'bookings', group: 'financial', name: 'Tourism tax', icon: 'invoices', money: true, desc: 'Tax collected from foreign guests and the monthly returns', kw: 'ttx customs myttx foreign levy' },
     { id: 'occupancy', need: 'bookings', group: 'bookings', name: 'Occupancy', icon: 'calendar', desc: 'Nights sold against nights available, weekends and length of stay', kw: 'nights sold available blocked weekend' },
@@ -113,7 +114,7 @@
     { id: 'guests', need: 'bookings', group: 'guests', name: 'Guests & origin', icon: 'user', desc: 'Arrivals by country, party size and length of stay', kw: 'countries nationality international domestic party' },
     { id: 'reviews', need: 'reviews', group: 'guests', name: 'Reviews', icon: 'star', desc: 'Ratings, sub-scores and replies by property and platform', kw: 'ratings stars cleanliness replies feedback' },
     { id: 'operations', need: 'bookings', group: 'operations', name: 'Turnovers & tasks', icon: 'tasks', desc: 'Check-ins, turnovers, back-to-back changeovers and tasks done on time', kw: 'cleaning housekeeping turnover check-in tasks overdue' },
-    { id: 'owners', need: 'bookings', group: 'owners', name: 'Owner payouts', icon: 'owner', money: true, desc: 'Net revenue, costs and payout for each property owner', kw: 'owner statements payouts management fee landlord' },
+    { id: 'owners', need: 'bookings', group: 'owners', name: 'Owner payouts', icon: 'owner', money: true, desc: 'Rent paid to each owner against the net revenue of their units', kw: 'owner statements payouts management fee landlord' },
     { id: 'inventory', need: 'stock', group: 'inventory', name: 'Stock used by unit', icon: 'inventory', desc: 'Which unit used which products most, with quantities and cost', kw: 'inventory stock supplies toiletries consumables products items usage' }
   ];
   var REP = {}; REPORTS.forEach(function (r) { REP[r.id] = r; });
@@ -647,6 +648,92 @@
     };
   };
 
+
+  /* ---------- Cost coverage: fixed costs (rent and bills from the unit files, plus the monthly fixed costs entered below)
+     and variable costs (running expenses recorded) against net revenue; gross profit = net revenue - fixed - variable ---------- */
+  function signed(v) { return (v < 0 ? '−' : '') + fmt.money(Math.abs(v)); }
+  function canEditFixed() { return O.can('reports.money') && (O.isOwner ? O.isOwner() : true); }
+  function fixedCard() {
+    var items = (D.fixedCosts && Array.isArray(D.fixedCosts.items) ? D.fixedCosts.items : []).filter(function (x) { return x && !x.to; });
+    var ed = canEditFixed(), tot = sum(items, function (x) { return +x.amount || 0; });
+    var rows = items.map(function (x) {
+      return '<tr><td>' + esc(x.name) + '</td><td class="num">' + fmt.money(+x.amount || 0) + '</td><td class="xs muted">' + esc(O.tpl('since {month}', { month: d.monthName(x.from + '-01', true) + ' ' + x.from.slice(0, 4) })) + '</td><td class="num">' + (ed ? '<button type="button" class="btn btn-ghost btn-xs" data-fc-del="' + esc(x.id) + '">' + esc(O.tr('Remove')) + '</button>' : '') + '</td></tr>';
+    }).join('');
+    return '<div class="card" style="margin-top:14px"><div class="card-head"><div class="hd"><h3>' + esc(O.tr('Monthly fixed costs')) + '</h3><div class="sub">' + esc(O.tr('Costs that stay the same every month, on top of the rent and bills in the unit files: salaries, software, accounting, insurance')) + '</div></div></div>' +
+      '<div class="card-body flush"><div class="table-wrap"><table class="table mini-table"><thead><tr><th>' + esc(O.tr('Cost')) + '</th><th class="num">' + esc(O.tr('A month')) + '</th><th></th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="4" class="muted">' + esc(O.tr('None added yet.')) + '</td></tr>') +
+      (items.length ? '<tr><td><b>' + esc(O.tr('Total a month')) + '</b></td><td class="num"><b>' + fmt.money(tot) + '</b></td><td></td><td></td></tr>' : '') + '</tbody></table></div></div>' +
+      (ed ? '<div class="card-foot"><form class="row-flex" data-fc-add style="gap:8px;flex-wrap:wrap;align-items:center"><input class="input" name="name" maxlength="60" placeholder="' + esc(O.tr('What it is, e.g. Cleaner salary')) + '" style="flex:2;min-width:180px" required><input class="input" name="amount" type="number" min="1" step="1" inputmode="decimal" placeholder="' + esc(O.tpl('{cur} a month', { cur: fmt.cur() })) + '" style="flex:1;min-width:120px" required><button type="submit" class="btn btn-primary btn-sm">' + O.icon('plus') + esc(O.tr('Add fixed cost')) + '</button></form><div class="xs muted" style="margin-top:6px">' + esc(O.tr('Each cost counts from this month on. Removing one stops it from next month; earlier months keep it.')) + '</div></div>' : '') + '</div>';
+  }
+  function addFixed(name, amount) {
+    if (!D.fixedCosts || typeof D.fixedCosts !== 'object' || Array.isArray(D.fixedCosts)) D.fixedCosts = { items: [] };
+    if (!Array.isArray(D.fixedCosts.items)) D.fixedCosts.items = [];
+    D.fixedCosts.items.push({ id: O.uid('FC'), name: name.slice(0, 60), amount: Math.round(amount * 100) / 100, from: D.TODAY.slice(0, 7), at: D.NOW, by: O.state.viewer });
+    O.emit('data', { type: 'fixedCosts' });
+  }
+  function removeFixed(id) {
+    var it = ((D.fixedCosts || {}).items || []).filter(function (x) { return x.id === id; })[0]; if (!it) return;
+    var cur = D.TODAY.slice(0, 7);
+    if (it.from >= cur) D.fixedCosts.items = D.fixedCosts.items.filter(function (x) { return x.id !== id; }); /* added this month: gone */
+    else it.to = cur; /* counted up to the end of this month */
+    O.emit('data', { type: 'fixedCosts' });
+  }
+  BUILD.costs = function (r) {
+    var UF = O.unitFile;
+    if (!UF || !UF.allowed()) return { empty: 'Costs come from each unit’s file (rent and bills). Your access does not include unit files.' };
+    var ufs = UF.state();
+    if (!ufs.loaded) { UF.load().catch(function () {}); return { empty: ufs.error || 'Loading the unit files…' }; }
+    var pid = st.pid, C = UF.coverage(r.from, r.to, pid), t = C.t, T = D.TODAY;
+    var future = r.to > T;
+    var noFile = props().filter(function (p) { return !(C.units[p.id] || {}).hasFile; });
+    var kpis = [
+      { label: 'Total cost', value: fmt.money(t.cost), sub: O.tpl('fixed {fixed}, variable {variable}', { fixed: fmt.moneyShort(t.fixed), variable: fmt.moneyShort(t.variable) }), hl: true },
+      { label: 'Net revenue earned', value: fmt.money(t.earned), sub: future ? O.tpl('nights up to {date}', { date: d.fmt(C.earnTo) }) : 'after platform fees' },
+      { label: 'Covered so far', value: t.covered == null ? '–' : fmt.pct(t.covered), sub: t.profit >= 0 ? 'all costs covered' : O.tpl('{x} still to cover', { x: fmt.money(-t.profit) }) },
+      { label: 'Gross profit so far', value: signed(t.profit), sub: 'net revenue minus all costs' },
+      { label: 'Expected gross profit', value: signed(t.expected), sub: future ? O.tpl('with {x} on the books', { x: fmt.moneyShort(t.booked) }) : 'for these dates' }
+    ];
+    var ids = pid ? [pid] : curIds(), days = d.range(r.from, r.to), run = 0, earnedLine = [], bookedLine = [];
+    days.forEach(function (x) { run += sum(ids, function (id) { return M.netRevenue(x, x, { propertyId: id }); }); earnedLine.push(x <= T ? run : null); bookedLine.push(x >= T ? run : null); });
+    var costLine = days.map(function () { return t.cost; });
+    var chart = {
+      unit: '',
+      legend: O.chart.legend([{ name: O.tr('Net revenue earned'), tone: 'brand' }].concat(future ? [{ name: O.tr('On the books'), tone: 'info' }] : []).concat([{ name: O.tr('Total cost'), tone: 'bad' }])),
+      draw: function (el) {
+        O.chart.line(el, {
+          labels: days.map(function (x) { return d.fmt(x); }), height: chartH(el), yFormat: moneyAxis, padLeft: 62, yMin: 0, ariaLabel: 'Net revenue against total cost',
+          tipTitle: function (i) { return d.dowName(days[i]) + ' ' + d.fmtY(days[i]); },
+          series: [{ name: O.tr('Total cost'), values: costLine, tone: 'bad', dash: true }].concat(future ? [{ name: O.tr('On the books'), values: bookedLine, tone: 'info', dash: true }] : []).concat([{ name: O.tr('Net revenue earned'), values: earnedLine, tone: 'brand', width: 2.4 }])
+        });
+      }
+    };
+    var rows = props().map(function (p) {
+      var x = C.units[p.id] || { rent: 0, bills: 0, expenses: 0, cost: 0, earned: 0, booked: 0 };
+      return { pid: p.id, v: [p.name, x.rent, x.bills, 0, x.expenses, x.cost, x.earned, x.cost > 0 ? Math.min(1, x.earned / x.cost) : null, x.earned - x.cost, x.booked - x.cost], h: { 0: propCell(p) + (x.hasFile ? '' : ' <span class="xs muted">(' + esc(O.tr('no unit file')) + ')</span>') } };
+    });
+    if (!pid && (t.other || C.general)) rows.push({ v: [O.tr('General / company'), 0, 0, t.other, C.general, t.other + C.general, 0, 0, -(t.other + C.general), -(t.other + C.general)] });
+    var cols = [{ label: 'Property', type: 'text', w: 40 }, { label: 'Rent', type: 'money', w: 16 }, { label: 'Bills', type: 'money', w: 15 }, { label: 'Other fixed', type: 'money', w: 17 }, { label: 'Variable', type: 'money', w: 17 }, { label: 'Total cost', type: 'money', w: 18 }, { label: 'Net earned', type: 'money', w: 18 }, { label: 'Covered', type: 'pct', w: 15 }, { label: 'Profit so far', type: 'money', w: 19 }, { label: 'Expected', type: 'money', w: 18 }];
+    var tot = ['All properties', t.rent, t.bills, t.other, t.variable, t.cost, t.earned, t.covered, t.profit, t.expected];
+    var side = { title: 'Gross profit', sub: rangeText(r), html: '<dl class="kv"><dt>Rent</dt><dd>' + fmt.money(t.rent) + '</dd><dt>Bills we pay</dt><dd>' + fmt.money(t.bills) + '</dd><dt>Other fixed costs</dt><dd>' + fmt.money(t.other) + '</dd><dt class="tot">Fixed costs</dt><dd class="tot">' + fmt.money(t.fixed) + '</dd>' +
+      '<dt>Variable costs (expenses)</dt><dd>' + fmt.money(t.variable) + '</dd><dt class="tot">Total cost</dt><dd class="tot">' + fmt.money(t.cost) + '</dd>' +
+      '<dt>Net revenue earned</dt><dd>' + fmt.money(t.earned) + '</dd><dt class="tot">Gross profit so far</dt><dd class="tot">' + signed(t.profit) + '</dd>' +
+      (future ? '<dt>Net revenue on the books</dt><dd>' + fmt.money(t.booked) + '</dd><dt class="tot">Expected gross profit</dt><dd class="tot">' + signed(t.expected) + '</dd>' : '') + '</dl>' +
+      (noFile.length ? '<div class="xs muted rp-sfoot">' + esc(O.tpl('No rent or bills yet for {units}. Add them in the unit file.', { units: noFile.map(function (p) { return p.unitNo || p.short || p.name; }).join(', ') })) + '</div>' : '') };
+    var insight = t.cost <= 0 ? O.tr('No costs are recorded for these dates yet. Add rent and bills in each unit’s file, and monthly fixed costs below.') :
+      t.profit >= 0 ? O.tpl('Costs of {cost} are covered. Net revenue so far is {earned}, a gross profit of {profit}.', { cost: B(fmt.money(t.cost)), earned: fmt.money(t.earned), profit: B(fmt.money(t.profit)) }) :
+      O.tpl('{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.', { pct: B(fmt.pct(t.covered || 0)), cost: fmt.money(t.cost), earned: fmt.money(t.earned), left: B(fmt.money(-t.profit)) });
+    if (future && t.cost > 0) insight = O.i18nKeep(insight + (O.state.lang === 'zh' ? '' : ' ') + O.tpl('With the bookings on the books, the expected gross profit is {x}.', { x: signed(t.expected) }));
+    return {
+      kpis: kpis, chartTitle: 'Net revenue against costs', chartSub: 'Running total of net revenue (after platform fees) against the total cost', chart: chart, side: side,
+      table: { title: 'By property', sub: 'Fixed and variable costs, net revenue and gross profit', cols: cols, rows: rows, total: { v: tot } },
+      summary: [['Total cost', fmt.money(t.cost)], ['Net revenue earned', fmt.money(t.earned)], ['Covered so far', t.covered == null ? '–' : fmt.pct(t.covered)], ['Gross profit so far', signed(t.profit)]],
+      notes: 'Fixed costs are the rent and the bills you pay from each unit’s file plus the monthly fixed costs below, spread evenly over each month. Variable costs are the running expenses recorded for these dates. Gross profit is net revenue (after platform fees) minus both.',
+      extra: pid ? '' : fixedCard(),
+      insight: insight
+    };
+  };
+  function curIdsOr(pid) { return pid ? [pid] : curIds(); }
+
   BUILD.expenses = function (r, c) {
     var pid = st.pid, ex = expensesIn(r, pid), exP = c ? expensesIn(c, pid) : [];
     var tot = sum(ex, function (e) { return e.amount; }), totP = sum(exP, function (e) { return e.amount; });
@@ -738,48 +825,54 @@
 
   /* ---------- Owners: payouts per property owner (statement maths from pages/owner.js) ---------- */
   BUILD.owners = function (r, c) {
-    var F = O.ownerFinance;
+    var F = O.ownerFinance, UF = O.unitFile;
     if (!F) return { unavailable: 'Owner figures did not load. Reload the page to try again.' };
+    if (!UF || !UF.allowed()) return { empty: 'Owner payouts are the rent in each unit’s file. Your access does not include unit files.' };
+    var ufs = UF.state();
+    if (!ufs.loaded) { UF.load().catch(function () {}); return { empty: ufs.error || 'Loading the unit files…' }; }
     var pid = st.pid;
-    function totals(S) {
-      var t = { units: 0, gross: 0, fee: 0, mgmt: 0, opex: 0, capex: 0, payout: 0, nights: 0, avail: 0 };
-      S.lines.forEach(function (l) { if (!inPid({ propertyId: l.p.id }, pid)) return; t.units++; ['gross', 'fee', 'mgmt', 'opex', 'capex', 'payout', 'nights', 'avail'].forEach(function (k) { t[k] += l[k]; }); });
-      t.occ = t.avail ? t.nights / t.avail : 0; return t;
+    /* each owner is paid the rent in the unit file (spread evenly over each month); what is left after rent stays with the business */
+    function totals(a, z, units) {
+      var cc = UF.costs(a, z), t = { units: 0, rent: 0, net: 0, nights: 0, avail: 0, noFile: [] };
+      units.forEach(function (p) {
+        if (!inPid({ propertyId: p.id }, pid)) return;
+        t.units++; var u = cc.units[p.id]; if (!u) t.noFile.push(p.unitNo || p.short || p.name);
+        t.rent += u ? u.rent : 0; t.net += M.netRevenue(a, z, { propertyId: p.id }); t.nights += M.nightsSold(a, z, { propertyId: p.id }); t.avail += M.availableNights(a, z, p.id);
+      });
+      t.kept = t.net - t.rent; t.occ = t.avail ? t.nights / t.avail : 0; return t;
     }
-    var list = F.owners().filter(function (o) { return o.units.some(function (p) { return inPid({ propertyId: p.id }, pid); }); }).map(function (o) {
-      return { name: o.name, t: totals(F.statement(o.name, r.from, r.to)), p: c ? totals(F.statement(o.name, c.from, c.to)) : null };
-    }).sort(function (a, b) { return b.t.payout - a.t.payout; });
+    var list = F.owners().map(function (o) { return { name: o.name, units: o.units.filter(function (p) { return O.inCur(p) && inPid({ propertyId: p.id }, pid); }) }; }).filter(function (o) { return o.units.length; }).map(function (o) {
+      return { name: o.name, t: totals(r.from, r.to, o.units), p: c ? totals(c.from, c.to, o.units) : null };
+    }).sort(function (a, b) { return b.t.rent - a.t.rent; });
     if (!list.length) return { empty: pid ? 'This property has no owner set. Add one in Properties.' : 'No property has an owner set yet. Add owners in Properties to see their payouts.' };
-    var T = { gross: 0, fee: 0, mgmt: 0, opex: 0, capex: 0, payout: 0, units: 0, nights: 0, avail: 0 }, TP = { payout: 0, gross: 0 };
-    list.forEach(function (x) { Object.keys(T).forEach(function (k) { T[k] += x.t[k]; }); if (x.p) { TP.payout += x.p.payout; TP.gross += x.p.gross - x.p.fee; } });
-    T.net = T.gross - T.fee;
+    var T = { rent: 0, net: 0, kept: 0, units: 0, nights: 0, avail: 0 }, TP = { rent: 0, kept: 0 }, noFile = [];
+    list.forEach(function (x) { Object.keys(T).forEach(function (k) { T[k] += x.t[k]; }); noFile = noFile.concat(x.t.noFile); if (x.p) { TP.rent += x.p.rent; TP.kept += x.p.kept; } });
     var link = O.allowed('owner');
     function ownerCell(n) { return link ? '<button type="button" class="lnk" data-go-owner="' + esc(n) + '" title="Open ' + esc(n) + '’s owner portal">' + esc(n) + '</button>' : esc(n); }
     var kpis = [
-      { label: 'Owner payouts', value: fmt.money(T.payout), delta: c ? chg(T.payout, TP.payout) : null, sub: c ? O.tpl('vs {x}', { x: fmt.money(TP.payout) }) : null, hl: true },
-      { label: 'Net revenue', value: fmt.money(T.net), delta: c ? chg(T.net, TP.gross) : null, sub: O.tpl('after platform fees, {units}', { units: fmt.plural(T.units, 'unit') }) },
-      { label: 'Management fee', value: fmt.money(T.mgmt), sub: Math.round(F.MGMT * 100) + '% after platform fees' },
-      { label: 'Costs charged', value: fmt.money(T.opex + T.capex), sub: T.capex ? fmt.money(T.capex) + ' capital spending' : 'running costs only' },
+      { label: 'Owner payouts', value: fmt.money(T.rent), delta: c ? chg(T.rent, TP.rent) : null, sub: 'rent from the unit files', hl: true },
+      { label: 'Net revenue', value: fmt.money(T.net), sub: O.tpl('after platform fees, {units}', { units: fmt.plural(T.units, 'unit') }) },
+      { label: 'Kept after rent', value: signed(T.kept), delta: c && TP.kept > 0 ? chg(T.kept, TP.kept) : null, sub: 'net revenue minus rent' },
       { label: 'Owners', value: fmt.num(list.length), sub: T.avail ? fmt.pct(T.nights / T.avail) + ' occupancy' : null }
     ];
-    var chart = hbarChart(list.map(function (x) { return { label: esc(x.name), name: x.name, cur: Math.max(0, x.t.payout), prev: x.p ? Math.max(0, x.p.payout) : 0, display: fmt.moneyShort(x.t.payout), prevDisplay: x.p ? fmt.moneyShort(x.p.payout) : '–' }; }), r, c, { aria: 'Owner payout by owner' });
-    /* pdf:false leaves a column out of the PDF (A4 portrait fits about nine money columns); pdfLabel shortens a header */
-    var cols = [{ label: 'Owner', type: 'text', w: 36 }, { label: 'Units', type: 'num', w: 12, pdf: false }, { label: 'Occupancy', type: 'pct', w: 17 }, { label: 'Net revenue', type: 'money', w: 24 }, { label: 'Mgmt fee', type: 'money', w: 19 }, { label: 'Running costs', pdfLabel: 'Costs', type: 'money', w: 21 }, { label: 'Capital', type: 'money', w: 17 }, { label: 'Payout', type: 'money', w: 21 }];
-    if (c) cols.push({ label: 'Before', type: 'money', w: 20, pdf: false }, { label: 'Change', type: 'delta', w: 16 });
+    var chart = hbarChart(list.map(function (x) { return { label: esc(x.name), name: x.name, cur: x.t.rent, prev: x.p ? x.p.rent : 0, display: fmt.moneyShort(x.t.rent), prevDisplay: x.p ? fmt.moneyShort(x.p.rent) : '–' }; }), r, c, { aria: 'Owner payout by owner' });
+    var cols = [{ label: 'Owner', type: 'text', w: 46 }, { label: 'Units', type: 'num', w: 14 }, { label: 'Occupancy', type: 'pct', w: 20 }, { label: 'Net revenue', type: 'money', w: 26 }, { label: 'Payout (rent)', type: 'money', w: 26 }, { label: 'Kept after rent', pdfLabel: 'Kept', type: 'money', w: 26 }];
+    if (c) cols.push({ label: 'Before', type: 'money', w: 22 });
     var rows = list.map(function (x) {
-      var v = [x.name, x.t.units, x.t.occ, x.t.gross - x.t.fee, x.t.mgmt, x.t.opex, x.t.capex, x.t.payout];
-      if (c) v.push(x.p.payout, chg(x.t.payout, x.p.payout));
-      return { v: v, h: { 0: ownerCell(x.name), 6: x.t.capex ? null : '<span class="faint">–</span>' } };
+      var v = [x.name, x.t.units, x.t.occ, x.t.net, x.t.rent, x.t.kept];
+      if (c) v.push(x.p.rent);
+      return { v: v, h: { 0: ownerCell(x.name) + (x.t.noFile.length === x.t.units ? ' <span class="xs muted">(' + esc(O.tr('no rent in unit file')) + ')</span>' : '') } };
     });
-    var tot = ['All owners', T.units, T.avail ? T.nights / T.avail : 0, T.net, T.mgmt, T.opex, T.capex, T.payout].concat(c ? [TP.payout, chg(T.payout, TP.payout)] : []);
-    var side = { title: 'Where the revenue went', sub: rangeText(r), html: '<dl class="kv"><dt>Guests paid</dt><dd>' + fmt.money(T.gross) + '</dd><dt>Platform fees</dt><dd>−' + fmt.money(T.fee) + '</dd><dt class="tot">Net revenue</dt><dd class="tot">' + fmt.money(T.net) + '</dd><dt>Management fee</dt><dd>−' + fmt.money(T.mgmt) + '</dd><dt>Running costs</dt><dd>−' + fmt.money(T.opex) + '</dd>' + (T.capex ? '<dt>Capital spending</dt><dd>−' + fmt.money(T.capex) + '</dd>' : '') + '<dt class="tot">Owner payouts</dt><dd class="tot">' + fmt.money(T.payout) + '</dd></dl><div class="xs muted rp-sfoot">' + esc(F.chargeRule) + '</div>' + goBtn('owner', 'Open owner portal') };
+    var tot = ['All owners', T.units, T.avail ? T.nights / T.avail : 0, T.net, T.rent, T.kept].concat(c ? [TP.rent] : []);
+    var side = { title: 'Where the net revenue went', sub: rangeText(r), html: '<dl class="kv"><dt>Net revenue</dt><dd>' + fmt.money(T.net) + '</dd><dt>Rent to owners</dt><dd>−' + fmt.money(T.rent) + '</dd><dt class="tot">Kept after rent</dt><dd class="tot">' + signed(T.kept) + '</dd></dl>' +
+      (noFile.length ? '<div class="xs muted rp-sfoot">' + esc(O.tpl('No rent in the unit file for {units}, so their payout shows as zero.', { units: noFile.join(', ') })) + '</div>' : '') + goBtn('properties', 'Open properties') };
     var best = list[0];
     return {
-      kpis: kpis, chartTitle: 'Payout by owner', chartSub: 'After platform fees, the management fee and costs charged', chart: chart, side: side,
-      table: { title: 'By owner', sub: 'Statement figures for the selected dates', cols: cols, rows: rows, total: { v: tot } },
-      summary: [['Owner payouts', fmt.money(T.payout)], ['Net revenue', fmt.money(T.net)], ['Management fee', fmt.money(T.mgmt)], ['Costs charged', fmt.money(T.opex + T.capex)]],
-      notes: 'Payouts here cover the selected dates and leave out balances carried between months. Monthly statements, approvals and carried balances are in the Owner portal.',
-      insight: O.i18nKeep(O.tpl(c ? 'Owners earn {payout} from {gross} of net revenue ({cmp}); the management fee comes to {fee}.' : 'Owners earn {payout} from {gross} of net revenue; the management fee comes to {fee}.', { payout: B(fmt.money(T.payout)), gross: fmt.money(T.net), cmp: c ? cmpPhrase(T.payout, TP.payout) : '', fee: fmt.money(T.mgmt) }) + (best && best.t.payout > 0 ? (O.state.lang === 'zh' ? '' : ' ') + O.tpl('{name} has the largest payout, {amount}.', { name: { raw: esc(best.name) }, amount: fmt.money(best.t.payout) }) : ''))
+      kpis: kpis, chartTitle: 'Payout by owner', chartSub: 'The rent in each unit’s file for these dates', chart: chart, side: side,
+      table: { title: 'By owner', sub: 'Rent paid to each owner against the net revenue of their units', cols: cols, rows: rows, total: { v: tot } },
+      summary: [['Owner payouts', fmt.money(T.rent)], ['Net revenue', fmt.money(T.net)], ['Kept after rent', signed(T.kept)]],
+      notes: 'Each owner is paid the fixed rent in the unit file, spread evenly over each month (a part month counts its share). No management fee is taken. Rent outside the lease dates is not counted.',
+      insight: O.i18nKeep(O.tpl('Owners are paid {rent} in rent for these dates, against {net} of net revenue from their units.', { rent: B(fmt.money(T.rent)), net: fmt.money(T.net) }) + (best && best.t.rent > 0 ? (O.state.lang === 'zh' ? '' : ' ') + O.tpl('{name} has the largest payout, {amount}.', { name: { raw: esc(best.name) }, amount: fmt.money(best.t.rent) }) : ''))
     };
   };
 
@@ -1109,20 +1202,22 @@
   function openReport(id, root, ctx) {
     if (!REP[id]) return;
     if (st.report !== id) st.sort = null;
-    st.report = id; st.view = 'report'; render(root, ctx); window.scrollTo(0, 0);
+    st.report = id; st.view = 'report';
+    if (id === 'costs' && !st.costsOpened) { st.costsOpened = 1; var pm = U.preset('thisMonth'); st.from = pm.from; st.to = pm.to; st.preset = 'thisMonth'; }
+    render(root, ctx); window.scrollTo(0, 0);
   }
 
   /* ---------- report view ---------- */
   function renderReport(root, ctx) {
     var rep = REP[st.report] || REPORTS[0]; st.report = rep.id;
-    var r = range(), c = compRange(r), lk = locked(rep), exp = canExport();
+    var r = range(), c = rep.id === 'costs' ? null : compRange(r), lk = locked(rep), exp = canExport();
     var head = '<div class="rp-head"><button type="button" class="btn btn-ghost btn-sm" data-lib>' + O.icon('left') + 'All reports</button>' +
       '<div class="rp-ttl"><div class="crumb">' + esc(GRP[rep.group].name) + '</div><h2>' + esc(rep.name) + '</h2><div class="ds">' + esc(rep.desc) + '</div></div>' +
       '<select class="select rp-switch" data-switch aria-label="Switch to another report">' + GROUPS.map(function (g) {
         return '<optgroup label="' + esc(g.name) + '">' + REPORTS.filter(function (x) { return x.group === g.id; }).map(function (x) { return '<option value="' + x.id + '"' + (x.id === rep.id ? ' selected' : '') + '>' + esc(x.name) + (locked(x) ? ' (financial access)' : '') + '</option>'; }).join('') + '</optgroup>';
       }).join('') + '</select></div>';
     var bar = '<div class="rp-bar"><div class="grp"><span data-slot="range"></span></div>' +
-      '<div class="grp"><span class="lbl">Compare with</span><div class="seg rp-cmp" role="group" aria-label="Compare with">' + COMPARE.map(function (x) { return '<button type="button" data-cmp="' + x[0] + '" class="' + (x[0] === st.compare ? 'on' : '') + '" aria-pressed="' + (x[0] === st.compare) + '"><span class="l">' + esc(x[1]) + '</span><span class="s">' + esc(x[2]) + '</span></button>'; }).join('') + '</div></div>' +
+      (rep.id === 'costs' ? '' : '<div class="grp"><span class="lbl">Compare with</span><div class="seg rp-cmp" role="group" aria-label="Compare with">' + COMPARE.map(function (x) { return '<button type="button" data-cmp="' + x[0] + '" class="' + (x[0] === st.compare ? 'on' : '') + '" aria-pressed="' + (x[0] === st.compare) + '"><span class="l">' + esc(x[1]) + '</span><span class="s">' + esc(x[2]) + '</span></button>'; }).join('') + '</div></div>') +
       '<div class="grp"><label class="sr-only" for="rp-prop">Property</label><select id="rp-prop" class="select"><option value="">All properties</option>' + D.properties.filter(function (p) { return (!p.archived || p.id === st.pid) && O.inCur(p); }).map(function (p) { return '<option value="' + p.id + '"' + (p.id === st.pid ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select>' + O.curSwitchHTML() + '</div></div>';
 
     var html = '<div class="pg-reports">' + head + (lk ? '' : bar), built = null;
@@ -1150,7 +1245,7 @@
           '<div class="card" style="margin-top:14px"><div class="card-head"><div class="hd"><h3>' + esc(built.table.title) + '</h3><div class="sub">' + esc(built.table.sub) + ' · ' + esc(rangeText(r)) + ' · tap a column to sort</div></div>' +
           '<div class="rp-actions">' + toolsHTML(built) + '<button type="button" class="btn btn-ghost btn-sm" data-act="csv"' + dis + '>' + O.icon('download') + 'CSV</button><button type="button" class="btn btn-ghost btn-sm" data-act="pdf"' + dis + '>' + O.icon('file') + 'PDF</button></div></div>' +
           '<div class="card-body flush tbl">' + tableHTML(built) + '</div>' +
-          (built.notes ? '<div class="card-foot">' + esc(built.notes) + '</div>' : '') + '</div>';
+          (built.notes ? '<div class="card-foot">' + esc(built.notes) + '</div>' : '') + '</div>' + (built.extra || '');
       }
     }
     html += '</div>';
@@ -1189,10 +1284,19 @@
       if (t && built) { var i = +t.dataset.sort, s = st.sort, k = sortKey(); st.sort = { key: k, col: i, dir: s && s.key === k && s.col === i ? -s.dir : (isNum(built.table.cols[i]) ? -1 : 1) }; O.$('.tbl', root).innerHTML = tableHTML(built); return; }
       t = e.target.closest('[data-act]');
       if (t && built && !t.disabled) { if (t.dataset.act === 'csv') doCSV(built, r); else doPDF(built, r, c); return; }
+      t = e.target.closest('[data-fc-del]');
+      if (t) { removeFixed(t.dataset.fcDel); render(root, ctx); return; }
       t = e.target.closest('[data-go-owner]');
       if (t) { O.go('owner', { owner: t.dataset.goOwner }); return; }
       t = e.target.closest('[data-go]');
       if (t) O.go(t.dataset.go);
+    };
+    var fcf = O.$('[data-fc-add]', root);
+    if (fcf) fcf.onsubmit = function (e) {
+      e.preventDefault();
+      var nm = String(fcf.elements.name.value || '').trim(), am = parseFloat(fcf.elements.amount.value);
+      if (!nm || !(am > 0)) { U.toast(O.tr('Add a name and a monthly amount above zero.'), 'bad'); return; }
+      addFixed(nm, am); U.toast(O.tpl('Added {name}: {amount} a month.', { name: nm, amount: fmt.money(am) })); render(root, ctx);
     };
     O.$('[data-switch]', root).onchange = function (e) { openReport(e.target.value, root, ctx); };
     O.curSwitchWire(root);
@@ -1202,8 +1306,9 @@
 
   function render(root, ctx) {
     var p0 = ctx.params || {};
+    if (!ctx._ufOn && ctx.on) { ctx._ufOn = 1; ctx.on('unitfiles', function () { if (st.view === 'report' && (st.report === 'costs' || st.report === 'owners')) render(root, ctx); }); }
     if (ctx.fresh) {
-      if (p0.report && REP[p0.report]) { st.report = p0.report; st.view = 'report'; } else st.view = 'library';
+      if (p0.report && REP[p0.report]) { st.report = p0.report; st.view = 'report'; if (p0.report === 'costs' && !st.costsOpened) { st.costsOpened = 1; var pm = U.preset('thisMonth'); st.from = pm.from; st.to = pm.to; st.preset = 'thisMonth'; } } else st.view = 'library';
       if (p0.propertyId && D.propById[p0.propertyId]) { st.pid = p0.propertyId; if (!O.inCur(st.pid)) O.store.set('viewCur', O.curOf(st.pid)); } /* open in that unit's currency */
       ctx.fresh = false; /* internal re-renders reuse this ctx */
     }
