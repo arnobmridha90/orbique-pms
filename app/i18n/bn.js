@@ -8270,5 +8270,7 @@ O.I18N.bn = {
 "Booked today, any stay dates · {n} cancelled": "আজ বুক করা, যেকোনো থাকার তারিখ · {n}টি বাতিল",
 "Booked today, any stay dates": "আজ বুক করা, যেকোনো থাকার তারিখ",
 "New bookings today": "আজকের নতুন বুকিং",
-"No new bookings have come in today yet.": "আজ এখনও কোনো নতুন বুকিং আসেনি।"
+"No new bookings have come in today yet.": "আজ এখনও কোনো নতুন বুকিং আসেনি।",
+"Ready-made review {n} of {total}": "তৈরি রিভিউ {total}টির মধ্যে {n}",
+"Next review": "পরের রিভিউ"
 };

@@ -8270,5 +8270,7 @@ O.I18N.zh = {
 "Booked today, any stay dates · {n} cancelled": "今天预订，任何入住日期 · {n} 个已取消",
 "Booked today, any stay dates": "今天预订，任何入住日期",
 "New bookings today": "今日新预订",
-"No new bookings have come in today yet.": "今天还没有新预订。"
+"No new bookings have come in today yet.": "今天还没有新预订。",
+"Ready-made review {n} of {total}": "现成评价 {n} / {total}",
+"Next review": "下一条评价"
 };
