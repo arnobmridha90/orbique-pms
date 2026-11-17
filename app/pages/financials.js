@@ -214,8 +214,9 @@
   function propRows(r) {
     var out = D.properties.filter(O.inCur).map(function (p) {
       var x = pnl(r.from, r.to, p.id);
+      if (p.archived && !x.nights && !x.revenue && !x.expTotal) return null; /* archived units show only when they have figures */
       return { id: p.id, name: p.name, short: p.short, area: p.area, nights: x.nights, occ: M.occupancy(r.from, r.to, p.id), revenue: x.revenue, fees: x.feeTotal, exp: x.expTotal, net: x.net, margin: x.margin, cap: x.capTotal };
-    });
+    }).filter(Boolean);
     var g = pnl(r.from, r.to, null);
     var general = { id: null, name: 'General / company', short: 'General', area: 'Not tied to a unit', nights: 0, occ: null, revenue: 0, fees: 0, exp: g.expTotal, net: -g.expTotal, margin: null, cap: g.capTotal };
     var k = st.psort, dir = st.pdir;
