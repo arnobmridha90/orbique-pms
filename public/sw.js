@@ -11,10 +11,10 @@
  * maps work without internet. Those caches are kept when VERSION changes (the page refreshes them every 30 days).
  * Bump VERSION when this file's caching rules change; old app caches are deleted on activate.
  */
-const VERSION = 'orbique-v4-5';
+const VERSION = 'orbique-v4-6';
 const MAPS = 'orbique-maps-';
 const MAP_HOST = 'tiles.openfreemap.org';
-const PRECACHE = ['/index.html', '/config.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/vendor/supabase.js', '/vendor/jspdf.umd.min.js', '/sounds/orbique_alert.wav'];
+const PRECACHE = ['/index.html', '/config.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/vendor/supabase.js', '/vendor/jspdf.umd.min.js', '/sounds/orbique_alert.wav', '/sounds/orbique_change.wav', '/sounds/orbique_message.wav', '/sounds/orbique_team.wav', '/sounds/orbique_task.wav'];
 const NETWORK_TIMEOUT = 6000; // on a slow connection, fall back to the cached app after this long
 
 self.addEventListener('install', (event) => {

@@ -18,8 +18,9 @@
  * WhatsApp alerts use an approved message template (WHATSAPP_ALERT_TEMPLATE, default "booking_alert", language
  * WHATSAPP_ALERT_LANG, default "en") with two body values: the title and the details. WhatsApp only lets a business
  * write first with a template. Sent from the workspace's WhatsApp number (whatsapp_numbers).
- * Phone alerts use Orbique's own loud chime (scripts/alert-sound.py): Android channel PUSH_CHANNEL with sound
- * PUSH_SOUND, iOS sound PUSH_SOUND + '.wav'. The phone's notification volume still applies.
+ * Phone alerts use Orbique's own tones (scripts/alert-sound.py), one per kind (pushTone): a new booking rings the chime on
+ * Android channel PUSH_CHANNEL (sound PUSH_SOUND), a cancellation or new dates the "change" tone on CHANGE_CHANNEL, and
+ * Team chat the "team" tone on TEAM_CHANNEL; iPhones get the same file name + '.wav'. The phone's volume still applies.
  * Nothing here logs or returns a key, and error messages never include one.
  */
 import { createSign } from 'node:crypto';
@@ -32,6 +33,12 @@ const BACKOFF_MS = [60e3, 2 * 60e3, 5 * 60e3, 15 * 60e3, 60 * 60e3];
 export const CHANNELS = ['email', 'whatsapp', 'push'];
 export const PUSH_CHANNEL = 'alerts_loud';        // Android notification channel; channels cannot change once made, so a new sound needs a new id
 export const PUSH_SOUND = 'orbique_alert';        // scripts/alert-sound.py; Android res/raw name, iOS adds .wav
+export const CHANGE_CHANNEL = 'alerts_change';    // cancellations and date changes: their own tone (app/native/bridge.js)
+export const CHANGE_SOUND = 'orbique_change';
+/** The phone channel and sound for a booking alert kind ('new', 'cancelled', 'changed', 'test'). */
+export function pushTone(kind) {
+  return kind === 'cancelled' || kind === 'changed' ? { channel: CHANGE_CHANNEL, sound: CHANGE_SOUND } : { channel: PUSH_CHANNEL, sound: PUSH_SOUND };
+}
 const CHANNEL_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', expedia: 'Expedia', trip: 'Trip.com', vrbo: 'Vrbo', direct: 'Direct', other: 'Another site' };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -268,23 +275,25 @@ export async function sendPush(sb, cfg, orgId, msg, data, opts = {}) {
   // phones of owners and ops managers (0024: other members' phones register for Team chat alerts only)
   const devices = must(await sb.from('push_devices').select('token').eq('org_id', orgId).eq('booking_alerts', true), 'load phones') || [];
   if (!devices.length) return 'skipped: no phone has turned on alerts yet';
+  const tone = pushTone(data && data.kind);
   const r = await fcmSend(sb, cfg, devices, (token) => ({
     token,
     notification: { title: msg.title, body: msg.lines.join('\n') },
     data: dataStrings(data),
-    // Android: the loud channel the app makes (app/native/bridge.js) and its sound, res/raw/orbique_alert.wav
-    android: { priority: 'high', notification: { channel_id: PUSH_CHANNEL, sound: PUSH_SOUND, notification_priority: 'PRIORITY_MAX', default_vibrate_timings: false, vibrate_timings: ['0s', '0.4s', '0.2s', '0.4s'] } },
-    // iPhone: the same sound from the app bundle (ios/App/App/orbique_alert.wav), delivered straight away
-    apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: PUSH_SOUND + '.wav' } } }
+    // Android: the channel the app makes for this kind (app/native/bridge.js) and its sound, res/raw/<sound>.wav
+    android: { priority: 'high', notification: { channel_id: tone.channel, sound: tone.sound, notification_priority: 'PRIORITY_MAX', default_vibrate_timings: false, vibrate_timings: ['0s', '0.4s', '0.2s', '0.4s'] } },
+    // iPhone: the same sound from the app bundle (ios/App/App/<sound>.wav), delivered straight away
+    apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: tone.sound + '.wav' } } }
   }), opts);
   if (r.sent || !r.failed.length) return r.sent ? 'sent' : 'skipped: no phone has turned on alerts yet';
   throw new AlertError('Firebase: ' + r.failed[0], { permanent: false });
 }
 
 /* Team chat (0024; api/alerts.js 'team-message'): one message to the phones of these people (user ids), on the phone
-   app's "Team chat" channel (app/native/bridge.js) with the phone's usual sound; a chat's alerts replace each other.
+   app's "Team chat" channel (app/native/bridge.js) with the Team chat tone; a chat's alerts replace each other.
    text {title, body}; data {kind: 'team', chatId}. -> {sent, failed: [why], phones}; one phone's error never throws. */
-export const TEAM_CHANNEL = 'team_chat';
+export const TEAM_CHANNEL = 'team_tone';          // was 'team_chat' with the phone's usual sound; channels cannot change
+export const TEAM_SOUND = 'orbique_team';
 export async function sendTeamPush(sb, cfg, orgId, userIds, text, data, opts = {}) {
   const users = [...new Set((userIds || []).filter((u) => typeof u === 'string' && u))];
   if (!cfg.configured || !users.length) return { sent: 0, failed: [], phones: 0, skipped: !cfg.configured ? 'phone alerts are not set up' : 'nobody to alert' };
@@ -295,8 +304,8 @@ export async function sendTeamPush(sb, cfg, orgId, userIds, text, data, opts = {
     token,
     notification: { title: clean(text.title, 80), body: clean(text.body, 180) },
     data: dataStrings(data),
-    android: { priority: 'high', notification: { channel_id: TEAM_CHANNEL, tag, default_sound: true } },
-    apns: { headers: { 'apns-priority': '10', 'apns-collapse-id': tag }, payload: { aps: { sound: 'default', 'thread-id': tag } } }
+    android: { priority: 'high', notification: { channel_id: TEAM_CHANNEL, tag, sound: TEAM_SOUND } },
+    apns: { headers: { 'apns-priority': '10', 'apns-collapse-id': tag }, payload: { aps: { sound: TEAM_SOUND + '.wav', 'thread-id': tag } } }
   }), opts);
   return Object.assign(r, { phones: devices.length });
 }

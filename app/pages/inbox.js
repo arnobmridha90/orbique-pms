@@ -74,7 +74,7 @@
     if (!c.assigneeId) { var sm = c.messages.filter(function (m) { return m.from === 'staff' && m.staffId; }).pop(); c.assigneeId = sm ? sm.staffId : 's4'; }
   });
 
-  /* ---- the alert chime for a new guest message (O.alertSound, app/core.js) ---------------------------------------
+  /* ---- the guest message tone (O.alertSound 'message', app/core.js) ---------------------------------------
      Live changes from the server ('remote-rows', sent before they are applied) ring once per batch when a chat gets a
      message from the guest that this device did not have yet. Not on first load (that is not a live change), not for
      the team's own saves (r.by) or messages, and not in this test copy, which has no live changes. Runs while Orbique is
@@ -88,7 +88,7 @@
       return r.data.messages.some(function (m, i) { return m && m.from === 'guest' && (m.xid ? !xids[m.xid] : i >= om.length); });
     });
   }
-  O.on('remote-rows', function (rows) { if (O.alertSound && newGuestMessages(rows)) O.alertSound.play(); });
+  O.on('remote-rows', function (rows) { if (O.alertSound && newGuestMessages(rows)) O.alertSound.play('message'); });
   O.inboxNewGuest = newGuestMessages; /* for checks in the browser console and tests */
 
   var st = { sel: null, view: 'list', tab: 'guests', box: 'main', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };

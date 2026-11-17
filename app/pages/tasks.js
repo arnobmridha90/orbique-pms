@@ -1281,6 +1281,22 @@
   /* ===================================================================
      PAGE
      =================================================================== */
+  /* ---------- the "new task for you" tone (O.alertSound 'task', app/core.js) ----------
+     A live change from the server that gives this person a task they did not have (a new task, or added to one),
+     saved by someone else, rings once per batch on any page while Orbique is open. Done tasks do not ring. */
+  O.on('remote-rows', function (rows) {
+    if (!O.alertSound || !O.auth || !O.auth.user) return;
+    var meStaff = O.state.viewer, meUser = (O.auth.user() || {}).id;
+    if (!meStaff || (O.auth.isPreviewing && O.auth.isPreviewing())) return;
+    var ring = (rows || []).some(function (r) {
+      if (r.coll !== 'tasks' || r.deleted || !r.data || (r.by && r.by === meUser)) return false;
+      if (r.data.status === 'done' || r.data.done) return false;
+      var old = taskById(r.id);
+      return W.ids(r.data).indexOf(meStaff) >= 0 && !(old && W.ids(old).indexOf(meStaff) >= 0);
+    });
+    if (ring) O.alertSound.play('task');
+  });
+
   O.page('tasks', {
     desc: 'Turnovers, housekeeping, inspections and repairs, and who is doing them',
     render: function (root, ctx) {

@@ -35,14 +35,24 @@
       .then(function () { st.loading = false; st.at = Date.now(); repaint(); });
   }
 
-  /* ---------- the sound for a new booking that arrives while the app is open ---------- */
+  /* ---------- the sound for a booking change that arrives while the app is open ----------
+     A new booking rings the booking tone; a cancellation or new dates from a booking site ring the change tone
+     (O.alertSound, app/core.js). Only live changes from the server that the team did not make (r.by), and only the
+     kinds switched on in these settings. */
   O.on('remote-rows', function (rows) {
-    var s = settings(); if (!s.on || !s.kinds.new || !O.alertSound) return;
-    var have = {}; (D.bookings || []).forEach(function (b) { have[String(b.id)] = 1; });
-    var fresh = rows.some(function (r) {
-      return r.coll === 'bookings' && !r.deleted && r.data && !r.by && !have[String(r.id)] && !/^(cancelled|deleted)$/.test(String(r.data.status || ''));
+    var s = settings(); if (!s.on || !O.alertSound) return;
+    var have = {}; (D.bookings || []).forEach(function (b) { have[String(b.id)] = b; });
+    var gone = function (st) { return /^(cancelled|deleted)$/.test(String(st || '')); };
+    var fresh = false, change = false;
+    rows.forEach(function (r) {
+      if (r.coll !== 'bookings' || r.deleted || !r.data || r.by) return;
+      var old = have[String(r.id)];
+      if (!old) { if (!gone(r.data.status)) fresh = true; return; }
+      if (gone(r.data.status) && !gone(old.status)) { if (s.kinds.cancelled) change = true; }
+      else if (!gone(r.data.status) && (r.data.checkIn !== old.checkIn || r.data.checkOut !== old.checkOut) && s.kinds.changed) change = true;
     });
-    if (fresh) O.alertSound.play();
+    if (fresh && s.kinds.new) O.alertSound.play('booking');
+    else if (change) O.alertSound.play('change');
   });
 
   /* ---------- the card ---------- */
@@ -75,15 +85,18 @@
       '</div></div>';
   }
 
-  /* this device's alert sound: on or off (O.store), and a Play button to hear it */
+  /* this device's alert sounds: on or off (O.store), and a Play button to hear each tone (O.alertSound, app/core.js) */
+  var TONE_NAMES = [['booking', 'New booking'], ['change', 'Cancellation or new dates'], ['message', 'Guest message'], ['team', 'Team chat'], ['task', 'New task for you']];
   function soundLine() {
     if (!O.alertSound) return '';
     var on = !O.alertSound.muted();
-    return '<div class="row-flex" style="gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--border)">' + O.icon('bell', 'al-ic') +
-      '<div class="grow" style="min-width:0"><b>Sound in the app</b><div class="small muted">' + (on ? 'On for this device: a loud chime for new bookings and guest messages while Orbique is open' : 'Off for this device') + '</div>' +
-      '<div class="xs muted" style="margin-top:2px">Your device\'s volume still applies. Phone notifications use the same chime.</div></div>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-al="sound-play">' + O.icon('play') + 'Play</button>' +
-      '<label class="row-flex" style="gap:6px"><input type="checkbox" data-al-sound' + (on ? ' checked' : '') + '> <span class="small">On</span></label></div>';
+    return '<div style="padding:8px 0; border-top:1px solid var(--border)"><div class="row-flex" style="gap:10px; align-items:center">' + O.icon('bell', 'al-ic') +
+      '<div class="grow" style="min-width:0"><b>Sounds in the app</b><div class="small muted">' + (on ? 'On for this device: a different tone for each kind of alert while Orbique is open' : 'Off for this device') + '</div>' +
+      '<div class="xs muted" style="margin-top:2px">Your device\'s volume still applies. Phone notifications use the same tones.</div></div>' +
+      '<label class="row-flex" style="gap:6px"><input type="checkbox" data-al-sound' + (on ? ' checked' : '') + '> <span class="small">On</span></label></div>' +
+      '<div class="row-flex wrap" style="gap:6px; margin:8px 0 0 30px">' + TONE_NAMES.map(function (t) {
+        return '<button type="button" class="btn btn-ghost btn-sm" data-al="sound-play" data-tone="' + t[0] + '" title="' + esc(O.t('Play')) + '">' + O.icon('play') + esc(O.t(t[1])) + '</button>';
+      }).join('') + '</div></div>';
   }
 
   /* ---------- edit ---------- */
@@ -128,7 +141,7 @@
     var b = e.target.closest('[data-al]'); if (!b || !b.closest('[data-alerts-card]')) return;
     if (b.dataset.al === 'edit') editModal();
     else if (b.dataset.al === 'test') sendTest();
-    else if (b.dataset.al === 'sound-play' && O.alertSound) { if (!O.alertSound.test()) U.toast('This browser cannot play sounds', 'bad'); }
+    else if (b.dataset.al === 'sound-play' && O.alertSound) { if (!O.alertSound.test(b.dataset.tone)) U.toast('This browser cannot play sounds', 'bad'); }
     else if (b.dataset.al === 'phone' && O.native && O.native.push) O.native.push.enable(true).then(function (r) { U.toast(r && r.ok ? 'Alerts are on for this phone' : (r && r.message) || 'Alerts could not be turned on', r && r.ok ? 'ok' : 'bad'); load(true); });
   });
 
@@ -136,7 +149,7 @@
     var c = e.target.closest('[data-al-sound]'); if (!c || !O.alertSound) return;
     O.alertSound.setMuted(!c.checked);
     U.toast(c.checked ? 'Alert sound on for this device' : 'Alert sound off for this device');
-    if (c.checked) O.alertSound.test();
+    if (c.checked) O.alertSound.test('booking');
     repaint();
   });
 
