@@ -8437,6 +8437,5 @@ O.I18N.zh = {
 "Harp": "豎琴",
 "Three beeps": "三聲嗶",
 "Glass": "玻璃",
-"Soft chord": "柔和和弦",
-"Revenue after platform fees, the same figure as the Dashboard. Before fees it is {amount}. Spark line: net revenue per day, {span}": "扣除平台費用後的收入，與儀表板相同。扣除前為 {amount}。走勢線：每日淨收入，{span}"
+"Soft chord": "柔和和弦"
 };

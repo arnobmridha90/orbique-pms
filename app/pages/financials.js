@@ -118,7 +118,6 @@
       o.fees[b.channel] += b.platformFee * k; o.feeTotal += b.platformFee * k;
     });
     o.revenue = o.acc + o.cln;
-    o.netRev = o.revenue - o.feeTotal;                /* net revenue: what is kept after the booking sites' fees (same as the Dashboard) */
     var ex = forProp(expIn(from, to, 'opex'), pid), cap = forProp(expIn(from, to, 'capex'), pid);
     o.exp = ex; o.expTotal = sum(ex);                 /* operating expenses: inside profit */
     o.cap = cap; o.capTotal = sum(cap);               /* capital spending: below operating profit */
@@ -345,7 +344,7 @@
         '<span class="small muted">Compare with</span>' + U.seg([['auto', 'Auto'], ['prev', 'Previous period'], ['month', 'Same days last month']], st.cmp, 'data-cmp') +
         O.curSwitchHTML() + '<span class="grow"></span><span class="fin-lock">' + O.icon('lock') + 'Only account owners can open Financials. Staff Access cannot grant it.</span></div>' +
         U.kpis([
-          { label: 'Net revenue', value: money(a.netRev), delta: fmt.change(a.netRev, b.netRev), sub: vs, spark: perDay('netRev'), hl: true, title: O.tpl('Revenue after platform fees, the same figure as the Dashboard. Before fees it is {amount}. Spark line: net revenue per day, {span}', { amount: money(a.revenue), span: span }) },
+          { label: 'Revenue', value: money(a.revenue), delta: fmt.change(a.revenue, b.revenue), sub: vs, spark: perDay('revenue'), hl: true, title: O.tpl('Spark line: revenue per day, {span}', { span: span }) },
           { label: 'Operating expenses', value: money(a.expTotal), delta: fmt.change(a.expTotal, b.expTotal), deltaOpts: { invert: true }, sub: vs, spark: perDay('expTotal'), title: O.tpl('The running costs of the month. Spark line: per day, {span}', { span: span }) },
           { label: 'Operating profit', value: signed(a.net) + ' <span class="small muted" style="font-weight:700">' + pctTxt(a.margin) + '</span>', delta: fmt.change(a.net, b.net), sub: vs, spark: perDay('net'), title: O.tpl('Revenue minus platform fees and operating expenses. Spark line: per day, {span}', { span: span }) },
           { label: 'Capital spending', value: money(a.capTotal), sub: a.cap.length ? fmt.plural(a.cap.length, 'purchase') + '<span class="lg"> · not in profit</span>' : 'None in this period', title: 'Long-lasting purchases for a property, kept out of operating profit. Platform fees: ' + money(a.feeTotal) }

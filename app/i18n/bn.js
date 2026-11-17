@@ -8437,6 +8437,5 @@ O.I18N.bn = {
 "Harp": "হার্প",
 "Three beeps": "তিনটি বিপ",
 "Glass": "কাচ",
-"Soft chord": "নরম কর্ড",
-"Revenue after platform fees, the same figure as the Dashboard. Before fees it is {amount}. Spark line: net revenue per day, {span}": "প্ল্যাটফর্ম ফির পর আয়, ড্যাশবোর্ডের মতোই। ফির আগে এটি {amount}। স্পার্ক লাইন: প্রতিদিনের নেট আয়, {span}"
+"Soft chord": "নরম কর্ড"
 };
