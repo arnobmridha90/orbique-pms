@@ -100,6 +100,8 @@
 .pg-reviews .rv-subs .lo b{color:var(--bad);}
 .pg-reviews .rg-scores{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;}
 .pg-reviews .rg-score{display:flex;flex-direction:column;gap:4px;font-size:13px;}
+.pg-reviews .rg-tl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.pg-reviews .rg-tl label{margin-right:auto;}
 .pg-reviews .rv-guest textarea{margin:4px 0 8px;}
 .pg-reviews .rv-guest .check{display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0 8px;}
 .pg-reviews .rv-reply{margin-top:12px;border-top:1px dashed var(--border);padding-top:12px;}
@@ -384,14 +386,14 @@
     } else if (blind && !canReply()) {
       reply = '<div class="rv-ro">' + O.icon('lock') + '<span>Airbnb hides this review until the guest is reviewed. ' + esc(NO_REPLY) + '</span></div>';
     } else if (blind) {
-      var gv = st.gr[r.id] || (st.gr[r.id] = { cleanliness: 5, communication: 5, respect_house_rules: 5, text: O.tpl('{name} was a great guest: tidy, friendly and easy to talk to. Welcome back any time!', { name: greetName(r.guest) }), note: '', rec: true });
+      var gv = st.gr[r.id]; if (!gv) { var ti = grNext(null, r.id); gv = st.gr[r.id] = { cleanliness: 5, communication: 5, respect_house_rules: 5, tpl: ti, text: grFill(ti, greetName(r.guest)), note: '', rec: true }; }
       var starSel = function (k, label) {
         return '<label class="rg-score"><span>' + label + '</span><select class="select" data-gr="' + r.id + '" data-k="' + k + '">' + [5, 4, 3, 2, 1].map(function (n) { return '<option value="' + n + '"' + (gv[k] === n ? ' selected' : '') + '>' + n + ' ★</option>'; }).join('') + '</select></label>';
       };
       reply = '<div class="rv-compose rv-guest"><div class="rc-head"><b>' + esc(O.tpl('Review {name} to see their review', { name: greetName(r.guest) })) + '</b></div>' +
         '<p class="muted small">' + esc('Airbnb keeps a guest\'s review hidden until you review the guest (or 14 days pass). Once you submit this, Airbnb shows their review and you can reply here.') + '</p>' +
         '<div class="rg-scores">' + starSel('cleanliness', 'Cleanliness') + starSel('communication', 'Communication') + starSel('respect_house_rules', 'House rules') + '</div>' +
-        '<label class="small" for="rg-t-' + r.id + '">Public review of the guest</label>' +
+        '<div class="rg-tl"><label class="small" for="rg-t-' + r.id + '">Public review of the guest</label><span class="muted small">' + esc(O.tpl('Ready-made review {n} of {total}', { n: gv.tpl + 1, total: GUEST_REVIEWS.length })) + '</span><button type="button" class="btn btn-quiet btn-xs" data-act="grnext" data-id="' + r.id + '">' + O.icon('refresh') + 'Next review</button></div>' +
         '<textarea class="textarea" id="rg-t-' + r.id + '" data-gr="' + r.id + '" data-k="text" rows="3">' + esc(gv.text) + '</textarea>' +
         '<label class="small" for="rg-n-' + r.id + '">Private note to the guest (optional)</label>' +
         '<textarea class="textarea" id="rg-n-' + r.id + '" data-gr="' + r.id + '" data-k="note" rows="2">' + esc(gv.note) + '</textarea>' +
@@ -487,6 +489,58 @@
     U.toast((was ? 'Reply updated on ' : 'Reply posted on ') + U.platName(r.platform) + ' for ' + r.guest);
     O.emit('data', { type: 'review', id: r.id });
   }
+  /* Ready-made public reviews of Airbnb guests ({name} = the guest's first name). Each new form takes the next one in
+     turn, after the last one actually sent (guestReviewed.tpl on the review record), skipping any used in the last
+     few reviews or already on another open form, so guests do not get the same words twice in a row. "Next review"
+     rotates the open form to the following one; the text can always be edited before sending. Not translated: it is
+     posted on Airbnb in English. */
+  var GUEST_REVIEWS = [
+    "{name} was a wonderful guest. They kept the suite clean and tidy, communicated clearly and followed every house rule. We would be happy to host them again anytime!",
+    "It was a pleasure hosting {name}. Friendly, respectful and easy to communicate with. The apartment was left in great condition. Highly recommended to other hosts!",
+    "{name} was an excellent guest: punctual, considerate and very tidy. Communication was smooth from start to finish. Welcome back anytime!",
+    "We loved having {name} stay with us. They treated the suite like their own home and left it spotless. Any host would be lucky to have them.",
+    "{name} was a great guest who respected the house rules and our neighbours. Quick to reply and very polite. We would gladly host them again.",
+    "Hosting {name} was easy and enjoyable. Clear communication, a smooth check-in and check-out, and the unit was left neat. Highly recommended!",
+    "{name} was a fantastic guest. Respectful of the space, friendly in every message and very easy to accommodate. Hope to see them again soon!",
+    "Thank you, {name}, for being such a considerate guest. Everything was left clean and in order, and communication was excellent throughout the stay.",
+    "{name} and their group were lovely guests. They followed all the house rules, kept noise down and left the suite in great shape. Welcome back anytime.",
+    "A five-star guest! {name} communicated well, arrived as planned and took great care of the apartment. We recommend them to any host.",
+    "{name} was polite, responsive and very respectful of our home. The suite was left tidy and check-out was right on time. A pleasure to host!",
+    "We were happy to host {name}. They were easy-going, clear in their messages and careful with the apartment. Any host would enjoy having them.",
+    "{name} was an ideal guest: friendly, organised and respectful. The suite was left in excellent condition. We would love to welcome them back.",
+    "Great communication and a very clean stay. {name} followed the check-in instructions perfectly and respected every rule. Highly recommended.",
+    "{name} was a joy to host. Courteous, tidy and quick to respond. They left the apartment just as they found it. Thank you for staying with us!",
+    "It was great having {name} stay with us. They were respectful, communicative and took good care of the suite. Welcome back anytime!",
+    "{name} is the kind of guest every host hopes for. Considerate of the neighbours, clean and very pleasant to deal with. Highly recommended.",
+    "Smooth stay from start to finish. {name} kept us updated on their arrival, followed the house rules and left the unit neat and tidy.",
+    "{name} was a respectful and friendly guest. The apartment was well looked after and communication was quick and clear. We would host them again in a heartbeat.",
+    "We highly recommend {name}. They were thoughtful, tidy and easy to communicate with during the whole stay. Thank you for being a great guest!",
+    "{name} took excellent care of our suite and followed every instruction. Friendly messages and an on-time check-out. A wonderful guest to host.",
+    "A pleasure from booking to check-out. {name} was courteous, clean and respectful of the building rules. Welcome back anytime!",
+    "{name} was a superb guest. They communicated clearly, respected our home and left everything in great order. Any host would be happy to have them.",
+    "Thank you {name} for a lovely stay. You were respectful, tidy and very easy to talk to. We hope to host you again on your next trip.",
+    "{name} was quiet, considerate and kept the apartment spotless. Communication was prompt and friendly. We happily recommend them to other hosts.",
+    "Hosting {name} was a great experience. They followed the house rules, cared for the space and were a pleasure to chat with. Welcome back!",
+    "{name} was a reliable and respectful guest. Check-in and check-out went exactly as planned and the suite was left clean. Highly recommended.",
+    "We enjoyed hosting {name}. Friendly, easy to coordinate with and very respectful of the apartment and the building. Five stars from us!",
+    "{name} was an outstanding guest who treated our suite with care. Clear communication and no issues at all. We would gladly welcome them back.",
+    "Wonderful guest! {name} was polite, tidy and followed every house rule. Thank you for choosing us, and we hope to see you again soon.",
+    "{name} made hosting easy: great communication, a tidy apartment at check-out and full respect for the house rules. Recommended to every host.",
+    "It was a real pleasure to have {name} stay with us. Considerate, friendly and clean. Our doors are always open for them!"
+  ];
+  function grFill(i, name) { return GUEST_REVIEWS[i].replace(/\{name\}/g, name); }
+  function grUsed() { /* template numbers of guest reviews already sent, newest first */
+    return D.reviews.filter(function (x) { return x && x.guestReviewed && typeof x.guestReviewed.tpl === 'number'; })
+      .sort(function (a, b) { var p = a.guestReviewed.date || '', q = b.guestReviewed.date || ''; return p < q ? 1 : p > q ? -1 : 0; })
+      .map(function (x) { return x.guestReviewed.tpl; });
+  }
+  function grNext(after, selfId) {
+    var n = GUEST_REVIEWS.length, used = grUsed(), recent = used.slice(0, Math.min(n - 6, used.length));
+    var open = Object.keys(st.gr).filter(function (k) { return k !== selfId && st.gr[k] && typeof st.gr[k].tpl === 'number'; }).map(function (k) { return st.gr[k].tpl; });
+    var start = typeof after === 'number' ? after + 1 : used.length ? used[0] + 1 : 0;
+    for (var j = 0; j < n; j++) { var i = (start + j) % n; if (recent.indexOf(i) < 0 && open.indexOf(i) < 0) return i; }
+    return ((start % n) + n) % n;
+  }
   /* Airbnb double-blind: review the guest so Airbnb shows their review (api/messages.js review-guest) */
   function reviewGuest(r) {
     var g = st.gr[r.id];
@@ -494,7 +548,7 @@
     if ((g.text || '').trim().length < 10) { U.toast('Write a public review of at least 10 characters first', 'bad'); return; }
     if (!(O.auth && O.auth.inbox && O.sync.adapter && O.sync.adapter.name === 'server')) { U.toast('Reviewing guests works in a live workspace only', 'bad'); return; }
     st.busy = r.id; ctx0 && ctx0.rerender && ctx0.rerender();
-    O.auth.inbox('review-guest', { reviewId: r.id, scores: { cleanliness: g.cleanliness, communication: g.communication, respect_house_rules: g.respect_house_rules }, publicReview: g.text, privateNote: g.note, recommend: g.rec }).then(function (res) {
+    O.auth.inbox('review-guest', { reviewId: r.id, scores: { cleanliness: g.cleanliness, communication: g.communication, respect_house_rules: g.respect_house_rules }, publicReview: g.text, privateNote: g.note, recommend: g.rec, tpl: g.tpl }).then(function (res) {
       if (res && res.review) O.sync.remote([{ coll: 'reviews', id: res.review.id, data: res.review.data, deleted: false }], []);
       delete st.gr[r.id];
       U.toast(O.tpl('Review of {name} sent to Airbnb', { name: r.guest }));
@@ -638,6 +692,10 @@
         var ta = O.$('[data-draft="' + r.id + '"]', page);
         if (act === 'post') post(r, ta ? ta.value : '');
         if (act === 'greview') reviewGuest(r);
+        if (act === 'grnext' && st.gr[r.id]) {
+          var gg = st.gr[r.id], ni = grNext(gg.tpl, r.id); gg.tpl = ni; gg.text = grFill(ni, greetName(r.guest));
+          ctx.rerender(); var tt = O.$('#rg-t-' + r.id, root); if (tt) tt.focus();
+        }
         if (act === 'another') {
           st.variant[r.id] = (st.variant[r.id] || 0) + 1; delete st.drafts[r.id];
           if (ta) { ta.value = suggest(r, st.variant[r.id]); autosize(ta); st.drafts[r.id] = ta.value; var cc = O.$('[data-cc="' + r.id + '"]', page); if (cc) cc.textContent = O.tpl('{n} characters', { n: ta.value.length }); ta.focus(); }

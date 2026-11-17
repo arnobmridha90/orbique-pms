@@ -251,7 +251,8 @@ export async function reviewGuest(sb, cfg, orgId, reviewId, input, by, opts = {}
     }
     throw e;
   }
-  const next = Object.assign({}, r, { guestReviewed: { date: todayMY(), by: by || null } });
+  const tpl = Number.isInteger(input && input.tpl) && input.tpl >= 0 && input.tpl < 200 ? input.tpl : null; /* which ready-made review it started from, for the rotation */
+  const next = Object.assign({}, r, { guestReviewed: Object.assign({ date: todayMY(), by: by || null }, tpl !== null ? { tpl } : {}) });
   delete next.id;
   must(await sb.from('records').update({ data: Object.assign({ id: r.id }, next) }).eq('org_id', orgId).eq('coll', 'reviews').eq('id', r.id), 'save guest review');
   return Object.assign({ id: r.id }, next);

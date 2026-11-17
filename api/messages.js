@@ -38,7 +38,7 @@
  *                                                              Messaging & Reviews app) for every connected building, then
  *                                                              fetch the reviews and recent conversations already there
  *   review-reply        {reviewId, text}        reviews.reply  the public reply to a booking-site review
- *   review-guest        {reviewId, scores: {cleanliness, communication, respect_house_rules} 1-5, publicReview, privateNote, recommend}
+ *   review-guest        {reviewId, scores: {cleanliness, communication, respect_house_rules} 1-5, publicReview, privateNote, recommend, tpl?}
  *                                               reviews.reply  review the guest of a hidden Airbnb review (double-blind),
  *                                                              which makes Airbnb show the guest's review
  *   greeting    {conversationId, greetingId, via}

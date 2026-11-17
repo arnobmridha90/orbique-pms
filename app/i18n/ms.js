@@ -8270,5 +8270,7 @@ O.I18N.ms = {
 "Booked today, any stay dates · {n} cancelled": "Ditempah hari ini, sebarang tarikh penginapan · {n} dibatalkan",
 "Booked today, any stay dates": "Ditempah hari ini, sebarang tarikh penginapan",
 "New bookings today": "Tempahan baharu hari ini",
-"No new bookings have come in today yet.": "Belum ada tempahan baharu masuk hari ini."
+"No new bookings have come in today yet.": "Belum ada tempahan baharu masuk hari ini.",
+"Ready-made review {n} of {total}": "Ulasan sedia {n} daripada {total}",
+"Next review": "Ulasan seterusnya"
 };
