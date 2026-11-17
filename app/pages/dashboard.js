@@ -809,11 +809,12 @@
           duesoon: O.unitFile ? safe(function () { return O.unitFile.dueSoonHTML(head); }, '') : '',
           costs: m.money ? safe(function () { return costsHTML(m); }, '') : ''
         };
-        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'costs', 'duesoon', 'inhouse'] : ['newtoday', 'sameday', 'arrivals', 'tasks', 'departures', 'costs', 'attention', 'duesoon', 'inhouse'];
+        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'costs', 'duesoon', 'inhouse'] : ['attention', 'costs', 'newtoday', 'sameday', 'arrivals', 'tasks', 'departures', 'duesoon', 'inhouse'];
         var styled = function (k) { return cards[k] ? cards[k].replace('<section class="card', '<section style="order:' + (order.indexOf(k) + 1) + '" class="card') : ''; };
-        var left = ['newtoday', 'sameday', 'arrivals', 'departures'].map(styled).join('');
-        var right = ['costs', 'tasks', 'attention', 'duesoon', 'inhouse'].map(styled).join('');
-        if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['costs', 'attention', 'duesoon'].map(styled).join(''); }
+        /* Needs attention is 1 and Costs this month 2 (Arnob): top of the left and right columns on a desktop, first and second on a phone */
+        var left = (mineFirst ? ['newtoday', 'sameday', 'arrivals', 'departures'] : ['attention', 'newtoday', 'sameday', 'arrivals', 'departures']).map(styled).join('');
+        var right = (mineFirst ? ['costs', 'tasks', 'attention', 'duesoon', 'inhouse'] : ['costs', 'tasks', 'duesoon', 'inhouse']).map(styled).join('');
+        if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['costs', 'attention', 'duesoon'].map(styled).join(''); if (!mineFirst) { left = ['attention', 'tasks'].map(styled).join(''); right = ['costs', 'duesoon'].map(styled).join(''); } }
         html = heroHTML(m) + '<div class="dsh-brief-slot">' + (st.brief ? briefPanelHTML() : '') + '</div>' +
           (left || right ? '<div class="dsh-main"><div class="dsh-col">' + left + '</div><div class="dsh-col">' + right + '</div></div>' : '');
         root._dshAlerts = alerts;
