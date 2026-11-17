@@ -8426,5 +8426,16 @@ O.I18N.zh = {
 "New task for you": "你的新任務",
 "Sounds in the app": "應用程式內的提示音",
 "On for this device: a different tone for each kind of alert while Orbique is open": "此裝置已開啟：Orbique 開啟時，每種提醒都有不同的提示音",
-"Your device's volume still applies. Phone notifications use the same tones.": "仍以裝置音量為準。手機通知也使用相同的提示音。"
+"Your device's volume still applies. Phone notifications use the same tones.": "仍以裝置音量為準。手機通知也使用相同的提示音。",
+"Chime": "鈴聲",
+"Falling bells": "下行鐘聲",
+"Ding ding": "叮叮",
+"Bloop": "啵",
+"Marimba": "馬林巴",
+"Sparkle": "閃耀",
+"Doorbell": "門鈴",
+"Harp": "豎琴",
+"Three beeps": "三聲嗶",
+"Glass": "玻璃",
+"Soft chord": "柔和和弦"
 };

@@ -26,7 +26,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const list = (dir, ext) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).sort().map((f) => path.join(dir, f)) : []);
 const jsSafe = (code) => code.replace(/<\/(script)/gi, '<\\/$1');
 /* CommonJS files the page and the api/ functions both use: [file, name under O] */
-const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg'], ['api/_lib/shared/greeting.cjs', 'greeting'], ['api/_lib/shared/journey.cjs', 'journey'], ['api/_lib/shared/rateplan.cjs', 'rateplan'], ['api/_lib/shared/sitecontent.cjs', 'sitecontent'], ['api/_lib/shared/geo.cjs', 'geo'], ['api/_lib/shared/unitdue.cjs', 'unitdue'], ['api/_lib/shared/beds.cjs', 'beds'], ['api/_lib/shared/taskwho.cjs', 'taskwho'], ['api/_lib/shared/unitreq.cjs', 'unitreq'], ['api/_lib/shared/teamchat.cjs', 'teamchat']]; /* in this order: guestmsg uses O.assign, greeting uses O.guestmsg, unitreq uses O.taskwho */
+const SHARED = [['api/_lib/shared/assign.cjs', 'assign'], ['api/_lib/shared/guestmsg.cjs', 'guestmsg'], ['api/_lib/shared/greeting.cjs', 'greeting'], ['api/_lib/shared/journey.cjs', 'journey'], ['api/_lib/shared/rateplan.cjs', 'rateplan'], ['api/_lib/shared/sitecontent.cjs', 'sitecontent'], ['api/_lib/shared/geo.cjs', 'geo'], ['api/_lib/shared/unitdue.cjs', 'unitdue'], ['api/_lib/shared/beds.cjs', 'beds'], ['api/_lib/shared/taskwho.cjs', 'taskwho'], ['api/_lib/shared/unitreq.cjs', 'unitreq'], ['api/_lib/shared/teamchat.cjs', 'teamchat'], ['api/_lib/shared/tones.cjs', 'tones']]; /* in this order: guestmsg uses O.assign, greeting uses O.guestmsg, unitreq uses O.taskwho */
 
 function page() {
   let shell = read(path.join(APP, 'shell.html'));
@@ -191,7 +191,7 @@ async function buildMobile() {
   fs.writeFileSync(path.join(www, 'index.html'), page());
   writeI18n(www);
   /* the alert tones (scripts/alert-sound.py) are played by O.alertSound from sounds/ next to index.html */
-  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'sounds/orbique_alert.wav', 'sounds/orbique_change.wav', 'sounds/orbique_message.wav', 'sounds/orbique_team.wav', 'sounds/orbique_task.wav']) {
+  for (const f of ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'sounds/orbique_alert.wav', 'sounds/orbique_change.wav', 'sounds/orbique_message.wav', 'sounds/orbique_team.wav', 'sounds/orbique_task.wav', 'sounds/orbique_sparkle.wav', 'sounds/orbique_doorbell.wav', 'sounds/orbique_harp.wav', 'sounds/orbique_beep.wav', 'sounds/orbique_glass.wav', 'sounds/orbique_pad.wav', 'sounds/orbique_urgent.wav']) {
     const src = path.join(ROOT, 'public', f);
     if (fs.existsSync(src)) copy(src, path.join(www, f));
   }

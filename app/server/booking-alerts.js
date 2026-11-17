@@ -85,17 +85,21 @@
       '</div></div>';
   }
 
-  /* this device's alert sounds: on or off (O.store), and a Play button to hear each tone (O.alertSound, app/core.js) */
-  var TONE_NAMES = [['booking', 'New booking'], ['change', 'Cancellation or new dates'], ['message', 'Guest message'], ['team', 'Team chat'], ['task', 'New task for you']];
+  /* this device's alert sounds: on or off (O.store), and for each alert type the tune it rings (O.alertSound, app/core.js;
+     the tunes are O.tones, api/_lib/shared/tones.cjs), each with a Play button. The phone app's notifications use the
+     same choice (app/native/bridge.js sends it to the server). */
   function soundLine() {
-    if (!O.alertSound) return '';
-    var on = !O.alertSound.muted();
+    if (!O.alertSound || !O.tones) return '';
+    var on = !O.alertSound.muted(), TN = O.tones, ch = O.alertSound.choice();
+    var tuneOpts = function (sel) { return TN.ORDER.map(function (id) { return '<option value="' + id + '"' + (id === sel ? ' selected' : '') + '>' + esc(O.t(TN.TUNES[id].name)) + '</option>'; }).join(''); };
     return '<div style="padding:8px 0; border-top:1px solid var(--border)"><div class="row-flex" style="gap:10px; align-items:center">' + O.icon('bell', 'al-ic') +
       '<div class="grow" style="min-width:0"><b>Sounds in the app</b><div class="small muted">' + (on ? 'On for this device: a different tone for each kind of alert while Orbique is open' : 'Off for this device') + '</div>' +
       '<div class="xs muted" style="margin-top:2px">Your device\'s volume still applies. Phone notifications use the same tones.</div></div>' +
       '<label class="row-flex" style="gap:6px"><input type="checkbox" data-al-sound' + (on ? ' checked' : '') + '> <span class="small">On</span></label></div>' +
-      '<div class="row-flex wrap" style="gap:6px; margin:8px 0 0 30px">' + TONE_NAMES.map(function (t) {
-        return '<button type="button" class="btn btn-ghost btn-sm" data-al="sound-play" data-tone="' + t[0] + '" title="' + esc(O.t('Play')) + '">' + O.icon('play') + esc(O.t(t[1])) + '</button>';
+      '<div class="al-tones" style="margin:8px 0 0 30px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:6px 8px; align-items:center">' + TN.TYPE_ORDER.map(function (t) {
+        return '<span class="small">' + esc(O.t(TN.TYPES[t].name)) + '</span>' +
+          '<select class="input input-sm" data-al-tone="' + t + '" aria-label="' + esc(O.t(TN.TYPES[t].name)) + '">' + tuneOpts(ch[t]) + '</select>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-al="sound-play" data-tone="' + t + '" title="' + esc(O.t('Play')) + '" aria-label="' + esc(O.t('Play')) + '">' + O.icon('play') + '</button>';
       }).join('') + '</div></div>';
   }
 
@@ -146,6 +150,12 @@
   });
 
   document.addEventListener('change', function (e) {
+    var sel = e.target.closest('[data-al-tone]');
+    if (sel && O.alertSound) { /* a new tune for one alert type: save it, play it */
+      var ch = O.alertSound.choice(); ch[sel.dataset.alTone] = sel.value; O.alertSound.setChoice(ch);
+      O.alertSound.preview(sel.value);
+      return;
+    }
     var c = e.target.closest('[data-al-sound]'); if (!c || !O.alertSound) return;
     O.alertSound.setMuted(!c.checked);
     U.toast(c.checked ? 'Alert sound on for this device' : 'Alert sound off for this device');
