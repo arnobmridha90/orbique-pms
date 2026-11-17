@@ -316,7 +316,7 @@
     desc: 'Operators, plans, access requests and the channel manager',
     noDataRerender: true,
     render: function (root, ctx) {
-      if (!O.auth.isPlatformAdmin()) { root.innerHTML = U.locked('the platform admin area', { reason: 'permission' }); return; }
+      if (!O.auth.inPlatformArea()) { root.innerHTML = U.locked('the platform admin area', { reason: 'permission' }); return; }
       var id = ++seq; cur.root = root; cur.ctx = ctx; cur.id = id;
       root.classList.add('pg-platform');
       var acts = O.html('<div class="row-flex"><button type="button" class="btn btn-ghost btn-sm pf-refresh" title="Refresh the list" aria-label="Refresh">' + O.icon('refresh') + '<span class="pf-hide-sm">Refresh</span></button><button type="button" class="btn btn-primary btn-sm">' + O.icon('plus') + 'Add operator</button></div>');
@@ -328,5 +328,5 @@
       if (ctx.fresh && ctx.params && ctx.params.create) setTimeout(function () { openCreate(); }, 0);
     }
   });
-  O.EXTRA_PAGES.platform = { allowed: function () { return !!(O.auth && O.auth.isPlatformAdmin && O.auth.isPlatformAdmin()); } };
+  O.EXTRA_PAGES.platform = { allowed: function () { return !!(O.auth && O.auth.inPlatformArea && O.auth.inPlatformArea()); } };
 })();

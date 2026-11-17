@@ -134,7 +134,7 @@
   }
   function choices() {
     var out = (S.ctx && S.ctx.workspaces || []).map(function (o) { return O.workspaces[o.id]; }).filter(Boolean);
-    if (S.ctx && S.ctx.platformAdmin) out.push(platformEntry());
+    if (S.ctx && S.ctx.platformAdmin && !S.previewing) out.push(platformEntry()); /* a staff preview never offers the platform area */
     return out;
   }
   /* the demo workspaces of the local test copy are not real operators */
@@ -704,11 +704,14 @@
 
   O.workspaceList = function () { return choices(); };
   O.workspaceExtras = function () {
-    return S.ctx && S.ctx.platformAdmin ? '<button class="ws-opt" data-ws-action="new-operator"><span class="ws-logo" style="border:1px dashed var(--border-strong);color:var(--muted)">' + O.icon('plus') + '</span><span><span class="t" style="display:block">Add an operator</span><span class="d" style="display:block">A new workspace and its owner</span></span></button>' : '';
+    return inPlatformArea() ? '<button class="ws-opt" data-ws-action="new-operator"><span class="ws-logo" style="border:1px dashed var(--border-strong);color:var(--muted)">' + O.icon('plus') + '</span><span><span class="t" style="display:block">Add an operator</span><span class="d" style="display:block">A new workspace and its owner</span></span></button>' : '';
   };
   O.onWorkspaceAction = function (act) { if (act === 'new-operator') O.go('platform', { create: true }); };
+  /* Platform admin lives only in the Orbique platform workspace, for a signed-in platform admin: never inside an operator's
+     workspace (Kozi included, even for its owner) and never in a staff preview. The server checks platform_admins on every read. */
+  function inPlatformArea() { return !!(S.platform && S.ctx && S.ctx.platformAdmin && !S.previewing); }
   O.navExtras = function () {
-    if (!(S.ctx && S.ctx.platformAdmin)) return '';
+    if (!inPlatformArea()) return '';
     return '<div class="nav-group">Orbique</div><button class="nav-item' + (O.state.page === 'platform' ? ' active' : '') + '" data-page="platform">' + O.icon('platform') + '<span>' + esc(O.t('platform')) + '</span></button>';
   };
   O.viewerNote = function () {
@@ -762,6 +765,7 @@
     flushThen(reload);
   };
   A.isPlatformAdmin = function () { return !!(S.ctx && S.ctx.platformAdmin); };
+  A.inPlatformArea = function () { return inPlatformArea(); };
   A.user = function () { if (!S.user) return null; var m = S.user.user_metadata || {}; return { id: S.user.id, email: userEmail(), login: userLogin(), name: userName(), mustChangePassword: !!m.must_change_password }; };
   A.orgId = function () { return S.org ? S.org.id : null; };
   A.role = function () { return myRole(); };
