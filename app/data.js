@@ -764,6 +764,14 @@
         var n = nightsIn(b, from, to); return s + (n ? b.revenue / b.nights * n : 0);
       }, 0);
     },
+    /* net revenue: what the business takes home on nights from..to, after the booking site's commission and fees */
+    netRevenue: function (from, to, f) {
+      f = f || {};
+      return O.data.bookings.reduce(function (s, b) {
+        if (!live(b) || (f.propertyId && b.propertyId !== f.propertyId) || (f.channel && b.channel !== f.channel)) return s;
+        var n = nightsIn(b, from, to); return s + (n ? ((+b.revenue || 0) - (+b.platformFee || 0)) / b.nights * n : 0);
+      }, 0);
+    },
     nightsSold: function (from, to, f) {
       f = f || {};
       return O.data.bookings.reduce(function (s, b) {
@@ -783,6 +791,7 @@
       var list = pid ? O.data.properties.filter(function (p) { return p.id === pid; }) : properties;
       if (pid && !list.length) return O.d.diff(from, to) + 1 - M.blockedNights(from, to, pid);
       var days = list.reduce(function (s, p) {
+        if (!pid && p.archived && !O.data.bookings.some(function (b) { return b.propertyId === p.id && live(b); })) return s; /* archived and never sold: never counted */
         var a = p.createdAt && String(p.createdAt).slice(0, 10) > from ? String(p.createdAt).slice(0, 10) : from;
         var z = p.archived && p.archivedAt && O.d.add(String(p.archivedAt).slice(0, 10), -1) < to ? O.d.add(String(p.archivedAt).slice(0, 10), -1) : to;
         return s + (a > z ? 0 : O.d.diff(a, z) + 1);

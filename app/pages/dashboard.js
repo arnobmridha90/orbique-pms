@@ -270,7 +270,8 @@
     return { cur: cur, prev: prev, from: ms, to: t, pfrom: pms, pto: pto, mon: d.monthName(t, true), pmon: d.monthName(pms, true), change: prev ? (cur - prev) / prev : null };
   }
   /* with several currencies the money line covers the units in the view currency (picked next to it) */
-  function revIn(a, z) { return O.multiCur() ? D.properties.filter(O.inCur).reduce(function (s, p) { return s + M.revenue(a, z, { propertyId: p.id }); }, 0) : M.revenue(a, z); }
+  /* net revenue: what the business takes home after platform fees; archived units are left out */
+  function revIn(a, z) { return D.properties.filter(function (p) { return O.inCur(p) && !p.archived; }).reduce(function (s, p) { return s + M.netRevenue(a, z, { propertyId: p.id }); }, 0); }
   function moneyPhrase(mm) {
     if (mm.change == null) return '';
     var p = pctWord(mm.change);
@@ -352,7 +353,7 @@
     if (m.money) {
       topic();
       var mm = m.money, pc = mm.change == null ? null : pctWord(mm.change);
-      s.push(T('{month} so far: {amount} in revenue.', { month: mm.mon, amount: fmt.money(mm.cur) }));
+      s.push(T('{month} so far: {amount} in net revenue.', { month: mm.mon, amount: fmt.money(mm.cur) }));
       if (pc != null) s.push(pc === 0 ? T('About the same as the same days in {month}.', { month: mm.pmon }) : T(mm.change > 0 ? '{pct}% above the same days in {month}.' : '{pct}% below the same days in {month}.', { pct: pc, month: mm.pmon }));
     }
     topic();
@@ -430,7 +431,7 @@
     if (m.money) {
       topic();
       var ph = moneyPhrase(m.money);
-      s.push(m.money.mon + ' so far: ' + fmt.money(m.money.cur) + ' in revenue' + (ph ? ', ' + ph : '') + '.');
+      s.push(m.money.mon + ' so far: ' + fmt.money(m.money.cur) + ' in net revenue' + (ph ? ', ' + ph : '') + '.');
     }
     topic();
     s.push('That\'s everything for now.');
@@ -550,7 +551,7 @@
     var foot = '';
     if (m.money) {
       var mm = m.money, ph = moneyPhrase(mm);
-      foot += '<div class="dsh-money" title="' + esc(O.tpl(O.multiCur() ? 'Revenue earned on nights from {range}, compared with {prev} ({amount}), units in {cur} only' : 'Revenue earned on nights from {range}, compared with {prev} ({amount})', { range: d.fmtRange(mm.from, mm.to), prev: d.fmtRange(mm.pfrom, mm.pto), amount: fmt.money(mm.prev), cur: O.viewCur() })) + '"><span>' + esc(O.tpl('{month} so far', { month: mm.mon })) + '</span><b>' + fmt.money(mm.cur) + '</b>' +
+      foot += '<div class="dsh-money" title="' + esc(O.tpl(O.multiCur() ? 'Net revenue (after platform fees) earned on nights from {range}, compared with {prev} ({amount}), units in {cur} only' : 'Net revenue (after platform fees) earned on nights from {range}, compared with {prev} ({amount})', { range: d.fmtRange(mm.from, mm.to), prev: d.fmtRange(mm.pfrom, mm.pto), amount: fmt.money(mm.prev), cur: O.viewCur() })) + '"><span>' + esc(O.tpl('{month} so far', { month: mm.mon })) + '</span><b>' + fmt.money(mm.cur) + '</b>' +
         (ph ? '<span class="delta ' + (pctWord(mm.change) === 0 ? 'flat' : mm.change > 0 ? 'good' : 'bad') + '">' + (pctWord(mm.change) === 0 ? '± ' : mm.change > 0 ? '▲ ' : '▼ ') + esc(ph) + '</span>' : '') + O.curSwitchHTML() + '</div>';
     }
     var links = (p.stays || p.tasks ? '<button type="button" class="btn btn-quiet btn-sm" data-act="runsheet" title="Download today\'s run sheet (PDF): arrivals, departures and open tasks">' + O.icon('printer') + 'Run sheet</button>' : '') +
@@ -606,7 +607,7 @@
       var p = prop(b.propertyId), gone = !live(b);
       var tag = gone ? '<span class="bad">' + esc(O.tr('Cancelled')) + '</span>' : b.checkIn === m.t ? '<span class="warn">' + esc(O.tr('Arrives today')) + '</span>' : '<span>' + esc(U.platName(b.channel)) + '</span>';
       var stay = d.fmt(b.checkIn) + ' – ' + d.fmt(b.checkOut) + ' · ' + fmt.plural(b.nights, 'night') + ' · ' + fmt.plural(b.guests, 'guest');
-      var money = m.perm.money && b.total ? ' · ' + fmt.money(b.total, { cur: b }) : '';
+      var net = (+b.revenue || 0) - (+b.platformFee || 0), money = m.perm.money && net > 0 ? ' · ' + esc(O.tpl('{amount} net', { amount: fmt.money(net, { cur: b }) })) : '';
       return '<div class="dsh-r' + (gone ? ' nx' : '') + '"' + rowAttr(b, m) + '><div class="dsh-tm"><b>' + esc(fmt.time(b.createdAt)) + '</b>' + tag + '</div>' +
         '<div style="min-width:0"><div class="dsh-nm">' + U.platIcon(b.channel) + guestName(b, m) + '<span class="u">' + esc(p.short) + '</span></div>' +
         '<div class="dsh-sb">' + esc(stay) + money + '</div></div><div class="dsh-act"></div></div>';

@@ -338,7 +338,7 @@
       '<div class="ct-r">' + U.status(b.status) + U.plat(b.channel) + '</div>' +
       '<dl class="kv"><dt>Stay</dt><dd>' + d.fmtRange(b.checkIn, b.checkOut) + ' · ' + fmt.plural(b.nights, 'night') + '</dd>' +
       '<dt>Check-in / out</dt><dd>' + shortTime(b.checkInTime) + ' / ' + shortTime(b.checkOutTime || '11:00') + '</dd>' +
-      '<dt>Guests</dt><dd>' + b.guests + '</dd>' + (O.can('bookings.value') ? '<dt>Total</dt><dd>' + fmt.money(b.total, { cur: b }) + '</dd>' : '') +
+      '<dt>Guests</dt><dd>' + b.guests + '</dd>' + (O.can('bookings.value') ? '<dt>' + esc(O.tr('You get')) + '</dt><dd><b>' + fmt.money((+b.revenue || 0) - (+b.platformFee || 0), { cur: b }) + '</b>' + (b.platformFee ? ' <span class="muted">' + esc(O.tpl('net, guest paid {amount}', { amount: fmt.money(b.total, { cur: b }) })) + '</span>' : '') + '</dd>' : '') +
       '<dt>Booking</dt><dd>' + esc(b.id) + '</dd></dl>' + chips +
       '<div class="ct-f">Click to open the booking</div>';
   }
