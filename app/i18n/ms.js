@@ -8381,5 +8381,6 @@ O.I18N.ms = {
 "net revenue minus rent": "hasil bersih tolak sewa",
 "no rent in unit file": "tiada sewa dalam fail unit",
 "rent from the unit files": "sewa daripada fail unit",
-"{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.": "{pct} daripada kos {cost} dilindungi setakat ini ({earned} hasil bersih). {left} lagi perlu dilindungi."
+"{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.": "{pct} daripada kos {cost} dilindungi setakat ini ({earned} hasil bersih). {left} lagi perlu dilindungi.",
+"Option {n} of {total}": "Pilihan {n} daripada {total}"
 };

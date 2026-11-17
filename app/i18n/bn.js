@@ -8381,5 +8381,6 @@ O.I18N.bn = {
 "net revenue minus rent": "নেট আয় থেকে ভাড়া বাদ",
 "no rent in unit file": "ইউনিট ফাইলে ভাড়া নেই",
 "rent from the unit files": "ইউনিট ফাইল থেকে ভাড়া",
-"{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.": "{cost} খরচের {pct} এ পর্যন্ত কভার হয়েছে ({earned} নেট আয়)। আরও {left} কভার করতে হবে।"
+"{pct} of the {cost} in costs is covered so far ({earned} net revenue). {left} still to cover.": "{cost} খরচের {pct} এ পর্যন্ত কভার হয়েছে ({earned} নেট আয়)। আরও {left} কভার করতে হবে।",
+"Option {n} of {total}": "{total}টির মধ্যে {n} নম্বর বিকল্প"
 };
