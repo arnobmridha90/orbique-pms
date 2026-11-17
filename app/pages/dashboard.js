@@ -563,6 +563,21 @@
       (p.brief ? briefButtonHTML() : '') +
       (foot ? '<div class="dsh-hero-foot">' + foot + '</div>' : '') + '</section>';
   }
+  /* this month's costs (unit-file rent and bills, monthly fixed costs, expenses) against net revenue earned so far */
+  function costsHTML(m) {
+    var UF = O.unitFile;
+    if (!UF || !UF.allowed()) return '';
+    UF.load().catch(function () {});
+    if (!UF.state().loaded) return '';
+    var ms = d.monthStart(m.t), C = UF.coverage(ms, d.monthEnd(m.t)), t = C.t;
+    if (!(t.cost > 0)) return '';
+    var pct = t.covered || 0, sg = function (v) { return (v < 0 ? '−' : '') + fmt.money(Math.abs(v)); };
+    var bar = '<div style="height:8px;border-radius:6px;background:var(--surface-2);overflow:hidden;margin:4px 0 8px"><i style="display:block;height:100%;width:' + (pct * 100).toFixed(1) + '%;background:' + (pct >= 1 ? 'var(--ok)' : 'var(--brand-strong)') + '"></i></div>';
+    var body = '<div style="padding:12px 16px 14px"><div class="dsh-money"><span>' + esc(O.tpl('{pct} of costs covered', { pct: fmt.pct(pct) })) + '</span><b>' + fmt.money(t.earned) + '</b><span class="muted">' + esc(O.tpl('of {cost}', { cost: fmt.money(t.cost) })) + '</span></div>' + bar +
+      '<dl class="kv"><dt>' + esc(O.tr('Fixed costs')) + '</dt><dd>' + fmt.money(t.fixed) + '</dd><dt>' + esc(O.tr('Variable costs')) + '</dt><dd>' + fmt.money(t.variable) + '</dd>' +
+      '<dt class="tot">' + esc(O.tr('Gross profit so far')) + '</dt><dd class="tot">' + sg(t.profit) + '</dd><dt>' + esc(O.tr('Expected for the month')) + '</dt><dd>' + sg(t.expected) + '</dd></dl></div>';
+    return '<section class="card" data-card="costs">' + head(O.tpl('Costs this month: {month}', { month: d.monthName(m.t, true) }), null, esc(O.tr('Net revenue after platform fees against rent, bills, fixed costs and expenses')), O.allowed('reports') ? '<button type="button" class="btn btn-ghost btn-sm" data-go-costs>' + esc(O.tr('Open report')) + '</button>' : '') + body + '</section>';
+  }
   function head(title, n, sub, extra, hot) {
     return '<div class="card-head"><div class="hd"><h3>' + esc(title) + (n != null ? '<span class="n' + (hot ? ' hot' : '') + '">' + n + '</span>' : '') + '</h3>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' + (extra || '') + '</div>';
   }
@@ -787,13 +802,14 @@
         var cards = {
           newtoday: p.stays ? newTodayHTML(m) : '', sameday: p.stays ? sameDayHTML(m) : '', arrivals: p.stays ? arrivalsHTML(m) : '', departures: p.stays ? departuresHTML(m) : '',
           inhouse: p.stays ? inHouseHTML(m) : '', tasks: p.tasks ? tasksHTML(m) : '', attention: attentionHTML(m, alerts),
-          duesoon: O.unitFile ? safe(function () { return O.unitFile.dueSoonHTML(head); }, '') : ''
+          duesoon: O.unitFile ? safe(function () { return O.unitFile.dueSoonHTML(head); }, '') : '',
+          costs: m.money ? safe(function () { return costsHTML(m); }, '') : ''
         };
-        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'duesoon', 'inhouse'] : ['newtoday', 'sameday', 'arrivals', 'tasks', 'departures', 'attention', 'duesoon', 'inhouse'];
+        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'costs', 'duesoon', 'inhouse'] : ['newtoday', 'sameday', 'arrivals', 'tasks', 'departures', 'costs', 'attention', 'duesoon', 'inhouse'];
         var styled = function (k) { return cards[k] ? cards[k].replace('<section class="card', '<section style="order:' + (order.indexOf(k) + 1) + '" class="card') : ''; };
         var left = ['newtoday', 'sameday', 'arrivals', 'departures'].map(styled).join('');
-        var right = ['tasks', 'attention', 'duesoon', 'inhouse'].map(styled).join('');
-        if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['attention', 'duesoon'].map(styled).join(''); }
+        var right = ['costs', 'tasks', 'attention', 'duesoon', 'inhouse'].map(styled).join('');
+        if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['costs', 'attention', 'duesoon'].map(styled).join(''); }
         html = heroHTML(m) + '<div class="dsh-brief-slot">' + (st.brief ? briefPanelHTML() : '') + '</div>' +
           (left || right ? '<div class="dsh-main"><div class="dsh-col">' + left + '</div><div class="dsh-col">' + right + '</div></div>' : '');
         root._dshAlerts = alerts;
@@ -830,6 +846,7 @@
         }
         if ((x = e.target.closest('[data-go]'))) { stopVoice(); O.go(x.dataset.go, x.dataset.add ? { add: true } : undefined); return; }
         if ((x = e.target.closest('[data-more]'))) { st.more[x.dataset.more] = !st.more[x.dataset.more]; if (!B.reading) ctx.rerender(); return; }
+        if (e.target.closest('[data-go-costs]')) { O.go('reports', { report: 'costs' }); return; }
         if (O.unitFile && e.target.closest('.uf-due') && O.unitFile.dueClick(e)) { stopVoice(); return; }
         if ((x = e.target.closest('[data-alert]'))) { var a = (root._dshAlerts || [])[+x.dataset.alert]; if (a) { stopVoice(); O.go(a.go[0], a.go[1]); } return; }
         if ((x = e.target.closest('[data-act]'))) {

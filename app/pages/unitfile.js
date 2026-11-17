@@ -184,6 +184,72 @@
     return F.dueSoon(files, D.TODAY);
   };
 
+  /* the fixed costs from the unit files for the nights from..to (needs load() first): rent while the lease runs, and the
+     bills the business pays ('We pay'), each spread evenly over its month (a bill every 3 months counts a third each month).
+     Archived units are left out. -> {units: {pid: {rent, bills}}, rent, bills, total, files (units with a file)} */
+  function monthsOf(freq) { var f = (F.FREQS || []).filter(function (x) { return x.id === freq; })[0]; return f ? f.months : 1; }
+  function spread(amount, from, to, a, z) { /* amount a month, counted per day over from..to within a..z */
+    var s = 0, m = d.monthStart(from);
+    if (a && a > from) from = a; if (z && z < to) to = z;
+    if (!(amount > 0) || from > to) return 0;
+    while (m <= to) {
+      var me = d.monthEnd(m), x = from > m ? from : m, y = to < me ? to : me;
+      if (x <= y) s += amount * (d.diff(x, y) + 1) / (d.diff(m, me) + 1);
+      m = d.addMonths(m, 1);
+    }
+    return s;
+  }
+  UF.fixedItems = function () { var b = D.fixedCosts; return b && Array.isArray(b.items) ? b.items.filter(function (x) { return x && x.name && +x.amount > 0; }) : []; };
+  UF.spread = spread;
+  UF.costs = function (from, to, pid) {
+    check();
+    var out = { units: {}, rent: 0, bills: 0, total: 0, files: 0 };
+    Object.keys(S.files).forEach(function (id) {
+      var p = D.propById[id]; if (!p || p.archived || (pid && id !== pid) || (!pid && O.inCur && !O.inCur(p))) return;
+      var f = S.files[id].data || {}, L = f.lease || {}, rent = spread(+L.rent || 0, from, to, L.start || null, L.end || null), bills = 0;
+      (Array.isArray(f.bills) ? f.bills : []).forEach(function (b) { if ((b.paidBy || 'us') === 'us') bills += spread((+b.amount || 0) / monthsOf(b.freq), from, to, null, null); });
+      out.units[id] = { rent: rent, bills: bills };
+      out.rent += rent; out.bills += bills; out.files++;
+    });
+    out.total = out.rent + out.bills;
+    return out;
+  };
+
+  /* cost coverage for from..to: fixed costs (unit files) plus running expenses recorded for those dates, against net
+     revenue (after platform fees) earned on nights up to today and already on the books for the whole range.
+     Shared by the Cost coverage report and the Dashboard card. */
+  UF.coverage = function (from, to, pid) {
+    var M = O.metrics, c = UF.costs(from, to, pid), T = D.TODAY;
+    var ids = D.properties.filter(function (p) { return !p.archived && (pid ? p.id === pid : (!O.inCur || O.inCur(p))); }).map(function (p) { return p.id; });
+    var exp = {}, expGeneral = 0;
+    M.expenses(from, to, 'opex').forEach(function (e) {
+      if (e.propertyId) { if (ids.indexOf(e.propertyId) >= 0) exp[e.propertyId] = (exp[e.propertyId] || 0) + (+e.amount || 0); }
+      else if (!pid && (!O.inCur || O.inCur(e))) expGeneral += +e.amount || 0;
+    });
+    var earnTo = to < T ? to : T, units = {};
+    /* other fixed costs the owner enters for the whole business (D.fixedCosts.items: {id, name, amount a month, from 'YYYY-MM', to 'YYYY-MM' once removed}) */
+    var other = 0, otherItems = [];
+    if (!pid) UF.fixedItems().forEach(function (it) {
+      var a = it.from ? it.from + '-01' : null, z = it.to ? d.monthEnd(it.to + '-01') : null, v = spread(+it.amount || 0, from, to, a, z);
+      if (v > 0) { other += v; otherItems.push({ name: it.name, amount: v, monthly: +it.amount || 0 }); }
+    });
+    var t = { rent: 0, bills: 0, other: other, expenses: expGeneral, cost: 0, earned: 0, booked: 0 };
+    ids.forEach(function (id) {
+      var u = c.units[id] || { rent: 0, bills: 0 }, x = {
+        rent: u.rent, bills: u.bills, expenses: exp[id] || 0, hasFile: !!c.units[id],
+        earned: from <= earnTo ? M.netRevenue(from, earnTo, { propertyId: id }) : 0,
+        booked: M.netRevenue(from, to, { propertyId: id })
+      };
+      x.cost = x.rent + x.bills + x.expenses; units[id] = x;
+      ['rent', 'bills', 'expenses', 'cost', 'earned', 'booked'].forEach(function (k) { t[k] += x[k]; });
+    });
+    t.cost += expGeneral + other;
+    t.fixed = t.rent + t.bills + t.other; t.variable = t.expenses;
+    t.covered = t.cost > 0 ? Math.min(1, t.earned / t.cost) : null;
+    t.profit = t.earned - t.cost; t.expected = t.booked - t.cost;
+    return { from: from, to: to, earnTo: earnTo, units: units, t: t, general: expGeneral, other: otherItems, files: c.files };
+  };
+
   /* ---------------- documents (signed in only) ---------------- */
   function bucket() { return sb().storage.from(BUCKET); }
   function docPath(pid, name) { return O.auth.orgId() + '/' + pid + '/' + O.uid('D').toLowerCase() + '-' + F.safeName(name); }
