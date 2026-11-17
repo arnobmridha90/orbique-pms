@@ -569,14 +569,18 @@
     if (!UF || !UF.allowed()) return '';
     UF.load().catch(function () {});
     if (!UF.state().loaded) return '';
-    var ms = d.monthStart(m.t), C = UF.coverage(ms, d.monthEnd(m.t)), t = C.t;
-    if (!(t.cost > 0)) return '';
-    var pct = t.covered || 0, sg = function (v) { return (v < 0 ? '−' : '') + fmt.money(Math.abs(v)); };
-    var bar = '<div style="height:8px;border-radius:6px;background:var(--surface-2);overflow:hidden;margin:4px 0 8px"><i style="display:block;height:100%;width:' + (pct * 100).toFixed(1) + '%;background:' + (pct >= 1 ? 'var(--ok)' : 'var(--brand-strong)') + '"></i></div>';
-    var body = '<div style="padding:12px 16px 14px"><div class="dsh-money"><span>' + esc(O.tpl('{pct} of costs covered', { pct: fmt.pct(pct) })) + '</span><b>' + fmt.money(t.earned) + '</b><span class="muted">' + esc(O.tpl('of {cost}', { cost: fmt.money(t.cost) })) + '</span></div>' + bar +
-      '<dl class="kv"><dt>' + esc(O.tr('Fixed costs')) + '</dt><dd>' + fmt.money(t.fixed) + '</dd><dt>' + esc(O.tr('Variable costs')) + '</dt><dd>' + fmt.money(t.variable) + '</dd>' +
-      '<dt class="tot">' + esc(O.tr('Gross profit so far')) + '</dt><dd class="tot">' + sg(t.profit) + '</dd><dt>' + esc(O.tr('Expected for the month')) + '</dt><dd>' + sg(t.expected) + '</dd></dl></div>';
-    return '<section class="card" data-card="costs">' + head(O.tpl('Costs this month: {month}', { month: d.monthName(m.t, true) }), null, esc(O.tr('Net revenue after platform fees against rent, bills, fixed costs and expenses')), O.allowed('reports') ? '<button type="button" class="btn btn-ghost btn-sm" data-go-costs>' + esc(O.tr('Open report')) + '</button>' : '') + body + '</section>';
+    var P = UF.monthPlan(d.monthStart(m.t)), pj = P.projected, ac = P.actual;
+    if (!(pj.total > 0)) return '';
+    var pct = P.covered || 0, sg = function (v) { return (v < 0 ? '−' : '') + fmt.money(Math.abs(v)); };
+    var cell = function (label, value, sub, tone) { return '<div style="min-width:0"><div class="xs muted">' + esc(O.tr(label)) + '</div><div style="font-family:var(--font-head);font-weight:800;font-size:18px;font-variant-numeric:tabular-nums' + (tone ? ';color:var(--' + tone + ')' : '') + '">' + value + '</div><div class="xs muted">' + sub + '</div></div>'; };
+    var bar = '<div style="height:8px;border-radius:6px;background:var(--surface-2);overflow:hidden;margin:2px 0 4px" role="img" aria-label="' + esc(O.tpl('{pct} of the projected cost covered', { pct: fmt.pct(pct) })) + '"><i style="display:block;height:100%;width:' + (Math.min(1, pct) * 100).toFixed(1) + '%;background:' + (pct >= 1 ? 'var(--ok)' : 'var(--brand-strong)') + '"></i></div>';
+    var body = '<div style="padding:12px 16px 14px;display:grid;grid-template-columns:1fr 1fr;gap:12px 16px">' +
+      cell('Projected cost', fmt.money(pj.total), esc(O.tpl('fixed {fixed}, variable {variable}', { fixed: fmt.moneyShort(pj.sched + pj.fixed), variable: fmt.moneyShort(pj.variable) }))) +
+      cell('Cost so far', fmt.money(ac.total), esc(O.tpl('fixed {fixed}, variable {variable}', { fixed: fmt.moneyShort(ac.fixed), variable: fmt.moneyShort(ac.variable) }))) +
+      '<div style="grid-column:1/-1;min-width:0">' + cell('Net revenue so far', fmt.money(P.earned), esc(O.tpl('{pct} of the projected cost covered', { pct: fmt.pct(pct) }))) + bar + '</div>' +
+      cell('Gross profit so far', sg(P.profit), esc(O.tr('net revenue minus cost so far')), P.profit < 0 ? 'bad' : null) +
+      cell('Expected for the month', sg(P.expected), esc(O.tpl('with {x} net on the books', { x: fmt.moneyShort(P.booked) })), P.expected < 0 ? 'bad' : null) + '</div>';
+    return '<section class="card" data-card="costs">' + head(O.tpl('Costs this month: {month}', { month: d.monthName(m.t, true) }), null, esc(P.history.length ? O.tpl('Projection learned from {months} of expenses', { months: fmt.plural(P.history.length, 'month') }) : O.tr('Projection from the unit files until expenses are recorded')), O.allowed('reports') ? '<button type="button" class="btn btn-ghost btn-sm" data-go-costs>' + esc(O.tr('Open report')) + '</button>' : '') + body + '</section>';
   }
   function head(title, n, sub, extra, hot) {
     return '<div class="card-head"><div class="hd"><h3>' + esc(title) + (n != null ? '<span class="n' + (hot ? ' hot' : '') + '">' + n + '</span>' : '') + '</h3>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' + (extra || '') + '</div>';

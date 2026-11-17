@@ -2,6 +2,7 @@
    codes, brand names, technical words, and words that only go into messages and documents for guests (which keep the
    operator's wording). They are shown as they are in every language. */
 O.I18N_IGNORE = [
+  "Utilities",
   /* review reply suggestions (guest-facing, kept in the operator wording) */
   "the view",
   "Those city views never get old, even for us.",
