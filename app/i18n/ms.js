@@ -8437,5 +8437,6 @@ O.I18N.ms = {
 "Harp": "Harpa",
 "Three beeps": "Tiga bip",
 "Glass": "Kaca",
-"Soft chord": "Kord lembut"
+"Soft chord": "Kord lembut",
+"Revenue after platform fees, the same figure as the Dashboard. Before fees it is {amount}. Spark line: net revenue per day, {span}": "Hasil selepas yuran platform, angka yang sama seperti Papan Pemuka. Sebelum yuran ialah {amount}. Garis kecil: hasil bersih sehari, {span}"
 };
