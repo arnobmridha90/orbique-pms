@@ -7,6 +7,8 @@
  *   unregister-device  the member who registered it    {token}: this phone stops getting them
  *   team-message       the sender of the message       {messageId}: phone alerts for a Team chat message just sent, once,
  *                                                      to the others in the chat who did not mute it -> {phones, sent}
+ *   team-translate-fix any active member of orgId      {id, to, text}: the right translation of one message (replaces the shared one; the
+ *                                                      health check's learning fix turns corrections into style notes, api/_lib/translate-learn.js)
  *   team-translate     any active member of orgId      {ids, to}: Team chat messages (up to 40, only chats the member is
  *                                                      in) in language `to` -> {configured, to, items, pending} (0025)
  *   health             the account owner               every check of the Health page -> {report, settings, log, fixes} (0027)
@@ -23,6 +25,8 @@ import { channelStatus, queueTest, pushConfig, sendTeamPush } from './_lib/alert
 import TC from './_lib/shared/teamchat.cjs';
 import TONES from './_lib/shared/tones.cjs';
 import { teamTranslate } from './_lib/team-translate.js';
+import { saveFix } from './_lib/translate-learn.js';
+import { TranslateError } from './_lib/translate.js';
 import { runHealth, healthSettings, saveHealthSettings, healthLog, applyFix, FIXES } from './_lib/healthcheck.js';
 
 const ALERT_ROLES = ['owner', 'ops'];
@@ -99,6 +103,11 @@ const ACTIONS = {
   'team-translate': async (sb, body, me) => {
     const { orgId } = await member(sb, body, me);
     return teamTranslate(sb, { orgId, userId: me.id, ids: body.ids, to: body.to });
+  },
+  'team-translate-fix': async (sb, body, me) => {
+    const { orgId } = await member(sb, body, me);
+    try { return await saveFix(sb, { orgId, userId: me.id, messageId: body.id, lang: body.to, fixed: body.text }); }
+    catch (e) { if (e instanceof TranslateError) throw bad('translate', e.message); throw e; }
   }
 };
 

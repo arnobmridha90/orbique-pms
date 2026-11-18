@@ -14,6 +14,7 @@
  * Safe fixes only (they change nothing a guest, a price or an availability depends on):
  *   unstick-queue   clear locks left by a stopped send (sync queue items and building locks older than 10 minutes)
  *   clear-pause     lift a pause or back-off that has run out on a building that is working again
+ *   learn-translation  fold the translation corrections your team typed into style notes (translate-learn.js)
  *   retry-alerts    send again the staff alerts stuck in the queue for 30 minutes or more
  * Everything else (resending guest messages, rates, availability, money, domains) stays a person's decision.
  * Never reads or returns a key; details are plain English.
@@ -21,6 +22,7 @@
 import { records, blob } from './channex-db.js';
 import { alertSettings, emailConfig, pushConfig, sendEmail, sendPush } from './alerts.js';
 import { translateConfig } from './translate.js';
+import { learn, pendingFixes } from './translate-learn.js';
 import { waConfig } from './whatsapp.js';
 
 const MIN = 60000;
@@ -30,6 +32,7 @@ export const WATCH_EVERY_MS = 15 * MIN;
 export const FIXES = {
   'unstick-queue': { label: 'Clear stuck sends', about: 'Clears locks left behind by a send that stopped (older than 10 minutes). The send then runs again by itself.' },
   'clear-pause': { label: 'Lift expired pauses', about: 'Lifts a pause or back-off that has run out on a building that is working again.' },
+  'learn-translation': { label: 'Learn from translation corrections', about: 'Turns the corrections your team types under a wrong translation into style notes that later translations follow.' },
   'retry-alerts': { label: 'Resend stuck alerts', about: 'Sends again the staff alerts (email, WhatsApp, phone) that sat in the queue for 30 minutes or more.' }
 };
 
@@ -246,7 +249,13 @@ async function checkTranslation(c) {
   if (!/^[\x21-\x7E]+$/.test(cfg.key)) return [item('translate', 'guests', 'Translation', 'bad', 'The key in Vercel has a stray space, line break or odd character. Paste ANTHROPIC_API_KEY again and redeploy.')];
   const last = rows(await c.sb.from('team_message_translations').select('created_at').order('created_at', { ascending: false }).limit(1));
   const when = last.length ? ' Last translation made ' + ago(c.now - Date.parse(last[0].created_at)) + '.' : ' No message translated yet.';
-  return [item('translate', 'guests', 'Translation', 'ok', 'The key is well formed.' + when)];
+  const out = [item('translate', 'guests', 'Translation', 'ok', 'The key is well formed.' + when)];
+  const fixes = rows(await c.sb.from('translation_fixes').select('learned').eq('org_id', c.orgId).limit(500));
+  const waiting = fixes.filter((f) => !f.learned).length;
+  out.push(item('translate-learn', 'guests', 'Translation learning', 'ok',
+    fixes.length ? plural(fixes.length, 'correction') + ' made by your team' + (waiting ? '; ' + plural(waiting, 'one') + ' not learned yet.' : ', all learned.') : 'No corrections yet. Under a translated message, "Not right?" lets your team teach the translator.',
+    waiting ? 'learn-translation' : undefined));
+  return out;
 }
 
 async function checkMoney(c) {
@@ -309,6 +318,12 @@ const FIX_RUN = {
     const a = rows(await c.sb.from('channex_properties').update({ paused_until: null, backoff_level: 0 }).eq('org_id', c.orgId).eq('status', 'live').or('paused_until.lt.' + nowIso + ',backoff_level.gt.0').or('last_error_at.is.null,last_error_at.lt.' + cut).select('channex_property_id'));
     return { changed: a.length, detail: 'Lifted the pause or back-off on ' + plural(a.length, 'building') + '.' };
   },
+  'learn-translation': async (c) => {
+    const before = await pendingFixes(c.sb, c.orgId);
+    if (!before) return { changed: 0, detail: 'No new corrections.' };
+    const r = await learn(c.sb, c.orgId, { env: c.env });
+    return { changed: r.learned, detail: 'Learned from ' + plural(r.learned, 'correction') + '; the style guide now has ' + plural(r.notes, 'rule') + '.' };
+  },
   'retry-alerts': async (c) => {
     const nowIso = new Date(c.now).toISOString();
     const a = rows(await c.sb.from('alert_outbox').update({ next_at: nowIso }).eq('org_id', c.orgId).is('finished_at', null).lt('next_at', new Date(c.now - 30 * MIN).toISOString()).gt('created_at', new Date(c.now - 2 * DAY).toISOString()).select('id'));
@@ -318,7 +333,7 @@ const FIX_RUN = {
 
 export async function applyFix(sb, orgId, fixId, opts = {}) {
   if (!FIX_RUN[fixId]) throw new Error('Unknown fix.');
-  const c = { sb, orgId, now: opts.now || Date.now() };
+  const c = { sb, orgId, now: opts.now || Date.now(), env: opts.env || process.env };
   const r = await FIX_RUN[fixId](c);
   if (r.changed) await logFix(sb, orgId, FIXES[fixId].label, r.detail + (opts.by === 'auto' ? ' (automatic)' : ' (you ran it)'), c.now);
   return { fix: fixId, changed: r.changed, detail: r.detail };

@@ -23,6 +23,7 @@ function fake(tables, rpcs = {}) {
     const q = {
       select() { return q; },
       eq(k, v) { f.push((r) => get(r, k) === v); return q; },
+      in(k, vs) { f.push((r) => vs.includes(get(r, k))); return q; },
       is(k, v) { f.push((r) => (v === null ? get(r, k) == null : get(r, k) === v)); return q; },
       lt(k, v) { f.push((r) => get(r, k) != null && String(get(r, k)) < String(v)); return q; },
       gt(k, v) { f.push((r) => get(r, k) != null && (typeof get(r, k) === 'number' ? get(r, k) > v : String(get(r, k)) > String(v))); return q; },
@@ -68,7 +69,7 @@ const healthy = () => ({
   channex_properties: [{ org_id: ORG, channex_property_id: 'P1', status: 'live', paused_until: null, backoff_level: 0, last_error: null, last_error_at: null, lease_until: null, updated_at: iso(MIN), channels: [{ id: 'c1', title: 'Airbnb - Vortex', channel: 'Airbnb', isActive: true }] }],
   channex_outbox: [], channex_alerts: [], inbound_emails: [{ org_id: ORG, received_at: iso(2 * HOUR), status: 'done', error: null }],
   inbound_addresses: [{ org_id: ORG, address: 'hello@x.co' }], alert_outbox: [], push_devices: [{ org_id: ORG, token: 't', booking_alerts: true }],
-  whatsapp_numbers: [], team_message_translations: [{ created_at: iso(HOUR) }], blobs: [blobRow('alertSettings', { emails: ['owner@x.co'] })],
+  whatsapp_numbers: [], translation_fixes: [], team_message_translations: [{ created_at: iso(HOUR) }], blobs: [blobRow('alertSettings', { emails: ['owner@x.co'] })],
   records: []
 });
 const find = (rep, id) => rep.items.find((i) => i.id === id);
@@ -120,7 +121,7 @@ test('safe fixes run only when switched on, change only stale items, and are log
   t.channex_outbox = [{ org_id: ORG, id: 1, created_at: iso(HOUR), claimed_at: iso(40 * MIN) }, { org_id: ORG, id: 2, created_at: iso(MIN), claimed_at: iso(MIN) }];
   const sb = fake(t);
   const items = [{ id: 'queue', fix: 'unstick-queue' }];
-  assert.deepEqual((await healthSettings(sb, ORG)).auto, { 'unstick-queue': true, 'clear-pause': true, 'retry-alerts': true });
+  assert.deepEqual((await healthSettings(sb, ORG)).auto, { 'unstick-queue': true, 'clear-pause': true, 'learn-translation': true, 'retry-alerts': true });
   await saveHealthSettings(sb, ORG, { auto: { 'unstick-queue': false } });
   assert.deepEqual(await autoFix(sb, ORG, items, { now: NOW }), []);
   assert.equal(sb.T.channex_outbox[0].claimed_at, iso(40 * MIN), 'switched off: untouched');
@@ -166,4 +167,38 @@ test('the watch tells the owner once about newly red items, and not again until 
   const sb3 = fake(Object.assign(healthy(), { inbound_emails: [{ org_id: ORG, received_at: iso(120 * HOUR), status: 'done', error: null }] }), { health_cron: cron, health_net: [] });
   await saveHealthSettings(sb3, ORG, { alert: false });
   assert.equal((await watchHealth(sb3, opts)).alerted, 0);
+});
+
+test('translation learning: corrections show as waiting, the fix folds them into style notes once and marks them learned', async () => {
+  const t = healthy();
+  t.translation_fixes = [
+    { id: 'f1', org_id: ORG, lang: 'ms', original: 'Check-in is at 3 pm', was: 'Daftar masuk pukul 3', fixed: 'Daftar masuk (check-in) pukul 3 petang', learned: false, created_at: iso(HOUR) },
+    { id: 'f2', org_id: ORG, lang: 'ms', original: 'Wi-Fi password', was: 'x', fixed: 'Kata laluan Wi-Fi', learned: true, created_at: iso(2 * HOUR) }
+  ];
+  const sb = fake(t);
+  let rep = await run(sb);
+  const it = find(rep, 'translate-learn');
+  assert.equal(it.fix, 'learn-translation');
+  assert.match(it.detail, /2 corrections/);
+  const asked = [];
+  const { learn } = await import('../api/_lib/translate-learn.js');
+  const r = await learn(sb, ORG, { env, now: NOW, complete: async (c, p) => { asked.push(p.user); return '{"notes":["Keep check-in in brackets after the Malay word."]}'; } });
+  assert.equal(r.learned, 1);
+  assert.match(asked[0], /Daftar masuk \(check-in\)/);
+  assert.equal(sb.T.translation_fixes[0].learned, true);
+  assert.deepEqual(sb.T.blobs.find((b) => b.key === 'translateStyle').data.v.notes.ms, ['Keep check-in in brackets after the Malay word.']);
+  assert.equal((await learn(sb, ORG, { env, complete: async () => { throw new Error('should not be asked'); } })).learned, 0, 'nothing left to learn');
+  rep = await run(sb);
+  assert.equal(find(rep, 'translate-learn').fix, undefined);
+});
+
+test('the learned style notes and latest corrections go into the translation prompt', async () => {
+  const sb = fake({ blobs: [blobRow('translateStyle', { notes: { ms: ['Use "Tuan" for male guests.'] } })], translation_fixes: [{ org_id: ORG, lang: 'ms', original: 'Hi', fixed: 'Hai', created_at: iso(MIN) }] });
+  const { loadStyle } = await import('../api/_lib/translate-learn.js');
+  const { requestBody } = await import('../api/_lib/translate.js');
+  const style = await loadStyle(sb, ORG, 'ms');
+  assert.match(style, /Tuan/);
+  assert.match(style, /"Hi" -> "Hai"/);
+  assert.match(requestBody({ model: 'm' }, 'Hello', 'ms', style).system, /Tuan/);
+  assert.equal(await loadStyle(sb, ORG, 'zh'), '', 'nothing learned for another language');
 });

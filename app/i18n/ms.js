@@ -8463,5 +8463,12 @@ O.I18N.ms = {
 "The health check runs on the live Orbique, where it can see the database, email, booking sites and alerts. It is not available in the local test copy.": "Semakan kesihatan berjalan pada Orbique sebenar, di mana ia dapat melihat pangkalan data, e-mel, tapak tempahan dan amaran. Ia tidak tersedia dalam salinan ujian setempat.",
 "Checking everything…": "Menyemak semuanya…",
 "Nothing needed fixing.": "Tiada apa yang perlu dibaiki.",
-"Every part of Orbique checked in one place, with safe fixes that run by themselves.": "Setiap bahagian Orbique disemak di satu tempat, dengan pembaikan selamat yang berjalan sendiri."
+"Every part of Orbique checked in one place, with safe fixes that run by themselves.": "Setiap bahagian Orbique disemak di satu tempat, dengan pembaikan selamat yang berjalan sendiri.",
+"Not right?": "Tidak tepat?",
+"Correct the translation": "Betulkan terjemahan",
+"Type how this message should read in {lang}. Orbique shows your version to everyone and learns from it.": "Taip bagaimana mesej ini patut dibaca dalam {lang}. Orbique akan menunjukkan versi anda kepada semua orang dan belajar daripadanya.",
+"Thanks, Orbique will remember this": "Terima kasih, Orbique akan mengingatinya",
+"Type the right translation first": "Taip terjemahan yang betul dahulu",
+"Learn from translation corrections": "Belajar daripada pembetulan terjemahan",
+"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "Menukar pembetulan yang ditaip pasukan anda di bawah terjemahan yang salah kepada nota gaya yang diikuti terjemahan seterusnya."
 };

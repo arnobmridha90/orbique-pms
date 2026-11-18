@@ -109,6 +109,11 @@ var STR = {
   translatedFrom: 'Translated from {lang}',
   seeOriginal: 'See original',
   seeTranslation: 'See translation',
+  notRight: 'Not right?',
+  fixTitle: 'Correct the translation',
+  fixHelp: 'Type how this message should read in {lang}. Orbique shows your version to everyone and learns from it.',
+  fixSaved: 'Thanks, Orbique will remember this',
+  fixNeed: 'Type the right translation first',
   someone: 'Someone',
   formerStaff: 'Former staff'
 };

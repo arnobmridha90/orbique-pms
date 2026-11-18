@@ -9,6 +9,7 @@
  */
 import { translateConfig, translate as claudeTranslate, langCode, TranslateError, MAX_CHARS } from './translate.js';
 import { check } from './supabase.js';
+import { loadStyle } from './translate-learn.js';
 
 export const MAX_IDS = 40;
 const PARALLEL = 4;
@@ -49,6 +50,7 @@ export async function teamTranslate(sb, { orgId, userId, ids, to }, opts = {}) {
   const now = opts.now || Date.now;
   const deadline = now() + (opts.budgetMs || 7000);
   const doTranslate = opts.translate || claudeTranslate;
+  const style = opts.style !== undefined ? opts.style : await loadStyle(sb, orgId, target);
   let i = 0;
   let stopped = false;
   async function worker() {
@@ -57,7 +59,7 @@ export async function teamTranslate(sb, { orgId, userId, ids, to }, opts = {}) {
       if (stopped || now() > deadline - 1500) { res.pending.push(m.id); continue; }
       try {
         const src = String(m.body).trim().slice(0, MAX_CHARS);
-        const r = await doTranslate(cfg, src, target);
+        const r = await doTranslate(cfg, src, target, { style });
         const row = { message_id: m.id, lang: target, src_lang: langCode(r.lang) || '', body: r.same ? '' : String(r.text || '').slice(0, 8000), same: !!r.same };
         check(await sb.from('team_message_translations').upsert(row, { onConflict: 'message_id,lang' }), 'save translation');
         res.items[m.id] = { text: row.body, from: row.src_lang, same: row.same };
