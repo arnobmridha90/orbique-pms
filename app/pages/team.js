@@ -309,6 +309,8 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
     return O.auth.call('/api/alerts', { action: 'team-translate', orgId: O.auth.orgId(), ids: ids, to: to }).then(function (r) {
       if (S.org !== key) return false;
       if (!r.configured) S.trOff = true;
+      /* the server stopped for a reason only the owner can fix (key missing, badly pasted or refused): say so once, never silently */
+      if (r.error && !S.trErr) { S.trErr = true; U.toast(r.error, 'bad'); }
       var items = r.items || {}, got = false;
       Object.keys(items).forEach(function (id) { S.tr[to + ':' + id] = items[id]; got = got || (!items[id].same && !!items[id].text); });
       /* what came back neither done nor pending was not translatable (no access, no text): never ask again */
