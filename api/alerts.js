@@ -9,6 +9,10 @@
  *                                                      to the others in the chat who did not mute it -> {phones, sent}
  *   team-translate     any active member of orgId      {ids, to}: Team chat messages (up to 40, only chats the member is
  *                                                      in) in language `to` -> {configured, to, items, pending} (0025)
+ *   health             the account owner               every check of the Health page -> {report, settings, log, fixes} (0027)
+ *   health-settings    the account owner               {auto: {<fix id>: bool}, alert: bool}: which safe fixes run by themselves, and whether
+ *                                                      a newly red check is sent to the owner -> {settings}
+ *   health-fix         the account owner               {fix}: run one safe fix now -> {result}
  *
  * Sign-in: "Authorization: Bearer <Supabase access token>". Uses the service-role key (server only).
  * Never returns a key; channel results are plain English ("sent", "skipped: why", "failed: why").
@@ -19,6 +23,7 @@ import { channelStatus, queueTest, pushConfig, sendTeamPush } from './_lib/alert
 import TC from './_lib/shared/teamchat.cjs';
 import TONES from './_lib/shared/tones.cjs';
 import { teamTranslate } from './_lib/team-translate.js';
+import { runHealth, healthSettings, saveHealthSettings, healthLog, applyFix, FIXES } from './_lib/healthcheck.js';
 
 const ALERT_ROLES = ['owner', 'ops'];
 
@@ -36,7 +41,23 @@ function deviceToken(v) {
   return t;
 }
 
+const OWNER_ONLY = ['owner'];
+
 const ACTIONS = {
+  health: async (sb, body, me) => {
+    const { orgId } = await member(sb, body, me, OWNER_ONLY);
+    const [report, settings, log] = await Promise.all([runHealth(sb, orgId), healthSettings(sb, orgId), healthLog(sb, orgId)]);
+    return { report, settings, log, fixes: FIXES };
+  },
+  'health-settings': async (sb, body, me) => {
+    const { orgId } = await member(sb, body, me, OWNER_ONLY);
+    return { settings: await saveHealthSettings(sb, orgId, body) };
+  },
+  'health-fix': async (sb, body, me) => {
+    const { orgId } = await member(sb, body, me, OWNER_ONLY);
+    if (typeof body.fix !== 'string' || !FIXES[body.fix]) throw bad('bad-fix', 'Unknown fix.');
+    return { result: await applyFix(sb, orgId, body.fix) };
+  },
   status: async (sb, body, me) => {
     const { orgId } = await member(sb, body, me);
     return { status: await channelStatus(sb, orgId, me.id) };

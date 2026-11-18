@@ -418,6 +418,7 @@
     pricing: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
     planner: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
     automations: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+    health: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
     invoices: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
     expenses: '<path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
     financials: '<path d="M3 21h18M5 21V10M19 21V10M9 21v-7M15 21v-7M12 3 3 8h18z"/>',
@@ -2123,7 +2124,7 @@
   O.LANGS = [['en', 'English', 'EN'], ['bn', 'বাংলা', 'Bangla'], ['ms', 'Bahasa Malaysia', 'MS'], ['zh', '中文（福建話）', 'Hokkien']];
   O.LOCALES = { en: 'en-MY', bn: 'bn-BD-u-nu-latn', ms: 'ms-MY', zh: 'zh-TW' };
   O.I18N = O.I18N || {};
-  var NAV_EN = { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', team: 'Team chat', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', more: 'More', home: 'Home', platform: 'Platform admin' };
+  var NAV_EN = { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', team: 'Team chat', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', health: 'System health', more: 'More', home: 'Home', platform: 'Platform admin' };
   O.NAV_EN = NAV_EN;
   var I = (function () {
     var own = Object.prototype.hasOwnProperty, caches = {}, pats = {}, frags = {};
@@ -2453,9 +2454,9 @@
     ['insights', ['statistics', 'reports']],
     ['finance', ['invoices', 'expenses', 'financials']],
     ['grow', ['website', 'livesite', 'guestapp']],
-    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'planner', 'automations', 'owner', 'staff', 'brand']]
+    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'planner', 'automations', 'owner', 'staff', 'brand', 'health']]
   ];
-  O.OWNER_ONLY = { financials: true, planner: true };
+  O.OWNER_ONLY = { financials: true, planner: true, health: true };
   /* pages in the menu whose access is not their own Staff Access section: {id: fn -> may open} */
   O.PAGE_ACCESS = { livesite: function () { return O.can('website.edit') || O.can('website.publish'); },
     /* Greeting Messages (pages/greetings.js): anyone who can open the inbox reads them; inbox.greetings changes them */
