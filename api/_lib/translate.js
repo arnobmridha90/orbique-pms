@@ -40,11 +40,11 @@ const SYSTEM = [
 ].join('\n');
 
 /** The request body for one translation (exported for tests). */
-export function requestBody(cfg, text, to) {
+export function requestBody(cfg, text, to, style) {
   return {
     model: cfg.model,
     max_tokens: 2000,
-    system: SYSTEM,
+    system: style ? SYSTEM + '\n' + String(style).slice(0, 3000) : SYSTEM,
     messages: [{ role: 'user', content: `Target language: ${langName(to)} (${to}).\n<message>\n${String(text).replace(/<\/?message>/gi, '')}\n</message>` }]
   };
 }
@@ -66,7 +66,7 @@ export function parseAnswer(raw) {
 
 /**
  * Translate text into `to` (ISO 639-1).
- *   opts {timeoutMs = 9000, fetch}
+ *   opts {timeoutMs = 9000, fetch, style (this workspace's learned style notes, see translate-learn.js)}
  */
 export async function translate(cfg, text, to, opts = {}) {
   const target = langCode(to);
@@ -86,7 +86,7 @@ export async function translate(cfg, text, to, opts = {}) {
     res = await doFetch(API_URL, {
       method: 'POST',
       headers: { 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify(requestBody(cfg, src, target)),
+      body: JSON.stringify(requestBody(cfg, src, target, opts.style)),
       signal: ctl.signal
     });
     const t = await res.text();
@@ -110,4 +110,31 @@ export async function translate(cfg, text, to, opts = {}) {
   if (!parsed) throw new TranslateError('The translation came back in a form Orbique could not read. Please try again.', { retryable: true });
   const lang = parsed.lang || '';
   return { lang, text: parsed.text, same: lang === target || parsed.text.trim() === src };
+}
+
+/** One plain Claude call (used by the learning pass): the answer text. Same key checks and errors as translate(). */
+export async function complete(cfg, { system, user, maxTokens = 1500 }, opts = {}) {
+  if (!cfg.key) throw new TranslateError('Translation is not set up on the server yet (ANTHROPIC_API_KEY is missing).');
+  if (!/^[\x21-\x7E]+$/.test(cfg.key)) throw new TranslateError('The translation key in Vercel has a stray space, line break or odd character. Paste ANTHROPIC_API_KEY again, then redeploy.');
+  const doFetch = opts.fetch || globalThis.fetch;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), opts.timeoutMs || 20000);
+  try {
+    const res = await doFetch(API_URL, {
+      method: 'POST',
+      headers: { 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: cfg.model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+      signal: ctl.signal
+    });
+    const t = await res.text();
+    let j = null;
+    try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
+    if (!res.ok) throw new TranslateError('The translation service refused the request.', { retryable: res.status === 429 || res.status >= 500 });
+    return (j && Array.isArray(j.content) ? j.content : []).filter((c) => c && c.type === 'text').map((c) => c.text).join('');
+  } catch (e) {
+    if (e instanceof TranslateError) throw e;
+    throw new TranslateError(ctl.signal.aborted ? 'Translation took too long.' : 'Could not reach the translation service.', { retryable: true });
+  } finally {
+    clearTimeout(timer);
+  }
 }

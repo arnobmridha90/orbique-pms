@@ -8463,5 +8463,12 @@ O.I18N.zh = {
 "The health check runs on the live Orbique, where it can see the database, email, booking sites and alerts. It is not available in the local test copy.": "健康檢查在正式的 Orbique 上執行，可查看資料庫、電郵、訂房網站與提醒。本機測試版沒有此功能。",
 "Checking everything…": "正在檢查所有項目…",
 "Nothing needed fixing.": "沒有需要修復的項目。",
-"Every part of Orbique checked in one place, with safe fixes that run by themselves.": "在同一處檢查 Orbique 的每個部分，並有自動執行的安全修復。"
+"Every part of Orbique checked in one place, with safe fixes that run by themselves.": "在同一處檢查 Orbique 的每個部分，並有自動執行的安全修復。",
+"Not right?": "翻译不对？",
+"Correct the translation": "更正翻译",
+"Type how this message should read in {lang}. Orbique shows your version to everyone and learns from it.": "请输入这条消息用{lang}应该怎么说。Orbique 会向所有人显示您的版本，并从中学习。",
+"Thanks, Orbique will remember this": "谢谢，Orbique 会记住这一点",
+"Type the right translation first": "请先输入正确的翻译",
+"Learn from translation corrections": "从翻译更正中学习",
+"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "把团队在错误翻译下输入的更正整理成风格笔记，之后的翻译会遵循。"
 };

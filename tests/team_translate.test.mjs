@@ -94,3 +94,31 @@ test('empty messages and a bad language are handled', async () => {
   assert.equal(r.to, 'en');
   assert.deepEqual(r.items, {});
 });
+
+test('a correction replaces the shared translation, is kept for learning, and only works in chats the person is in', async () => {
+  const { saveFix } = await import('../api/_lib/translate-learn.js');
+  const T = { team_messages: [msg(1, 'all', 'Check-in is at 3 pm'), msg(2, 'secret', 'private')], team_message_translations: [{ message_id: id(1), lang: 'ms', src_lang: 'en', body: 'Daftar masuk 3', same: false }], translation_fixes: [] };
+  const sb = {
+    from(table) {
+      const f = []; let ins = null, up = null;
+      const q = {
+        select() { return q; }, eq(k, v) { f.push((r) => r[k] === v); return q; },
+        insert(r) { ins = r; return q; }, upsert(r) { up = r; return q; },
+        maybeSingle() { return Promise.resolve({ data: T[table].filter((r) => f.every((fn) => fn(r)))[0] || null, error: null }); },
+        then(res, rej) {
+          if (ins) T[table].push(ins);
+          if (up) { const i = T[table].findIndex((r) => r.message_id === up.message_id && r.lang === up.lang); if (i >= 0) T[table][i] = up; else T[table].push(up); }
+          return Promise.resolve({ data: null, error: null }).then(res, rej);
+        }
+      };
+      return q;
+    },
+    rpc(n, a) { return Promise.resolve({ data: a.p_chat === 'all', error: null }); }
+  };
+  const r = await saveFix(sb, { orgId: ORG, userId: U, messageId: id(1), lang: 'ms', fixed: ' Daftar masuk (check-in) pukul 3 petang ' });
+  assert.equal(r.text, 'Daftar masuk (check-in) pukul 3 petang');
+  assert.equal(T.team_message_translations[0].body, 'Daftar masuk (check-in) pukul 3 petang');
+  assert.deepEqual([T.translation_fixes[0].original, T.translation_fixes[0].was, T.translation_fixes[0].learned], ['Check-in is at 3 pm', 'Daftar masuk 3', undefined]);
+  await assert.rejects(() => saveFix(sb, { orgId: ORG, userId: U, messageId: id(2), lang: 'ms', fixed: 'x' }), TranslateError);
+  await assert.rejects(() => saveFix(sb, { orgId: ORG, userId: U, messageId: id(1), lang: 'ms', fixed: '  ' }), TranslateError);
+});

@@ -8463,5 +8463,12 @@ O.I18N.bn = {
 "The health check runs on the live Orbique, where it can see the database, email, booking sites and alerts. It is not available in the local test copy.": "স্বাস্থ্য যাচাই লাইভ অরবিকে চলে, যেখানে এটি ডাটাবেস, ইমেইল, বুকিং সাইট ও অ্যালার্ট দেখতে পারে। লোকাল টেস্ট কপিতে এটি পাওয়া যায় না।",
 "Checking everything…": "সবকিছু যাচাই করা হচ্ছে…",
 "Nothing needed fixing.": "কিছু ঠিক করার দরকার ছিল না।",
-"Every part of Orbique checked in one place, with safe fixes that run by themselves.": "অরবিকের প্রতিটি অংশ এক জায়গায় যাচাই, সাথে নিজে চলা নিরাপদ সমাধান।"
+"Every part of Orbique checked in one place, with safe fixes that run by themselves.": "অরবিকের প্রতিটি অংশ এক জায়গায় যাচাই, সাথে নিজে চলা নিরাপদ সমাধান।",
+"Not right?": "ঠিক নয়?",
+"Correct the translation": "অনুবাদ ঠিক করুন",
+"Type how this message should read in {lang}. Orbique shows your version to everyone and learns from it.": "এই বার্তাটি {lang} ভাষায় কেমন হওয়া উচিত তা লিখুন। Orbique সবাইকে আপনার সংস্করণ দেখাবে এবং এ থেকে শিখবে।",
+"Thanks, Orbique will remember this": "ধন্যবাদ, Orbique এটি মনে রাখবে",
+"Type the right translation first": "আগে সঠিক অনুবাদটি লিখুন",
+"Learn from translation corrections": "অনুবাদ সংশোধন থেকে শিখুন",
+"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "আপনার টিম ভুল অনুবাদের নিচে যে সংশোধন লেখে তা স্টাইল নোটে পরিণত করে, যা পরের অনুবাদগুলো অনুসরণ করে।"
 };

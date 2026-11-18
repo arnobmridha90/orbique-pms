@@ -89,6 +89,7 @@
 .pg-team .tc-msg.pending .tc-bub{opacity:0.7;}
 .pg-team .tc-tr{display:flex;align-items:center;gap:4px;margin:4px 0 0;padding:0;background:none;border:none;font:inherit;font-size:11px;line-height:1.3;color:var(--muted);cursor:pointer;text-align:left;}
 .pg-team .tc-tr svg{width:12px;height:12px;}
+.pg-team .tc-trrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;}
 .pg-team .tc-tr-link{text-decoration:underline;}
 .pg-team .tc-tr:hover .tc-tr-link{color:var(--text);}
 .pg-team .tc-img{display:block;padding:0;border:none;background:var(--surface-2);border-radius:7px;overflow:hidden;cursor:zoom-in;max-width:280px;min-width:120px;min-height:90px;margin:2px 0 4px;}
@@ -326,6 +327,17 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
     });
   };
 
+  /* the team's own correction of a translation: shown to everyone at once, and learned from (api/_lib/translate-learn.js) */
+  TCX.fixTranslation = function (id, text) {
+    check();
+    var to = trLang();
+    return O.auth.call('/api/alerts', { action: 'team-translate-fix', orgId: O.auth.orgId(), id: id, to: to, text: text }).then(function (r) {
+      var cur = S.tr[to + ':' + id] || {};
+      S.tr[to + ':' + id] = { text: r.text || text, from: cur.from || '', same: false };
+      changed({});
+      return true;
+    });
+  };
   function softReload() { clearTimeout(S.reloadT); S.reloadT = setTimeout(function () { TCX.load(true).catch(function () {}); }, 350); }
   /* something changed: the menu badge and the page (when open) follow */
   var listeners = [];
@@ -602,10 +614,22 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
     var tr = TCX.translation(m);
     if (!tr) return '<span class="txt" data-no-i18n>' + linkify(m.body) + '</span>';
     var orig = TCX.showingOriginal(m.id), from = langLabel(tr.from);
-    return '<span class="txt" data-no-i18n>' + linkify(orig ? m.body : tr.text) + '</span>' +
+    return '<span class="txt" data-no-i18n>' + linkify(orig ? m.body : tr.text) + '</span><div class="tc-trrow">' +
       '<button type="button" class="tc-tr" data-tc-orig="' + esc(m.id) + '">' + O.icon('lang') +
       '<span>' + esc(orig ? t('seeTranslation') : (from ? t('translatedFrom', { lang: from }) : t('translated'))) + '</span>' +
-      (orig ? '' : '<span class="tc-tr-sep">·</span><span class="tc-tr-link">' + esc(t('seeOriginal')) + '</span>') + '</button>';
+      (orig ? '' : '<span class="tc-tr-sep">·</span><span class="tc-tr-link">' + esc(t('seeOriginal')) + '</span>') + '</button>' +
+      (orig ? '' : '<button type="button" class="tc-tr" data-tc-fix="' + esc(m.id) + '"><span class="tc-tr-link">' + esc(t('notRight')) + '</span></button>') + '</div>';
+  }
+  function fixTranslation(m) {
+    var tr = m && TCX.translation(m); if (!m || !tr) return;
+    var id = m.id;
+    var f = O.html('<div class="field"><label for="tc-fx">' + esc(t('fixHelp', { lang: langLabel(trLang()) })) + '</label><textarea class="input" id="tc-fx" rows="4" maxlength="4000"></textarea></div>');
+    O.$('#tc-fx', f).value = tr.text;
+    U.modal({ title: t('fixTitle'), body: f, size: 'sm', actions: [{ label: t('cancel') }, { label: t('save'), kind: 'primary', onClick: function (cl) {
+      var v = O.$('#tc-fx', f).value.trim(); if (!v) { U.toast(t('fixNeed'), 'bad'); return false; }
+      TCX.fixTranslation(id, v).then(function () { cl(); U.toast(t('fixSaved')); }, function (e) { U.toast(errText(e, t('sendFailed')), 'bad'); });
+      return false;
+    } }] });
   }
   var WHO_COLORS = ['#2F7D6D', '#3B5B8C', '#8A5A2B', '#6D4C9F', '#A0414E', '#3F7F3F', '#1F6A8A', '#8C3E7A'];
   function whoColor(id) { return 'color-mix(in srgb, ' + WHO_COLORS[D.hash(String(id)) % WHO_COLORS.length] + ' 80%, var(--text))'; }
@@ -803,6 +827,8 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
         var row = e.target.closest('[data-chat]'); if (row) { openChat(row.dataset.chat); return; }
         var img = e.target.closest('[data-tc-img]');
         if (img) { var mi = msgOf(img.dataset.tcImg), src = O.$('img', img).src; if (mi && src) U.modal({ title: mi.file.name || t('photo'), body: '<div class="tc-lightbox"><img alt="" src="' + esc(src) + '"></div>', actions: [{ label: t('done'), kind: 'primary' }] }); return; }
+        var xb = e.target.closest('[data-tc-fix]');
+        if (xb) { fixTranslation(msgOf(xb.dataset.tcFix)); return; }
         var tb = e.target.closest('[data-tc-orig]');
         if (tb) { var id = tb.dataset.tcOrig; TCX.showOriginal(id, !TCX.showingOriginal(id)); paintThread(false); return; }
         var fb = e.target.closest('[data-tc-file]');
