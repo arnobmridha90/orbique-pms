@@ -7,7 +7,7 @@ export function koziContent() {
     version: 1,
     buildings: [{
       id: 'vortex-klcc', cityId: 'kuala-lumpur', city: 'Kuala Lumpur', name: 'Kozi @ Vortex KLCC', building: 'Vortex Suites KLCC',
-      address: '56 Jalan Sultan Ismail, 50250 Kuala Lumpur', area: 'Golden Triangle, between KLCC and Bukit Bintang',
+      address: '12 Jalan Sultan Ismail, 50250 Kuala Lumpur', area: 'Golden Triangle, between KLCC and Bukit Bintang',
       intro: 'Two-bedroom suites high above the Golden Triangle, between KLCC and Bukit Bintang.',
       checkIn: '3:00 pm', checkOut: '11:00 am',
       photos: [P('building/Vortex-KLCC-street-view-2025', 'Vortex Suites KLCC from the street', 1600, 2400)], visible: true

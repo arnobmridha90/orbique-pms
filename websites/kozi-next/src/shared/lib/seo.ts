@@ -42,7 +42,7 @@ export function lodgingLd(b: Building, suites: Suite[]) {
     name: b.name, url: `${BRAND.my}${buildingPath(b)}`, email: BRAND.email, slogan: BRAND.tagline,
     description: b.intro || `${b.name}, ${b.area || b.city}.`,
     address: vortex
-      ? { '@type': 'PostalAddress', streetAddress: 'Vortex Suites KLCC, 56 Jalan Sultan Ismail', addressLocality: 'Kuala Lumpur', postalCode: '50250', addressCountry: 'MY' }
+      ? { '@type': 'PostalAddress', streetAddress: 'Vortex Suites KLCC, 12 Jalan Sultan Ismail', addressLocality: 'Kuala Lumpur', postalCode: '50250', addressCountry: 'MY' }
       : { '@type': 'PostalAddress', streetAddress: `${b.building}, ${b.address}`, addressLocality: b.city, addressCountry: 'MY' },
     ...(vortex ? { geo: { '@type': 'GeoCoordinates', latitude: PROPERTY.geo.lat, longitude: PROPERTY.geo.lon } } : {}),
     checkinTime: time24(b.checkIn), checkoutTime: time24(b.checkOut), knowsLanguage: ['en', 'ms', 'id'],

@@ -289,7 +289,7 @@ VORTEX_LD = {
     'name': 'Kozi @ Vortex KLCC', 'url': MY + '/kuala-lumpur/vortex-klcc/', 'email': EMAIL, 'telephone': PHONE,
     'slogan': 'Exceptional spaces. Memorable stays.',
     'description': 'Two-bedroom serviced city suites at Vortex KLCC in central Kuala Lumpur, each sleeping four with a full kitchen.',
-    'address': {'@type': 'PostalAddress', 'streetAddress': 'Vortex KLCC, Jalan Sultan Ismail', 'addressLocality': 'Kuala Lumpur', 'addressRegion': 'Wilayah Persekutuan Kuala Lumpur', 'addressCountry': 'MY'},
+    'address': {'@type': 'PostalAddress', 'streetAddress': 'Vortex KLCC, 12 Jalan Sultan Ismail', 'addressLocality': 'Kuala Lumpur', 'addressRegion': 'Wilayah Persekutuan Kuala Lumpur', 'addressCountry': 'MY'},
     'amenityFeature': [{'@type': 'LocationFeatureSpecification', 'name': n, 'value': True} for n in ('Kitchen', 'City view', 'Smart TV', 'Coffee and tea')],
     'knowsLanguage': ['en', 'ms', 'id'],
     'parentOrganization': {'@type': 'Organization', 'name': 'Kozi', 'url': COM + '/'},
