@@ -95,7 +95,7 @@ function seed() {
     ],
     records: [
       rec('unitTypes', 'UT-STD', { name: 'Standard 2-Bedroom Suite', buildingId: 'BD-1' }),
-      rec('buildings', 'BD-1', { name: 'Vortex KLCC', address: '56 Jalan Sultan Ismail, 50250 Kuala Lumpur', checkInTime: '15:00', checkOutTime: '11:00' }),
+      rec('buildings', 'BD-1', { name: 'Vortex KLCC', address: '12 Jalan Sultan Ismail, 50250 Kuala Lumpur', checkInTime: '15:00', checkOutTime: '11:00' }),
       rec('properties', 'P-411', { unitTypeId: 'UT-STD', unitNo: '41-1', buildingId: 'BD-1' }),
       rec('ratePlans', 'RP-FLEX', { unitTypeId: 'UT-STD', name: 'Flexible', primary: true, defaultRate: 250, minStay: 1 }),
       rec('ratePlans', 'RP-NREF', { unitTypeId: 'UT-STD', name: 'Non-refundable', follows: { planId: 'RP-FLEX', type: 'pct', value: -10 }, defaultRate: 225, minStay: 1 }),
@@ -252,7 +252,7 @@ test('arrival time and note go on the booking; the guest gets a confirmation ema
   assert.equal(m.reply_to, 'hello@staykozi.com');
   assert.match(m.subject, new RegExp('confirmed: Tue 10 Nov 2026 \\(' + out.bookingId + '\\)'));
   for (const want of [out.bookingId, 'Standard Suite', 'Check-in: Tue 10 Nov 2026, from 3:00 pm', 'Check-out: Thu 12 Nov 2026, by 11:00 am', 'Guests: 2', 'Total paid: RM550.00',
-    'Rate: Flexible. Free cancellation until Tue 3 Nov 2026.', 'Address: Vortex KLCC, 56 Jalan Sultan Ismail, 50250 Kuala Lumpur', 'Your arrival time: 7:00 pm to 9:00 pm']) assert.ok(m.text.includes(want), want);
+    'Rate: Flexible. Free cancellation until Tue 3 Nov 2026.', 'Address: Vortex KLCC, 12 Jalan Sultan Ismail, 50250 Kuala Lumpur', 'Your arrival time: 7:00 pm to 9:00 pm']) assert.ok(m.text.includes(want), want);
   b = booking(db, out.bookingId);
   assert.equal(b.web.guestEmail, 'sent');
   const st = await bookingStatus(db, site, { session_id: b.web.session });
