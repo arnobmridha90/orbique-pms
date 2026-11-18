@@ -35,6 +35,7 @@ import { renewTokens } from './_lib/whatsapp-connect.js';
 import { waConfig } from './_lib/whatsapp.js';
 import { purgeTrash, relinkChats } from './_lib/inbox.js';
 import { processJourney } from './_lib/journey.js';
+import { watchHealth } from './_lib/healthcheck.js';
 
 export const TICK_BUDGET_MS = 15000;
 const PRUNE_DAYS = 60;
@@ -51,7 +52,8 @@ export const bookingHooks = {
   waTokens: (sb, opts) => renewTokens(sb, Object.assign({ config: waConfig() }, opts)),
   inboxTrash: (sb) => purgeTrash(sb, null),
   journey: (sb, opts) => processJourney(sb, opts),
-  relink: (sb, opts) => relinkChats(sb, opts)
+  relink: (sb, opts) => relinkChats(sb, opts),
+  health: (sb, opts) => watchHealth(sb, opts)
 };
 
 /** Run a hook; a failure is logged and reported, never stops the tick (ARI still goes out). */
@@ -79,6 +81,8 @@ export async function tick(sb, opts = {}) {
   const left = () => 22000 - (Date.now() - start);
   if (left() > 4000) out.journey = await safely('timed messages', () => bookingHooks.journey(sb, { channexConfig: cfg, deadline: Date.now() + Math.min(8000, left() - 2000) }));
   if (left() > 3000) out.relink = await safely('link chats', () => bookingHooks.relink(sb, { config: cfg, deadline: Date.now() + Math.min(4000, left() - 1500) }));
+  // the health check (api/_lib/healthcheck.js): at most once every 15 minutes per workspace; safe fixes, and a warning when something turns red
+  if (left() > 9000 && bookingHooks.health) out.health = await safely('health check', () => bookingHooks.health(sb, {}));
   return out;
 }
 

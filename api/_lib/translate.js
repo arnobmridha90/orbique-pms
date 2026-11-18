@@ -11,9 +11,9 @@ export const API_URL = 'https://api.anthropic.com/v1/messages';
 export const DEFAULT_MODEL = 'claude-haiku-5-5';
 export const MAX_CHARS = 4000;
 
-export function translateConfig() {
-  const key = String(process.env.ANTHROPIC_API_KEY || '').trim();
-  const model = String(process.env.ANTHROPIC_MODEL || '').trim() || DEFAULT_MODEL;
+export function translateConfig(env = process.env) {
+  const key = String(env.ANTHROPIC_API_KEY || '').trim();
+  const model = String(env.ANTHROPIC_MODEL || '').trim() || DEFAULT_MODEL;
   return { key, model, configured: !!key };
 }
 
