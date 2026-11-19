@@ -41,7 +41,7 @@ const clock = (t: string, dflt: Clock): Clock => {
 };
 /** Half an hour earlier: the last look out of the window before check-out. */
 const earlier = ([h, m, ap]: Clock): Clock => (m >= 30 ? [h, m - 30, ap] : [h === 1 ? 12 : h - 1, m + 30, h === 12 ? (ap === 'pm' ? 'am' : 'pm') : ap]);
-const checkIn = home?.checkIn ?? '3:00 pm', checkOut = home?.checkOut ?? '11:00 am';
+const checkIn = home?.checkIn ?? '3:00 pm', checkOut = home?.checkOut ?? '12:00 pm';
 type Moment = { t: Clock; k: string; h: (s: Suite) => string; p: (s: Suite) => string; day: number; dusk: number; keep?: boolean };
 const MOMENTS: Moment[] = [
   { t: clock(checkIn, [3, 0, 'pm']), k: 'boutique/01-living-room', h: () => 'Welcome in', p: () => `Check-in is from ${checkIn}.${usual ? ' Two bedrooms, two bathrooms, room for four.' : ''}`, day: 0.95, dusk: 0, keep: true },

@@ -696,7 +696,7 @@ export function confirmationEmail(b, s, place = {}) {
     ['Booking reference', b.id],
     ['Suite', suite],
     ['Check-in', longDate(b.checkIn) + ', from ' + (clockText(b.checkInTime) || '3:00 pm')],
-    ['Check-out', longDate(b.checkOut) + ', by ' + (clockText(b.checkOutTime) || '11:00 am')],
+    ['Check-out', longDate(b.checkOut) + ', by ' + (clockText(b.checkOutTime) || '12:00 pm')],
     ['Nights', String(n)],
     ['Guests', String(b.guests) + (num(b.extraBed) > 0 ? ' (with an extra bed)' : '')],
     ['Total paid', rm(w.paid || b.total)],
