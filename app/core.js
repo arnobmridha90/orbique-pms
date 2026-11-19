@@ -1532,7 +1532,7 @@
         bookingTasksHTML(b) +
         '<div><div class="section-title" style="margin-top:0">Guest</div><div class="row-flex">' + U.avatar(b.guest.name) + '<div class="grow"><div class="b">' + O.esc(b.guest.name) + '</div><div class="small muted">' + O.esc(b.guest.countryName || '') + contact + '</div></div>' + (O.can('inbox') && (conv || (b.status !== 'cancelled' && b.checkOut >= D.TODAY && O.can('inbox.send'))) ? '<button class="btn btn-ghost btn-sm" data-act="chat">' + O.icon('chat') + 'Message</button>' : '') + '</div></div>' +
         (canMoney ? '<div><div class="section-title" style="margin-top:0">Payment</div><dl class="kv"><dt>' + b.nights + ' × ' + O.fmt.money(b.nightly, { cur: b }) + '</dt><dd>' + O.fmt.money(b.accommodation, { cur: b }) + '</dd><dt>Cleaning fee</dt><dd>' + O.fmt.money(b.cleaningFee, { cur: b }) + '</dd>' + (b.tourismTax ? '<dt>Tourism tax</dt><dd>' + O.fmt.money(b.tourismTax, { cur: b }) + '</dd>' : '') + '<dt class="tot">Guest paid</dt><dd class="tot">' + O.fmt.money(b.total, { cur: b }) + '</dd>' +
-        (O.isOwner() ? '<dt>' + O.esc(O.tpl('{site} fee', { site: U.platName(b.channel) })) + '</dt><dd>−' + O.fmt.money(b.platformFee, { cur: b }) + '</dd><dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout, { cur: b }) + '</dd>' : '') + '</dl></div>' : '') +
+        (O.isOwner() ? (b.channel === 'direct' && !b.platformFee ? '' : '<dt>' + O.esc(O.tpl('{site} fee', { site: U.platName(b.channel) })) + '</dt><dd>−' + O.fmt.money(b.platformFee, { cur: b }) + '</dd>') + '<dt class="tot">Payout</dt><dd class="tot">' + O.fmt.money(b.payout, { cur: b }) + '</dd>' : '') + '</dl></div>' : '') +
         (b.status !== 'cancelled' && canInv && canMoney ? '<div><div class="section-title" style="margin-top:0">Invoice &amp; receipt</div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Invoice ' + O.esc(b.invoiceNo || '') + '</div><div class="lr-sub">Created automatically ' + d.fmtY(b.invoiceDate || b.checkIn) + '</div></div>' + O.invoice.statusHTML(b, 'invoice') + '<button class="btn btn-ghost btn-xs" data-act="inv">View</button></div>' +
           '<div class="list-row"><div class="lr-main"><div class="lr-title">Receipt ' + O.esc(b.receiptNo || '') + '</div><div class="lr-sub">' + (b.paidAt ? 'Created automatically when paid, ' + d.fmtY(b.paidAt) : 'Created automatically when payment arrives') + '</div></div>' + O.invoice.statusHTML(b, 'receipt') + (b.paidAt || canPay ? '<button class="btn btn-ghost btn-xs" data-act="rcp">' + (b.paidAt ? 'View' : 'Record payment') + '</button>' : '') + '</div>' +
@@ -1786,6 +1786,12 @@
     Object.keys(D.propById).forEach(function (k) { delete D.propById[k]; }); D.properties.forEach(function (p) { D.propById[p.id] = p; });
     if (D.itemById) { Object.keys(D.itemById).forEach(function (k) { delete D.itemById[k]; }); D.invItems.forEach(function (x) { D.itemById[x.id] = x; }); }
   };
+  /* direct bookings (walk-in, phone, Website) carry no fee: the payout is what the guest paid. Clears the 3% that
+     bookings saved before 19 Nov 2026 still hold. Returns true when it changed the booking */
+  O.noDirectFee = function (b) {
+    if (!b || b.channel !== 'direct' || !(+b.platformFee)) return false;
+    b.platformFee = 0; b.payout = b.total; return true;
+  };
   /* apply rows from a backend: rows = [{coll, id, data, deleted}], blobs = [{key, data}] */
   function applyRows(rows, blobs) {
     var touched = false;
@@ -1798,6 +1804,7 @@
       var c = canon(row.data);
       if (idx >= 0 && canon(arr[idx]) === c) { lastMap[String(row.id)] = c; return; }
       var obj = clone(row.data);
+      if (row.coll === 'bookings') O.noDirectFee(obj); /* differs from c, so the next save stores the corrected booking */
       if (idx >= 0) { /* keep the same object so references held by pages stay valid */ var cur = arr[idx]; Object.keys(cur).forEach(function (k) { delete cur[k]; }); Object.assign(cur, obj); } else arr.push(obj);
       lastMap[String(row.id)] = c; touched = true;
     });

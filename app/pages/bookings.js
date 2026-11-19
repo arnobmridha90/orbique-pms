@@ -1008,7 +1008,7 @@
       $('.nb-paysec').hidden = ota;
       $('.nb-srchint').textContent = ota ? 'For a booking made on ' + site + ' before it was connected. Bookings from connected sites come in by themselves.' : v.src === 'website' ? 'A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.' : '';
       $('.nb-cihint').textContent = v.ci && v.ci < T ? 'A stay that has already started: the guest is in house now.' : '';
-      $('.nb-proto').textContent = ota ? 'Copy the amounts from ' + site + '. ' + site + ' collects the payment and any tourism tax, so nothing is added on top.' : 'Direct bookings carry a 3% payment fee.';
+      $('.nb-proto').textContent = ota ? 'Copy the amounts from ' + site + '. ' + site + ' collects the payment and any tourism tax, so nothing is added on top.' : 'Direct bookings have no fee: the payout is what the guest pays.';
       if (ota && !feeDirty) $('[name=fee]').value = v.total > 0 ? Math.round(v.total * feePct(v.src) * 100) / 100 : '';
       $('.nb-maxg').textContent = 'Up to ' + maxGuests(p) + ' guests';
       var sg = suggestion(p.id, v.ci, v.co);

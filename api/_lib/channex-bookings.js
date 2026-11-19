@@ -96,7 +96,7 @@ export function channelOf(rev) {
   return 'other';
 }
 /** Commission rates the app shows (D.channels in app/data.js), for an estimate when Channex sends no ota_commission. */
-export const FEE_PCT = { airbnb: 0.15, booking: 0.15, agoda: 0.15, expedia: 0.18, trip: 0.15, other: 0.15, vrbo: 0.08, direct: 0.03 };
+export const FEE_PCT = { airbnb: 0.15, booking: 0.15, agoda: 0.15, expedia: 0.18, trip: 0.15, other: 0.15, vrbo: 0.08, direct: 0 }; // no fee on direct bookings
 const CHANNEL_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', expedia: 'Expedia', trip: 'Trip.com', vrbo: 'Vrbo', other: 'the platform' };
 
 /** The revision attributes, whatever shape it came in ({id, attributes} from the API, or plain). */
