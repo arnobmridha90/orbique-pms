@@ -110,7 +110,7 @@ export function init(root: HTMLElement) {
       'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kozi//Booking//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
       `UID:${ref() || stamp}@staykozi.com`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${d(a)}`, `DTEND;VALUE=DATE:${d(b)}`,
       `SUMMARY:Kozi @ Vortex KLCC\\, ${suite}`, 'LOCATION:Vortex Suites KLCC\\, 12 Jalan Sultan Ismail\\, 50250 Kuala Lumpur',
-      `DESCRIPTION:Booking ${ref()}. Check in from 3:00 pm\\, check out by 11:00 am. Questions: ${email}`,
+      `DESCRIPTION:Booking ${ref()}. Check in from 3:00 pm\\, check out by 12:00 pm. Questions: ${email}`,
       'END:VEVENT', 'END:VCALENDAR',
     ].join('\r\n');
     const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));

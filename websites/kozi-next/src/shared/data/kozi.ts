@@ -27,7 +27,7 @@ export const PROPERTY = {
   address: '12 Jalan Sultan Ismail, 50250 Kuala Lumpur',
   city: 'Kuala Lumpur',
   geo: { lat: 3.151, lon: 101.706 },
-  checkIn: '3:00 pm', checkOut: '11:00 am',
+  checkIn: '3:00 pm', checkOut: '12:00 pm',
   path: '/kuala-lumpur/vortex-klcc/',
 };
 
