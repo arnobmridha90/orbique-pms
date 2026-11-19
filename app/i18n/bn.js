@@ -8470,5 +8470,9 @@ O.I18N.bn = {
 "Thanks, Orbique will remember this": "ধন্যবাদ, Orbique এটি মনে রাখবে",
 "Type the right translation first": "আগে সঠিক অনুবাদটি লিখুন",
 "Learn from translation corrections": "অনুবাদ সংশোধন থেকে শিখুন",
-"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "আপনার টিম ভুল অনুবাদের নিচে যে সংশোধন লেখে তা স্টাইল নোটে পরিণত করে, যা পরের অনুবাদগুলো অনুসরণ করে।"
+"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "আপনার টিম ভুল অনুবাদের নিচে যে সংশোধন লেখে তা স্টাইল নোটে পরিণত করে, যা পরের অনুবাদগুলো অনুসরণ করে।",
+"The room rate for each night. The total follows it.": "প্রতি রাতের রুম রেট। মোট টাকা এর সাথে বদলায়।",
+"Extra bed": "অতিরিক্ত বেড",
+"The invoice shows the new amounts: send it again so the guest has the right one.": "ইনভয়েসে নতুন অঙ্ক দেখাবে: অতিথি যেন সঠিকটি পান, তাই আবার পাঠান।",
+"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "আপনার নিজের ওয়েবসাইট থেকে আসা বুকিং (যেমন WhatsApp-এ পাঠানো)। এটি একটি ডাইরেক্ট বুকিং, ওয়েবসাইট হিসেবে চিহ্নিত।"
 };

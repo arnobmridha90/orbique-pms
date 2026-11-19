@@ -8470,5 +8470,9 @@ O.I18N.zh = {
 "Thanks, Orbique will remember this": "谢谢，Orbique 会记住这一点",
 "Type the right translation first": "请先输入正确的翻译",
 "Learn from translation corrections": "从翻译更正中学习",
-"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "把团队在错误翻译下输入的更正整理成风格笔记，之后的翻译会遵循。"
+"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "把团队在错误翻译下输入的更正整理成风格笔记，之后的翻译会遵循。",
+"The room rate for each night. The total follows it.": "每晚的房價，總額會隨之更新。",
+"Extra bed": "加床",
+"The invoice shows the new amounts: send it again so the guest has the right one.": "發票會顯示新金額：請重新發送，讓客人拿到正確的版本。",
+"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "來自您自己網站的訂房（例如透過 WhatsApp 傳來）。這是直接訂房，標記為「網站」。"
 };
