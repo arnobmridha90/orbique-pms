@@ -511,9 +511,14 @@
   };
   U.plat = function (id, opts) {
     opts = opts || {};
-    var name = (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id);
-    return '<span class="plat">' + U.platIcon(id) + (opts.icon ? '' : O.esc(name)) + '</span>';
+    var name = opts.name || (D.channels[id] && D.channels[id].name) || (id === 'google' ? 'Google' : id);
+    return '<span class="plat">' + U.platIcon(id, opts.name) + (opts.icon ? '' : O.esc(name)) + '</span>';
   };
+  /* where a booking came from: the booking site, or for the operator's own bookings "Direct" or "Website" (a booking from
+     their own website: channel 'direct' with otaName 'Website', the same mark api/_lib/website.js gives online bookings) */
+  U.isWebsite = function (b) { return !!(b && b.channel === 'direct' && b.otaName === 'Website'); };
+  U.bookingSite = function (b) { return U.isWebsite(b) ? 'Website' : U.platName(b && b.channel); };
+  U.platOf = function (b, opts) { var o = {}; for (var k in (opts || {})) o[k] = opts[k]; if (U.isWebsite(b)) o.name = U.bookingSite(b); return U.plat(b.channel, o); };
   /* D.channelOrder without the platforms only the channel manager brings (Expedia, Trip.com, other) until a booking uses them */
   U.channelsInUse = function () {
     var later = { expedia: 1, trip: 1, other: 1 };
@@ -1519,7 +1524,7 @@
       var contact = canContacts ? ' · ' + O.esc(b.guest.phone || '') + ' · ' + O.esc(b.guest.email || '') : ' · <span title="Your access does not include guest contact details">contact details hidden</span>';
       var extra = O.booking.actions.filter(function (x) { try { return !x.show || x.show(b); } catch (e) { return false; } });
       return '<div class="stack">' +
-        '<div class="row-flex wrap">' + U.status(b.status) + U.plat(b.channel) + (b.sameDay ? '<span class="pill accent">⚡ Same-day booking</span>' : '') + O.booking.flags(b) + '<span class="muted small">Booked ' + O.fmt.dateTime(b.createdAt) + '</span></div>' +
+        '<div class="row-flex wrap">' + U.status(b.status) + U.platOf(b) + (b.sameDay ? '<span class="pill accent">⚡ Same-day booking</span>' : '') + O.booking.flags(b) + '<span class="muted small">Booked ' + O.fmt.dateTime(b.createdAt) + '</span></div>' +
         (O.booking.source(b) ? '<div class="small muted bk-src">' + O.esc(O.booking.source(b)) + '</div>' : '') +
         (extra.length ? '<div class="row-flex wrap">' + extra.map(function (x, i) { var why = x.disabled ? x.disabled(b) : ''; return '<button class="btn btn-' + (x.kind || 'ghost') + ' btn-sm" data-extra="' + i + '"' + (why ? ' disabled title="' + O.esc(why) + '"' : '') + '>' + (x.icon ? O.icon(x.icon) : '') + O.esc(x.label) + '</button>'; }).join('') + '</div>' : '') +
         '<div class="card"><div class="card-body"><dl class="kv"><dt>Property</dt><dd>' + O.esc(p.area || p.location || p.city ? O.propLabel(p) : p.name) + '</dd><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + O.fmt.time(b.checkInTime) + ' / ' + O.fmt.time(b.checkOutTime) + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + O.esc(b.notes) + '</dd>' : '') + '</dl></div></div>' +

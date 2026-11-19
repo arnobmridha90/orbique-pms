@@ -244,7 +244,7 @@
   var SORTS = {
     guest: function (a, b) { return String(a.guest.name).localeCompare(String(b.guest.name)); },
     checkIn: function (a, b) { return a.checkIn < b.checkIn ? -1 : a.checkIn > b.checkIn ? 1 : a.id < b.id ? -1 : 1; },
-    channel: function (a, b) { return U.platName(a.channel).localeCompare(U.platName(b.channel)); },
+    channel: function (a, b) { return U.bookingSite(a).localeCompare(U.bookingSite(b)); },
     status: function (a, b) { return STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status); },
     total: function (a, b) { return (a.total || 0) - (b.total || 0); }
   };
@@ -277,9 +277,9 @@
   function rowHTML(b, showValue) {
     var cx = b.status === 'cancelled', sub = staySub(b);
     return '<div class="bk-row' + (cx ? ' cx' : '') + '" data-id="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(O.tpl('{guest}, {dates}, {status}', { guest: b.guest.name, dates: d.fmtRange(b.checkIn, b.checkOut), status: U.statusLabel(b.status) })) + '">' +
-      '<div class="c-guest"><div class="l1">' + esc(b.guest.name) + (b.sameDay ? '<span class="sd" title="Booked today (' + esc(fmt.time(b.createdAt)) + ') for arrival today">⚡ Same-day</span>' : '') + '</div><div class="l2">' + esc(b.id) + (b.reservationCode ? ' · ' + esc(U.platName(b.channel) + ' ' + b.reservationCode) : '') + (b.guest.countryName ? ' · ' + esc(b.guest.countryName) : '') + '</div></div>' +
+      '<div class="c-guest"><div class="l1">' + esc(b.guest.name) + (b.sameDay ? '<span class="sd" title="Booked today (' + esc(fmt.time(b.createdAt)) + ') for arrival today">⚡ Same-day</span>' : '') + '</div><div class="l2">' + esc(b.id) + (b.reservationCode && !U.isWebsite(b) ? ' · ' + esc(U.platName(b.channel) + ' ' + b.reservationCode) : '') + (b.guest.countryName ? ' · ' + esc(b.guest.countryName) : '') + '</div></div>' +
       '<div class="c-stay"><div class="l1">' + d.fmtRange(b.checkIn, b.checkOut) + ' <span class="nts">· ' + fmt.plural(b.nights, 'night') + '</span></div><div class="l2' + (sub[0] ? ' soon' : '') + '">' + esc(sub[1]) + '</div></div>' +
-      '<div class="c-plat">' + U.plat(b.channel) + '</div>' +
+      '<div class="c-plat">' + U.platOf(b) + '</div>' +
       '<div class="c-status">' + U.status(b.status) + '</div>' +
       (showValue ? '<div class="c-total">' + fmt.money(b.total, { cur: b }) + '</div>' : '') +
       readyCell(b) + '</div>';
@@ -513,7 +513,7 @@
       var ut = O.unitType(b.unitTypeId);
       var r = [b.id, p ? propName(p) : O.bookingPlace(b), place(p), ut ? O.typeTitle(ut) : '', (p && p.unitNo) || '', b.guest.name, b.guest.countryName || ''];
       if (contacts) r = r.concat([b.guest.phone || '', b.guest.email || '']);
-      r = r.concat([b.checkIn, b.checkOut, b.nights, b.guests, U.platName(b.channel), b.reservationCode || '', U.statusLabel(b.status), String(b.createdAt || '').replace('T', ' ')]);
+      r = r.concat([b.checkIn, b.checkOut, b.nights, b.guests, U.bookingSite(b), b.reservationCode || '', U.statusLabel(b.status), String(b.createdAt || '').replace('T', ' ')]);
       if (money) r = r.concat([O.curOf(b), b.total, b.tourismTax, b.revenue, b.platformFee, b.payout]);
       return r.concat([b.invoiceNo || '', b.invoiceSent ? b.invoiceSent.via + ' ' + (b.invoiceSent.at || '') : 'No', b.receiptNo || '', b.paidAt || '', b.receiptSent ? b.receiptSent.via + ' ' + (b.receiptSent.at || '') : 'No', b.idVerified ? 'Yes' : 'No', b.cancelledAt || '']);
     }));
@@ -671,7 +671,7 @@
   function infoModal(b) {
     U.modal({
       title: b.guest.name, sub: b.id + ' · property no longer in the list',
-      body: '<dl class="kv"><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Platform</dt><dd>' + esc(U.platName(b.channel)) + '</dd><dt>Status</dt><dd>' + esc(U.statusLabel(b.status)) + '</dd></dl>',
+      body: '<dl class="kv"><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Platform</dt><dd>' + esc(U.bookingSite(b)) + '</dd><dt>Status</dt><dd>' + esc(U.statusLabel(b.status)) + '</dd></dl>',
       actions: [{ label: 'Close' }]
     });
   }
@@ -741,10 +741,11 @@
     b.accommodation = Math.round((b.nightly || 0) * b.nights);
     b.cleaningFee = b.cleaningFee != null && p.id === b.propertyId ? b.cleaningFee : cleaningFor(p);
     b.tourismTax = b.guest.foreign && O.tourismTaxApplies(p) ? 10 * b.nights : 0;
-    b.total = b.accommodation + b.cleaningFee + b.tourismTax;
+    var extra = b.extraBed || 0; /* the extra-bed charge of a website booking */
+    b.total = b.accommodation + b.cleaningFee + b.tourismTax + extra;
     b.platformFee = Math.round(b.accommodation * feePct(b.channel));
     b.payout = b.total - b.platformFee;
-    b.revenue = b.accommodation + b.cleaningFee;
+    b.revenue = b.accommodation + b.cleaningFee + extra;
   }
 
   /* ---------------- unit picker of the booking forms ----------------
@@ -781,7 +782,17 @@
     if (!O.can('bookings.edit')) { U.toast(NO.edit, 'bad'); return; }
     if (!canEditB(b)) { U.toast('Completed and cancelled bookings cannot be changed', 'bad'); return; }
     var T = D.TODAY, inHouse = b.status === 'checked_in' || b.checkIn < T, contacts = canContacts(), money = canValue(), ota = otaLocked(b);
+    /* direct (and website) bookings: the nightly price can be changed; a booking-site booking typed in by hand: what the guest
+       paid and the commission. A booking from a connected site keeps the price the site sent. */
+    var direct = b.channel === 'direct', hand = !ota && !direct, cur = esc(fmt.cur(b));
     function f(label, input, cls, hint) { return '<div class="field ' + (cls || '') + '"><label>' + label + '</label>' + input + (hint || '') + '</div>'; }
+    var priceSec = direct ? '<div class="nb-sec">Price</div><div class="form-grid">' +
+        f('Booked on', '<select class="select" name="src">' + ['direct', 'website'].map(function (c) { return '<option value="' + c + '"' + (c === srcOf(b) ? ' selected' : '') + '>' + esc(srcLabel(c)) + '</option>'; }).join('') + '</select>', money ? '' : 'full') +
+        (money ? f('Nightly price (<span class="nb-cur">' + cur + '</span>)', '<input type="number" class="input" name="price" min="1" step="1" inputmode="decimal" value="' + esc(String(b.nightly || '')) + '">', '', '<div class="hint">The room rate for each night. The total follows it.</div>') : '') + '</div>'
+      : hand && money ? '<div class="nb-sec">Price</div><div class="form-grid">' +
+        f('Guest paid in total (<span class="nb-cur">' + cur + '</span>)', '<input type="number" class="input" name="total" min="0" step="0.01" inputmode="decimal" value="' + esc(String(b.total || '')) + '">', '', '<div class="hint">The final price on the site\'s booking page.</div>') +
+        f('Commission and fees (<span class="nb-cur">' + cur + '</span>)', '<input type="number" class="input" name="fee" min="0" step="0.01" inputmode="decimal" value="' + esc(String(b.platformFee || 0)) + '">', '', '<div class="hint nb-payout"></div>') + '</div>'
+      : '';
     var props = D.properties.filter(function (p) { return !isArchived(p) || p.id === b.propertyId; });
     var body = O.html('<div class="nb-wrap"><div class="stack">' +
       '<div class="nb-sec">Stay</div><div class="form-grid">' +
@@ -791,7 +802,7 @@
       f('Arrival time', '<input type="time" class="input" name="tin" value="' + esc(b.checkInTime || '15:00') + '">') +
       f('Departure time', '<input type="time" class="input" name="tout" value="' + esc(b.checkOutTime || '11:00') + '">') +
       f('Guests', '<input type="number" class="input" name="guests" min="1" value="' + b.guests + '">', '', '<div class="hint nb-maxg"></div>') +
-      '</div><div class="nb-sec">Guest</div><div class="form-grid">' +
+      '</div>' + priceSec + '<div class="nb-sec">Guest</div><div class="form-grid">' +
       f('Guest name', '<input class="input" name="name" autocomplete="off" value="' + esc(b.guest.name) + '">', 'full') +
       (contacts ? f('Phone (WhatsApp)', '<input class="input" name="phone" inputmode="tel" autocomplete="off" value="' + esc(b.guest.phone || '') + '">') + f('Email', '<input class="input" name="email" type="email" autocomplete="off" value="' + esc(b.guest.email || '') + '">')
         : f('Phone', '<input class="input" disabled value="' + esc(maskPhone(b.guest.phone)) + '">') + f('Email', '<input class="input" disabled value="' + esc(maskEmail(b.guest.email)) + '">', '', '<div class="hint">Contact details are hidden for your access.</div>')) +
@@ -801,7 +812,10 @@
     var $ = function (s) { return O.$(s, body); };
     function vals() {
       return { pid: $('[name=pid]').value, ci: $('[name=ci]').value, co: $('[name=co]').value, guests: +$('[name=guests]').value || 0, tin: $('[name=tin]').value || '15:00', tout: $('[name=tout]').value || '11:00',
-        name: $('[name=name]').value.trim(), phone: contacts ? $('[name=phone]').value.trim() : b.guest.phone, email: contacts ? $('[name=email]').value.trim() : b.guest.email, notes: $('[name=notes]').value.trim() };
+        name: $('[name=name]').value.trim(), phone: contacts ? $('[name=phone]').value.trim() : b.guest.phone, email: contacts ? $('[name=email]').value.trim() : b.guest.email, notes: $('[name=notes]').value.trim(),
+        src: $('[name=src]') ? $('[name=src]').value : srcOf(b),
+        price: $('[name=price]') ? num($('[name=price]').value) : b.nightly || 0,
+        total: $('[name=total]') ? num($('[name=total]').value) : b.total, fee: $('[name=fee]') ? num($('[name=fee]').value) : b.platformFee };
     }
     function update() {
       var v = vals(), ok = v.ci && v.co && v.co > v.ci, r = resolveUnit(v.pid, v.ci, v.co, b), p = r.p || D.propById[b.propertyId];
@@ -819,10 +833,17 @@
           : r.auto ? (r.unitId === b.propertyId ? O.tpl('{available} The guest keeps {unit}.', { available: { raw: bold('Available.') }, unit: { raw: esc(unitWord(p)) } }) : O.tpl('{available} Orbique puts the guest in {unit}, the best fit.', { available: { raw: bold('Available.') }, unit: { raw: esc(unitWord(p)) } }))
             : changed ? O.tpl('{available} for all {count} at {unit}.', { available: { raw: bold('Available') }, count: fmt.plural(nights, 'night'), unit: { raw: esc(p.short || p.name) } }) : esc(O.tr('Same dates and unit as now.'));
       }
-      var acc = Math.round((b.nightly || 0) * nights), clean = v.pid === b.propertyId ? b.cleaningFee : cleaningFor(p), tax = b.guest.foreign && O.tourismTaxApplies(p) ? 10 * nights : 0, tot = acc + clean + tax, mc = { cur: p };
+      var mc = { cur: p }, nightly = direct ? Math.round(v.price) : b.nightly || 0;
+      var acc = Math.round(nightly * nights), clean = v.pid === b.propertyId ? b.cleaningFee : cleaningFor(p), tax = b.guest.foreign && O.tourismTaxApplies(p) ? 10 * nights : 0, extra = direct ? b.extraBed || 0 : 0, tot = acc + clean + tax + extra;
+      if (hand) tot = Math.round(v.total * 100) / 100;
+      var payout = Math.max(0, Math.round((v.total - v.fee) * 100) / 100);
+      if (hand && money) $('.nb-payout').textContent = v.total > 0 ? 'Your payout: ' + fmt.money(payout, mc) + '.' : '';
+      var lines = hand ? '<dt>Guest paid on ' + esc(U.platName(b.channel)) + '</dt><dd>' + fmt.money(tot, mc) + '</dd><dt>Commission and fees</dt><dd>−' + fmt.money(v.fee, mc) + '</dd><dt class="tot">Your payout</dt><dd class="tot">' + fmt.money(payout, mc) + '</dd>'
+        : '<dt>' + nights + ' × ' + fmt.money(nightly, mc) + '</dt><dd>' + fmt.money(acc, mc) + '</dd><dt>Cleaning fee</dt><dd>' + fmt.money(clean, mc) + '</dd>' + (tax ? '<dt>Tourism tax</dt><dd>' + fmt.money(tax, mc) + '</dd>' : '') + (extra ? '<dt>Extra bed</dt><dd>' + fmt.money(extra, mc) + '</dd>' : '') + '<dt class="tot">New total</dt><dd class="tot">' + fmt.money(tot, mc) + '</dd>';
+      var shown = ota ? b.total : tot; /* a connected site's booking keeps its amounts */
       $('.nb-sum').innerHTML = '<h4>' + esc(propName(p)) + '</h4><div class="muted small">' + esc(place(p)) + '</div><div class="muted small">' + (ok ? d.fmtY(v.ci) + ' → ' + d.fmtY(v.co) + ' · ' + fmt.plural(nights, 'night') : 'Choose dates') + '</div>' +
-        (money ? '<dl class="kv"><dt>' + nights + ' × ' + fmt.money(b.nightly, mc) + '</dt><dd>' + fmt.money(acc, mc) + '</dd><dt>Cleaning fee</dt><dd>' + fmt.money(clean, mc) + '</dd>' + (tax ? '<dt>Tourism tax</dt><dd>' + fmt.money(tax, mc) + '</dd>' : '') +
-          '<dt class="tot">New total</dt><dd class="tot">' + fmt.money(tot, mc) + '</dd></dl>' + (ok && tot !== b.total ? '<div class="nb-docs" style="margin-top:8px">Was ' + fmt.money(b.total, { cur: b }) + '.' + (b.paidAt ? ' The guest has paid, so settle the difference of ' + fmt.money(Math.abs(tot - b.total), mc) + (tot > b.total ? ' with them.' : ' back to them.') : '') + '</div>' : '') : '');
+        (money ? (ota ? '<dl class="kv"><dt class="tot">Guest paid</dt><dd class="tot">' + fmt.money(b.total, { cur: b }) + '</dd></dl>' : '<dl class="kv">' + lines + '</dl>') +
+          (ok && !ota && Math.abs(shown - b.total) >= 0.01 ? '<div class="nb-docs" style="margin-top:8px">Was ' + fmt.money(b.total, { cur: b }) + '.' + (b.paidAt && direct ? ' The guest has paid, so settle the difference of ' + fmt.money(Math.abs(tot - b.total), mc) + (tot > b.total ? ' with them.' : ' back to them.') : '') + (b.invoiceSent ? ' The invoice shows the new amounts: send it again so the guest has the right one.' : '') + '</div>' : '') : '');
     }
     body.addEventListener('input', function () { $('.nb-err').innerHTML = ''; update(); });
     body.addEventListener('change', function (e) {
@@ -848,11 +869,22 @@
           if (!v.name) err.push('Enter the guest\'s name.');
           if (contacts && v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) err.push('The email address does not look right.');
           if (p && (v.guests < 1 || v.guests > maxGuests(p))) err.push('Guests must be between 1 and ' + maxGuests(p) + ' for this unit.');
+          if (direct && money && !(v.price > 0)) err.push('Enter the nightly price.');
+          if (hand && money && !(v.total > 0)) err.push('Enter what the guest paid on ' + U.platName(b.channel) + '.');
+          if (hand && money && (v.fee < 0 || v.fee > v.total)) err.push('The commission and fees should be between 0 and what the guest paid.');
           if (err.length) { $('.nb-err').innerHTML = '<b>Please check ' + (err.length === 1 ? 'this' : 'these') + ':</b><br>' + err.map(esc).join('<br>'); try { $('.nb-err').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (x) { /* ignore */ } return false; }
           var from = b.propertyId || null;
           var moved = v.ci !== b.checkIn || v.co !== b.checkOut || (r.auto ? r.unitId !== from : v.pid !== from);
           b.nights = d.diff(v.ci, v.co);
-          if (!ota && b.channel === 'direct') reprice(b, p); /* a platform booking keeps the price the platform sent */
+          if (direct) {
+            if (money) b.nightly = Math.round(v.price);
+            if (v.src === 'website') b.otaName = 'Website'; else if (b.otaName === 'Website') delete b.otaName;
+            reprice(b, p);
+          } else if (hand && money) { /* the amounts are the site's, its commission included; the site collected any tourism tax */
+            var tot = Math.round(v.total * 100) / 100, fee = Math.round(v.fee * 100) / 100;
+            b.nightly = Math.round(tot / b.nights); b.accommodation = tot; b.cleaningFee = 0; b.tourismTax = 0;
+            b.total = tot; b.revenue = tot; b.platformFee = fee; b.payout = Math.round((tot - fee) * 100) / 100;
+          } /* a booking from a connected site keeps the price the site sent */
           b.checkIn = v.ci; b.checkOut = v.co; b.guests = v.guests; b.checkInTime = v.tin; b.checkOutTime = v.tout;
           if (r.auto) { b.unitTypeId = r.typeId; O.assignBooking(b, { ignoreLock: true }); } /* keeps the unit while it is still free */
           else if (r.typeId || b.unitTypeId) { if (v.pid !== from) O.pickUnit(b, v.pid); }
@@ -870,6 +902,11 @@
       }]
     });
   }
+
+  /* "Booked on" choices: 'direct', 'website' (a direct booking from the operator's own website) or a booking site's channel id */
+  function isSiteSrc(src) { return !!(src && src !== 'direct' && src !== 'website' && D.channels[src]); }
+  function srcLabel(c) { return c === 'direct' ? 'Direct booking' : c === 'website' ? 'Website' : D.channels[c].name; }
+  function srcOf(b) { return b.channel === 'direct' ? (U.isWebsite(b) ? 'website' : 'direct') : b.channel; }
 
   O.bookingTools = { open: openBooking, edit: editBooking, cancel: cancelBooking, copyLink: copyLink, propLabel: propLabel, place: place, propName: propName };
 
@@ -921,13 +958,13 @@
     var countries = Object.keys(D.countryName).sort(function (a, b) { return a === 'MY' ? -1 : b === 'MY' ? 1 : D.countryName[a].localeCompare(D.countryName[b]); });
     var methods = ['FPX online banking', 'Card (Visa)', 'DuitNow QR', 'Bank transfer', 'Cash'];
     /* where the booking was made: direct, or a booking site the person copies it from (one that is not connected yet) */
-    var src0 = D.channels[o.channel] ? o.channel : 'direct';
-    var srcs = ['direct'].concat((D.channelOrder || Object.keys(D.channels)).filter(function (c) { return c !== 'direct' && D.channels[c]; }));
+    var src0 = o.channel === 'website' || D.channels[o.channel] ? o.channel : 'direct';
+    var srcs = ['direct', 'website'].concat((D.channelOrder || Object.keys(D.channels)).filter(function (c) { return c !== 'direct' && D.channels[c]; }));
     function f(label, input, cls, hint) { return '<div class="field ' + (cls || '') + '"><label>' + label + '</label>' + input + (hint || '') + '</div>'; }
     var body = O.html('<div class="nb-wrap"><div class="stack">' +
       '<div class="nb-sec">Stay</div>' +
       '<div class="form-grid">' +
-      f('Booked on', '<select class="select" name="src">' + srcs.map(function (c) { return '<option value="' + c + '"' + (c === src0 ? ' selected' : '') + '>' + esc(c === 'direct' ? 'Direct booking' : D.channels[c].name) + '</option>'; }).join('') + '</select>', 'full', '<div class="hint nb-srchint"></div>') +
+      f('Booked on', '<select class="select" name="src">' + srcs.map(function (c) { return '<option value="' + c + '"' + (c === src0 ? ' selected' : '') + '>' + esc(srcLabel(c)) + '</option>'; }).join('') + '</select>', 'full', '<div class="hint nb-srchint"></div>') +
       f('Property', '<select class="select" name="pid">' + unitOptions(props, pid0) + '</select>', 'full') +
       f('Check-in', '<input type="date" class="input" name="ci" min="' + d.add(T, -PAST) + '" value="' + ci0 + '">', '', '<div class="hint nb-cihint"></div>') +
       f('Check-out', '<input type="date" class="input" name="co" min="' + d.add(T, 1) + '" value="' + co0 + '">') +
@@ -965,11 +1002,11 @@
       return { avg: avg, wk: wk.length ? Math.round(sum(wk, function (v) { return v; }) / wk.length) : null, we: we.length ? Math.round(sum(we, function (v) { return v; }) / we.length) : null };
     }
     function update() {
-      var v = vals(), r = resolveUnit(v.pid, v.ci, v.co), p = r.p, ota = v.src !== 'direct', site = ota ? D.channels[v.src].name : '';
+      var v = vals(), r = resolveUnit(v.pid, v.ci, v.co), p = r.p, ota = isSiteSrc(v.src), site = ota ? D.channels[v.src].name : '';
       O.$$('.nb-direct', body).forEach(function (x) { x.hidden = ota; });
       O.$$('.nb-ota', body).forEach(function (x) { x.hidden = !ota; });
       $('.nb-paysec').hidden = ota;
-      $('.nb-srchint').textContent = ota ? 'For a booking made on ' + site + ' before it was connected. Bookings from connected sites come in by themselves.' : '';
+      $('.nb-srchint').textContent = ota ? 'For a booking made on ' + site + ' before it was connected. Bookings from connected sites come in by themselves.' : v.src === 'website' ? 'A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.' : '';
       $('.nb-cihint').textContent = v.ci && v.ci < T ? 'A stay that has already started: the guest is in house now.' : '';
       $('.nb-proto').textContent = ota ? 'Copy the amounts from ' + site + '. ' + site + ' collects the payment and any tourism tax, so nothing is added on top.' : 'Direct bookings carry a 3% payment fee.';
       if (ota && !feeDirty) $('[name=fee]').value = v.total > 0 ? Math.round(v.total * feePct(v.src) * 100) / 100 : '';
@@ -1018,7 +1055,7 @@
       title: 'New booking', sub: 'A direct booking, or one made on a booking site that is not connected yet.', size: 'wide', body: body,
       actions: [{ label: 'Cancel' }, {
         label: 'Create booking', kind: 'primary', onClick: function () {
-          var v = vals(), r = resolveUnit(v.pid, v.ci, v.co), p = r.p, err = [], now = D.TODAY, ota = v.src !== 'direct';
+          var v = vals(), r = resolveUnit(v.pid, v.ci, v.co), p = r.p, err = [], now = D.TODAY, ota = isSiteSrc(v.src);
           if (!v.ci || !v.co || v.co <= v.ci) err.push('Check-out must be after check-in.');
           else {
             if (v.ci < now && v.co <= now) err.push('This stay has already ended. Only stays from today, or ones still going on, can be added.');
@@ -1054,11 +1091,12 @@
     var b = {
       id: O.uid('BK'), propertyId: p.id,
       guest: { name: v.name, country: v.country, countryName: D.countryName[v.country] || v.country, foreign: foreign, phone: v.phone || '', email: v.email || '' },
-      guests: v.guests, channel: v.src || 'direct', checkIn: v.ci, checkOut: v.co, nights: nights,
+      guests: v.guests, channel: isSiteSrc(v.src) ? v.src : 'direct', checkIn: v.ci, checkOut: v.co, nights: nights,
       checkInTime: v.time, checkOutTime: p.checkOutTime || '11:00', createdAt: D.NOW, createdBy: O.state.viewer,
       nightly: Math.round(v.price), cleaningFee: cleaningFor(p),
       status: v.ci < T ? 'checked_in' : 'confirmed', idVerified: false, codeStatus: 'held', sameDay: v.ci === T, notes: v.notes || ''
     };
+    if (v.src === 'website') b.otaName = 'Website';
     if (b.channel === 'direct') reprice(b, p);
     else { /* copied from the site: the amounts are the site's, its commission included; the site collected any tourism tax */
       var tot = Math.round(v.total * 100) / 100, fee = Math.round(v.fee * 100) / 100;

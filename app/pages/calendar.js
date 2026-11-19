@@ -335,7 +335,7 @@
       chips = '<div class="ready">' + O.readiness(b).filter(function (r) { return r.label !== 'No turnover needed'; }).map(function (r) { return '<span class="rd ' + r.state + '">' + esc(r.label) + '</span>'; }).join('') + '</div>';
     }
     return '<div class="ct-n">' + esc(b.guest.name) + (b.sameDay ? '<span class="pill accent">⚡ Same-day</span>' : '') + '</div>' +
-      '<div class="ct-r">' + U.status(b.status) + U.plat(b.channel) + '</div>' +
+      '<div class="ct-r">' + U.status(b.status) + U.platOf(b) + '</div>' +
       '<dl class="kv"><dt>Stay</dt><dd>' + d.fmtRange(b.checkIn, b.checkOut) + ' · ' + fmt.plural(b.nights, 'night') + '</dd>' +
       '<dt>Check-in / out</dt><dd>' + shortTime(b.checkInTime) + ' / ' + shortTime(b.checkOutTime || '11:00') + '</dd>' +
       '<dt>Guests</dt><dd>' + b.guests + '</dd>' + (O.can('bookings.value') ? '<dt>' + esc(O.tr('You get')) + '</dt><dd><b>' + fmt.money((+b.revenue || 0) - (+b.platformFee || 0), { cur: b }) + '</b>' + (b.platformFee ? ' <span class="muted">' + esc(O.tpl('net, guest paid {amount}', { amount: fmt.money(b.total, { cur: b }) })) + '</span>' : '') + '</dd>' : '') +
@@ -348,7 +348,7 @@
     var p = D.propById[b.propertyId];
     U.modal({
       title: b.guest.name, sub: propLabel(p), size: 'sm',
-      body: '<div class="row-flex wrap" style="margin-bottom:10px">' + U.status(b.status) + U.plat(b.channel) + '</div><dl class="kv"><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + fmt.time(b.checkInTime || '15:00') + ' / ' + fmt.time(b.checkOutTime || '11:00') + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + esc(b.notes) + '</dd>' : '') + '</dl>',
+      body: '<div class="row-flex wrap" style="margin-bottom:10px">' + U.status(b.status) + U.platOf(b) + '</div><dl class="kv"><dt>Stay</dt><dd>' + d.fmtY(b.checkIn) + ' → ' + d.fmtY(b.checkOut) + '</dd><dt>Nights · guests</dt><dd>' + b.nights + ' · ' + b.guests + '</dd><dt>Check-in / out</dt><dd>' + fmt.time(b.checkInTime || '15:00') + ' / ' + fmt.time(b.checkOutTime || '11:00') + '</dd>' + (b.notes ? '<dt>Note</dt><dd>' + esc(b.notes) + '</dd>' : '') + '</dl>',
       actions: [{ label: 'Close' }]
     });
   }

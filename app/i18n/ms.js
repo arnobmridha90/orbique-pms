@@ -8470,5 +8470,9 @@ O.I18N.ms = {
 "Thanks, Orbique will remember this": "Terima kasih, Orbique akan mengingatinya",
 "Type the right translation first": "Taip terjemahan yang betul dahulu",
 "Learn from translation corrections": "Belajar daripada pembetulan terjemahan",
-"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "Menukar pembetulan yang ditaip pasukan anda di bawah terjemahan yang salah kepada nota gaya yang diikuti terjemahan seterusnya."
+"Turns the corrections your team types under a wrong translation into style notes that later translations follow.": "Menukar pembetulan yang ditaip pasukan anda di bawah terjemahan yang salah kepada nota gaya yang diikuti terjemahan seterusnya.",
+"The room rate for each night. The total follows it.": "Kadar bilik bagi setiap malam. Jumlah mengikutinya.",
+"Extra bed": "Katil tambahan",
+"The invoice shows the new amounts: send it again so the guest has the right one.": "Invois menunjukkan amaun baharu: hantar semula supaya tetamu mendapat yang betul.",
+"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "Tempahan dari laman web anda sendiri (contohnya dihantar melalui WhatsApp). Ia tempahan terus, ditanda Laman web."
 };
