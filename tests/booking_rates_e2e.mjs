@@ -50,7 +50,7 @@ async function run(browser, size, tag) {
   await save('Create booking');
   const web = await pg.evaluate(() => { const b = O.data.bookings.filter((x) => x.guest.name === 'Web Guest')[0]; return b && { id: b.id, channel: b.channel, otaName: b.otaName, nightly: b.nightly, nights: b.nights, total: b.total, fee: b.platformFee }; });
   check(web && web.channel === 'direct' && web.otaName === 'Website', tag + ': saved as a direct booking marked Website');
-  check(web && web.nightly === 250 && web.fee === Math.round(250 * web.nights * 0.03), tag + ': direct pricing and 3% fee kept');
+  check(web && web.nightly === 250 && web.fee === 0, tag + ': direct pricing, no fee on a direct booking');
   await pg.evaluate(() => O.go('bookings'));
   await pg.waitForTimeout(200);
   const badge = await pg.evaluate((id) => { const r = [...document.querySelectorAll('.pg-bookings [data-id], .pg-bookings [data-open]')].find((x) => (x.dataset.id || x.dataset.open) === id); return r ? r.textContent : document.querySelector('.pg-bookings').textContent; }, web.id);
@@ -68,7 +68,24 @@ async function run(browser, size, tag) {
   await save('Save changes');
   const ed = await pg.evaluate((id) => { const b = O.data.booking(id); return { nightly: b.nightly, acc: b.accommodation, total: b.total, fee: b.platformFee, payout: b.payout, clean: b.cleaningFee, tax: b.tourismTax, otaName: b.otaName }; }, web.id);
   check(ed.nightly === 199 && ed.acc === 199 * web.nights, tag + ': nightly price and accommodation updated');
-  check(ed.total === ed.acc + ed.clean + ed.tax && ed.payout === ed.total - ed.fee && ed.fee === Math.round(ed.acc * 0.03), tag + ': total, fee and payout follow');
+  check(ed.total === ed.acc + ed.clean + ed.tax && ed.fee === 0 && ed.payout === ed.total, tag + ': total follows, no fee, payout is what the guest paid');
+
+  /* ---- the payment panel shows no fee line on a direct booking ---- */
+  await pg.evaluate((id) => O.bookingTools.open ? O.bookingTools.open(O.data.booking(id)) : O.booking.open(id), web.id).catch(() => {});
+  await pg.waitForTimeout(300);
+  const panel = await pg.evaluate(() => { const m = document.querySelector('.modal:last-of-type, .drawer'); return m ? m.textContent : ''; });
+  check(/Payout/.test(panel) && !/Direct fee/.test(panel), tag + ': payment panel has no Direct fee line');
+  await pg.keyboard.press('Escape');
+
+  /* ---- a direct booking saved with the old 3% fee is corrected when the app loads ---- */
+  await pg.evaluate((id) => { const b = O.data.booking(id); b.platformFee = 30; b.payout = b.total - 30; return O.sync.flush(); }, web.id);
+  await pg.waitForTimeout(1500);
+  await pg.reload();
+  await pg.waitForFunction(() => window.O && O._started, null, { timeout: 20000 });
+  const old = await pg.evaluate((id) => { const b = O.data.booking(id); return b && { fee: b.platformFee, payout: b.payout, total: b.total }; }, web.id);
+  check(old && old.fee === 0 && old.payout === old.total, tag + ': saved direct booking with the old fee loads with no fee');
+  await pg.evaluate(() => O.go('bookings'));
+  await pg.waitForSelector('.pg-bookings');
 
   /* ---- switch it back to a plain direct booking ---- */
   await pg.evaluate((id) => O.bookingTools.edit(O.data.booking(id)), web.id);

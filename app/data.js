@@ -70,7 +70,7 @@
     expedia: { id: 'expedia', name: 'Expedia', feePct: 0.18 },
     trip: { id: 'trip', name: 'Trip.com', feePct: 0.15 },
     other: { id: 'other', name: 'Other platform', feePct: 0.15 },
-    direct: { id: 'direct', name: 'Direct', feePct: 0.03 }
+    direct: { id: 'direct', name: 'Direct', feePct: 0 } /* no fee on direct bookings: the payout is what the guest paid */
   };
   /* expedia, trip and other arrive through the channel manager (api/_lib/channex-bookings.js); lists hide them while unused */
   var channelOrder = ['airbnb', 'booking', 'agoda', 'vrbo', 'expedia', 'trip', 'other', 'direct'];

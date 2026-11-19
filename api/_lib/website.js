@@ -494,7 +494,7 @@ export async function checkout(sb, site, body, opts = {}) {
   const price = member ? 'member' : 'public';
   const accommodation = money(opt.nightly.reduce((a, n) => a + (member ? n.member : n.public), 0));
   const total = money(accommodation + opt.extraBed);
-  const platformFee = money(total * FEE_PCT.direct);
+  const platformFee = 0; // no fee on direct bookings: the payout is what the guest paid
   const nowLocal = nowMY(now);
   const holdUntil = new Date(now + s.holdMinutes * 60000).toISOString();
   const b = newBookingFields({

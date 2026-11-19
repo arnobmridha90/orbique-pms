@@ -128,12 +128,12 @@
   function locked(rep) { return !!rep.money && !canMoney(); }
   var WHY_EXPORT = 'Downloading reports needs the "Download reports" permission (Staff access)';
 
-  /* 'Fee rates: Airbnb, Booking.com and Agoda 15%, Vrbo 8%, direct bookings 3% card fees.' built from D.channels */
+  /* 'Fee rates: Airbnb, Booking.com and Agoda 15%, Vrbo 8% commission on the room rate; no fee on direct bookings.' built from D.channels */
   function feeNote() {
     var g = {}, order = [];
     U.channelsInUse().forEach(function (ch) { if (ch === 'direct' || !D.channels[ch]) return; var k = String(Math.round(D.channels[ch].feePct * 100)); if (!g[k]) { g[k] = []; order.push(k); } g[k].push(D.channels[ch].name); });
     var parts = order.map(function (k) { var n = g[k]; return (n.length > 1 ? n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] : n[0]) + ' ' + k + '%'; });
-    return 'Fee rates: ' + parts.join(', ') + ' commission on the room rate; direct bookings ' + Math.round(((D.channels.direct || {}).feePct || 0) * 100) + '% card fees.';
+    return 'Fee rates: ' + parts.join(', ') + ' commission on the room rate; no fee on direct bookings.';
   }
 
   /* the report covers exactly the dates picked, future dates included (bookings already on the books).
@@ -535,7 +535,7 @@
     var side = { title: 'Share of nights', sub: rangeText(r), html: '<div class="side-list">' + O.chart.hbars(data.slice().sort(function (a, b) { return b.nights - a.nights; }).map(function (x) { return { label: U.plat(x.ch), value: totN ? x.nights / totN * 100 : 0, display: totN ? fmt.pct(x.nights / totN) : '0%' }; }), { max: 100 }) + '</div>' + (money ? '<div class="note rp-sfoot">' + feeNote() + '</div>' : '') };
     return {
       kpis: kpis, chartTitle: 'Nights sold by channel', chartSub: c ? O.tpl('This period against the {period}', { period: compName() }) : rangeText(r), chart: chart, side: side,
-      table: { title: 'By channel', sub: money ? 'Volume, net revenue and fees (OTA commission, or card fees on direct bookings)' : 'Volume and booking behaviour', cols: cols, rows: rows, total: { v: tot } },
+      table: { title: 'By channel', sub: money ? 'Volume, net revenue and OTA commission (no fee on direct bookings)' : 'Volume and booking behaviour', cols: cols, rows: rows, total: { v: tot } },
       summary: [['Top channel', top && top.nights ? U.platName(top.ch) : '–'], ['Direct share', totN ? fmt.pct(direct.nights / totN, 1) : '–'], ['Nights sold', fmt.num(totN)]].concat(money ? [['OTA commission', fmt.money(otaFee)]] : []),
       notes: 'Lead time is the average number of days between booking and arrival. Cancelled is the share of bookings made in the range that were later cancelled.',
       pdfNote: money ? feeNote() : '',
