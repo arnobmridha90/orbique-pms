@@ -6,6 +6,10 @@
      {id: O.uid('MV'), date, at, dir: 'in'|'out'|'adjust', kind, lines: [{itemId, qty}], propertyId?, usedBy?, bookingId?,
       supplier?, cost? (total of a purchase, in the workspace's main currency O.baseCur()), note, by}
      kind: in -> 'purchase' (or 'count' for the opening count), out -> 'turnover'|'repair'|'other', adjust -> 'count'|'writeoff'.
+     SIZES: an item may have sizes (item.sizes ['500ml', '1L', ...], item.sizeMode 'list' pick only | 'write' type only |
+     'both' pick or type, the default when sizes exist | 'none'). A line then carries `size` and stock is kept per item AND
+     size (onHandBy, keyed lineKey(l) = itemId + '::' + size). Lines saved before the item had sizes count as
+     item.legacySize. Totals per item (onHand, stock, usage, overuse, reports) add every size together.
      Count lines also keep `counted` (what was on the shelf); their qty is the difference from the records.
    Settings (D.inventorySettings, blob 'config'): {basis: 'stay'|'total', threshold: 0.4, minQty: 5}.
 
@@ -38,9 +42,12 @@
      O.inventory.noun(id, n)  -> 'rolls of toilet paper' / 'roll of toilet paper' (n === 1) for sentences
      O.inventory.settings()   -> validated copy of D.inventorySettings
      O.inventory.onHand()     -> {itemId: qty} for every item that appears in a move (including inactive ones)
+     O.inventory.onHandBy()   -> {lineKey: qty}: the same per item and size (key = itemId, or itemId + '::' + size)
+     stock() entries also carry sizes: [{size, qty}] (sizes with stock, list order first; '' = size not noted)
      O.inventory.open(kind, preset) opens a stock form: kind 'in'|'out'|'adjust';
            preset {propertyId, bookingId, use, mode: 'count'|'writeoff', lines: [{itemId, qty}], supplier, note}
-   Page params (O.go('inventory', {...})): tab 'stock'|'moves'|'overuse'|'items'|'settings', low: true (low stock only),
+   Page params (O.go('inventory', {...})): tab 'stock'|'moves'|'overuse'|'settings' ('items' opens Settings, where the
+     item list and sizes now live), low: true (low stock only),
      propertyId / itemId (movement filters), action 'in'|'out'|'adjust' (open that form).
    Bell (O.notifiers): low stock and overuse, for people who can record purchases or correct counts; one summary per type
    when there are more than two. */
@@ -54,6 +61,32 @@
   if (!D.invMoves) D.invMoves = [];
   if (!D.invItems) D.invItems = [];
   if (!D.itemById) D.itemById = {};
+
+  /* the starter list grows (app/data.js D.invStarter, items carry `since`). A workspace that saved its own item list
+     gets the newer starter items once, and sizes on starter items it never gave sizes to. Items the owner removed after
+     that are not brought back: D.invStarterVer remembers the version already added. Runs for an account owner only. */
+  var STARTER_VER = 2;
+  O.sync.blob('invStarterVer', 'config');
+  O.automation.register('inventory-starter', function () {
+    if (num(D.invStarterVer, 1) >= STARTER_VER || !O.isOwner() || !Array.isArray(D.invItems)) return;
+    var cur = num(D.invStarterVer, 1), have = {}, changed = false;
+    D.invItems.forEach(function (it) { if (it && it.id) have[it.id] = it; });
+    (D.invStarter || []).forEach(function (s0) {
+      var it = have[s0.id];
+      if (!it) {
+        if ((s0.since || 1) <= cur) return;
+        var x = JSON.parse(JSON.stringify(s0)); delete x.oldName; delete x.since; x.active = true; D.invItems.push(x); changed = true; return;
+      }
+      if (s0.sizes && it.sizes === undefined && it.sizeMode === undefined) {
+        it.sizes = s0.sizes.slice(); if (s0.legacySize && !it.legacySize) it.legacySize = s0.legacySize;
+        if (s0.oldName && it.name === s0.oldName) it.name = s0.name;
+        changed = true;
+      }
+    });
+    D.invStarterVer = STARTER_VER;
+    if (changed) O.reindex();
+    O.emit('data');
+  });
 
   function moves() { return Array.isArray(D.invMoves) ? D.invMoves : []; }
   function items() { return Array.isArray(D.invItems) ? D.invItems : []; }
@@ -73,6 +106,39 @@
     return out;
   }
   function round2(x) { return Math.round(x * 100) / 100; }
+
+  /* ------------------------------------------------------------------ sizes */
+  var SEP = '::';
+  function normSize(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 24); }
+  function sizeEq(a, b) { return String(a || '').replace(/\s+/g, '').toLowerCase() === String(b || '').replace(/\s+/g, '').toLowerCase(); }
+  function sizesOf(it) { var out = []; ((it && Array.isArray(it.sizes)) ? it.sizes : []).forEach(function (x) { x = normSize(x); if (x && !out.some(function (y) { return sizeEq(x, y); })) out.push(x); }); return out; }
+  function sizeMode(it) { if (!it) return 'none'; var m = it.sizeMode; if (m === 'none' || m === 'list' || m === 'write' || m === 'both') return m === 'list' && !sizesOf(it).length ? 'write' : m; return sizesOf(it).length ? 'both' : 'none'; }
+  function hasSizes(it) { return sizeMode(it) !== 'none'; }
+  /* a typed size that matches a listed one ("1 l") becomes the listed spelling ("1L") */
+  function tidySize(it, v) { v = normSize(v); var m = sizesOf(it).filter(function (x) { return sizeEq(x, v); })[0]; return m || v; }
+  function lineSize(l, it) { var v = normSize(l && l.size); if (!v && it && it.legacySize) v = normSize(it.legacySize); return v ? tidySize(it, v) : ''; }
+  function keyOf(id, size) { return size ? id + SEP + size : id; }
+  function splitKey(k) { k = String(k); var i = k.indexOf(SEP); return i < 0 ? { id: k, size: '' } : { id: k.slice(0, i), size: k.slice(i + SEP.length) }; }
+  /* items without sizes keep one stock figure, whatever older lines say */
+  function lineKey(l) { var it = item(l.itemId); return hasSizes(it) ? keyOf(l.itemId, lineSize(l, it)) : l.itemId; }
+  function sizeLabel(size) { return size || O.tr('Size not noted'); }
+  function nameWithSize(id, size) { var it = item(id), n = it ? it.name : O.tr('Removed item'); return hasSizes(it) || size ? n + (size ? ' · ' + size : '') : n; }
+  function lineName(l) { var it = item(l.itemId); return nameWithSize(l.itemId, hasSizes(it) ? lineSize(l, it) : ''); }
+  /* every size known for an item: its list, then sizes typed in past records */
+  function knownSizes(id) {
+    var it = item(id), out = sizesOf(it);
+    moves().forEach(function (m) { (m && m.lines || []).forEach(function (l) { if (l && l.itemId === id) { var z = lineSize(l, it); if (z && !out.some(function (y) { return sizeEq(y, z); })) out.push(z); } }); });
+    return out;
+  }
+  /* the size a new line starts with: the one last used for this item, else the first in its list */
+  function defaultSize(id) {
+    var it = item(id); if (!hasSizes(it)) return '';
+    var ms = moves(), list = sizesOf(it);
+    for (var i = ms.length - 1; i >= 0; i--) { var ls = (ms[i] && ms[i].lines) || []; for (var j = 0; j < ls.length; j++) if (ls[j] && ls[j].itemId === id) { var z = lineSize(ls[j], it); if (z) return z; } }
+    return list[0] || '';
+  }
+  function sizeOrder(id, a, b) { var L = sizesOf(item(id)), ia = L.indexOf(a), ib = L.indexOf(b); if (ia < 0) ia = a ? 500 : 999; if (ib < 0) ib = b ? 500 : 999; return ia - ib || (a < b ? -1 : a > b ? 1 : 0); }
+  function qs(v) { return String(v).replace(/["\\]/g, '\\$&'); } /* for [data-x="..."] selectors */
   /* search: item names first; the category only when no name matches ("tea" finds Tea bags, "linen" finds the linen) */
   function matchItems(list, q, nameOf, catOf) {
     q = String(q || '').trim().toLowerCase(); if (!q) return list;
@@ -126,9 +192,19 @@
     moves().forEach(function (m) { if (!m) return; (m.lines || []).forEach(function (l) { if (l && l.itemId) q[l.itemId] = round2((q[l.itemId] || 0) + signed(m, l)); }); });
     return q;
   }
+  function onHandBy() {
+    var q = {};
+    moves().forEach(function (m) { if (!m) return; (m.lines || []).forEach(function (l) { if (l && l.itemId) { var k = lineKey(l); q[k] = round2((q[k] || 0) + signed(m, l)); } }); });
+    return q;
+  }
+  function sizesInStock(id, by) {
+    by = by || onHandBy(); var out = [];
+    Object.keys(by).forEach(function (k) { var p = splitKey(k); if (p.id === id && round2(by[k]) !== 0) out.push({ size: p.size, qty: by[k] }); });
+    return out.sort(function (a, b) { return sizeOrder(id, a.size, b.size); });
+  }
   function historyStart() { var h = null; moves().forEach(function (m) { if (m && m.date && (!h || m.date < h)) h = m.date; }); return h; }
   function stock() {
-    var h = onHand(), T = D.TODAY, from = d.add(T, -29), start = historyStart(), used = {};
+    var h = onHand(), by = onHandBy(), T = D.TODAY, from = d.add(T, -29), start = historyStart(), used = {};
     var days = start ? Math.max(1, Math.min(30, d.diff(start > from ? start : from, T) + 1)) : 30;
     moves().forEach(function (m) {
       if (!m || m.dir !== 'out' || !m.date || m.date < from || m.date > T) return;
@@ -136,7 +212,7 @@
     });
     return activeItems().map(function (it) {
       var qty = h[it.id] || 0, re = Math.max(0, num(it.reorder, 0)), tracked = it.id in h, perDay = (used[it.id] || 0) / days;
-      return { itemId: it.id, name: it.name, cat: it.cat || 'Other', unit: it.unit || '', qty: qty, reorder: re, low: tracked && qty <= re, tracked: tracked, perDay: round2(perDay), daysLeft: perDay > 0 ? Math.max(0, Math.floor(qty / perDay)) : null };
+      return { itemId: it.id, name: it.name, cat: it.cat || 'Other', unit: it.unit || '', qty: qty, reorder: re, low: tracked && qty <= re, tracked: tracked, perDay: round2(perDay), daysLeft: perDay > 0 ? Math.max(0, Math.floor(qty / perDay)) : null, sizes: hasSizes(it) ? sizesInStock(it.id, by) : [] };
     });
   }
   function low() {
@@ -225,6 +301,7 @@
   O.inventory = {
     stock: stock, low: low, overuse: overuse, usage: usage, onHand: onHand, settings: settings, noun: noun,
     itemName: function (id) { var it = item(id); return it ? it.name : 'Removed item'; },
+    onHandBy: onHandBy, sizes: sizesOf, lineName: lineName,
     open: function (kind, preset) { openForm(kind, preset); }
   };
 
@@ -267,8 +344,7 @@
 
   function tabs() {
     var t = [['stock', 'Stock'], ['moves', 'Movements'], ['overuse', 'Overuse', overuse().length]];
-    if (O.can('inventory.items')) t.push(['items', 'Items']);
-    if (O.isOwner()) t.push(['settings', 'Settings']);
+    if (O.can('inventory.items') || O.isOwner()) t.push(['settings', 'Settings']);
     return t;
   }
 
@@ -278,7 +354,7 @@
       var n = activeItems().length, act = canDo('adjust') ? '<button type="button" class="btn btn-primary" data-act="count-first">' + O.icon('check') + 'Count your stock</button>'
         : canDo('in') ? '<button type="button" class="btn btn-primary" data-act="in">' + O.icon('download') + 'Record a purchase</button>' : '';
       return '<div class="card"><div class="inv-empty"><div class="ic">' + O.icon('inventory') + '</div><h3>No stock recorded yet</h3>' +
-        '<p>Count what is on your shelves to set the starting stock. ' + (n ? fmt.plural(n, 'item is', 'items are') + ' ready to count' + (O.can('inventory.items') ? '; change the list in Items.' : '.') : 'Add the items you keep in Items first.') + '</p>' +
+        '<p>Count what is on your shelves to set the starting stock. ' + (n ? fmt.plural(n, 'item is', 'items are') + ' ready to count' + (O.can('inventory.items') ? '; add your own items and sizes in Settings.' : '.') : 'Add the items you keep in Settings first.') + '</p>' +
         (act || '<p class="small">Ask an ops manager or the account owner to record the first stock count.</p>') + '</div></div>';
     }
     var all = stock(), lows = all.filter(function (s) { return s.low; }).sort(function (a, b) { return (a.qty / (a.reorder || 1)) - (b.qty / (b.reorder || 1)); });
@@ -310,7 +386,8 @@
         var it = item(s.itemId), soon = !s.low && s.daysLeft != null && s.daysLeft <= 7;
         var pill = !s.tracked ? '<span class="pill neutral">Not counted</span>' : s.low ? U.pill('Reorder', 'bad') : soon ? U.pill('Low soon', 'warn') : '';
         var cover = s.daysLeft == null ? '<span class="faint">Not used lately</span>' : s.daysLeft > 90 ? '3+ months' : fmt.plural(s.daysLeft, 'day');
-        html += '<div class="s-row' + (s.low ? ' low' : '') + '"><span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' +
+        var szs = s.sizes && s.sizes.length ? '<span class="szs">' + s.sizes.map(function (z) { return '<span class="sz-chip' + (z.qty < 0 ? ' neg' : '') + '">' + esc(sizeLabel(z.size)) + ' <b>' + qtyText(z.qty) + '</b></span>'; }).join('') + '</span>' : '';
+        html += '<div class="s-row' + (s.low ? ' low' : '') + (szs ? ' has-sz' : '') + '"><span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + szs + '</span>' +
           '<span class="r qty">' + qtyText(s.qty) + ' <span>' + esc(unitWord(it, s.qty)) + '</span></span>' +
           '<span class="r muted c-re">' + qtyText(s.reorder) + '</span><span class="r muted c-cover">' + cover + '</span><span class="r c-pill">' + pill + '</span>' +
           '<span class="sub">' + esc(s.daysLeft != null ? O.tpl('Reorder at {qty} · lasts about {time}', { qty: qtyText(s.reorder), time: s.daysLeft > 90 ? O.tr('3+ months') : fmt.plural(s.daysLeft, 'day') }) : O.tpl('Reorder at {qty}', { qty: qtyText(s.reorder) })) + '</span></div>';
@@ -319,8 +396,11 @@
     return html;
   }
   function stockCSV() {
-    var rows = [['Item', 'Category', 'In stock', 'Unit', 'Reorder level', 'Status', 'Used per day (last 30 days)', 'Lasts about (days)']];
-    stock().forEach(function (s) { rows.push([s.name, s.cat, s.qty, s.unit, s.reorder, !s.tracked ? 'Not counted' : s.low ? 'Reorder' : 'OK', s.perDay, s.daysLeft == null ? '' : s.daysLeft]); });
+    var rows = [['Item', 'Size', 'Category', 'In stock', 'Unit', 'Reorder level', 'Status', 'Used per day (last 30 days)', 'Lasts about (days)']];
+    stock().forEach(function (s) {
+      rows.push([s.name, s.sizes.length ? 'All sizes' : '', s.cat, s.qty, s.unit, s.reorder, !s.tracked ? 'Not counted' : s.low ? 'Reorder' : 'OK', s.perDay, s.daysLeft == null ? '' : s.daysLeft]);
+      s.sizes.forEach(function (z) { rows.push([s.name, sizeLabel(z.size), s.cat, z.qty, s.unit, '', '', '', '']); });
+    });
     O.downloadCSV('stock-' + D.TODAY + '.csv', rows);
     U.toast('Stock list downloaded');
   }
@@ -358,9 +438,9 @@
   }
   function linesSummary(m) {
     var ls = (m.lines || []).filter(function (l) { return num(l.qty, 0) !== 0; });
-    if (st.mv.item) { var l = ls.filter(function (x) { return x.itemId === st.mv.item; })[0]; return l ? '<b>' + esc(O.inventory.itemName(l.itemId)) + '</b> ' + qtySigned(m, l) : ''; }
+    if (st.mv.item) { var l = ls.filter(function (x) { return x.itemId === st.mv.item; })[0]; return l ? '<b>' + esc(lineName(l)) + '</b> ' + qtySigned(m, l) : ''; }
     if (!ls.length) return '<span class="faint">No change</span>';
-    var first = ls.slice(0, 2).map(function (l) { return esc(O.inventory.itemName(l.itemId)) + ' ' + qtySigned(m, l); }).join(', ');
+    var first = ls.slice(0, 2).map(function (l) { return esc(lineName(l)) + ' ' + qtySigned(m, l); }).join(', ');
     return first + (ls.length > 2 ? ' <span class="more">+' + (ls.length - 2) + ' more</span>' : '');
   }
   function qtySigned(m, l) {
@@ -401,7 +481,7 @@
   }
   function movesCSV() {
     var list = mvFiltered(), mon = canMoney(), r = mvRange();
-    var head = ['Date', 'Time', 'Direction', 'Type', 'Item', 'Category', 'Quantity (+ in, − out)', 'Unit of measure', 'Property', 'Used by', 'Booking', 'Supplier'];
+    var head = ['Date', 'Time', 'Direction', 'Type', 'Item', 'Size', 'Category', 'Quantity (+ in, − out)', 'Unit of measure', 'Property', 'Used by', 'Booking', 'Supplier'];
     if (mon) head.push('Purchase total (' + fmt.cur(O.baseCur()) + ')', 'Line value at item cost (' + fmt.cur(O.baseCur()) + ')');
     head.push('Note', 'Recorded by', 'Move ID');
     var rows = [head];
@@ -409,7 +489,7 @@
       (m.lines || []).forEach(function (l) {
         if (st.mv.item && l.itemId !== st.mv.item) return;
         var it = item(l.itemId), q = signed(m, l);
-        var row = [m.date, m.at && m.at.length > 10 ? m.at.slice(11, 16) : '', { 'in': 'In', out: 'Out', adjust: 'Adjust' }[m.dir] || m.dir, kindLabel(m), it ? it.name : 'Removed item', it ? it.cat : '', q, it ? it.unit : '',
+        var row = [m.date, m.at && m.at.length > 10 ? m.at.slice(11, 16) : '', { 'in': 'In', out: 'Out', adjust: 'Adjust' }[m.dir] || m.dir, kindLabel(m), it ? it.name : 'Removed item', hasSizes(it) ? lineSize(l, it) : '', it ? it.cat : '', q, it ? it.unit : '',
           m.propertyId ? propName(m.propertyId) : '', personName(m.usedBy), m.bookingId || '', m.supplier || ''];
         if (mon) row.push(m.dir === 'in' && m.cost != null ? m.cost : '', round2(Math.abs(q) * num(it && it.cost, 0)));
         row.push(m.note || '', personName(m.by), m.id);
@@ -434,7 +514,7 @@
     var body = '<div class="inv-detail"><dl class="kv">' + kv.map(function (x) { return '<dt>' + x[0] + '</dt><dd>' + x[1] + '</dd>'; }).join('') + '</dl>' +
       '<div class="lines">' + (m.lines || []).map(function (l) {
         var it = item(l.itemId), extra = l.counted != null ? ' <span class="faint small">counted ' + qtyText(l.counted) + '</span>' : '';
-        return '<div class="ln"><span>' + esc(it ? it.name : 'Removed item') + extra + '</span><b>' + qtySigned(m, l) + ' ' + esc(unitWord(it, Math.abs(num(l.qty, 0)))) + '</b></div>';
+        return '<div class="ln"><span>' + esc(lineName(l)) + extra + '</span><b>' + qtySigned(m, l) + ' ' + esc(unitWord(it, Math.abs(num(l.qty, 0)))) + '</b></div>';
       }).join('') + '</div></div>';
     var acts = [{ label: 'Close' }];
     if (canDelete(m)) acts.unshift({ label: 'Delete this record', kind: 'ghost', onClick: function (close) {
@@ -490,12 +570,19 @@
   }
 
   /* ------------------------------------------------------------------ ITEMS tab */
+  function usedIds() { var u = {}; moves().forEach(function (m) { (m && m.lines || []).forEach(function (l) { if (l) u[l.itemId] = 1; }); }); return u; }
+  function sizeSummary(it) {
+    var mode = sizeMode(it); if (mode === 'none') return '';
+    var L = sizesOf(it), how = mode === 'list' ? O.tr('pick from the list') : mode === 'write' ? O.tr('staff type the size') : O.tr('pick or type');
+    return (L.length ? L.join(', ') : O.tr('No sizes listed')) + ' · ' + how;
+  }
   function itemsTab() {
-    if (!O.can('inventory.items')) return U.locked('item management', { reason: 'permission' });
-    var mon = canMoney(), q = st.it.q.trim().toLowerCase(), h = onHand();
+    if (!O.can('inventory.items')) return '';
+    var mon = canMoney(), q = st.it.q.trim().toLowerCase(), h = onHand(), used = usedIds();
     var list = matchItems(items().filter(function (it) { return st.it.inactive || active(it); }), q, function (it) { return it.name; }, function (it) { return it.cat; });
     var off = items().filter(function (it) { return !active(it); }).length;
-    var html = '<div class="card"><div class="inv-tools"><label class="search">' + O.icon('search') + '<input type="search" data-it="q" placeholder="Search items" value="' + esc(st.it.q) + '" aria-label="Search items"></label>' +
+    var html = '<div class="card inv-items-card"><div class="card-head"><div><h3>Items and sizes</h3><div class="sub">' + esc(O.tpl('{n} items. Add your own, set the sizes staff choose from, edit or remove any item.', { n: activeItems().length })) + '</div></div></div>' +
+      '<div class="inv-tools"><label class="search">' + O.icon('search') + '<input type="search" data-it="q" placeholder="Search items" value="' + esc(st.it.q) + '" aria-label="Search items"></label>' +
       (off ? '<button type="button" class="chip' + (st.it.inactive ? ' on' : '') + '" data-act="it-inactive">Show items no longer tracked (' + off + ')</button>' : '') +
       '<span class="spacer"></span><button type="button" class="btn btn-primary btn-sm" data-act="it-add">' + O.icon('plus') + 'Add item</button></div><div data-slot-items>';
     if (!items().length) return html + '<div class="inv-empty"><div class="ic">' + O.icon('inventory') + '</div><h3>No items yet</h3><p>Add the supplies you keep in the store room: toiletries, coffee, cleaning products, linen and spare parts.</p></div></div></div>';
@@ -507,11 +594,13 @@
       html += '<div class="inv-grp">' + esc(c) + ' <span class="n">' + rows.length + '</span></div>';
       rows.forEach(function (it) {
         var on = active(it);
-        html += '<div class="i-row' + cls + (on ? '' : ' off') + '"><span class="nm" title="' + esc(it.name) + '">' + esc(it.name) + '</span><span class="c-unit">' + esc(it.unit || '') + '</span>' +
+        var sz = sizeSummary(it);
+        html += '<div class="i-row' + cls + (on ? '' : ' off') + '"><span class="nm" title="' + esc(it.name) + '">' + esc(it.name) + (sz ? '<span class="i-sz">' + esc(sz) + '</span>' : '') + '</span><span class="c-unit">' + esc(it.unit || '') + '</span>' +
           (mon ? '<span class="r c-cost">' + money(num(it.cost, 0)) + '</span>' : '') + '<span class="r c-re">' + qtyText(it.reorder) + '</span><span class="r c-stock">' + (it.id in h ? qtyText(h[it.id]) : '<span class="faint">–</span>') + '</span>' +
           '<span class="acts"><button type="button" class="btn btn-ghost btn-xs" data-it-edit="' + esc(it.id) + '">' + O.icon('edit') + 'Edit</button>' +
-          '<button type="button" class="btn btn-quiet btn-xs" data-it-toggle="' + esc(it.id) + '">' + (on ? 'Stop tracking' : 'Track again') + '</button></span>' +
-          '<span class="sub">' + esc(it.unit || '') + (mon ? ' · ' + money(num(it.cost, 0)) + ' each' : '') + ' · reorder at ' + qtyText(it.reorder) + (it.id in h ? ' · ' + qtyText(h[it.id]) + ' in stock' : '') + '</span></div>';
+          (used[it.id] ? '<button type="button" class="btn btn-quiet btn-xs" data-it-toggle="' + esc(it.id) + '">' + (on ? 'Stop tracking' : 'Track again') + '</button>'
+            : '<button type="button" class="btn btn-quiet btn-xs" data-it-del="' + esc(it.id) + '">' + O.icon('trash') + 'Remove</button>') + '</span>' +
+          '<span class="sub">' + esc(it.unit || '') + (mon ? ' · ' + money(num(it.cost, 0)) + ' each' : '') + ' · reorder at ' + qtyText(it.reorder) + (it.id in h ? ' · ' + qtyText(h[it.id]) + ' in stock' : '') + (sz ? '<br>' + esc(sz) : '') + '</span></div>';
       });
     });
     return html + '</div></div>';
@@ -519,7 +608,11 @@
   function editItem(id) {
     if (!O.can('inventory.items')) { U.toast(noAccess(), 'bad'); return; }
     var it = id ? item(id) : null, isNew = !it, cs = cats();
-    var v = it ? { name: it.name, cat: it.cat, unit: it.unit, cost: it.cost, reorder: it.reorder, use: (it.use || [0, 0, 0]).slice() } : { name: '', cat: st.cat || cs[0] || '', unit: '', cost: '', reorder: '', use: [0, 0, 0] };
+    var v = it ? { name: it.name, cat: it.cat, unit: it.unit, cost: it.cost, reorder: it.reorder, use: (it.use || [0, 0, 0]).slice(), sizes: sizesOf(it), mode: sizeMode(it) } : { name: '', cat: st.cat || cs[0] || '', unit: '', cost: '', reorder: '', use: [0, 0, 0], sizes: [], mode: 'none' };
+    var MODES = [['none', 'No sizes'], ['both', 'Pick or type'], ['list', 'Pick only'], ['write', 'Type only']];
+    /* i18n:off (sizes are the workspace's own words) */
+    var PRESETS = [['500ml', '1L', '2L', '5L'], ['30ml', '50ml', '300ml', '1L'], ['S', 'M', 'L', 'XL'], ['Small', 'Medium', 'Large'], ['Single', 'Super single', 'Queen', 'King']];
+    /* i18n:on */
     var body = O.html('<div class="inv-form"><div class="form-grid">' +
       '<div class="field full"><label>Name <span class="req">*</span></label><input class="input" data-f="name" maxlength="60" value="' + esc(v.name) + '" placeholder="For example: Shampoo 30 ml"></div>' +
       '<div class="field"><label>Category</label><select class="select" data-f="cat">' + cs.map(function (c) { return '<option' + (c === v.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '<option value="__new">New category…</option></select></div>' +
@@ -527,11 +620,32 @@
       '<div class="field"><label>Counted in <span class="req">*</span></label><input class="input" data-f="unit" maxlength="20" value="' + esc(v.unit || '') + '" placeholder="roll, bottle, piece"><div class="hint">One of what you count, in the singular.</div></div>' +
       '<div class="field"><label>Cost each</label><div class="money-in"><span>' + esc(fmt.cur(O.baseCur())) + '</span><input class="input" type="number" inputmode="decimal" min="0" step="0.01" data-f="cost" value="' + esc(v.cost) + '"></div></div>' +
       '<div class="field"><label>Reorder level <span class="req">*</span></label><input class="input" type="number" inputmode="numeric" min="0" step="1" data-f="reorder" value="' + esc(v.reorder) + '"><div class="hint">Show a reorder alert at or below this.</div></div>' +
+      '<div class="field full inv-sizes"><label>Sizes</label>' + U.seg(MODES, v.mode, 'data-szmode') +
+      '<div class="hint" data-szhint></div>' +
+      '<div data-szbox><div class="sz-list" data-szlist></div>' +
+      '<div class="sz-add"><input class="input" data-f="newsize" maxlength="24" placeholder="Add a size, for example 500ml or 1L"><button type="button" class="btn btn-ghost btn-sm" data-szadd>' + O.icon('plus') + 'Add</button></div>' +
+      '<div class="sz-presets"><span class="small muted">Quick add:</span>' + PRESETS.map(function (p, i) { return '<button type="button" class="chip" data-szpre="' + i + '">' + esc(p.join(' · ')) + '</button>'; }).join('') + '</div></div></div>' +
       '<div class="field full"><label>Usual use (optional)</label><div class="row-flex wrap">' +
       ['per stay', 'per night', 'per guest'].map(function (l, i) { return '<label class="row-flex small" style="gap:6px"><input class="input" style="width:84px" type="number" inputmode="decimal" min="0" step="0.05" data-use="' + i + '" value="' + esc(v.use[i] || 0) + '">' + l + '</label>'; }).join('') +
       '</div><div class="hint">Suggests a restock for units without history, for example 1 per stay plus 0.5 per night.</div></div>' +
       '</div><div class="inv-err" data-err></div></div>');
     var catSel = O.$('[data-f="cat"]', body);
+    var szs = v.sizes.slice(), mode = v.mode;
+    function paintSizes() {
+      O.$('[data-szbox]', body).hidden = mode === 'none';
+      O.$('[data-szhint]', body).textContent = mode === 'none' ? O.tr('Stock is one figure for this item.') : mode === 'list' ? O.tr('Staff pick one of these sizes when they record stock. Stock is kept for each size.') : mode === 'write' ? O.tr('Staff type the size when they record stock (the sizes below are suggested). Stock is kept for each size.') : O.tr('Staff pick a size from the list, or choose Other and type one. Stock is kept for each size.');
+      O.$('[data-szlist]', body).innerHTML = szs.length ? szs.map(function (z, i) { return '<span class="sz-chip">' + esc(z) + '<button type="button" data-szrm="' + i + '" aria-label="' + esc(O.tpl('Remove {x}', { x: z })) + '">×</button></span>'; }).join('') : '<span class="small muted">' + esc(O.tr('No sizes yet.')) + '</span>';
+    }
+    function addSize(z) { z = normSize(z); if (!z) return; if (!szs.some(function (y) { return sizeEq(y, z); })) szs.push(z); if (mode === 'none') { mode = 'both'; O.$$('[data-szmode]', body).forEach(function (x) { x.classList.toggle('on', x.dataset.szmode === mode); }); } paintSizes(); }
+    body.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.szmode) { mode = b.dataset.szmode; O.$$('[data-szmode]', body).forEach(function (x) { x.classList.toggle('on', x === b); }); paintSizes(); }
+      else if (b.dataset.szrm != null) { szs.splice(+b.dataset.szrm, 1); paintSizes(); }
+      else if (b.dataset.szpre != null) { PRESETS[+b.dataset.szpre].forEach(addSize); }
+      else if (b.hasAttribute('data-szadd')) { var inp = O.$('[data-f="newsize"]', body); addSize(inp.value); inp.value = ''; inp.focus(); }
+    });
+    O.$('[data-f="newsize"]', body).addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addSize(e.target.value); e.target.value = ''; } });
+    paintSizes();
     catSel.onchange = function () { O.$('[data-newcat]', body).hidden = catSel.value !== '__new'; if (catSel.value === '__new') O.$('[data-f="newcat"]', body).focus(); };
     U.modal({ title: isNew ? 'Add an item' : 'Edit ' + it.name, sub: isNew ? 'It appears in every stock form and the stock list' : 'Changes apply to new records; past records keep their quantities', body: body, size: 'inv-modal', actions: [{ label: 'Cancel' }, { label: isNew ? 'Add item' : 'Save changes', kind: 'primary', onClick: function () {
       function val(k) { return (O.$('[data-f="' + k + '"]', body) || {}).value; }
@@ -539,11 +653,24 @@
       var cost = num(val('cost'), 0), reorder = num(val('reorder'), NaN), use = [0, 1, 2].map(function (i) { return Math.max(0, num(O.$('[data-use="' + i + '"]', body).value, 0)); });
       var err = !name ? 'Give the item a name.' : !unit ? 'Say what you count it in, for example roll or bottle.' : !cat ? 'Name the new category.' : !isFinite(reorder) || reorder < 0 ? 'Set a reorder level (0 or more).' : cost < 0 ? 'The cost cannot be negative.' :
         items().some(function (x) { return x !== it && active(x) && x.name.toLowerCase() === name.toLowerCase(); }) ? 'An item with this name is already in the list.' : '';
+      var pending = normSize((O.$('[data-f="newsize"]', body) || {}).value); if (pending && mode !== 'none') addSize(pending);
+      if (!err && mode === 'list' && !szs.length) err = O.tr('Add at least one size, or let staff type the size.');
       if (err) { O.$('[data-err]', body).textContent = err; return false; }
-      if (isNew) { D.invItems.push({ id: O.uid('IT'), name: name, cat: cat, unit: unit, cost: round2(cost), reorder: Math.round(reorder), use: use, active: true }); }
+      var target = it;
+      if (isNew) { target = { id: O.uid('IT'), name: name, cat: cat, unit: unit, cost: round2(cost), reorder: Math.round(reorder), use: use, active: true }; D.invItems.push(target); }
       else { it.name = name; it.cat = cat; it.unit = unit; it.cost = round2(cost); it.reorder = Math.round(reorder); it.use = use; }
+      target.sizes = szs.slice(); target.sizeMode = mode;
+      if (mode === 'none') target.sizes = [];
       O.reindex(); O.emit('data'); U.toast(isNew ? name + ' added' : 'Changes saved');
     } }] });
+  }
+  function deleteItem(id) {
+    var it = item(id); if (!it) return;
+    if (!O.can('inventory.items')) { U.toast(noAccess(), 'bad'); return; }
+    if (usedIds()[id]) { toggleItem(id); return; }
+    U.confirm(O.tpl('Remove {x} from your items? It has no stock records, so nothing else changes.', { x: it.name }), 'Remove item', 'danger').then(function (ok) {
+      if (!ok) return; var i = D.invItems.indexOf(it); if (i >= 0) D.invItems.splice(i, 1); O.reindex(); O.emit('data'); U.toast(O.tpl('{x} removed', { x: it.name }));
+    });
   }
   function toggleItem(id) {
     var it = item(id); if (!it) return;
@@ -557,7 +684,10 @@
 
   /* ------------------------------------------------------------------ SETTINGS tab (owner) */
   function settingsTab() {
-    if (!O.isOwner()) return U.locked('the inventory settings');
+    if (!O.isOwner() && !O.can('inventory.items')) return U.locked('the inventory settings');
+    return itemsTab() + (O.isOwner() ? overuseSettings() : '');
+  }
+  function overuseSettings() {
     var s = settings();
     return '<div class="card set-card"><div class="card-head"><div><h3>Overuse warnings</h3><div class="sub">How a unit\'s use is compared with its own past</div></div></div><div class="card-body">' +
       '<div class="field"><label>Compare</label>' + U.seg([['stay', 'Use per stay'], ['total', 'Total use']], s.basis, 'data-set-basis') +
@@ -568,7 +698,7 @@
       '<div class="set-prev" data-set-prev></div>' +
       '<div class="row-flex wrap"><button type="button" class="btn btn-primary" data-act="set-save">Save settings</button><button type="button" class="btn btn-ghost" data-act="set-reset">Back to recommended</button></div>' +
       '</div></div>' +
-      '<div class="small muted">Reorder levels are set for each item in Items.</div>';
+      '<div class="small muted">Reorder levels are set for each item above.</div>';
   }
   function draftSettings(root) {
     var seg = O.$('[data-set-basis].on', root), t = O.$('[data-set="threshold"]', root), m = O.$('[data-set="minQty"]', root);
@@ -635,8 +765,10 @@
     var T = D.TODAY, from = d.add(T, -89), out = [];
     var tos = moves().filter(function (m) { return m && m.dir === 'out' && m.propertyId === pid && m.kind === 'turnover' && m.date >= from && m.date <= T; });
     if (tos.length >= 2) {
-      var sum = {}; tos.forEach(function (m) { (m.lines || []).forEach(function (l) { sum[l.itemId] = (sum[l.itemId] || 0) + num(l.qty, 0); }); });
-      activeItems().forEach(function (it) { var q = Math.round((sum[it.id] || 0) / tos.length); if (q >= 1) out.push({ itemId: it.id, qty: q }); });
+      var sum = {}; tos.forEach(function (m) { (m.lines || []).forEach(function (l) { var k = lineKey(l); sum[k] = (sum[k] || 0) + num(l.qty, 0); }); });
+      Object.keys(sum).forEach(function (k) { var p = splitKey(k), q = Math.round(sum[k] / tos.length); if (q >= 1 && active(item(p.id))) out.push({ itemId: p.id, size: p.size, qty: q }); });
+      var at = {}; items().forEach(function (it, i) { at[it.id] = i; });
+      out.sort(function (a, b) { return (at[a.itemId] - at[b.itemId]) || sizeOrder(a.itemId, a.size, b.size); });
       return { lines: out, why: 'Average of the last ' + tos.length + ' turnovers at ' + propName(pid, true) };
     }
     var b = bookingId && D.booking ? D.booking(bookingId) : null, nights = b ? num(b.nights, 2) : 2, guests = b ? num(b.guests, 2) : 2;
@@ -644,16 +776,18 @@
     return { lines: out, why: 'Usual amounts for a ' + fmt.plural(nights, 'night') + ' stay with ' + fmt.plural(guests, 'guest') };
   }
 
-  function stepper(id, qty) {
-    return '<div class="stp"><button type="button" data-step="-1" data-id="' + esc(id) + '" aria-label="One less">−</button><input type="number" inputmode="decimal" min="0" step="1" data-qty="' + esc(id) + '" value="' + esc(qtyText(qty).replace(/,/g, '')) + '" aria-label="Quantity"><button type="button" data-step="1" data-id="' + esc(id) + '" aria-label="One more">+</button></div>';
+  function stepper(key, qty) {
+    return '<div class="stp"><button type="button" data-step="-1" data-id="' + esc(key) + '" aria-label="One less">−</button><input type="number" inputmode="decimal" min="0" step="1" data-qty="' + esc(key) + '" value="' + esc(qtyText(qty).replace(/,/g, '')) + '" aria-label="Quantity"><button type="button" data-step="1" data-id="' + esc(key) + '" aria-label="One more">+</button></div>';
   }
 
   function openForm(kind, pre) {
     pre = pre || {};
     if (kind !== 'in' && kind !== 'out' && kind !== 'adjust') return;
     if (!canDo(kind)) { U.toast(noAccess(), 'bad'); return; }
-    var phone = isPhone(), meId = O.state.viewer, T = D.TODAY, h = onHand(), v = O.viewer() || {};
-    var f = { sel: {}, order: [], q: '', mode: pre.mode === 'writeoff' ? 'writeoff' : 'count', date: T, note: pre.note || '' };
+    var phone = isPhone(), meId = O.state.viewer, T = D.TODAY, h = onHandBy(), v = O.viewer() || {};
+    /* lines are keyed by item and size (lineKey): f.sel[key] = qty, f.order = keys in the order added; f.other[key] = the
+       line shows the "type a size" box */
+    var f = { sel: {}, order: [], other: {}, q: '', mode: pre.mode === 'writeoff' ? 'writeoff' : 'count', date: T, note: pre.note || '' };
     if (kind === 'out') {
       f.task = myTask();
       f.propertyId = pre.propertyId != null ? pre.propertyId : f.task ? f.task.propertyId : '';
@@ -663,11 +797,34 @@
       f.bookingId = pre.bookingId != null ? pre.bookingId : f.use === 'turnover' ? defaultBooking(f.propertyId) : '';
     }
     if (kind === 'in') { f.supplier = pre.supplier || ''; f.cost = pre.cost != null ? String(pre.cost) : ''; }
-    function setQty(id, q) { if (f.order.indexOf(id) < 0) f.order.push(id); f.sel[id] = q; }
-    function unset(id) { delete f.sel[id]; f.order = f.order.filter(function (x) { return x !== id; }); }
-    (pre.lines || []).forEach(function (l) { if (item(l.itemId)) setQty(l.itemId, Math.max(0, num(l.qty, 0))); });
+    function idOf(key) { return splitKey(key).id; }
+    function keysOf(id) { return f.order.filter(function (k) { return idOf(k) === id && f.sel[k] != null; }); }
+    function setQty(key, q) { if (f.order.indexOf(key) < 0) f.order.push(key); f.sel[key] = q; }
+    function unset(key) { delete f.sel[key]; delete f.other[key]; f.order = f.order.filter(function (x) { return x !== key; }); }
+    function unsetItem(id) { keysOf(id).forEach(unset); }
+    /* a line from a preset or a fill-in: sized items without a size take the usual one */
+    function keyFor(id, size) { var it = item(id); if (!hasSizes(it)) return id; size = size ? tidySize(it, size) : defaultSize(id); if (!size) f.other[keyOf(id, '')] = 1; return keyOf(id, size); }
+    (pre.lines || []).forEach(function (l) { if (item(l.itemId)) setQty(keyFor(l.itemId, l.size), Math.max(0, num(l.qty, 0))); });
     var isCount = function () { return kind === 'adjust' && f.mode === 'count'; };
-    function startQty(id) { return isCount() ? Math.max(0, Math.round(h[id] || 0)) : 1; }
+    function startQty(key) { return isCount() ? Math.max(0, Math.round(h[key] || 0)) : 1; }
+    /* a new line for an item: its usual size, or the next size not on the form yet */
+    function newKey(id) {
+      var it = item(id); if (!hasSizes(it)) return id;
+      var taken = keysOf(id).map(function (k) { return splitKey(k).size; }), first = defaultSize(id);
+      if (first && taken.indexOf(first) < 0) return keyOf(id, first);
+      var next = knownSizes(id).filter(function (z) { return taken.indexOf(z) < 0; })[0];
+      if (next) return keyOf(id, next);
+      if (sizeMode(it) === 'list') return null;
+      return keyOf(id, '');
+    }
+    /* for a full count: one line per size in stock (or the usual size) */
+    function countKeys(it) {
+      if (!hasSizes(it)) return [it.id];
+      var ks = sizesInStock(it.id, h).map(function (z) { return keyOf(it.id, z.size); });
+      return ks.length ? ks : [keyOf(it.id, defaultSize(it.id))];
+    }
+
+    if (pre.countAll && isCount()) activeItems().forEach(function (it) { countKeys(it).forEach(function (k) { setQty(k, startQty(k)); }); });
 
     /* ---- body ---- */
     var title = kind === 'in' ? 'Stock in' : kind === 'out' ? 'Record stock used' : 'Count or adjust stock';
@@ -705,18 +862,19 @@
     var el = mdl.el;
     function $f(k) { return O.$('[data-f="' + k + '"]', body); }
     function err(msg) { O.$('[data-err]', body).textContent = msg || ''; }
+    function live() { return f.order.filter(function (k) { return f.sel[k] != null; }); }
 
     /* ---- labels and hints ---- */
     function paintMeta() {
-      var n = f.order.filter(function (id) { return f.sel[id] != null && (isCount() || f.sel[id] > 0); }).length;
+      var n = live().filter(function (k) { return isCount() || f.sel[k] > 0; }).length;
       var lbl = kind === 'in' ? 'Items received' : kind === 'out' ? 'Items used' : isCount() ? 'What is on the shelf' : 'Items to write off';
       O.$('[data-items-label]', body).textContent = lbl + (n ? ' · ' + n : '');
       var save = O.$('#inv-save', el);
-      if (save && isCount()) { var ch = f.order.filter(function (id) { return f.sel[id] != null && round2(num(f.sel[id], 0) - (h[id] || 0)) !== 0; }).length; save.textContent = ch ? 'Save · ' + fmt.plural(ch, 'correction') : n ? 'Save count' : 'Save'; }
+      if (save && isCount()) { var ch = live().filter(function (k) { return round2(num(f.sel[k], 0) - (h[k] || 0)) !== 0; }).length; save.textContent = ch ? 'Save · ' + fmt.plural(ch, 'correction') : n ? 'Save count' : 'Save'; }
       else if (save) save.textContent = n ? 'Save · ' + fmt.plural(n, 'item') : 'Save';
       var allBtn = O.$('[data-all]', body); if (allBtn) allBtn.hidden = !isCount();
       if (kind === 'in') {
-        var est = f.order.reduce(function (s, id) { var it = item(id); return s + num(f.sel[id], 0) * num(it && it.cost, 0); }, 0);
+        var est = live().reduce(function (s, k) { var it = item(idOf(k)); return s + num(f.sel[k], 0) * num(it && it.cost, 0); }, 0);
         O.$('[data-cost-hint]', body).textContent = est > 0 ? 'About ' + money(round2(est)) + ' at usual prices' : 'The amount on the receipt';
       }
       if (kind === 'adjust') {
@@ -745,45 +903,90 @@
       box.innerHTML = '<div class="grow"><b>The usual restock: ' + fmt.plural(u.lines.length, 'item') + '</b>' + esc(u.why) + '</div><button type="button" class="btn btn-primary btn-sm" data-fill>' + O.icon('plus') + 'Fill in</button>';
     }
 
+    /* ---- sizes on a line ---- */
+    function sizeCtl(key) {
+      var p = splitKey(key), it = item(p.id); if (!hasSizes(it)) return '';
+      var mode = sizeMode(it), list = sizesOf(it), cur = p.size, inList = list.indexOf(cur) >= 0;
+      var typing = mode === 'write' || (mode === 'both' && (f.other[key] || (cur && !inList)));
+      var lbl = esc(O.tpl('Size of {x}', { x: it.name }));
+      var html = '<span class="sz-ctl">';
+      if (mode !== 'write') {
+        html += '<select class="select sz-sel" data-sz="' + esc(key) + '" aria-label="' + lbl + '">' +
+          (!cur && !typing ? '<option value="" selected>' + esc(O.tr('Size…')) + '</option>' : '') +
+          list.map(function (z) { return '<option' + (z === cur && !typing ? ' selected' : '') + '>' + esc(z) + '</option>'; }).join('') +
+          (mode === 'list' && cur && !inList ? '<option selected>' + esc(cur) + '</option>' : '') +
+          (mode === 'both' ? '<option value="__other"' + (typing ? ' selected' : '') + '>' + esc(O.tr('Other…')) + '</option>' : '') + '</select>';
+      }
+      if (typing) {
+        var dl = 'szl-' + String(p.id).replace(/[^\w-]/g, '');
+        html += '<input class="input sz-in" data-szin="' + esc(key) + '" maxlength="24" list="' + dl + '" placeholder="' + esc(O.tr('Type the size')) + '" value="' + esc(cur) + '" aria-label="' + lbl + '">' +
+          '<datalist id="' + dl + '">' + knownSizes(p.id).map(function (z) { return '<option value="' + esc(z) + '">'; }).join('') + '</datalist>';
+      }
+      return html + '</span>';
+    }
+    /* the line's size changed: move it to its new key (adding to a line that already has that size) */
+    function resize(key, size) {
+      var p = splitKey(key), it = item(p.id); size = size ? tidySize(it, size) : '';
+      var nk = keyOf(p.id, size); delete f.other[key];
+      if (nk === key) return key;
+      var q = f.sel[key], i = f.order.indexOf(key);
+      if (f.sel[nk] != null) { f.sel[nk] = isCount() ? q : round2(num(f.sel[nk], 0) + num(q, 0)); unset(key); }
+      else { f.order.splice(i, 1, nk); delete f.sel[key]; f.sel[nk] = isCount() ? startQty(nk) : q; }
+      return nk;
+    }
+    function addSizeBtn(id) {
+      var it = item(id); if (!hasSizes(it) || (sizeMode(it) === 'list' && keysOf(id).length >= sizesOf(it).length)) return '';
+      return '<button type="button" class="btn btn-quiet btn-xs sz-more" data-addsz="' + esc(id) + '">' + O.icon('plus') + esc(O.tr('Another size')) + '</button>';
+    }
+
     /* ---- items: picker (desktop) or tick list (phone) ---- */
-    function lineMeta(id) {
-      var it = item(id), have = h[id] || 0, q = num(f.sel[id], 0), u = unitWord(it, have);
+    function lineMeta(key) {
+      var id = idOf(key), it = item(id), have = h[key] || 0, q = num(f.sel[key], 0), u = unitWord(it, have);
+      if (hasSizes(it) && !splitKey(key).size && !isCount()) return { t: O.tr('Choose the size'), bad: true };
       if (isCount()) {
-        if (!(id in h)) return { t: 'First count', bad: false };
+        if (!(key in h)) return { t: 'First count', bad: false };
         var diff = round2(q - have); return { t: 'Records say ' + qtyText(have) + (diff ? ' · ' + (diff < 0 ? qtyText(-diff) + ' missing' : qtyText(diff) + ' extra') : ' · matches'), bad: diff < 0 };
       }
       if ((kind === 'out' || (kind === 'adjust')) && q > have) return { t: 'Only ' + qtyText(have) + ' ' + u + ' in the records', bad: true };
       return { t: qtyText(have) + ' ' + u + ' in stock', bad: false };
     }
     function pickerList() {
-      var q = f.q.trim().toLowerCase(), list = matchItems(activeItems(), q, function (it) { return it.name; }, function (it) { return it.cat; });
-      if (!list.length) return '<div class="ip-none">No item matches "' + esc(f.q) + '".' + (O.can('inventory.items') ? ' Add it in the Items tab.' : '') + '</div>';
+      var q = f.q.trim().toLowerCase(), list = matchItems(activeItems(), q, function (it) { return it.name; }, function (it) { return it.cat; }), tot = onHand();
+      if (!list.length) return '<div class="ip-none">No item matches "' + esc(f.q) + '".' + (O.can('inventory.items') ? ' Add it in Settings.' : '') + '</div>';
       return cats().concat(['Other']).map(function (c) {
         var rows = list.filter(function (it) { return (it.cat || 'Other') === c; }); if (!rows.length) return '';
         return '<div class="ip-cat">' + esc(c) + '</div>' + rows.map(function (it) {
-          return '<button type="button" role="option" class="ip-opt' + (f.sel[it.id] != null ? ' in' : '') + '" data-pick="' + esc(it.id) + '"><span class="t">' + esc(it.name) + '</span><span class="s">' + qtyText(h[it.id] || 0) + ' ' + esc(unitWord(it, h[it.id] || 0)) + ' in stock</span></button>';
+          var L = hasSizes(it) ? sizesOf(it) : [];
+          return '<button type="button" role="option" class="ip-opt' + (keysOf(it.id).length ? ' in' : '') + '" data-pick="' + esc(it.id) + '"><span class="t">' + esc(it.name) + '</span><span class="s">' + qtyText(tot[it.id] || 0) + ' ' + esc(unitWord(it, tot[it.id] || 0)) + ' in stock</span>' + (L.length ? '<span class="s">' + esc(L.join(', ')) + '</span>' : '') + '</button>';
         }).join('');
       }).join('');
     }
-    function lineHTML(id) {
-      var it = item(id), m = lineMeta(id);
-      return '<div class="ip-line" data-line="' + esc(id) + '"><div class="nm"><b>' + esc(it ? it.name : 'Removed item') + '</b><span class="s' + (m.bad ? ' bad' : '') + '" data-meta>' + esc(m.t) + '</span></div>' + stepper(id, f.sel[id]) +
-        '<button type="button" class="ip-x" data-rm="' + esc(id) + '" aria-label="Remove ' + esc(it ? it.name : 'item') + '">×</button></div>';
+    function lineHTML(key) {
+      var id = idOf(key), it = item(id), m = lineMeta(key);
+      return '<div class="ip-line' + (hasSizes(it) ? ' sized' : '') + '" data-line="' + esc(key) + '"><div class="nm"><b>' + esc(it ? it.name : 'Removed item') + '</b><span class="s' + (m.bad ? ' bad' : '') + '" data-meta>' + esc(m.t) + '</span></div>' + sizeCtl(key) + stepper(key, f.sel[key]) +
+        '<button type="button" class="ip-x" data-rm="' + esc(key) + '" aria-label="Remove ' + esc(it ? it.name : 'item') + '">×</button></div>';
     }
     function tickRow(it) {
-      var on = f.sel[it.id] != null, m = on ? lineMeta(it.id) : isCount() && !(it.id in h) ? { t: 'Not counted yet', bad: false } : { t: (isCount() ? 'Records say ' : '') + qtyText(h[it.id] || 0) + (isCount() ? '' : ' ' + unitWord(it, h[it.id] || 0) + ' in stock'), bad: false };
-      return '<div class="tk-row' + (on ? ' on' : '') + '" data-row="' + esc(it.id) + '"><button type="button" class="tk-tick" data-tick="' + esc(it.id) + '" aria-pressed="' + on + '"><span class="tk-box">' + (on ? O.icon('check') : '') + '</span>' +
-        '<span class="tk-nm"><span class="t">' + esc(it.name) + '</span><span class="s' + (m.bad ? ' bad' : '') + '" data-meta>' + esc(m.t) + '</span></span></button>' + (on ? stepper(it.id, f.sel[it.id]) : '') + '</div>';
+      var ks = keysOf(it.id), on = ks.length > 0, sized = hasSizes(it), tot = 0;
+      sizesInStock(it.id, h).forEach(function (z) { tot += z.qty; }); if (!sized) tot = h[it.id] || 0;
+      var m = on && !sized ? lineMeta(ks[0]) : isCount() && !on && !Object.keys(h).some(function (k) { return idOf(k) === it.id; }) ? { t: 'Not counted yet', bad: false } : { t: (isCount() ? 'Records say ' : '') + qtyText(tot) + (isCount() ? '' : ' ' + unitWord(it, tot) + ' in stock'), bad: false };
+      var html = '<div class="tk-item" data-row="' + esc(it.id) + '"><div class="tk-row' + (on ? ' on' : '') + '"><button type="button" class="tk-tick" data-tick="' + esc(it.id) + '" aria-pressed="' + on + '"><span class="tk-box">' + (on ? O.icon('check') : '') + '</span>' +
+        '<span class="tk-nm"><span class="t">' + esc(it.name) + '</span><span class="s' + (m.bad ? ' bad' : '') + '" data-meta>' + esc(m.t) + '</span></span></button>' + (on && !sized ? stepper(ks[0], f.sel[ks[0]]) : '') + '</div>';
+      if (on && sized) {
+        html += ks.map(function (k) { var lm = lineMeta(k); return '<div class="tk-sz" data-line="' + esc(k) + '">' + sizeCtl(k) + '<span class="s' + (lm.bad ? ' bad' : '') + '" data-meta>' + esc(lm.t) + '</span>' + stepper(k, f.sel[k]) + '<button type="button" class="ip-x" data-rm="' + esc(k) + '" aria-label="Remove">×</button></div>'; }).join('') +
+          '<div class="tk-sz-more">' + addSizeBtn(it.id) + '</div>';
+      }
+      return html + '</div>';
     }
     function tickList() {
       var q = f.q.trim().toLowerCase(), list = matchItems(activeItems(), q, function (it) { return it.name; }, function (it) { return it.cat; });
-      if (!activeItems().length) return '<div class="tk-none">There are no items to choose yet.' + (O.can('inventory.items') ? ' Add them in the Items tab.' : '') + '</div>';
+      if (!activeItems().length) return '<div class="tk-none">There are no items to choose yet.' + (O.can('inventory.items') ? ' Add them in Settings.' : '') + '</div>';
       if (!list.length) return '<div class="tk-none">No item matches "' + esc(f.q) + '".</div>';
       /* ticked items first, so a filled-in restock is easy to check */
-      var ticked = list.filter(function (it) { return f.sel[it.id] != null; });
+      var ticked = list.filter(function (it) { return keysOf(it.id).length; });
       var html = ticked.length && !q ? '<div class="tk-cat">Ticked</div>' + ticked.map(tickRow).join('') : '';
       cats().concat(['Other']).forEach(function (c) {
-        var rows = list.filter(function (it) { return (it.cat || 'Other') === c && (q || f.sel[it.id] == null); }); if (!rows.length) return;
+        var rows = list.filter(function (it) { return (it.cat || 'Other') === c && (q || !keysOf(it.id).length); }); if (!rows.length) return;
         html += '<div class="tk-cat">' + esc(c) + '</div>' + rows.map(tickRow).join('');
       });
       return html;
@@ -798,19 +1001,24 @@
       }
       paintMeta();
     }
+    /* desktop: lines in the order added, each item's sizes together, with "Another size" under a sized item */
     function paintLines() {
       if (phone) { var tk = O.$('[data-tk]', host); if (tk) tk.innerHTML = tickList(); return; }
-      var box = O.$('.ip-lines', host);
-      box.innerHTML = f.order.filter(function (id) { return f.sel[id] != null; }).map(lineHTML).join('');
-      if (!f.order.length) box.innerHTML = '';
+      var box = O.$('.ip-lines', host), seen = {}, out = '';
+      live().forEach(function (k) {
+        var id = idOf(k); if (seen[id]) return; seen[id] = 1;
+        out += keysOf(id).map(lineHTML).join('');
+        var more = addSizeBtn(id); if (more) out += '<div class="ip-line ip-more">' + more + '</div>';
+      });
+      box.innerHTML = out;
     }
-    function refreshLine(id) {
+    function refreshLine(key) {
       if (phone) {
-        var row = O.$('[data-row="' + id + '"]', host), it = item(id);
+        var row = O.$('[data-row="' + qs(idOf(key)) + '"]', host), it = item(idOf(key));
         if (row && it) { var n = O.html(tickRow(it)); row.replaceWith(n); }
       } else {
-        var meta = O.$('[data-line="' + id + '"] [data-meta]', host);
-        if (meta) { var m = lineMeta(id); meta.textContent = m.t; meta.classList.toggle('bad', m.bad); }
+        var meta = O.$('[data-line="' + qs(key) + '"] [data-meta]', host);
+        if (meta) { var m = lineMeta(key); meta.textContent = m.t; meta.classList.toggle('bad', m.bad); }
       }
       paintMeta();
     }
@@ -826,14 +1034,25 @@
       opts.forEach(function (o, i) { o.classList.toggle('act', i === act); });
       opts[act].scrollIntoView({ block: 'nearest' });
     }
+    function flash(key) { var line = O.$('[data-line="' + qs(key) + '"]', host); if (line) { line.classList.add('flash'); setTimeout(function () { line.classList.remove('flash'); }, 700); line.scrollIntoView({ block: 'nearest' }); } return line; }
+    /* picking an item: a new line (a sized item already on the form gets a line for another size) */
+    function addLine(id) {
+      var it = item(id), have = keysOf(id);
+      if (have.length && !hasSizes(it)) return have[0];
+      var k = newKey(id); if (!k) return have[0];
+      if (f.sel[k] != null) return k;
+      setQty(k, startQty(k)); if (!splitKey(k).size) f.other[k] = 1;
+      return k;
+    }
     function pick(id, focusQty) {
-      if (f.sel[id] == null) setQty(id, startQty(id));
+      var k = addLine(id);
       f.q = ''; var qi = O.$('[data-q]', host); if (qi) qi.value = '';
-      paintLines(); paintMeta();
-      var line = O.$('[data-line="' + id + '"]', host);
-      if (line) { line.classList.add('flash'); setTimeout(function () { line.classList.remove('flash'); }, 700); line.scrollIntoView({ block: 'nearest' }); }
-      if (focusQty) { openList(false); var inp = O.$('[data-qty="' + id + '"]', host); if (inp) { inp.focus(); inp.select(); } }
-      else if (list && !list.hidden) list.innerHTML = pickerList();
+      paintLines(); paintMeta(); flash(k);
+      if (focusQty) {
+        openList(false);
+        var tgt = O.$('[data-line="' + qs(k) + '"] ' + (splitKey(k).size || !hasSizes(item(id)) ? '[data-qty]' : '[data-szin]'), host) || O.$('[data-line="' + qs(k) + '"] [data-sz]', host);
+        if (tgt) { tgt.focus(); if (tgt.select) tgt.select(); }
+      } else if (list && !list.hidden) list.innerHTML = pickerList();
     }
 
     /* ---- events ---- */
@@ -842,27 +1061,31 @@
       if (b.dataset.use) { f.use = b.dataset.use; O.$$('[data-use]', body).forEach(function (x) { x.classList.toggle('on', x === b); }); if (f.use !== 'turnover') { f.bookingId = ''; $f('bookingId').value = ''; } paintMeta(); return; }
       if (b.dataset.mode) {
         f.mode = b.dataset.mode; O.$$('[data-mode]', body).forEach(function (x) { x.classList.toggle('on', x === b); });
-        f.order.forEach(function (id) { f.sel[id] = startQty(id); }); paintLines(); paintMeta(); err(''); return;
+        live().forEach(function (k) { f.sel[k] = startQty(k); }); paintLines(); paintMeta(); err(''); return;
       }
       if (b.hasAttribute('data-fill')) {
-        var u = usualFor(f.propertyId, f.bookingId); u.lines.forEach(function (l) { setQty(l.itemId, l.qty); });
+        var u = usualFor(f.propertyId, f.bookingId); u.lines.forEach(function (l) { setQty(keyFor(l.itemId, l.size), l.qty); });
         f.filled = f.propertyId + '|' + f.bookingId;
         f.q = ''; var qi = O.$('[data-q]', host); if (qi) qi.value = '';
         paintLines(); paintMeta(); err('');
         return;
       }
-      if (b.hasAttribute('data-clear')) { f.sel = {}; f.order = []; f.filled = ''; paintLines(); paintMeta(); return; }
-      if (b.hasAttribute('data-all')) { activeItems().forEach(function (it) { if (f.sel[it.id] == null) setQty(it.id, startQty(it.id)); }); paintLines(); paintMeta(); return; }
+      if (b.hasAttribute('data-clear')) { f.sel = {}; f.order = []; f.other = {}; f.filled = ''; paintLines(); paintMeta(); return; }
+      if (b.hasAttribute('data-all')) { activeItems().forEach(function (it) { if (!keysOf(it.id).length) countKeys(it).forEach(function (k) { setQty(k, startQty(k)); }); }); paintLines(); paintMeta(); return; }
       if (b.dataset.pick) { pick(b.dataset.pick, false); return; }
-      if (b.dataset.rm) { unset(b.dataset.rm); paintLines(); paintMeta(); return; }
+      if (b.dataset.addsz) { var nk = addLine(b.dataset.addsz); paintLines(); paintMeta(); flash(nk); var si = O.$('[data-line="' + qs(nk) + '"] [data-szin], [data-line="' + qs(nk) + '"] [data-sz]', host); if (si) si.focus(); return; }
+      if (b.dataset.rm) { var rid = idOf(b.dataset.rm); unset(b.dataset.rm); if (phone) refreshLine(keyOf(rid, '')); else { paintLines(); paintMeta(); } return; }
       if (b.dataset.tick) {
-        var id = b.dataset.tick; if (f.sel[id] != null) unset(id); else setQty(id, startQty(id));
+        var id = b.dataset.tick;
+        if (keysOf(id).length) unsetItem(id);
+        else if (isCount()) countKeys(item(id)).forEach(function (k) { setQty(k, startQty(k)); });
+        else addLine(id);
         refreshLine(id); err(''); return;
       }
       if (b.dataset.step) {
         var sid = b.dataset.id, nv = Math.max(0, round2(num(f.sel[sid], 0) + num(b.dataset.step, 0)));
-        if (nv === 0 && !isCount()) { if (phone) { unset(sid); refreshLine(sid); } else { f.sel[sid] = 0; var inp0 = O.$('[data-qty="' + sid + '"]', host); if (inp0) inp0.value = '0'; refreshLine(sid); } return; }
-        f.sel[sid] = nv; var inp = O.$('[data-qty="' + sid + '"]', host); if (inp) inp.value = qtyText(nv).replace(/,/g, '');
+        if (nv === 0 && !isCount()) { if (phone && !hasSizes(item(idOf(sid)))) { unset(sid); refreshLine(sid); } else { f.sel[sid] = 0; var inp0 = O.$('[data-qty="' + qs(sid) + '"]', host); if (inp0) inp0.value = '0'; refreshLine(sid); } return; }
+        f.sel[sid] = nv; var inp = O.$('[data-qty="' + qs(sid) + '"]', host); if (inp) inp.value = qtyText(nv).replace(/,/g, '');
         refreshLine(sid);
       }
     });
@@ -880,9 +1103,19 @@
       if (t.dataset.f === 'supplier') f.supplier = t.value;
       if (t.dataset.f === 'cost') f.cost = t.value;
     });
+    function afterResize(nk, focusQty) {
+      paintLines(); paintMeta(); err('');
+      if (focusQty) { var qi2 = O.$('[data-line="' + qs(nk) + '"] [data-qty]', host); if (qi2) { qi2.focus(); qi2.select(); } }
+    }
     body.addEventListener('change', function (e) {
       var t = e.target;
       if (t.dataset.qty) { var v3 = num(t.value, 0); f.sel[t.dataset.qty] = Math.max(0, round2(v3)); t.value = qtyText(f.sel[t.dataset.qty]).replace(/,/g, ''); refreshLine(t.dataset.qty); return; }
+      if (t.dataset.sz) {
+        var key = t.dataset.sz;
+        if (t.value === '__other') { f.other[key] = 1; paintLines(); var ti = O.$('[data-line="' + qs(key) + '"] [data-szin]', host); if (ti) ti.focus(); return; }
+        afterResize(resize(key, t.value), !phone); return;
+      }
+      if (t.dataset.szin) { var typed = normSize(t.value); if (!typed) return; afterResize(resize(t.dataset.szin, typed), !phone); return; }
       if (t.dataset.f === 'propertyId') {
         f.propertyId = t.value; f.bookingId = f.use === 'turnover' ? defaultBooking(f.propertyId) : '';
         $f('bookingId').innerHTML = bookingOptions(f.propertyId, f.bookingId); err(''); paintMeta(); return;
@@ -900,23 +1133,29 @@
         else if (e.key === 'ArrowUp') { e.preventDefault(); moveAct(-1); }
         else if (e.key === 'Enter') { e.preventDefault(); var opts = list ? O.$$('.ip-opt', list) : []; var o = opts[act >= 0 ? act : 0]; if (o && !list.hidden) pick(o.dataset.pick, true); }
         else if (e.key === 'Escape' && list && !list.hidden) { e.stopPropagation(); openList(false); }
-      } else if (t.dataset.qty && e.key === 'Enter') { e.preventDefault(); t.blur(); var qi = O.$('[data-q]', host); if (qi && !phone) qi.focus(); }
+      } else if (t.dataset.szin && e.key === 'Enter') { e.preventDefault(); t.blur(); }
+      else if (t.dataset.qty && e.key === 'Enter') { e.preventDefault(); t.blur(); var qi = O.$('[data-q]', host); if (qi && !phone) qi.focus(); }
     }, true);
 
     /* ---- save ---- */
     function save() {
       err('');
+      /* a size typed but not yet confirmed (no change event yet) still counts */
+      O.$$('[data-szin]', host).forEach(function (x) { var z = normSize(x.value); if (z && f.sel[x.dataset.szin] != null && splitKey(x.dataset.szin).size !== z) resize(x.dataset.szin, z); });
       var date = ($f('date') && $f('date').value) || T; if (date > T) date = T;
       var note = String(($f('note') && $f('note').value) || '').trim();
-      var ids = f.order.filter(function (id) { return f.sel[id] != null && item(id); });
+      var keys = live().filter(function (k) { return item(idOf(k)); });
+      var noSize = keys.filter(function (k) { var p = splitKey(k); return hasSizes(item(p.id)) && !p.size && (isCount() ? !(k in h) : num(f.sel[k], 0) > 0); })[0];
+      if (noSize) { paintLines(); err(O.tpl('Choose or type the size of {x}.', { x: item(idOf(noSize)).name })); var nf = O.$('[data-line="' + qs(noSize) + '"] [data-szin], [data-line="' + qs(noSize) + '"] [data-sz]', host); if (nf) nf.focus(); return false; }
+      function mk(k, qty) { var p = splitKey(k), l = { itemId: p.id, qty: qty }; if (p.size) l.size = p.size; return l; }
       var lines = [];
       if (isCount()) {
-        var now = onHand();
-        ids.forEach(function (id) { var c = Math.max(0, num(f.sel[id], 0)), diff = round2(c - (now[id] || 0)); if (diff) lines.push({ itemId: id, qty: diff, counted: c }); });
-        if (!ids.length) { err('Tick the items you counted.'); return false; }
+        var now = onHandBy();
+        keys.forEach(function (k) { var c = Math.max(0, num(f.sel[k], 0)), diff = round2(c - (now[k] || 0)); if (diff) { var l = mk(k, diff); l.counted = c; lines.push(l); } });
+        if (!keys.length) { err('Tick the items you counted.'); return false; }
         if (!lines.length) { U.toast('Everything you counted matches the records. Nothing to change.'); return true; }
       } else {
-        ids.forEach(function (id) { var q = round2(num(f.sel[id], 0)); if (q > 0) lines.push({ itemId: id, qty: kind === 'adjust' ? -q : q }); });
+        keys.forEach(function (k) { var q = round2(num(f.sel[k], 0)); if (q > 0) lines.push(mk(k, kind === 'adjust' ? -q : q)); });
         if (!lines.length) { err(kind === 'in' ? 'Add the items you received and how many.' : kind === 'out' ? 'Tick what you used and how many.' : 'Add the items to write off.'); return false; }
       }
       var at = date === T ? D.NOW : date + 'T12:00';
@@ -957,7 +1196,6 @@
   function body() {
     if (st.tab === 'moves') return movesTab();
     if (st.tab === 'overuse') return overuseTab();
-    if (st.tab === 'items') return itemsTab();
     if (st.tab === 'settings') return settingsTab();
     return stockTab();
   }
@@ -967,7 +1205,7 @@
     render: function (root, ctx) {
       var p = ctx.params || {};
       if (ctx.fresh) {
-        if (p.tab) st.tab = p.tab;
+        if (p.tab) st.tab = p.tab === 'items' ? 'settings' : p.tab;
         if (p.low) { st.tab = 'stock'; st.lowOnly = true; st.q = ''; st.cat = ''; }
         if (p.propertyId || p.itemId) { st.tab = p.tab || 'moves'; st.mv.prop = p.propertyId || ''; st.mv.item = p.itemId || ''; st.mv.dir = ''; st.mv.person = ''; }
       }
@@ -999,10 +1237,11 @@
         if (b.dataset.ovMoves) { var k = b.dataset.ovMoves.split('|'); st.tab = 'moves'; st.mv.prop = k[0]; st.mv.item = k[1]; st.mv.dir = 'out'; st.mv.person = ''; st.mv.preset = 'last90'; st.mv.limit = 60; ctx.rerender(); return; }
         if (b.dataset.itEdit) { editItem(b.dataset.itEdit); return; }
         if (b.dataset.itToggle) { toggleItem(b.dataset.itToggle); return; }
+        if (b.dataset.itDel) { deleteItem(b.dataset.itDel); return; }
         if (b.dataset.setBasis) { O.$$('[data-set-basis]', pg).forEach(function (x) { x.classList.toggle('on', x === b); }); paintSettingsPreview(pg); return; }
         var a = b.dataset.act; if (!a) return;
         if (a === 'in' || a === 'out' || a === 'adjust') openForm(a);
-        else if (a === 'count-first') openForm('adjust', { mode: 'count', lines: activeItems().map(function (it) { return { itemId: it.id, qty: 0 }; }) });
+        else if (a === 'count-first') openForm('adjust', { mode: 'count', countAll: true });
         else if (a === 'buy-low') buyLow();
         else if (a === 'low-only') { st.lowOnly = !st.lowOnly; repaint(); }
         else if (a === 'stock-csv') stockCSV();

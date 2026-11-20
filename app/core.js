@@ -1754,7 +1754,10 @@
     canWrite: function () { return S.started && !S.readOnly; },
     /* {records: {key: {id: canon}}, blobs: {key: canon}} as last saved / loaded */
     last: { records: {}, blobs: {} },
-    pending: false, pendingRemote: false, _timer: null, _writing: null, _demo: null
+    pending: false, pendingRemote: false, _timer: null, _writing: null, _demo: null,
+    /* config record collections still on the built-in defaults (nothing saved on the server yet). The first change to
+       one saves the WHOLE list: the server then holds every row, because a saved list replaces the defaults on load */
+    unsavedDefaults: {}
   };
   ['bookings', 'blocks', 'tasks', 'reviews', 'conversations', 'quickReplies', 'greetings', 'expenses', 'staff', 'properties', 'buildings', 'unitTypes', 'places', 'invMoves', 'guestRequests', 'damageReports', 'staffInvites', 'ownerMessages'].forEach(function (k) { S.records(k, 'demo'); });
   ['invItems', 'checklists'].forEach(function (k) { S.records(k, 'config'); });
@@ -1834,6 +1837,11 @@
           if (lastMap[id] !== c) { rows.push({ coll: k, id: id, data: JSON.parse(c), deleted: false }); lastMap[id] = c; }
         });
         Object.keys(lastMap).forEach(function (id) { if (!seen[id]) { rows.push({ coll: k, id: id, data: null, deleted: true }); delete lastMap[id]; } });
+        if (S.unsavedDefaults[k] && rows.some(function (x) { return x.coll === k; })) {
+          var sent = {}; rows.forEach(function (x) { if (x.coll === k) sent[String(x.id)] = 1; });
+          (D[k] || []).forEach(function (x) { if (x && x.id != null && !sent[String(x.id)]) rows.push({ coll: k, id: String(x.id), data: JSON.parse(canon(x)), deleted: false }); });
+          delete S.unsavedDefaults[k];
+        }
       } else if (D[k] !== undefined) {
         var v = capBlob(k, D[k]), c = canon(v);
         if (S.last.blobs[k] !== c) { blobs.push({ key: k, data: JSON.parse(c) }); S.last.blobs[k] = c; }
@@ -1906,6 +1914,7 @@
         Object.keys(REG).forEach(function (k) {
           var r = REG[k];
           if (r.type === 'records' && (r.kind === 'demo' || hasRows[k])) { if (Array.isArray(D[k])) D[k].length = 0; else D[k] = []; }
+          else if (r.type === 'records' && r.kind === 'config') S.unsavedDefaults[k] = 1;
           else if (r.type === 'blob' && r.kind === 'demo') { var v = D[k]; if (Array.isArray(v)) v.length = 0; else if (v && typeof v === 'object') Object.keys(v).forEach(function (x) { delete v[x]; }); }
         });
       }

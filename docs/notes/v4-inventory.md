@@ -115,3 +115,20 @@ inventory.js. `O.inventory.stock() + low() + overuse()` together take about 2 ms
 
 During testing every build logged `pageerror: Unexpected end of input` from `app/pages/guestapp.js` (another
 engineer's file, mid-edit). It did not affect this page.
+
+## Items and sizes (20 Nov 2026)
+
+- Settings tab (owners, and anyone with "Add and edit items" in Staff Access) now holds **Items and sizes**: add an item,
+  edit it, set its sizes, stop tracking an item that has records, or remove one that has none. The old Items tab opens
+  Settings.
+- Each item can have sizes (`sizes`, e.g. Floor cleaner 500ml / 1L / 2L / 5L) and a `sizeMode`: pick or type (default),
+  pick only, type only, or no sizes. Stock forms show a size picker on every line, "Other…" to type a size, and
+  "Another size" to record two sizes of one item. Lines save `size`; stock is kept per item and size (`onHandBy`),
+  while reorder levels, overuse and reports stay per item (all sizes added together).
+- Records saved before an item had sizes count as `legacySize` (the size its old name carried, e.g. Floor cleaner 2 L).
+- The starter list grew from 33 to 123 items in 8 categories (data.js, `since: 2`). Workspaces still on the built-in
+  list see them at once; a workspace that saved its own list gets the new ones once (automation `inventory-starter`,
+  owner only, remembered in `invStarterVer`).
+- Sync fix (core.js `unsavedDefaults`): the first change to a list still on the built-in defaults (item list,
+  checklists) saves the whole list, so editing one item no longer leaves only that item after a reload.
+- Browser check: `node tests/inventory_sizes_e2e.mjs <url>`.
