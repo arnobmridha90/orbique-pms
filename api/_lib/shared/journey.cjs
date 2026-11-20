@@ -78,7 +78,19 @@ function isDue(step, b, cfg, now, ciTime) {
   var w = dueWindow(step, b, ciTime);
   if (!w || now < w.at || now >= w.until) return false;
   if (cfg.since && w.at < cfg.since) return false;
+  /* One message per moment (Arnob, 2026-11-20: "We need to send 1 precise message"): a booking made inside the last
+     24 hours before check-in gets the welcome alone, not a confirmation right before it; a one-night stay gets no
+     separate check-out reminder, as the welcome already gives the check-out time. */
+  if (step === 'confirm' && welcomeCovers(b, cfg, ciTime)) return false;
+  if (step === 'checkout' && cfg.steps.welcome.on && addMinutes(b.checkIn + 'T00:00', 24 * 60).slice(0, 10) === b.checkOut) return false;
   return true;
+}
+
+/* whether the welcome is already due when the booking comes in (booked less than 24 hours before check-in) */
+function welcomeCovers(b, cfg, ciTime) {
+  if (!cfg.steps.welcome || !cfg.steps.welcome.on || !isAt(b.createdAt)) return false;
+  var w = dueWindow('welcome', b, ciTime);
+  return !!w && b.createdAt >= w.at;
 }
 
 /* the text of a step for a booking's channel */
