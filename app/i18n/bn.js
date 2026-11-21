@@ -8616,5 +8616,11 @@ O.I18N.bn = {
 "{n} new Google reviews": "{n}টি নতুন গুগল রিভিউ",
 "No new Google reviews": "নতুন কোনো গুগল রিভিউ নেই",
 "Google reviews already here stay. New ones stop coming in until an account owner connects Google again.": "এখানে থাকা গুগল রিভিউগুলো থেকে যাবে। একজন অ্যাকাউন্ট মালিক আবার গুগল সংযুক্ত না করা পর্যন্ত নতুন রিভিউ আসবে না।",
-"Disconnect Google?": "গুগল সংযোগ বিচ্ছিন্ন করবেন?"
+"Disconnect Google?": "গুগল সংযোগ বিচ্ছিন্ন করবেন?",
+"Put the cards back in the default order on wide screens": "চওড়া স্ক্রিনে কার্ডগুলো আগের মূল ক্রমে ফিরিয়ে দিন",
+"Put the cards back in the default order on phones": "ফোনে কার্ডগুলো আগের মূল ক্রমে ফিরিয়ে দিন",
+"Reset order": "ক্রম রিসেট করুন",
+"Drag to move this card": "এই কার্ডটি সরাতে টেনে আনুন",
+"Move this card (arrow keys up and down)": "এই কার্ডটি সরান (উপর ও নিচের তীর কী)",
+"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে"
 };

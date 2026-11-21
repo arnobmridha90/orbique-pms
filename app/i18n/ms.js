@@ -8616,5 +8616,11 @@ O.I18N.ms = {
 "{n} new Google reviews": "{n} ulasan Google baharu",
 "No new Google reviews": "Tiada ulasan Google baharu",
 "Google reviews already here stay. New ones stop coming in until an account owner connects Google again.": "Ulasan Google yang sudah ada di sini kekal. Ulasan baharu berhenti masuk sehingga pemilik akaun menyambungkan Google semula.",
-"Disconnect Google?": "Putuskan sambungan Google?"
+"Disconnect Google?": "Putuskan sambungan Google?",
+"Put the cards back in the default order on wide screens": "Kembalikan kad ke susunan asal pada skrin lebar",
+"Put the cards back in the default order on phones": "Kembalikan kad ke susunan asal pada telefon",
+"Reset order": "Set semula susunan",
+"Drag to move this card": "Seret untuk mengalihkan kad ini",
+"Move this card (arrow keys up and down)": "Alihkan kad ini (kekunci anak panah atas dan bawah)",
+"Cards are back in the default order": "Kad kembali ke susunan asal"
 };

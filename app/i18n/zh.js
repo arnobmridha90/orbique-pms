@@ -8616,5 +8616,11 @@ O.I18N.zh = {
 "{n} new Google reviews": "{n} 則新的 Google 評論",
 "No new Google reviews": "沒有新的 Google 評論",
 "Google reviews already here stay. New ones stop coming in until an account owner connects Google again.": "已在這裡的 Google 評論會保留。在帳戶擁有者重新連接 Google 之前，不會再匯入新評論。",
-"Disconnect Google?": "要中斷與 Google 的連接嗎？"
+"Disconnect Google?": "要中斷與 Google 的連接嗎？",
+"Put the cards back in the default order on wide screens": "將寬螢幕上的卡片恢復為預設順序",
+"Put the cards back in the default order on phones": "將手機上的卡片恢復為預設順序",
+"Reset order": "重設順序",
+"Drag to move this card": "拖曳以移動此卡片",
+"Move this card (arrow keys up and down)": "移動此卡片（上下方向鍵）",
+"Cards are back in the default order": "卡片已恢復為預設順序"
 };

@@ -12,6 +12,11 @@
   var st = { more: {}, brief: null };          /* UI state that survives re-renders */
   var B = { run: 0, reading: false, dirty: false, ctx: null, page: null, timer: null }; /* read-aloud runtime */
   var CAP = { arrivals: 6, tasks: 6, inhouse: 4, newtoday: 6 };
+  /* each person's own card order (api/_lib/shared/dashorder.cjs): one record per team member, saved for the whole team
+     like any other record, so it follows the person to the web app and the phone app */
+  O.sync.records('dashLayouts', 'config');
+  if (!D.dashLayouts) D.dashLayouts = [];
+  var DR = { drag: null, mq: null };            /* drag runtime */
 
   O.css('dashboard', `
 .pg-dashboard{display:flex;flex-direction:column;gap:14px;max-width:1320px;}
@@ -54,6 +59,23 @@
 /* layout */
 .pg-dashboard .dsh-main{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);gap:14px;align-items:start;}
 .pg-dashboard .dsh-col{display:flex;flex-direction:column;gap:14px;min-width:0;}
+.pg-dashboard .dsh-main.one{grid-template-columns:minmax(0,1fr);}
+.pg-dashboard .dsh-main.one .dsh-col:empty{display:none;}
+
+/* drag to reorder (each person's own order, app/pages/dashboard.js "card order") */
+.pg-dashboard .dsh-grip{flex:none;display:inline-flex;align-items:center;justify-content:center;width:30px;height:34px;margin:-6px 0 -6px -8px;border:0;border-radius:8px;background:none;color:var(--muted);cursor:grab;touch-action:none;opacity:.55;}
+.pg-dashboard .dsh-grip svg{width:16px;height:16px;}
+.pg-dashboard .dsh-grip:hover, .pg-dashboard .dsh-grip:focus-visible{opacity:1;background:var(--surface-2);color:var(--text);}
+.pg-dashboard [data-card] > .card-head{cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+.pg-dashboard [data-card] > .card-head .btn, .pg-dashboard [data-card] > .card-head a{cursor:pointer;}
+.pg-dashboard .dsh-hold{transform:scale(.985);transition:transform .25s ease;}
+.pg-dashboard .dsh-lift{position:fixed !important;z-index:300;margin:0 !important;pointer-events:none;box-shadow:0 18px 40px rgba(10,15,25,.22),0 0 0 2px var(--brand);transform:rotate(.6deg);opacity:.97;max-height:76px;overflow:hidden;}
+.pg-dashboard .dsh-ph{border:2px dashed var(--brand);border-radius:var(--radius,14px);background:var(--brand-soft-2);flex:none;}
+.pg-dashboard .dsh-main.dsh-dragging{grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);}
+.pg-dashboard .dsh-main[data-lay="narrow"].dsh-dragging{grid-template-columns:minmax(0,1fr);}
+.pg-dashboard .dsh-main.dsh-dragging .dsh-col{min-height:90px;}
+.pg-dashboard .dsh-main.dsh-dragging .dsh-col:empty{display:flex;border:2px dashed var(--border);border-radius:var(--radius,14px);}
+body.dsh-noselect{-webkit-user-select:none;user-select:none;cursor:grabbing;}
 .pg-dashboard .card-head .hd{min-width:0;flex:1 1 200px;}
 .pg-dashboard .card-head h3 .n{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--surface-2);color:var(--text-2);box-shadow:inset 0 0 0 1px var(--border);font-size:11px;font-weight:800;margin-left:7px;vertical-align:1px;}
 .pg-dashboard .card-head h3 .n.hot{background:var(--accent);color:var(--accent-ink);box-shadow:none;}
@@ -125,7 +147,6 @@
 
 @media (max-width:1100px){
   .pg-dashboard .dsh-main{grid-template-columns:minmax(0,1fr);}
-  .pg-dashboard .dsh-col{display:contents;}
 }
 @media (max-width:760px){
   .pg-dashboard .dsh-steps{grid-template-columns:minmax(0,1fr);}
@@ -153,6 +174,8 @@
   .pg-dashboard .dsh-welcome h2{font-size:21px;}
 }
 @media (prefers-reduced-motion: reduce){
+  .pg-dashboard .dsh-hold{transition:none;transform:none;}
+  .pg-dashboard .dsh-lift{transform:none;}
   .pg-dashboard .dsh-eq.on i{animation:none;height:10px;}
   .pg-dashboard .dsh-s{transition:none;}
 }
@@ -541,7 +564,7 @@
   }
 
   /* ------------------------------------------------------------------ cards */
-  function heroHTML(m) {
+  function heroHTML(m, lay) {
     var p = m.perm, bits = [];
     if (p.stays) bits.push(m.sameDay.length ? O.tpl('{count} ({n} same-day)', { count: fmt.plural(m.allArrivals.length, 'arrival'), n: m.sameDay.length }) : fmt.plural(m.allArrivals.length, 'arrival'), fmt.plural(m.departures.length, 'departure'));
     var tk = fmt.plural(m.tasks.length, p.others ? 'open task' : 'task for you', p.others ? 'open tasks' : 'tasks for you');
@@ -555,7 +578,8 @@
         (ph ? '<span class="delta ' + (pctWord(mm.change) === 0 ? 'flat' : mm.change > 0 ? 'good' : 'bad') + '">' + (pctWord(mm.change) === 0 ? '± ' : mm.change > 0 ? '▲ ' : '▼ ') + esc(ph) + '</span>' : '') + O.curSwitchHTML() + '</div>';
     }
     var links = (p.stays || p.tasks ? '<button type="button" class="btn btn-quiet btn-sm" data-act="runsheet" title="Download today\'s run sheet (PDF): arrivals, departures and open tasks">' + O.icon('printer') + 'Run sheet</button>' : '') +
-      (p.stats ? '<button type="button" class="btn btn-quiet btn-sm" data-go="statistics">' + O.icon('statistics') + 'See statistics</button>' : '');
+      (p.stats ? '<button type="button" class="btn btn-quiet btn-sm" data-go="statistics">' + O.icon('statistics') + 'See statistics</button>' : '') +
+      (lay ? '<button type="button" class="btn btn-quiet btn-sm" data-act="resetorder"' + (lay.custom ? '' : ' hidden') + ' title="' + esc(O.tr(lay.mode === 'wide' ? 'Put the cards back in the default order on wide screens' : 'Put the cards back in the default order on phones')) + '">' + O.icon('refresh') + esc(O.tr('Reset order')) + '</button>' : '');
     if (links) foot += '<div class="dsh-links">' + links + '</div>';
     return '<section class="card dsh-hero" aria-label="Today">' +
       '<div><div class="dsh-date">' + O.icon('clock', 'ico') + '<span class="dsh-clock">' + esc(longDate(m.t)) + ' · ' + esc(fmt.time(m.time)) + '</span></div>' +
@@ -787,11 +811,191 @@
     });
   }
 
+
+  /* ------------------------------------------------------------------ card order (drag to reorder)
+     Phones, the phone app and windows up to 1100px wide show one column ('narrow'); wider screens two ('wide'). Each has
+     its own saved order. Drag a card by its title bar: with a mouse, press and move; on a touch screen, hold the title
+     bar for a moment (a quick swipe still scrolls the page), or drag the dotted handle at once. Reset order puts back the
+     default for this screen size. */
+  function layoutMode() {
+    if (!DR.mq && window.matchMedia) DR.mq = window.matchMedia('(max-width:1100px)');
+    return DR.mq && DR.mq.matches ? 'narrow' : 'wide';
+  }
+  function layoutKey(mode) { return 'dashLayout:' + (O.state.workspace || '') + ':' + (O.state.viewer || 'me') + ':' + mode; }
+  function layoutRec() { var id = O.state.viewer; if (!id) return null; return D.dashLayouts.filter(function (r) { return r && r.id === id; })[0] || null; }
+  /* the saved order for this screen size: the team record, else (no team member, or a workspace that cannot save) this device's copy */
+  function savedLayout(mode) {
+    var r = layoutRec();
+    if (r && r[mode]) return r[mode];
+    if (!O.state.viewer || !O.sync.canWrite()) return O.store.get(layoutKey(mode), null);
+    return null;
+  }
+  function layoutFor(mode, mineFirst, stays) {
+    var saved = savedLayout(mode), OD = O.dashorder;
+    return { mode: mode, custom: !!saved, order: OD.merge(mode, saved, { mineFirst: mineFirst, stays: stays }), mineFirst: mineFirst, stays: stays };
+  }
+  function saveLayout(mode, order) {
+    var id = O.state.viewer;
+    if (id && O.sync.canWrite()) {
+      var r = layoutRec();
+      if (!r) { r = { id: id }; D.dashLayouts.push(r); }
+      if (order) r[mode] = order; else delete r[mode];
+      r.at = new Date().toISOString();
+      O.emit('data', { type: 'dashLayout', id: id });
+    }
+    if (order) O.store.set(layoutKey(mode), order); else O.store.set(layoutKey(mode), null);
+  }
+  var GRIP = '<svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><circle cx="5.5" cy="3.5" r="1.4"/><circle cx="10.5" cy="3.5" r="1.4"/><circle cx="5.5" cy="8" r="1.4"/><circle cx="10.5" cy="8" r="1.4"/><circle cx="5.5" cy="12.5" r="1.4"/><circle cx="10.5" cy="12.5" r="1.4"/></svg>';
+  /* a drag handle at the start of each card's title bar */
+  function addGrips(page) {
+    O.$$('.dsh-main [data-card] > .card-head', page).forEach(function (h) {
+      if (h.querySelector('.dsh-grip')) return;
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'dsh-grip'; b.innerHTML = GRIP;
+      b.title = O.tr('Drag to move this card'); b.setAttribute('aria-label', O.tr('Move this card (arrow keys up and down)'));
+      h.insertBefore(b, h.firstChild);
+    });
+  }
+  /* what is on screen now, as the saved shape */
+  function drawnOrder(mainEl) {
+    var cols = O.$$('.dsh-col', mainEl).map(function (c) { return Array.prototype.filter.call(c.children, function (x) { return x.dataset && x.dataset.card; }).map(function (x) { return x.dataset.card; }); });
+    return mainEl.dataset.lay === 'wide' ? [cols[0] || [], cols[1] || []] : (cols[0] || []);
+  }
+  function commitOrder(mainEl, lay) {
+    var mode = mainEl.dataset.lay, next = O.dashorder.afterDrag(mode, drawnOrder(mainEl), lay.order);
+    if (O.sync.canon(next) === O.sync.canon(lay.order)) return;
+    lay.order = next; lay.custom = true;
+    saveLayout(mode, next);
+    var rs = B.page && O.$('[data-act="resetorder"]', B.page); if (rs) rs.hidden = false;
+  }
+  function wireDrag(page, ctx) {
+    var mainEl = O.$('.dsh-main', page); if (!mainEl) return;
+    var lay = DR.lay, HOLD_MS = 420, SLOP = 8;
+    addGrips(page);
+    function cancelPending() { var g = DR.pending; if (!g) return; clearTimeout(g.timer); if (g.card) g.card.classList.remove('dsh-hold'); DR.pending = null; window.removeEventListener('pointermove', pendMove, true); window.removeEventListener('pointerup', pendUp, true); window.removeEventListener('pointercancel', pendUp, true); }
+    function pendMove(e) {
+      var g = DR.pending; if (!g || e.pointerId !== g.id) return;
+      var dx = e.clientX - g.x, dy = e.clientY - g.y, far = Math.abs(dx) > SLOP || Math.abs(dy) > SLOP;
+      if (!far) return;
+      if (g.touch) { cancelPending(); return; } /* a touch that moves before the hold is a scroll */
+      var card = g.card; cancelPending(); start(card, e);
+    }
+    function pendUp() { cancelPending(); }
+    /* touch: while a drag runs the page must not scroll. The lifted card has left the page, so this listens on the window;
+       stopping the first move also stops the browser from cancelling the pointer for a scroll */
+    function tMove(e) { var d = DR.drag; if (!d) return; if (e.cancelable) e.preventDefault(); var t = e.touches && e.touches[0]; if (t) { d.x = t.clientX; d.y = t.clientY; } }
+    function tEnd(e) { if (DR.drag && (!e.touches || !e.touches.length)) finish(false); }
+    page.addEventListener('contextmenu', function (e) { if (DR.drag || (DR.pending && e.target.closest('[data-card] > .card-head'))) e.preventDefault(); });
+    page.addEventListener('pointerdown', function (e) {
+      if (DR.drag || e.button > 0) return;
+      var grip = e.target.closest('.dsh-grip'), headEl = e.target.closest('.dsh-main [data-card] > .card-head');
+      if (!headEl) return;
+      var card = headEl.parentNode;
+      if (grip) { e.preventDefault(); start(card, e); return; }
+      if (e.target.closest('button, a, select, input, textarea, label')) return;
+      var touch = e.pointerType !== 'mouse';
+      DR.pending = { id: e.pointerId, x: e.clientX, y: e.clientY, card: card, touch: touch, timer: 0 };
+      if (touch) {
+        card.classList.add('dsh-hold');
+        DR.pending.timer = setTimeout(function () { var g = DR.pending; if (!g) return; var c = g.card, at = { clientX: g.x, clientY: g.y, pointerId: g.id }; cancelPending(); if (navigator.vibrate) try { navigator.vibrate(15); } catch (er) {} start(c, at); }, HOLD_MS);
+      }
+      window.addEventListener('pointermove', pendMove, true);
+      window.addEventListener('pointerup', pendUp, true);
+      window.addEventListener('pointercancel', pendUp, true);
+    });
+    /* keyboard: the handle moves its card up or down with the arrow keys */
+    page.addEventListener('keydown', function (e) {
+      var grip = e.target.closest && e.target.closest('.dsh-grip'); if (!grip || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      e.preventDefault();
+      var card = grip.closest('[data-card]'), col = card.parentNode, sib = e.key === 'ArrowUp' ? card.previousElementSibling : card.nextElementSibling;
+      if (sib) col.insertBefore(card, e.key === 'ArrowUp' ? sib : sib.nextSibling);
+      else if (mainEl.dataset.lay === 'wide') { var other = O.$$('.dsh-col', mainEl)[col.dataset.col === '0' ? 1 : 0]; if (e.key === 'ArrowDown' && col.dataset.col === '0') other.insertBefore(card, other.firstChild); else if (e.key === 'ArrowUp' && col.dataset.col === '1') other.appendChild(card); else return; }
+      else return;
+      grip.focus(); commitOrder(mainEl, lay);
+    });
+
+    function start(card, e) {
+      var r = card.getBoundingClientRect(), ph = document.createElement('div');
+      ph.className = 'dsh-ph'; ph.style.height = Math.min(r.height, 76) + 'px'; /* only the title bar travels, so the spot it goes to stays in view on a phone */
+      mainEl.classList.add('dsh-dragging');
+      card.parentNode.insertBefore(ph, card);
+      card.classList.add('dsh-lift'); card.style.width = r.width + 'px'; card.style.left = r.left + 'px'; card.style.top = r.top + 'px';
+      document.body.classList.add('dsh-noselect');
+      var d = DR.drag = { card: card, ph: ph, dx: e.clientX - r.left, dy: Math.min(e.clientY - r.top, 60), x: e.clientX, y: e.clientY, id: e.pointerId, raf: 0, page: page };
+      /* out of the columns while it moves, so the placeholder alone marks the spot; the wrapper gives it the page's styles */
+      var wrap = document.createElement('div'); wrap.className = 'pg-dashboard dsh-liftwrap'; wrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:300;display:block;max-width:none;';
+      document.body.appendChild(wrap); wrap.appendChild(card); d.wrap = wrap;
+      window.addEventListener('pointermove', move, true);
+      window.addEventListener('pointerup', end, true);
+      window.addEventListener('pointercancel', pCancel, true);
+      window.addEventListener('touchmove', tMove, { capture: true, passive: false });
+      window.addEventListener('touchend', tEnd, true);
+      window.addEventListener('touchcancel', tEnd, true);
+      window.addEventListener('keydown', esc_, true);
+      d.from = { parent: ph.parentNode, next: ph.nextSibling };
+      tick();
+    }
+    function move(e) { var d = DR.drag; if (!d || (d.id != null && e.pointerId !== d.id)) return; e.preventDefault(); d.x = e.clientX; d.y = e.clientY; }
+    function tick() {
+      var d = DR.drag; if (!d) return;
+      d.card.style.left = (d.x - d.dx) + 'px'; d.card.style.top = (d.y - d.dy) + 'px';
+      place(d);
+      /* near the top or bottom edge, scroll the page */
+      var edge = 70, vh = window.innerHeight, sp = 0;
+      if (d.y < edge) sp = -Math.ceil((edge - d.y) / 4); else if (d.y > vh - edge) sp = Math.ceil((d.y - (vh - edge)) / 4);
+      if (sp) window.scrollBy(0, sp);
+      d.raf = requestAnimationFrame(tick);
+    }
+    /* the placeholder goes to the column under the finger, before the first card whose middle is below it */
+    function place(d) {
+      var cols = O.$$('.dsh-col', mainEl), col = cols[0];
+      if (cols.length > 1) {
+        var best = Infinity;
+        cols.forEach(function (c) { var b = c.getBoundingClientRect(), dist = d.x < b.left ? b.left - d.x : d.x > b.right ? d.x - b.right : 0; if (dist < best) { best = dist; col = c; } });
+      }
+      var before = null;
+      Array.prototype.some.call(col.children, function (x) {
+        if (x === d.ph) return false;
+        var b = x.getBoundingClientRect();
+        if (d.y < b.top + b.height / 2) { before = x; return true; }
+        return false;
+      });
+      if (d.ph.parentNode !== col || d.ph.nextSibling !== before) col.insertBefore(d.ph, before);
+    }
+    function esc_(e) { if (e.key === 'Escape' && DR.drag) { e.preventDefault(); finish(true); } }
+    function end() { finish(false); }
+    /* a touch drag ends on touchend; the browser may cancel the pointer when it first moves, which is not a drop */
+    function pCancel(e) { if (e.pointerType === 'mouse' || e.pointerType === 'pen') finish(false); }
+    function finish(cancel) {
+      var d = DR.drag; if (!d) return;
+      cancelAnimationFrame(d.raf);
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', end, true);
+      window.removeEventListener('pointercancel', pCancel, true);
+      window.removeEventListener('touchmove', tMove, { capture: true, passive: false });
+      window.removeEventListener('touchend', tEnd, true);
+      window.removeEventListener('touchcancel', tEnd, true);
+      window.removeEventListener('keydown', esc_, true);
+      if (cancel) d.from.parent.insertBefore(d.ph, d.from.next && d.from.next.parentNode === d.from.parent ? d.from.next : null);
+      d.card.classList.remove('dsh-lift'); d.card.style.width = d.card.style.left = d.card.style.top = '';
+      d.ph.parentNode.replaceChild(d.card, d.ph);
+      if (d.wrap.parentNode) d.wrap.parentNode.removeChild(d.wrap);
+      document.body.classList.remove('dsh-noselect');
+      mainEl.classList.remove('dsh-dragging');
+      DR.drag = null;
+      /* a click right after the drop must not open what is under the finger */
+      var swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); window.removeEventListener('click', swallow, true); };
+      window.addEventListener('click', swallow, true); setTimeout(function () { window.removeEventListener('click', swallow, true); }, 0);
+      if (!cancel) commitOrder(mainEl, lay);
+      if (DR.dirty) { DR.dirty = false; ctx.rerender(); }
+    }
+  }
+
   /* ------------------------------------------------------------------ page */
   var def = {
     desc: 'Today at a glance',
     render: function (root, ctx) {
-      B.ctx = ctx;
+      B.ctx = ctx; DR.dirty = false;
       if (st.brief && st.brief.viewer !== O.state.viewer) st.brief = null;
       var m = model(), p = m.perm;
       ctx.setActions('');
@@ -809,31 +1013,42 @@
           duesoon: O.unitFile ? safe(function () { return O.unitFile.dueSoonHTML(head); }, '') : '',
           costs: m.money ? safe(function () { return costsHTML(m); }, '') : ''
         };
-        var order = mineFirst ? ['tasks', 'sameday', 'arrivals', 'departures', 'newtoday', 'attention', 'costs', 'duesoon', 'inhouse'] : ['attention', 'arrivals', 'sameday', 'costs', 'departures', 'duesoon', 'newtoday', 'tasks', 'inhouse'];
-        var styled = function (k) { return cards[k] ? cards[k].replace('<section class="card', '<section style="order:' + (order.indexOf(k) + 1) + '" class="card') : ''; };
-        /* Arnob 2026-11-18. Left: check-ins, check-outs, new bookings, in-house (same-day bookings sit under check-ins). Right: needs attention, financials, due soon, tasks. On a phone the two columns alternate. */
-        var left = (mineFirst ? ['newtoday', 'sameday', 'arrivals', 'departures'] : ['arrivals', 'sameday', 'departures', 'newtoday', 'inhouse']).map(styled).join('');
-        var right = (mineFirst ? ['costs', 'tasks', 'attention', 'duesoon', 'inhouse'] : ['attention', 'costs', 'duesoon', 'tasks']).map(styled).join('');
-        if (!p.stays) { left = ['tasks'].map(styled).join(''); right = ['costs', 'attention', 'duesoon'].map(styled).join(''); if (!mineFirst) { left = ['attention', 'tasks'].map(styled).join(''); right = ['costs', 'duesoon'].map(styled).join(''); } }
-        html = heroHTML(m) + '<div class="dsh-brief-slot">' + (st.brief ? briefPanelHTML() : '') + '</div>' +
-          (left || right ? '<div class="dsh-main"><div class="dsh-col">' + left + '</div><div class="dsh-col">' + right + '</div></div>' : '');
+        var lay = layoutFor(layoutMode(), mineFirst, p.stays), drawn = function (keys) { return keys.filter(function (k) { return cards[k]; }).map(function (k) { return cards[k]; }).join(''); };
+        var main = '';
+        if (lay.mode === 'wide') {
+          var left = drawn(lay.order[0]), right = drawn(lay.order[1]);
+          /* one column empty (for example a person who sees no bookings): the other takes the whole width */
+          if (left || right) main = '<div class="dsh-main' + (left && right ? '' : ' one') + '" data-lay="wide"><div class="dsh-col" data-col="0">' + left + '</div><div class="dsh-col" data-col="1">' + right + '</div></div>';
+        } else {
+          var one = drawn(lay.order);
+          if (one) main = '<div class="dsh-main one" data-lay="narrow"><div class="dsh-col" data-col="0">' + one + '</div></div>';
+        }
+        DR.lay = main ? lay : null;
+        html = heroHTML(m, lay) + '<div class="dsh-brief-slot">' + (st.brief ? briefPanelHTML() : '') + '</div>' + main;
         root._dshAlerts = alerts;
       }
       root.innerHTML = '<div class="pg-dashboard">' + html + '</div>';
       var page = B.page = O.$('.pg-dashboard', root);
       O.curSwitchWire(page);
+      if (!m.empty && DR.lay) wireDrag(page, ctx);
+      /* turning a tablet or resizing the window across 1100px switches between the one- and two-column order */
+      var mq = DR.mq, mqWas = layoutMode(), onMq = function () { if (layoutMode() === mqWas) return; if (DR.drag || B.reading) { DR.dirty = true; return; } ctx.rerender(); };
+      if (mq) { if (mq.addEventListener) mq.addEventListener('change', onMq); else if (mq.addListener) mq.addListener(onMq); }
 
       ctx.onLeave(function () {
+        if (mq) { if (mq.removeEventListener) mq.removeEventListener('change', onMq); else if (mq.removeListener) mq.removeListener(onMq); }
+        if (DR.drag) { var dd = DR.drag; cancelAnimationFrame(dd.raf); if (dd.wrap.parentNode) dd.wrap.parentNode.removeChild(dd.wrap); document.body.classList.remove('dsh-noselect'); DR.drag = null; }
+        if (DR.pending) { clearTimeout(DR.pending.timer); DR.pending = null; }
         stopVoice();
         if (st.brief && st.brief.mode === 'reading') { st.brief.mode = 'stopped'; st.brief.idx = -1; }
         if (O.state.page !== 'dashboard') { st.brief = null; st.more = {}; }
         B.page = null;
       });
-      ctx.on('data', function () { if (B.reading) B.dirty = true; });
+      ctx.on('data', function () { if (B.reading) B.dirty = true; else if (DR.drag) DR.dirty = true; });
       /* unit files load from the server on their own (app/pages/unitfile.js): redraw the "Due soon" card */
-      ctx.on('unitfiles', function () { if (B.reading) { B.dirty = true; return; } var a = document.activeElement; if (a && page.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return; ctx.rerender(); });
+      ctx.on('unitfiles', function () { if (B.reading) { B.dirty = true; return; } if (DR.drag || DR.pending) { DR.dirty = true; return; } var a = document.activeElement; if (a && page.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return; ctx.rerender(); });
       ctx.on('tick', function () { /* keep the clock and greeting current without disturbing the person */
-        if (B.reading) return;
+        if (B.reading || DR.drag || DR.pending) return;
         var a = document.activeElement;
         if (a && page.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return;
         if (+String(D.NOW_TIME).slice(3, 5) % 5 === 0) ctx.rerender();
@@ -858,6 +1073,7 @@
           var act = x.dataset.act, b = x.dataset.b ? D.booking(x.dataset.b) : null;
           var task = x.dataset.t ? D.tasks.filter(function (k2) { return k2.id === x.dataset.t; })[0] : null;
           var where = task && task.propertyId ? ' at ' + prop(task.propertyId).short : '';
+          if (act === 'resetorder') { if (DR.lay) { saveLayout(DR.lay.mode, null); U.toast(O.tr('Cards are back in the default order')); ctx.rerender(); } return; }
           if (act === 'open' && b) O.booking.open(b.id);
           else if (act === 'addclean' && b) addClean(b);
           else if (act === 'runsheet') runSheetPDF(model());
@@ -878,6 +1094,6 @@
   };
   /* while the brief is being read, other people's changes do not redraw the page (that would cut the voice off);
      the page redraws once the brief ends */
-  Object.defineProperty(def, 'noDataRerender', { get: function () { return B.reading; }, enumerable: true });
+  Object.defineProperty(def, 'noDataRerender', { get: function () { return B.reading || !!DR.drag; }, enumerable: true });
   O.page('dashboard', def);
 })();
