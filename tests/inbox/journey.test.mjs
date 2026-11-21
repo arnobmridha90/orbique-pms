@@ -58,6 +58,18 @@ test('isDue: the step is on, the stay is live, the moment has come, and it fell 
   assert.equal(J.isDue('welcome', BK({ checkIn: '2026-11-15' }), cfg, '2026-11-14T16:00', '11:00'), false);
 });
 
+test('one message per moment: a last-minute booking gets the welcome alone, a one-night stay no check-out reminder', () => {
+  const cfg = ON();
+  const late = BK({ checkIn: '2026-11-15', checkOut: '2026-11-17', createdAt: '2026-11-14T20:00' });
+  assert.equal(J.isDue('confirm', late, cfg, '2026-11-14T20:01', '15:00'), false, 'booked inside 24 h: no confirmation');
+  assert.equal(J.isDue('welcome', late, cfg, '2026-11-14T20:01', '15:00'), true, 'the welcome goes out instead');
+  const offW = ON(); offW.steps.welcome.on = false;
+  assert.equal(J.isDue('confirm', late, offW, '2026-11-14T20:01', '15:00'), true, 'with the welcome off, the confirmation still goes');
+  const one = BK({ checkIn: '2026-11-16', checkOut: '2026-11-17' });
+  assert.equal(J.isDue('checkout', one, cfg, '2026-11-16T18:00', '15:00'), false, 'one night: the welcome gave the check-out time');
+  assert.equal(J.isDue('checkout', BK(), cfg, '2026-11-17T18:00', '15:00'), true, 'two nights: the reminder goes');
+});
+
 test('textFor: Airbnb guests get the Airbnb version when there is one', () => {
   const cfg = ON();
   assert.match(J.textFor(cfg, 'welcome', 'airbnb'), /^Unit \{unit_no\}\. Door/);
