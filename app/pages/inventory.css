@@ -167,8 +167,8 @@
 .ip .ip-line .nm b{display:block; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .ip .ip-line .nm .s{font-size:11.5px; color:var(--muted);}
 .ip .ip-line .nm .s.bad{color:var(--bad); font-weight:600;}
-.ip .ip-x{width:32px; height:32px; border:none; background:none; color:var(--muted); font-size:18px; border-radius:7px; flex-shrink:0;}
-.ip .ip-x:hover{background:var(--bad-soft); color:var(--bad);}
+.ip .ip-x, .tk .ip-x{width:32px; height:32px; border:none; background:none; color:var(--muted); font-size:18px; border-radius:7px; flex-shrink:0;}
+.ip .ip-x:hover, .tk .ip-x:hover{background:var(--bad-soft); color:var(--bad);}
 .ip .ip-empty{font-size:12.5px; color:var(--muted); padding:4px 2px;}
 
 /* tick list (phone) */
@@ -252,3 +252,44 @@
   .inv-form .inv-err{order:6;}
   .inv-detail .kv{grid-template-columns:96px 1fr;}
 }
+
+/* sizes (item + size): chips in the stock list and settings, the size picker on a form line */
+.pg-inv .s-row.has-sz .nm, .pg-inv .i-row .nm{white-space:normal;}
+.pg-inv .szs{display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; font-weight:500;}
+.sz-chip{display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); font-size:11.5px; color:var(--text-2); white-space:nowrap;}
+.sz-chip b{font-variant-numeric:tabular-nums; color:var(--text);}
+.sz-chip.neg b{color:var(--bad);}
+.sz-chip button{border:none; background:none; padding:0 0 0 2px; font-size:14px; line-height:1; color:var(--muted); cursor:pointer;}
+.sz-chip button:hover{color:var(--bad);}
+.pg-inv .i-sz{display:block; font-weight:500; font-size:11.5px; color:var(--muted); white-space:normal;}
+.pg-inv .inv-items-card .card-head{padding-bottom:0;}
+.inv-sizes .seg{margin-bottom:6px;}
+.inv-sizes .sz-list{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0;}
+.inv-sizes .sz-add{display:flex; gap:8px; align-items:center;}
+.inv-sizes .sz-add .input{flex:1; min-width:0;}
+.inv-sizes .sz-presets{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px;}
+.inv-sizes .sz-presets .chip{font-size:12px; min-height:28px;}
+.sz-ctl{display:inline-flex; gap:6px; align-items:center; flex-shrink:0;}
+.sz-ctl .sz-sel{width:auto; min-width:92px; max-width:150px; height:34px; padding-top:0; padding-bottom:0; font-size:13px;}
+.sz-ctl .sz-in{width:110px; height:34px; font-size:13px;}
+.ip .ip-line.ip-more{padding:3px 8px 5px 12px; background:var(--surface-2);}
+.ip .ip-line.sized + .ip-line.sized .nm b{color:var(--muted); font-weight:600;}
+.tk .tk-item{border-bottom:1px solid var(--border);}
+.tk .tk-item .tk-row{border-bottom:none;}
+.tk .tk-sz{display:flex; align-items:center; gap:8px; padding:8px 4px 8px 36px; background:var(--brand-soft-2);}
+.tk .tk-sz .s{flex:1; min-width:0; font-size:11.5px; color:var(--muted);}
+.tk .tk-sz .s.bad{color:var(--bad); font-weight:600;}
+.tk .tk-sz .sz-sel{font-size:16px; height:40px; max-width:130px;}
+.tk .tk-sz .sz-in{font-size:16px; height:40px; width:96px;}
+.tk .tk-sz .ip-x{flex-shrink:0;}
+.tk .tk-sz-more{padding:2px 4px 8px 36px; background:var(--brand-soft-2);}
+.tk .tk-sz-more:empty{display:none;}
+@media (max-width:760px){
+  .ip .ip-line.sized{flex-wrap:wrap;}
+}
+.ip .ip-opt .t{flex:1; min-width:0;}
+.tk .tk-sz{flex-wrap:wrap; row-gap:2px;}
+.tk .tk-sz .sz-ctl{flex:1 1 100%; min-width:0;}
+.tk .tk-sz .sz-ctl .sz-sel{flex:0 1 auto; min-width:80px;}
+.tk .tk-sz .sz-ctl .sz-in{flex:1 1 60px; min-width:60px; width:auto;}
+.tk .tk-sz .stp{margin-right:0;}
