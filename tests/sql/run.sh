@@ -27,7 +27,7 @@ migrate_all() { # url
   DATABASE_URL="$url" node scripts/migrate.mjs
   DATABASE_URL="$url" node scripts/migrate.mjs                     # nothing left to apply
   # 0009 and 0014 replace functions from 0006, so they are re-run after it (in production each file runs once, in order)
-  for f in 0006_channex.sql 0007_channex_cron.sql 0009_channex_fixes.sql 0010_inbox.sql 0011_alerts.sql 0014_listing_types.sql 0015_website_booking.sql 0016_planner_owner_only.sql 0017_site_content.sql 0020_reveal_24h.sql 0021_guest_places.sql 0022_inbox_organize.sql 0023_unit_files.sql 0024_team_chat.sql 0025_team_chat_translate.sql; do
+  for f in 0006_channex.sql 0007_channex_cron.sql 0009_channex_fixes.sql 0010_inbox.sql 0011_alerts.sql 0014_listing_types.sql 0015_website_booking.sql 0016_planner_owner_only.sql 0017_site_content.sql 0020_reveal_24h.sql 0021_guest_places.sql 0022_inbox_organize.sql 0023_unit_files.sql 0024_team_chat.sql 0025_team_chat_translate.sql 0029_google_reviews.sql; do
     DATABASE_URL="$url" node scripts/migrate.mjs --reapply "$f"   # re-run through the runner
     psqlq "$url" -f "supabase/migrations/$f" >/dev/null 2>&1 || { echo "re-running $f with psql failed"; psqlq "$url" -f "supabase/migrations/$f"; exit 1; }
   done

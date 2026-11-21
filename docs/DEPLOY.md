@@ -345,6 +345,14 @@ address straight into the inbox; email replies to guests then go out from that a
    `insert into public.inbound_addresses (address, org_id, kind) values ('hello@staykozi.com', '<the org id>', 'own');`
    The workspace keeps its Orbique address too, so booking sites already set up with it still work.
 
+## Google reviews (Google Business Profile)
+
+Google reviews on the Reviews page, with replies, once Google has approved the Cloud project for the Business Profile
+API. Vercel (Production): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (an OAuth "Web application" client whose redirect
+URI is the live address followed by `/api/messages`), optional `GOOGLE_REDIRECT_URI`. Without them the feature stays off.
+The owner then presses Connect Google on the Reviews page. Every step, including Google's access request:
+`docs/notes/google-reviews.md`.
+
 ## Website bookings: live prices, card payment, members
 
 A workspace's own website books through `/api/public/*` (api/public.js). Settings live in the workspace's `website`

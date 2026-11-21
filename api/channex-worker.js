@@ -33,7 +33,9 @@ import { processOutbox } from './_lib/alerts.js';
 import { releaseHolds } from './_lib/website.js';
 import { renewTokens } from './_lib/whatsapp-connect.js';
 import { waConfig } from './_lib/whatsapp.js';
-import { purgeTrash, relinkChats } from './_lib/inbox.js';
+import { purgeTrash, relinkChats, postNotice } from './_lib/inbox.js';
+import { googleConfig } from './_lib/google.js';
+import { syncDue } from './_lib/google-reviews.js';
 import { processJourney } from './_lib/journey.js';
 import { watchHealth } from './_lib/healthcheck.js';
 
@@ -53,7 +55,8 @@ export const bookingHooks = {
   inboxTrash: (sb) => purgeTrash(sb, null),
   journey: (sb, opts) => processJourney(sb, opts),
   relink: (sb, opts) => relinkChats(sb, opts),
-  health: (sb, opts) => watchHealth(sb, opts)
+  health: (sb, opts) => watchHealth(sb, opts),
+  google: (sb, opts) => syncDue(sb, googleConfig(), Object.assign({ notice: postNotice }, opts))
 };
 
 /** Run a hook; a failure is logged and reported, never stops the tick (ARI still goes out). */
@@ -81,6 +84,8 @@ export async function tick(sb, opts = {}) {
   const left = () => 22000 - (Date.now() - start);
   if (left() > 4000) out.journey = await safely('timed messages', () => bookingHooks.journey(sb, { channexConfig: cfg, deadline: Date.now() + Math.min(8000, left() - 2000) }));
   if (left() > 3000) out.relink = await safely('link chats', () => bookingHooks.relink(sb, { config: cfg, deadline: Date.now() + Math.min(4000, left() - 1500) }));
+  // Google Business Profile reviews (api/_lib/google-reviews.js): each connected workspace every 30 minutes
+  if (left() > 6000 && bookingHooks.google) out.google = await safely('google reviews', () => bookingHooks.google(sb, { deadline: Date.now() + Math.min(5000, left() - 4000) }));
   // the health check (api/_lib/healthcheck.js): at most once every 15 minutes per workspace; safe fixes, and a warning when something turns red
   if (left() > 9000 && bookingHooks.health) out.health = await safely('health check', () => bookingHooks.health(sb, {}));
   return out;
