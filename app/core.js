@@ -417,6 +417,7 @@
     tasks: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     pricing: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
     planner: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+    netrates: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v4M16 3v4"/><path d="M12 12v6M14 13.2h-2.6a1.2 1.2 0 0 0 0 2.4h1.2a1.2 1.2 0 0 1 0 2.4H10"/>',
     automations: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     health: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
     invoices: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
@@ -2136,7 +2137,7 @@
   O.LANGS = [['en', 'English', 'EN'], ['bn', 'বাংলা', 'Bangla'], ['ms', 'Bahasa Malaysia', 'MS'], ['zh', '中文（福建話）', 'Hokkien']];
   O.LOCALES = { en: 'en-MY', bn: 'bn-BD-u-nu-latn', ms: 'ms-MY', zh: 'zh-TW' };
   O.I18N = O.I18N || {};
-  var NAV_EN = { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', team: 'Team chat', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', health: 'System health', more: 'More', home: 'Home', platform: 'Platform admin' };
+  var NAV_EN = { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', team: 'Team chat', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', netrates: 'Net Rates', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', health: 'System health', more: 'More', home: 'Home', platform: 'Platform admin' };
   O.NAV_EN = NAV_EN;
   var I = (function () {
     var own = Object.prototype.hasOwnProperty, caches = {}, pats = {}, frags = {};
@@ -2466,13 +2467,15 @@
     ['insights', ['statistics', 'reports']],
     ['finance', ['invoices', 'expenses', 'financials']],
     ['grow', ['website', 'livesite', 'guestapp']],
-    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'planner', 'automations', 'owner', 'staff', 'brand', 'health']]
+    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'netrates', 'planner', 'automations', 'owner', 'staff', 'brand', 'health']]
   ];
   O.OWNER_ONLY = { financials: true, planner: true, health: true };
   /* pages in the menu whose access is not their own Staff Access section: {id: fn -> may open} */
   O.PAGE_ACCESS = { livesite: function () { return O.can('website.edit') || O.can('website.publish'); },
     /* Greeting Messages (pages/greetings.js): anyone who can open the inbox reads them; inbox.greetings changes them */
-    greetings: function () { return O.can('inbox', 'view'); } };
+    greetings: function () { return O.can('inbox', 'view'); },
+    /* Net rates (pages/netrates.js): anyone who sees Pricing; pricing.rules changes what each site takes */
+    netrates: function () { return O.can('pricing', 'view'); } };
   O.allowed = function (id) { if (O.EXTRA_PAGES && O.EXTRA_PAGES[id]) return O.EXTRA_PAGES[id].allowed ? O.EXTRA_PAGES[id].allowed() : true; if (O.PAGE_ACCESS[id]) return O.PAGE_ACCESS[id](); return O.OWNER_ONLY[id] ? O.isOwner() : O.can(id, 'view'); };
   /* pages outside the menu groups (e.g. the platform admin area added by auth.js): {id: {allowed: fn}} */
   O.EXTRA_PAGES = O.EXTRA_PAGES || {};
