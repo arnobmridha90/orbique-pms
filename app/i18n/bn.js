@@ -8477,5 +8477,11 @@ O.I18N.bn = {
 "The room rate for each night. The total follows it.": "প্রতি রাতের রুম রেট। মোট টাকা এর সাথে বদলায়।",
 "Extra bed": "অতিরিক্ত বেড",
 "The invoice shows the new amounts: send it again so the guest has the right one.": "ইনভয়েসে নতুন অঙ্ক দেখাবে: অতিথি যেন সঠিকটি পান, তাই আবার পাঠান।",
-"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "আপনার নিজের ওয়েবসাইট থেকে আসা বুকিং (যেমন WhatsApp-এ পাঠানো)। এটি একটি ডাইরেক্ট বুকিং, ওয়েবসাইট হিসেবে চিহ্নিত।"
+"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "আপনার নিজের ওয়েবসাইট থেকে আসা বুকিং (যেমন WhatsApp-এ পাঠানো)। এটি একটি ডাইরেক্ট বুকিং, ওয়েবসাইট হিসেবে চিহ্নিত।",
+"Put the cards back in the default order on wide screens": "চওড়া স্ক্রিনে কার্ডগুলো আগের মূল ক্রমে ফিরিয়ে দিন",
+"Put the cards back in the default order on phones": "ফোনে কার্ডগুলো আগের মূল ক্রমে ফিরিয়ে দিন",
+"Reset order": "ক্রম রিসেট করুন",
+"Drag to move this card": "এই কার্ডটি সরাতে টেনে আনুন",
+"Move this card (arrow keys up and down)": "এই কার্ডটি সরান (উপর ও নিচের তীর কী)",
+"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে"
 };

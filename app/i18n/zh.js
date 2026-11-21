@@ -8477,5 +8477,11 @@ O.I18N.zh = {
 "The room rate for each night. The total follows it.": "每晚的房價，總額會隨之更新。",
 "Extra bed": "加床",
 "The invoice shows the new amounts: send it again so the guest has the right one.": "發票會顯示新金額：請重新發送，讓客人拿到正確的版本。",
-"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "來自您自己網站的訂房（例如透過 WhatsApp 傳來）。這是直接訂房，標記為「網站」。"
+"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "來自您自己網站的訂房（例如透過 WhatsApp 傳來）。這是直接訂房，標記為「網站」。",
+"Put the cards back in the default order on wide screens": "將寬螢幕上的卡片恢復為預設順序",
+"Put the cards back in the default order on phones": "將手機上的卡片恢復為預設順序",
+"Reset order": "重設順序",
+"Drag to move this card": "拖曳以移動此卡片",
+"Move this card (arrow keys up and down)": "移動此卡片（上下方向鍵）",
+"Cards are back in the default order": "卡片已恢復為預設順序"
 };

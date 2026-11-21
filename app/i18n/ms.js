@@ -8477,5 +8477,11 @@ O.I18N.ms = {
 "The room rate for each night. The total follows it.": "Kadar bilik bagi setiap malam. Jumlah mengikutinya.",
 "Extra bed": "Katil tambahan",
 "The invoice shows the new amounts: send it again so the guest has the right one.": "Invois menunjukkan amaun baharu: hantar semula supaya tetamu mendapat yang betul.",
-"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "Tempahan dari laman web anda sendiri (contohnya dihantar melalui WhatsApp). Ia tempahan terus, ditanda Laman web."
+"A booking from your own website (for example sent on WhatsApp). It is a direct booking, marked Website.": "Tempahan dari laman web anda sendiri (contohnya dihantar melalui WhatsApp). Ia tempahan terus, ditanda Laman web.",
+"Put the cards back in the default order on wide screens": "Kembalikan kad ke susunan asal pada skrin lebar",
+"Put the cards back in the default order on phones": "Kembalikan kad ke susunan asal pada telefon",
+"Reset order": "Set semula susunan",
+"Drag to move this card": "Seret untuk mengalihkan kad ini",
+"Move this card (arrow keys up and down)": "Alihkan kad ini (kekunci anak panah atas dan bawah)",
+"Cards are back in the default order": "Kad kembali ke susunan asal"
 };
