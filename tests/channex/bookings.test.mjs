@@ -305,3 +305,27 @@ test('revisionNights: a listing booking forgets the nights of its listing type t
   const out = revisionNights([], [{ unitTypeId: 'UT-P', listingTypeId: 'LT-1', propertyId: 'P-1', checkIn: '2026-11-10', checkOut: '2026-11-12' }], units, new Set(['UT-P', 'LT-1']));
   assert.deepEqual(out.map((r) => r.target_id).sort(), ['LT-1', 'UT-P']);
 });
+
+test('Vrbo USD booking: stay only, 12% fee, converted to RM with the original kept', async () => {
+  const { revisionToBookings } = await import('../../api/_lib/channex-bookings.js');
+  const rev = {
+    id: 'r1', booking_id: 'b1', ota_name: 'VRBO', unique_id: 'VRB-HA-X', currency: 'USD', amount: '74.43', payment_collect: 'ota', ota_commission: null,
+    arrival_date: '2026-11-24', departure_date: '2026-11-25',
+    rooms: [{ days: { '2026-11-24': '60.00' }, amount: '74.43', checkin_date: '2026-11-24', checkout_date: '2026-11-25', occupancy: { adults: 2 },
+      services: [{ name: 'Lodging taxes we remit', excluded: true, total_price: '2.43' }, { name: 'Guest service fee', excluded: true, total_price: '12.00' }] }]
+  };
+  const now = Date.parse('2026-11-21T12:00:00Z');
+  const fx = { v: { base: 'MYR', rates: { USD: 0.25 }, at: '2026-11-20T19:00:00Z' } };
+  const [b] = revisionToBookings(rev, { now, fx }).bookings;
+  assert.equal(b.total, 240);
+  assert.equal(b.platformFee, 28.8);
+  assert.equal(b.payout, 211.2);
+  assert.equal(b.currency, undefined);
+  assert.equal(b.fxOriginal.total, 60);
+  assert.equal(b.fxOriginal.payout, 52.8);
+  assert.match(b.otaNotes, /USD 60\.00 booking, est\. payout USD 52\.80/);
+  // no exchange rate: amounts stay as sent and are labelled
+  const [c] = revisionToBookings(rev, { now }).bookings;
+  assert.equal(c.total, 60);
+  assert.equal(c.currency, 'USD');
+});

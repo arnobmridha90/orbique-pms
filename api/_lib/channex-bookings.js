@@ -23,7 +23,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import A from './shared/assign.cjs';
 import G from './shared/guestmsg.cjs';
 import { channexConfig, channelView, ChannexError } from './channex.js';
-import { must, records, tracked, addAlert, todayMY, addDays, daysBetween, isIso } from './channex-db.js';
+import { must, records, tracked, addAlert, todayMY, addDays, daysBetween, isIso, blob } from './channex-db.js';
 import { CONNECTED } from './channex-sync.js';
 import { MESSAGE_EVENTS, receiveChannex, postNotice } from './inbox.js';
 import { saveReview } from './reviews.js';
@@ -96,7 +96,7 @@ export function channelOf(rev) {
   return 'other';
 }
 /** Commission rates the app shows (D.channels in app/data.js), for an estimate when Channex sends no ota_commission. */
-export const FEE_PCT = { airbnb: 0.15, booking: 0.15, agoda: 0.15, expedia: 0.18, trip: 0.15, other: 0.15, vrbo: 0.08, direct: 0 }; // no fee on direct bookings
+export const FEE_PCT = { airbnb: 0.15, booking: 0.15, agoda: 0.15, expedia: 0.18, trip: 0.15, other: 0.15, vrbo: 0.12, direct: 0 }; // no fee on direct bookings
 const CHANNEL_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', expedia: 'Expedia', trip: 'Trip.com', vrbo: 'Vrbo', other: 'the platform' };
 
 /** The revision attributes, whatever shape it came in ({id, attributes} from the API, or plain). */
@@ -181,10 +181,13 @@ export function revisionToBookings(rev, ctx = {}) {
     const share = rooms.length > 1 ? (shareSum > 0 ? roomShares[i] / shareSum : 1 / rooms.length) : 1;
     let total = rooms.length > 1 ? (roomShares[i] ? money(roomShares[i] + cleaningFee + tourismTax) : money(totalAmount * share)) : totalAmount;
     if (!total) total = money(accommodation + cleaningFee + tourismTax);
+    // Vrbo's amount is what the traveller paid, including its guest service fee and the lodging taxes Vrbo remits
+    // (services marked excluded): none of that reaches the host, so the booking is the stay itself.
+    if (channel === 'vrbo' && collect === 'ota' && accommodation > 0) total = money(accommodation + cleaningFee + tourismTax);
     const occ = isObj(room.occupancy) ? room.occupancy : isObj(rev.occupancy) ? rev.occupancy : {};
     const guests = Math.max(1, Math.round(num(occ.adults) + num(occ.children)) || 1);
     const feePct = FEE_PCT[channel] !== undefined ? FEE_PCT[channel] : 0.15;
-    let platformFee = commission !== null ? money(commission * share) : Math.round(accommodation * feePct);
+    let platformFee = commission !== null ? money(commission * share) : currency && currency !== 'MYR' ? money(accommodation * feePct) : Math.round(accommodation * feePct);
     // Agoda's amounts are what the property receives; its price to the guest is refsell_amt, so the fee is the difference
     const sellRatio = channel === 'agoda' && commission === null ? agodaSellRatio(room) : 0;
     let payout = collect === 'property' ? total : money(total - platformFee);
@@ -236,15 +239,45 @@ export function revisionToBookings(rev, ctx = {}) {
     };
     if (validTime(rev.arrival_hour)) b.arrivalHour = rev.arrival_hour;
     if (groupRef) b.groupRef = groupRef;
-    if (currency && currency !== 'MYR') b.currency = currency;
     if (commission === null && !sellRatio && !tripNet) b.feeEstimated = true;
     if (tripNet) b.netRate = true;
+    const fxRate = currency && currency !== 'MYR' ? fxPerMyr(ctx.fx, currency, ctx.now || Date.now()) : null;
+    if (fxRate) toMyr(b, currency, fxRate);
+    else if (currency && currency !== 'MYR') b.currency = currency;
     if (collect) b.paymentCollect = collect;
     if (collect !== 'property') { b.paidAt = createdAt.slice(0, 10); b.payMethod = 'Paid via ' + (CHANNEL_NAME[channel] || 'the platform'); }
     if (status === 'cancelled') b.cancelledAt = ctx.today || todayMY(ctx.now || Date.now());
     return b;
   });
   return { bookings, problems };
+}
+
+/**
+ * Units of `currency` per 1 MYR from the workspace's fxRates blob ({v: {base, rates, at}} or {base, rates, at}), or null
+ * when there is none or it is more than 7 days old.
+ */
+export function fxPerMyr(fx, currency, now = Date.now()) {
+  const f = fx && typeof fx === 'object' ? (fx.v && typeof fx.v === 'object' ? fx.v : fx) : null;
+  if (!f || String(f.base || '').toUpperCase() !== 'MYR' || !f.rates) return null;
+  const r = Number(f.rates[currency]);
+  const at = Date.parse(f.at || '');
+  if (!(r > 0) || !Number.isFinite(at) || now - at > 7 * 86400000) return null;
+  return r;
+}
+
+/**
+ * A booking a site sent in another currency (Vrbo sends USD): its amounts are turned into RM so revenue, payouts and
+ * reports add up, and what the site sent is kept in fxOriginal and shown in the OTA notes.
+ */
+export function toMyr(b, currency, rate) {
+  const keys = ['nightly', 'accommodation', 'cleaningFee', 'tourismTax', 'total', 'revenue', 'platformFee', 'payout'];
+  const orig = { currency, rate };
+  for (const k of keys) { orig[k] = b[k]; b[k] = k === 'nightly' ? Math.round(num(b[k]) / rate) : money(num(b[k]) / rate); }
+  b.fxOriginal = orig;
+  const note = currency + ' ' + orig.total.toFixed(2) + ' booking, ' + (b.feeEstimated ? 'est. ' : '') + 'payout ' + currency + ' ' + money(orig.payout).toFixed(2) +
+    ' (1 RM = ' + rate + ' ' + currency + ')';
+  b.otaNotes = b.otaNotes ? b.otaNotes + '\n' + note : note;
+  return b;
 }
 
 /** The fields a booking gets once, when it is first created (O.bookingDefaults plus the arrival defaults in data.js). */
@@ -260,7 +293,7 @@ export function newBookingFields(b) {
 
 /** Keys a channel revision owns; everything else (unit, door code, guest token, staff notes, invoices…) stays as staff left it. */
 export const CHANNEL_KEYS = ['unitTypeId', 'listingTypeId', 'ratePlanId', 'channel', 'otaName', 'reservationCode', 'channex', 'groupRef', 'guests', 'checkIn', 'checkOut',
-  'nights', 'nightly', 'accommodation', 'cleaningFee', 'tourismTax', 'total', 'revenue', 'currency', 'platformFee', 'feeEstimated', 'netRate', 'payout',
+  'nights', 'nightly', 'accommodation', 'cleaningFee', 'tourismTax', 'total', 'revenue', 'currency', 'fxOriginal', 'platformFee', 'feeEstimated', 'netRate', 'payout',
   'paymentCollect', 'otaNotes', 'arrivalHour'];
 
 /**
@@ -588,7 +621,7 @@ export async function ingestRevision(sb, input, opts = {}) {
   const ctx = await assignContext(sb, prop.org_id, from, to);
   for (const b of existingList) if (!ctx.bookings.some((x) => x.id === b.id)) ctx.bookings.push(b);
 
-  const { bookings: incoming, problems } = revisionToBookings(rev, { roomTypes: maps.roomTypes, ratePlans: maps.ratePlans, recordIds, firstInsertedAt, checkTimes: checkTimesFn(ctx), now });
+  const { bookings: incoming, problems } = revisionToBookings(rev, { roomTypes: maps.roomTypes, ratePlans: maps.ratePlans, recordIds, firstInsertedAt, checkTimes: checkTimesFn(ctx), now, fx: await blob(sb, prop.org_id, 'fxRates').catch(() => null) });
   const nowLocal = nowMY(now);
   const saved = [];
   const moves = [];
