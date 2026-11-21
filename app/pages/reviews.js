@@ -50,6 +50,11 @@
 .pg-reviews .rv-ro{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:10px;padding:9px 12px;}
 .pg-reviews .rv-ro svg{width:14px;height:14px;flex-shrink:0;}
 .pg-reviews .rv-empty{text-align:center;padding:4px 16px 24px;}
+.pg-reviews .rv-g{display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap;}
+.pg-reviews .rv-g-ic .plat-ic{width:28px;height:28px;font-size:13px;}
+.pg-reviews .rv-g-body{flex:1;min-width:200px;display:flex;flex-direction:column;gap:3px;}
+.pg-reviews .rv-g-locs{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:6px;}
+.pg-reviews .rv-g .bad-text{color:var(--bad);}
 .pg-reviews .kpi .k-val small{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px;}
 .pg-reviews .rv-filters{padding:12px 16px;display:flex;flex-direction:column;gap:10px;}
 .pg-reviews .rv-frow{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;}
@@ -194,6 +199,8 @@
 
   /* ------------------------------------------------------------------ helpers */
   function prop(id) { return D.propById[id] || { id: id, name: 'Removed property', short: 'Removed property', housekeeper: null }; }
+  /* where a review is about: its unit, or for a Google review (no unit) the Business Profile's name */
+  function placeOf(r) { return D.propById[r.propertyId] || (r.place ? { id: null, name: r.place, short: r.place, housekeeper: null, buildingId: r.buildingId || null } : prop(r.propertyId)); }
   function canReply() { return O.can('reviews.reply'); }
   var NO_REPLY = 'Replying to reviews is not part of your access. An account owner can change this in Staff Access.';
   function staffName(id) { var s = D.staffById(id); return s ? s.name : 'Team'; }
@@ -225,7 +232,7 @@
     if (skip !== 'prop' && st.prop && r.propertyId !== st.prop) return false;
     if (st.q) {
       var q = st.q.toLowerCase(), b = r.bookingId ? r.bookingId.toLowerCase() : '';
-      if ((r.guest + ' ' + r.text + ' ' + r.tags.join(' ') + ' ' + prop(r.propertyId).name).toLowerCase().indexOf(q) < 0 && b.indexOf(q) < 0) return false;
+      if ((r.guest + ' ' + r.text + ' ' + r.tags.join(' ') + ' ' + placeOf(r).name).toLowerCase().indexOf(q) < 0 && b.indexOf(q) < 0) return false;
     }
     return true;
   }
@@ -314,7 +321,7 @@
   var REPLY_OPTIONS = 5 * 6 * 7;
   function suggest(r, v) {
     /* replies name the business and the building ("Kozi @ Vortex KLCC"), never the listing title */
-    var ws = O.ws().name, bd = O.buildingOf ? O.buildingOf(prop(r.propertyId)) : null;
+    var ws = O.ws().name, bd = O.buildingOf ? O.buildingOf(placeOf(r)) : null;
     var name = greetName(r.guest), p = bd && bd.name ? ws + ' @ ' + bd.name : ws, team = 'The ' + ws + ' Team';
     v = Math.abs(v || 0) % REPLY_OPTIONS;
     var rd = readReview(r), lk = rd.likes.length ? rd.likes[v % rd.likes.length] : null, lk2 = rd.likes.length > 1 ? rd.likes[(v + 1) % rd.likes.length] : null;
@@ -440,7 +447,7 @@
   }
 
   function reviewHTML(r) {
-    var p = prop(r.propertyId), b = r.bookingId ? D.booking(r.bookingId) : null, low = r.stars <= 3, a = age(r);
+    var p = placeOf(r), b = r.bookingId ? D.booking(r.bookingId) : null, low = r.stars <= 3, a = age(r);
     var conv = convFor(r), task = taskFor(r);
     var flags = [];
     if (!r.reply) flags.push(U.pill('Needs reply · waiting ' + (a === 0 ? 'since today' : fmt.plural(a, 'day')), a >= 3 || low ? 'bad' : 'warn'));
@@ -454,6 +461,7 @@
     var canBk = O.allowed('bookings'), canLink = O.can('reviews', 'edit'), canTask = O.can('tasks.create'), canChat = O.allowed('inbox');
     var meta = '<span>' + esc(p.name) + '</span>' +
       (b ? '<span class="dotsep">' + esc(O.tpl('Stayed {range} · {count}', { range: d.fmtRange(b.checkIn, b.checkOut), count: fmt.plural(b.nights, 'night') })) + '</span><span class="dotsep">' + (canBk ? '<button type="button" class="rv-link" data-open="' + esc(b.id) + '" aria-label="Open booking ' + esc(b.id) + '">' + esc(b.id) + '</button>' : esc(b.id)) + '</span>'
+        : r.gg ? '<span class="dotsep">Google Business Profile</span>'
         : '<span class="dotsep">Not linked to a booking</span>' + (canLink ? '<span class="dotsep"><button type="button" class="rv-link" data-act="link" data-id="' + r.id + '">Link booking</button></span>' : ''));
     var taskBtn = low && !task && canTask ? '<button type="button" class="btn btn-ghost btn-sm" data-act="task" data-id="' + r.id + '">' + O.icon('tasks') + 'Create follow-up task</button>' : '';
     var chatBtn = conv && canChat ? '<button type="button" class="btn btn-ghost btn-sm" data-act="chat" data-id="' + r.id + '">' + O.icon('chat') + 'Message guest</button>' : '';
@@ -548,8 +556,8 @@
     text = (text || '').trim();
     if (text.length < 10) { U.toast('Write a reply of at least 10 characters first', 'bad'); return; }
     var was = !!r.reply;
-    /* a review that came from a booking site through Channex: the reply is posted there first (api/messages.js) */
-    if (r.cx && O.auth && O.auth.inbox && O.sync.adapter && O.sync.adapter.name === 'server') {
+    /* a review that came from a booking site through Channex, or from Google: the reply is posted there first (api/messages.js) */
+    if ((r.cx || r.gg) && O.auth && O.auth.inbox && O.sync.adapter && O.sync.adapter.name === 'server') {
       if (st.busy) return;
       st.busy = r.id; ctx0 && ctx0.rerender && ctx0.rerender();
       O.auth.inbox('review-reply', { reviewId: r.id, text: text }).then(function (res) {
@@ -656,7 +664,7 @@
     var cover = coveringTask(r);
     if (cover) {
       r.taskId = cover.id;
-      U.toast('Task ' + cover.id + ' (' + cover.title + ') already covers this at ' + prop(r.propertyId).short + '. It is now linked to the review.');
+      U.toast('Task ' + cover.id + ' (' + cover.title + ') already covers this at ' + placeOf(r).short + '. It is now linked to the review.');
       O.emit('data', { type: 'review', id: r.id });
       return;
     }
@@ -664,7 +672,7 @@
     var tags = r.tags.join(' ');
     var who = hit ? hit[3] : /Maintenance|Door code/.test(tags) ? 'maint' : /Cleanliness/.test(tags) ? 'clean' : 'ops';
     var maint = who === 'maint', clean = who === 'clean';
-    var p = prop(r.propertyId);
+    var p = placeOf(r);
     var roleStaff = function (role, fb) { var x = D.staff.filter(function (s) { return s.role === role; })[0]; return x ? x.id : fb; };
     var assignee = maint ? roleStaff('maintenance', null) : clean ? p.housekeeper : roleStaff('ops', null);
     if (assignee && !D.staffById(assignee)) assignee = null;
@@ -684,10 +692,10 @@
     if (!O.can('reviews', 'edit')) { U.toast('Your access does not include changing reviews', 'bad'); return; }
     var opts = D.bookings.filter(function (b) { return b.propertyId === r.propertyId && b.status !== 'cancelled' && b.checkOut <= r.date && b.checkOut >= d.add(r.date, -21); })
       .sort(function (a, b) { return a.checkOut < b.checkOut ? 1 : -1; });
-    if (!opts.length) { U.toast('No stays at ' + prop(r.propertyId).short + ' ended in the three weeks before this review', 'bad'); return; }
+    if (!opts.length) { U.toast('No stays at ' + placeOf(r).short + ' ended in the three weeks before this review', 'bad'); return; }
     var same = opts.filter(function (b) { return b.channel === r.platform || (r.platform === 'google' && b.channel === 'direct'); });
     U.modal({
-      title: 'Link review to a booking', sub: U.platName(r.platform) + ' review by ' + r.guest + ' on ' + d.fmtY(r.date) + ' · ' + prop(r.propertyId).name,
+      title: 'Link review to a booking', sub: U.platName(r.platform) + ' review by ' + r.guest + ' on ' + d.fmtY(r.date) + ' · ' + placeOf(r).name,
       body: '<div class="stack"><div class="field"><label for="rv-lb">Stay</label><select id="rv-lb" class="select">' + opts.map(function (b) {
         return '<option value="' + b.id + '"' + (same[0] && same[0].id === b.id ? ' selected' : '') + '>' + esc(b.guest.name) + ' · ' + esc(d.fmtRange(b.checkIn, b.checkOut)) + ' · ' + esc(U.platName(b.channel)) + ' · ' + esc(b.id) + '</option>';
       }).join('') + '</select><div class="hint">Stays at this unit that ended in the three weeks before the review, latest first.</div></div></div>',
@@ -702,9 +710,80 @@
     var list = sortList(D.reviews.filter(function (r) { return match(r); }));
     var rows = [['Date', 'Guest', 'Country', 'Property', 'Platform', 'Stars', 'Cleanliness', 'Communication', 'Check-in', 'Accuracy', 'Tags', 'Booking', 'Review', 'Replied', 'Reply date', 'Replied by', 'Reply']];
     list.forEach(function (r) {
-      rows.push([r.date, r.guest, D.countryName[r.country] || r.country, prop(r.propertyId).name, U.platName(r.platform), r.stars, r.sub.cleanliness, r.sub.communication, r.sub.checkin, r.sub.accuracy, r.tags.join('; '), r.bookingId || '', r.text, r.reply ? 'Yes' : 'No', r.reply ? r.reply.date : '', r.reply ? staffName(r.reply.by) : '', r.reply ? r.reply.text : '']);
+      rows.push([r.date, r.guest, D.countryName[r.country] || r.country, placeOf(r).name, U.platName(r.platform), r.stars, r.sub.cleanliness, r.sub.communication, r.sub.checkin, r.sub.accuracy, r.tags.join('; '), r.bookingId || '', r.text, r.reply ? 'Yes' : 'No', r.reply ? r.reply.date : '', r.reply ? staffName(r.reply.by) : '', r.reply ? r.reply.text : '']);
     });
     O.downloadCSV('reviews-' + st.from + '-to-' + st.to + '.csv', rows);
+  }
+
+
+  /* ------------------------------------------------------------------ Google Business Profile
+     The owner connects Google once (sign-in in the browser; Google blocks sign-in inside the phone app, so the app
+     opens the system browser). Reviews then arrive every 30 minutes (api/channex-worker.js) and replies go back to
+     Google through api/messages.js. Nothing shows when the server has no Google keys. */
+  var G = { loaded: false, busy: false, info: null, locs: null, err: null };
+  function liveServer() { return !!(O.auth && O.auth.inbox && O.sync.adapter && O.sync.adapter.name === 'server'); }
+  function gLoad(force) {
+    if (!liveServer() || G.busy || (G.loaded && !force)) return;
+    G.busy = true;
+    O.auth.inbox('google-status', {}).then(function (res) { G.info = res; G.loaded = true; if (res.connection && res.connection.status === 'pick' && res.owner) gLocations(); },
+      function () { G.loaded = true; G.info = null; }).then(function () { G.busy = false; if (ctx0 && ctx0.rerender) ctx0.rerender(); });
+  }
+  function gLocations() {
+    O.auth.inbox('google-locations', {}).then(function (res) { G.locs = res.locations || []; G.err = null; }, function (e) { G.locs = null; G.err = e.message; })
+      .then(function () { if (ctx0 && ctx0.rerender) ctx0.rerender(); });
+  }
+  function gCall(action, body, done) {
+    if (G.busy) return; G.busy = true; if (ctx0 && ctx0.rerender) ctx0.rerender();
+    O.auth.inbox(action, body || {}).then(function (res) { if (done) done(res); }, function (e) { U.toast(e.message || 'Google did not answer. Please try again.', 'bad'); })
+      .then(function () { G.busy = false; if (ctx0 && ctx0.rerender) ctx0.rerender(); });
+  }
+  /* back from Google's sign-in: /?google=active|pick|waiting|error&why=... */
+  function gReturn() {
+    var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    var g = q.get('google'); if (!g) return;
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+    if (g === 'error') U.toast(q.get('why') || 'Google was not connected. Please try again.', 'bad');
+    else U.toast(g === 'active' ? 'Google is connected. Your Google reviews are coming in.' : g === 'pick' ? 'Google is connected. Choose which Business Profile to show.' : 'Google is connected. Reviews start once Google approves API access.');
+    G.loaded = false;
+  }
+  function googleCard() {
+    var i = G.info;
+    if (!i || !i.configured) return '';
+    var c = i.connection, own = i.owner, busy = G.busy ? ' disabled' : '';
+    var head = '<div class="rv-g-ic">' + U.platIcon('google') + '</div>';
+    if (!c) {
+      if (!own) return '';
+      return '<div class="card rv-g">' + head + '<div class="rv-g-body"><b>Bring in your Google reviews</b><div class="muted small">Connect the Google account that owns your Business Profile to see Google reviews here and reply to them.</div></div>' +
+        '<button type="button" class="btn btn-primary btn-sm" data-g="start"' + busy + '>Connect Google</button></div>';
+    }
+    var who = c.email ? esc(O.tpl('Connected as {email}', { email: c.email })) : 'Connected';
+    var out = own ? '<button type="button" class="btn btn-quiet btn-xs" data-g="off"' + busy + '>Disconnect</button>' : '';
+    if (c.status === 'pick') {
+      var list = !own ? '<div class="muted small">An account owner needs to choose which Business Profile to show.</div>'
+        : G.err ? '<div class="small bad-text">' + esc(G.err) + '</div>'
+        : !G.locs ? '<div class="muted small">Loading your Business Profiles…</div>'
+        : !G.locs.length ? '<div class="muted small">' + esc(c.error || 'This Google account does not manage any Business Profile. Connect with the account that owns the profile.') + '</div>'
+        : '<div class="rv-g-locs">' + G.locs.map(function (l, n) { return '<button type="button" class="btn btn-ghost btn-sm" data-g="pick" data-n="' + n + '"' + busy + '>' + esc(l.title) + (l.address ? ' <span class="muted small">' + esc(l.address) + '</span>' : '') + '</button>'; }).join('') + '</div>';
+      return '<div class="card rv-g">' + head + '<div class="rv-g-body"><b>Choose your Business Profile</b><div class="muted small">' + who + '</div>' + list + '</div>' + out + '</div>';
+    }
+    if (c.status === 'waiting' || c.status === 'error') {
+      return '<div class="card rv-g">' + head + '<div class="rv-g-body"><b>' + (c.status === 'waiting' ? 'Waiting for Google' : 'Google reviews need attention') + '</b><div class="muted small">' + who + (c.title ? ' · ' + esc(c.title) : '') + '</div><div class="small">' + esc(c.error || '') + '</div></div>' +
+        (own ? '<button type="button" class="btn btn-ghost btn-sm" data-g="start"' + busy + '>Connect again</button>' : '') + out + '</div>';
+    }
+    var stats = c.total ? esc(O.tpl('{avg} average from {n} Google reviews', { avg: (c.average || 0).toFixed(1), n: c.total })) : '';
+    var when = c.lastSync ? esc(O.tpl('Updated {ago}', { ago: fmt.ago(c.lastSync) })) : '';
+    return '<div class="card rv-g">' + head + '<div class="rv-g-body"><b>' + esc(c.title || 'Google Business Profile') + '</b><div class="muted small">' + [stats, when, who].filter(Boolean).join(' · ') + '</div></div>' +
+      (canReply() ? '<button type="button" class="btn btn-ghost btn-sm" data-g="sync"' + busy + '>' + O.icon('refresh') + (G.busy ? 'Checking…' : 'Check now') + '</button>' : '') + out + '</div>';
+  }
+  function wireGoogle(page) {
+    page.addEventListener('click', function (e) {
+      var x = e.target.closest('[data-g]'); if (!x) return;
+      var a = x.dataset.g;
+      if (a === 'start') gCall('google-start', {}, function (res) { if (!res || !res.url) return; if (O.native && O.native.browser && O.native.browser(res.url)) { U.toast('Finish connecting Google in the browser, then come back and open Reviews again.'); return; } location.href = res.url; });
+      if (a === 'pick' && G.locs) { var l = G.locs[+x.dataset.n]; if (l) gCall('google-pick', { account: l.account, location: l.location, title: l.title }, function (res) { G.info.connection = res.connection; U.toast(O.tpl('{n} Google reviews fetched', { n: res.saved || 0 })); }); }
+      if (a === 'sync') gCall('google-sync', {}, function (res) { if (res.connection) G.info.connection = res.connection; U.toast(res.error ? res.error : res.added ? O.tpl('{n} new Google reviews', { n: res.added }) : 'No new Google reviews', res.error ? 'bad' : undefined); });
+      if (a === 'off') U.confirm('Google reviews already here stay. New ones stop coming in until an account owner connects Google again.', 'Disconnect', 'danger', 'Disconnect Google?').then(function (yes) { if (yes) gCall('google-disconnect', {}, function () { G.info.connection = null; G.locs = null; }); });
+    });
   }
 
   /* ------------------------------------------------------------------ page */
@@ -712,6 +791,7 @@
     desc: 'Every platform in one place: filter, reply and spot what to fix',
     render: function (root, ctx) {
       ctx0 = ctx;
+      gReturn(); gLoad();
       var pr = ctx.params || {};
       syncDates();
       relink();
@@ -729,18 +809,20 @@
       if (!D.reviews.length) { /* nothing yet (new workspace): one sentence plus the main action */
         ctx.setActions('');
         var noProps = !D.properties.length, canAdd = noProps ? O.can('properties.create') : O.allowed('bookings');
-        root.innerHTML = '<div class="pg-reviews"><div class="card rv-empty">' + U.empty('Reviews from Airbnb, Booking.com, Agoda, Vrbo and Google show up here after your guests stay.', '★') +
+        root.innerHTML = '<div class="pg-reviews">' + googleCard() + '<div class="card rv-empty">' + U.empty('Reviews from Airbnb, Booking.com, Agoda, Vrbo and Google show up here after your guests stay.', '★') +
           (canAdd ? '<button type="button" class="btn btn-primary" data-go="' + (noProps ? 'properties' : 'bookings') + '">' + (noProps ? O.icon('plus') + 'Add your first property' : 'See bookings') + '</button>' : '') + '</div></div>';
         O.$('.pg-reviews', root).addEventListener('click', function (e) { var g = e.target.closest('[data-go]'); if (g) O.go(g.dataset.go); });
+        wireGoogle(O.$('.pg-reviews', root));
         return;
       }
       var acts = ctx.setActions('<button type="button" class="btn btn-ghost btn-sm" data-top="csv">' + O.icon('download') + 'Export CSV</button>');
       O.$('[data-top=csv]', acts).onclick = exportCSV;
       O.$('[data-top=csv]', acts).title = 'Download the reviews that match the current filters';
 
-      root.innerHTML = '<div class="pg-reviews">' + kpisHTML() + filtersHTML() +
+      root.innerHTML = '<div class="pg-reviews">' + googleCard() + kpisHTML() + filtersHTML() +
         '<div class="rv-main"><div class="rv-list">' + listHTML() + '</div><aside class="rv-side" aria-label="Review analysis">' + propertyPanel() + mentionPanel() + '</aside></div></div>';
       var page = O.$('.pg-reviews', root);
+      wireGoogle(page);
 
       U.mount(page, 'dr', U.dateRange({
         from: st.from, to: st.to, preset: st.preset, presets: PRESETS,

@@ -37,7 +37,16 @@
  *   sites-on                                    owner          switch on booking-site messages and reviews (the Channex
  *                                                              Messaging & Reviews app) for every connected building, then
  *                                                              fetch the reviews and recent conversations already there
- *   review-reply        {reviewId, text}        reviews.reply  the public reply to a booking-site review
+ *   review-reply        {reviewId, text}        reviews.reply  the public reply to a booking-site review (a Google review,
+ *                                                              id RV-GG-..., goes to the Google Business Profile)
+ *   google-status                               member         {configured, owner, connection} (never tokens)
+ *   google-start                                owner          {url}: the Google sign-in; Google sends the owner back to
+ *                                                              GET /api/messages?code&state, which saves it and redirects
+ *                                                              to the app with ?google=active|pick|waiting|error
+ *   google-locations                            owner          the Business Profiles the connected account manages
+ *   google-pick  {account, location, title, buildingId?}  owner  show this profile's reviews; runs the first fetch
+ *   google-sync                                 reviews.reply  fetch new and changed Google reviews now
+ *   google-disconnect                           owner          forget the Google sign-in (fetched reviews stay)
  *   review-guest        {reviewId, scores: {cleanliness, communication, respect_house_rules} 1-5, publicReview, privateNote, recommend, tpl?}
  *                                               reviews.reply  review the guest of a hidden Airbnb review (double-blind),
  *                                                              which makes Airbnb show the guest's review
@@ -78,11 +87,13 @@ import { waConfig, withToken, fetchMedia, phoneNumberInfo, WhatsAppError } from 
 import { connectWithSignup } from './_lib/whatsapp-connect.js';
 import { appUrl } from './_lib/alerts.js';
 import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from './_lib/translate.js';
-import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt, routes, VIA_NAME, MEDIA_BUCKET, checkMedia, mediaKind, mediaPath, ownsPath, signedUrl, sendMediaReply, markConv, purgeTrash, forgetConv, noteUpload, uploadSent } from './_lib/inbox.js';
+import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt, routes, VIA_NAME, MEDIA_BUCKET, checkMedia, mediaKind, mediaPath, ownsPath, signedUrl, sendMediaReply, markConv, purgeTrash, forgetConv, noteUpload, uploadSent, postNotice } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
 import { assistantConfig, facts as assistantFacts, transcript, secretsOf, suggest, lookUp, AssistantError } from './_lib/assistant.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
 import { pullReviews, replyReview, reviewGuest } from './_lib/reviews.js';
+import { googleConfig, authUrl, signState } from './_lib/google.js';
+import { connectionOf, connView, finishConnect, locationsOf, pickLocation, syncGoogle, replyGoogle, disconnectGoogle } from './_lib/google-reviews.js';
 import GREETING from './_lib/shared/greeting.cjs';
 
 export const SITES_BUDGET_MS = 15000; // Vercel stops api functions at 20 s (vercel.json)
@@ -569,6 +580,12 @@ async function sitesOn(sb, body, me) {
 async function reviewReplyAction(sb, body, me) {
   const ws = await workspace(sb, body, me, 'reviews.reply');
   if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is posted to the booking sites.');
+  if (/^RV-GG-/.test(String(body.reviewId || ''))) { // a Google review: the reply goes to the Business Profile
+    const gc = googleConfig();
+    if (!gc.configured) throw forbidden('Google reviews are not set up on the server yet.');
+    const review = await replyGoogle(sb, gc, ws.org.id, body.reviewId, body.text, ws.member.staff_id || null);
+    return { review: { id: review.id, data: review } };
+  }
   const cx = channexConfig();
   if (!channexMessages(cx, ws.org.id)) throw forbidden('Booking-site reviews are not switched on for this workspace yet.');
   const review = await replyReview(sb, cx, ws.org.id, body.reviewId, body.text, ws.member.staff_id || null, { userId: me.id });
@@ -584,17 +601,97 @@ async function reviewGuestAction(sb, body, me) {
   return { review: { id: review.id, data: review } };
 }
 
+/* ---------- Google Business Profile reviews (api/_lib/google-reviews.js) ---------- */
+// Status for every member (the Reviews page shows it); connecting, choosing the profile and disconnecting are for the
+// account owner. Sign-in runs in the browser: google-start gives the Google address, Google sends the owner back to
+// GET /api/messages?code&state (handler below), which saves the sign-in and returns to the Reviews page.
+
+async function memberOf(sb, body, me) {
+  const orgId = uuidField(body.orgId);
+  const m = await membership(sb, orgId, me.id);
+  if (!m || m.status !== 'active') throw forbidden('You are not a member of this workspace.');
+  const org = await getOrg(sb, orgId);
+  if (org.status !== 'active') throw forbidden('This workspace is paused. Please contact Orbique.');
+  return { org, member: m };
+}
+
+function googleOn() {
+  const gc = googleConfig();
+  if (!gc.configured) throw new ApiError(503, 'not-configured', 'Google reviews are not set up on the server yet (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel).');
+  return gc;
+}
+
+async function googleStatus(sb, body, me) {
+  const ws = await memberOf(sb, body, me);
+  const gc = googleConfig();
+  return { configured: gc.configured, owner: ws.member.role === 'owner', connection: gc.configured ? connView(await connectionOf(sb, ws.org.id)) : null };
+}
+
+async function googleStart(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'owner');
+  if (await isDemo(sb, ws.org.id)) throw forbidden('This is a demo workspace, so nothing is connected to Google.');
+  const gc = googleOn();
+  return { url: authUrl(gc, signState(gc, { orgId: ws.org.id, userId: me.id })) };
+}
+
+async function googleLocations(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'owner');
+  return { locations: await locationsOf(sb, googleOn(), ws.org.id) };
+}
+
+async function googlePick(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'owner');
+  const gc = googleOn();
+  const out = await pickLocation(sb, gc, ws.org.id, body);
+  return Object.assign(out, { connection: connView(await connectionOf(sb, ws.org.id)) });
+}
+
+async function googleSync(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'reviews.reply');
+  const gc = googleOn();
+  const out = await syncGoogle(sb, gc, ws.org.id, { notice: postNotice, deadline: Date.now() + SITES_BUDGET_MS });
+  return Object.assign(out, { connection: connView(await connectionOf(sb, ws.org.id)) });
+}
+
+async function googleDisconnect(sb, body, me) {
+  const ws = await workspace(sb, body, me, 'owner');
+  return disconnectGoogle(sb, googleOn(), ws.org.id);
+}
+
+/** GET /api/messages?code&state (or ?error&state): Google sends the owner back here. Answers with a redirect to the app. */
+async function googleCallback(req, res) {
+  const url = new URL(req.url, 'http://x');
+  const q = { code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') };
+  const gc = googleConfig();
+  const back = (gc.appUrl || '') + '/';
+  const go = (params) => { res.statusCode = 302; res.setHeader('Location', back + '?' + new URLSearchParams(params).toString()); res.setHeader('Cache-Control', 'no-store'); res.end(); };
+  if (!gc.configured) return go({ google: 'error', why: 'Google reviews are not set up on the server yet.' });
+  try {
+    const sb = requireAdminClient();
+    const out = await finishConnect(sb, gc, q, {
+      canConnect: async (orgId, userId) => { const m = await membership(sb, orgId, userId); return !!(m && m.status === 'active' && m.role === 'owner'); }
+    });
+    return go({ google: out.status });
+  } catch (e) {
+    console.error('[google] connect:', e && e.message);
+    return go({ google: 'error', why: e instanceof ApiError ? e.message : 'Something went wrong on our side. Please try again.' });
+  }
+}
+
 const ACTIONS = {
   config, send: sendAction, translate: translateAction, preview, media,
   'media-upload': mediaUpload, 'send-media': sendMediaAction, organize, purge, lists: listsAction,
   'whatsapp-connect': connectNumber, 'whatsapp-signup': signupNumberAction, 'whatsapp-disconnect': disconnectNumber,
   'sites-on': sitesOn, 'review-reply': reviewReplyAction, 'review-guest': reviewGuestAction,
-  greeting: greetingAction, 'greeting-preview': greetingPreview, suggest: suggestAction
+  greeting: greetingAction, 'greeting-preview': greetingPreview, suggest: suggestAction,
+  'google-status': googleStatus, 'google-start': googleStart, 'google-locations': googleLocations, 'google-pick': googlePick,
+  'google-sync': googleSync, 'google-disconnect': googleDisconnect
 };
 
 export default async function handler(req, res) {
   if (cors(req, res)) return;
   try {
+    if (req.method === 'GET' && /[?&]state=/.test(req.url || '')) return await googleCallback(req, res);
     if (req.method !== 'POST') {
       res.setHeader('Allow', 'POST');
       return send(res, 405, { ok: false, error: 'method', message: 'Use POST for this address.' });

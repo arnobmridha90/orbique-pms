@@ -48,7 +48,7 @@ export const MAX_TEXT = 4096;
 export const OTA_VIA = { booking: 'booking', airbnb: 'airbnb', expedia: 'expedia' };
 export const VIA_NAME = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site', email: 'email', agoda: 'Agoda', tripcom: 'Trip.com' };
 /* the conversations that hold a platform's notifications no booking matched (feed key -> the name shown) */
-export const FEED_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', tripcom: 'Trip.com', expedia: 'Expedia', channex: 'Channel manager', email: 'Email' };
+export const FEED_NAME = { airbnb: 'Airbnb', booking: 'Booking.com', agoda: 'Agoda', tripcom: 'Trip.com', expedia: 'Expedia', channex: 'Channel manager', email: 'Email', google: 'Google' };
 
 /* ---------- phone numbers ---------- */
 
