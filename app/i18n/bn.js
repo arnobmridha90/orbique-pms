@@ -8622,5 +8622,17 @@ O.I18N.bn = {
 "Reset order": "ক্রম রিসেট করুন",
 "Drag to move this card": "এই কার্ডটি সরাতে টেনে আনুন",
 "Move this card (arrow keys up and down)": "এই কার্ডটি সরান (উপর ও নিচের তীর কী)",
-"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে"
+"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে",
+"Clear alerts": "সতর্কতা মুছুন",
+"{n} older alerts not shown": "আরও {n}টি পুরনো সতর্কতা দেখানো হয়নি",
+"No alerts yet. New bookings, cancellations, guest messages, Team chat and new tasks show here when they ring.": "এখনো কোনো সতর্কতা নেই। নতুন বুকিং, বাতিল, অতিথির বার্তা, টিম চ্যাট ও নতুন কাজ বাজলে এখানে দেখা যাবে।",
+"Needs you": "আপনার মনোযোগ দরকার",
+"{n} new messages from {guest}": "{guest}-এর কাছ থেকে {n}টি নতুন বার্তা",
+"New message from {guest}": "{guest}-এর কাছ থেকে নতুন বার্তা",
+"New task for you: {task}": "আপনার জন্য নতুন কাজ: {task}",
+"due {when}": "শেষ সময় {when}",
+"Team chat: {chat}": "টিম চ্যাট: {chat}",
+"New booking: {guest}": "নতুন বুকিং: {guest}",
+"Booking cancelled: {guest}": "বুকিং বাতিল: {guest}",
+"New dates: {guest}": "নতুন তারিখ: {guest}"
 };

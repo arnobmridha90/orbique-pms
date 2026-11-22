@@ -8622,5 +8622,17 @@ O.I18N.zh = {
 "Reset order": "重設順序",
 "Drag to move this card": "拖曳以移動此卡片",
 "Move this card (arrow keys up and down)": "移動此卡片（上下方向鍵）",
-"Cards are back in the default order": "卡片已恢復為預設順序"
+"Cards are back in the default order": "卡片已恢復為預設順序",
+"Clear alerts": "清除提醒",
+"{n} older alerts not shown": "另有 {n} 則較舊的提醒未顯示",
+"No alerts yet. New bookings, cancellations, guest messages, Team chat and new tasks show here when they ring.": "尚無提醒。新訂單、取消、房客訊息、團隊聊天和新任務響起時會顯示在這裡。",
+"Needs you": "需要你處理",
+"{n} new messages from {guest}": "{guest} 傳來 {n} 則新訊息",
+"New message from {guest}": "{guest} 傳來新訊息",
+"New task for you: {task}": "你的新任務：{task}",
+"due {when}": "到期 {when}",
+"Team chat: {chat}": "團隊聊天：{chat}",
+"New booking: {guest}": "新訂單：{guest}",
+"Booking cancelled: {guest}": "訂單已取消：{guest}",
+"New dates: {guest}": "新日期：{guest}"
 };

@@ -515,6 +515,8 @@ button.tc-person{width:100%;background:none;border:none;text-align:left;color:va
     if (!mine && !open) c.unread = (c.unread || 0) + 1;
     TC.sortChats(S.chats);
     if (!mine && !c.muted && O.alertSound) O.alertSound.play('team');
+    /* the bell's history (O.alertLog, app/core.js): an open chat is being read, so only the others */
+    if (!mine && !c.muted && !open && O.alertLog) { var pt = TC.pushText(c, nameOf(m.sender), m); O.alertLog.add({ key: 'team:' + m.id, type: 'team', k: 'Team chat: {chat}', v: { chat: pt.title }, s: pt.body, go: ['team', { chatId: m.chatId }] }); }
     if (!mine && open) TCX.markRead(m.chatId).catch(function () {});
     if (!mine && !open && O.state.page !== 'team') U.toast(TC.pushText(c, nameOf(m.sender), m).title + ': ' + TC.pushText(c, nameOf(m.sender), m).body);
     changed({ thread: m.chatId, list: true });

@@ -8622,5 +8622,17 @@ O.I18N.ms = {
 "Reset order": "Set semula susunan",
 "Drag to move this card": "Seret untuk mengalihkan kad ini",
 "Move this card (arrow keys up and down)": "Alihkan kad ini (kekunci anak panah atas dan bawah)",
-"Cards are back in the default order": "Kad kembali ke susunan asal"
+"Cards are back in the default order": "Kad kembali ke susunan asal",
+"Clear alerts": "Kosongkan amaran",
+"{n} older alerts not shown": "{n} amaran lama tidak ditunjukkan",
+"No alerts yet. New bookings, cancellations, guest messages, Team chat and new tasks show here when they ring.": "Belum ada amaran. Tempahan baharu, pembatalan, mesej tetamu, Sembang pasukan dan tugasan baharu dipaparkan di sini apabila berbunyi.",
+"Needs you": "Perlukan anda",
+"{n} new messages from {guest}": "{n} mesej baharu daripada {guest}",
+"New message from {guest}": "Mesej baharu daripada {guest}",
+"New task for you: {task}": "Tugasan baharu untuk anda: {task}",
+"due {when}": "perlu siap {when}",
+"Team chat: {chat}": "Sembang pasukan: {chat}",
+"New booking: {guest}": "Tempahan baharu: {guest}",
+"Booking cancelled: {guest}": "Tempahan dibatalkan: {guest}",
+"New dates: {guest}": "Tarikh baharu: {guest}"
 };

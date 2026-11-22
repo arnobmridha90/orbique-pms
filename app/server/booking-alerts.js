@@ -40,20 +40,32 @@
      (O.alertSound, app/core.js). Only live changes from the server that the team did not make (r.by), and only the
      kinds switched on in these settings. */
   O.on('remote-rows', function (rows) {
-    var s = settings(); if (!s.on || !O.alertSound) return;
+    var s = settings();
     var have = {}; (D.bookings || []).forEach(function (b) { have[String(b.id)] = b; });
     var gone = function (st) { return /^(cancelled|deleted)$/.test(String(st || '')); };
     var fresh = false, change = false;
     rows.forEach(function (r) {
       if (r.coll !== 'bookings' || r.deleted || !r.data || r.by) return;
-      var old = have[String(r.id)];
-      if (!old) { if (!gone(r.data.status)) fresh = true; return; }
-      if (gone(r.data.status) && !gone(old.status)) { if (s.kinds.cancelled) change = true; }
-      else if (!gone(r.data.status) && (r.data.checkIn !== old.checkIn || r.data.checkOut !== old.checkOut) && s.kinds.changed) change = true;
+      var old = have[String(r.id)], b = r.data;
+      if (!old) { if (!gone(b.status)) { fresh = true; logBooking('new', r.id, b); } return; }
+      if (gone(b.status) && !gone(old.status)) { if (s.kinds.cancelled) change = true; logBooking('cancelled', r.id, b); }
+      else if (!gone(b.status) && (b.checkIn !== old.checkIn || b.checkOut !== old.checkOut)) { if (s.kinds.changed) change = true; logBooking('changed', r.id, b, old); }
     });
+    if (!s.on || !O.alertSound) return;
     if (fresh && s.kinds.new) O.alertSound.play('booking');
     else if (change) O.alertSound.play('change');
   });
+  /* the bell's history (O.alertLog, app/core.js): one line per booking change, also when its sound is switched off.
+     The key matches the phone alert's (app/native/bridge.js), so the same booking shows once. */
+  var LOG = { new: ['booking', 'New booking: {guest}'], cancelled: ['change', 'Booking cancelled: {guest}'], changed: ['change', 'New dates: {guest}'] };
+  function logBooking(kind, id, b, old) {
+    if (!O.alertLog) return;
+    var p = D.propById[b.propertyId], ch = b.channel ? U.platName(b.channel) : '';
+    var dates = b.checkIn && b.checkOut ? O.d.fmtRange(b.checkIn, b.checkOut) : '';
+    if (kind === 'changed' && old && old.checkIn && old.checkOut) dates = O.d.fmtRange(old.checkIn, old.checkOut) + ' → ' + dates;
+    O.alertLog.add({ key: 'bk:' + id + ':' + kind, type: LOG[kind][0], k: LOG[kind][1], v: { guest: (b.guest && b.guest.name) || 'Guest' },
+      s: [p ? p.short : '', dates, ch].filter(Boolean).join(' · '), go: { booking: id }, toast: true });
+  }
 
   /* ---------- the card ---------- */
   function line(icon, name, ready, who, why) {
