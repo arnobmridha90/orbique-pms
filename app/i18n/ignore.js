@@ -798,5 +798,7 @@ O.I18N_IGNORE = [
   "Wonderful guest! {name} was polite, tidy and followed every house rule. Thank you for choosing us, and we hope to see you again soon.",
   "{name} made hosting easy: great communication, a tidy apartment at check-out and full respect for the house rules. Recommended to every host.",
   "It was a real pleasure to have {name} stay with us. Considerate, friendly and clean. Our doors are always open for them!",
-  "inbox translate"
+  "inbox translate",
+  /* booking site names (app/pages/calendar.js, rate type groups) */
+  "Vrbo", "Traveloka", "Hostelworld", "Ctrip"
 ];

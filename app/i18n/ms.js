@@ -8625,5 +8625,12 @@ O.I18N.ms = {
 "Cards are back in the default order": "Kad kembali ke susunan asal",
 "Team language for new guest messages": "Bahasa pasukan untuk mesej tetamu baharu",
 "Translate guest messages automatically": "Terjemah mesej tetamu secara automatik",
-"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "Semua orang melihat mesej tetamu dalam bahasa aplikasi yang mereka pilih dalam Tetapan. Bahasa di atas digunakan apabila mesej tiba dan apabila bahasa aplikasi seseorang belum ditetapkan."
+"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "Semua orang melihat mesej tetamu dalam bahasa aplikasi yang mereka pilih dalam Tetapan. Bahasa di atas digunakan apabila mesej tiba dan apabila bahasa aplikasi seseorang belum ditetapkan.",
+"Flexible": "Fleksibel",
+"Weekly stay (7+ nights)": "Penginapan mingguan (7+ malam)",
+"Collapse every rate type group": "Lipat semua kumpulan jenis kadar",
+"Expand every rate type group": "Kembangkan semua kumpulan jenis kadar",
+"Show this group": "Tunjukkan kumpulan ini",
+"Hide this group": "Sembunyikan kumpulan ini",
+"{n} plan": "{n} pelan"
 };

@@ -8625,5 +8625,12 @@ O.I18N.zh = {
 "Cards are back in the default order": "卡片已恢復為預設順序",
 "Team language for new guest messages": "新客人消息的团队语言",
 "Translate guest messages automatically": "自动翻译客人消息",
-"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "每个人都会以自己在设置中选择的应用语言查看客人消息。上方的语言用于消息到达时，以及某人尚未设置应用语言时。"
+"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "每个人都会以自己在设置中选择的应用语言查看客人消息。上方的语言用于消息到达时，以及某人尚未设置应用语言时。",
+"Flexible": "彈性",
+"Weekly stay (7+ nights)": "週租（7 晚以上）",
+"Collapse every rate type group": "收合所有房價類型群組",
+"Expand every rate type group": "展開所有房價類型群組",
+"Show this group": "顯示此群組",
+"Hide this group": "隱藏此群組",
+"{n} plan": "{n} 個方案"
 };

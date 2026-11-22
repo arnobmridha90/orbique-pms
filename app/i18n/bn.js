@@ -8625,5 +8625,12 @@ O.I18N.bn = {
 "Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে",
 "Team language for new guest messages": "নতুন অতিথি বার্তার জন্য টিমের ভাষা",
 "Translate guest messages automatically": "অতিথির বার্তা স্বয়ংক্রিয়ভাবে অনুবাদ করুন",
-"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "সবাই অতিথির বার্তা দেখেন সেটিংসে বেছে নেওয়া অ্যাপের ভাষায়। উপরের ভাষাটি ব্যবহার হয় বার্তা আসার সময় এবং যখন কারও অ্যাপের ভাষা ঠিক করা নেই।"
+"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "সবাই অতিথির বার্তা দেখেন সেটিংসে বেছে নেওয়া অ্যাপের ভাষায়। উপরের ভাষাটি ব্যবহার হয় বার্তা আসার সময় এবং যখন কারও অ্যাপের ভাষা ঠিক করা নেই।",
+"Flexible": "ফ্লেক্সিবল",
+"Weekly stay (7+ nights)": "সাপ্তাহিক থাকা (৭+ রাত)",
+"Collapse every rate type group": "সব রেট টাইপ গ্রুপ গুটিয়ে নিন",
+"Expand every rate type group": "সব রেট টাইপ গ্রুপ খুলুন",
+"Show this group": "এই গ্রুপ দেখান",
+"Hide this group": "এই গ্রুপ লুকান",
+"{n} plan": "{n}টি প্ল্যান"
 };
