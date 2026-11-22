@@ -8622,5 +8622,8 @@ O.I18N.zh = {
 "Reset order": "重設順序",
 "Drag to move this card": "拖曳以移動此卡片",
 "Move this card (arrow keys up and down)": "移動此卡片（上下方向鍵）",
-"Cards are back in the default order": "卡片已恢復為預設順序"
+"Cards are back in the default order": "卡片已恢復為預設順序",
+"Team language for new guest messages": "新客人消息的团队语言",
+"Translate guest messages automatically": "自动翻译客人消息",
+"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "每个人都会以自己在设置中选择的应用语言查看客人消息。上方的语言用于消息到达时，以及某人尚未设置应用语言时。"
 };

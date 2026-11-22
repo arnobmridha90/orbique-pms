@@ -8622,5 +8622,8 @@ O.I18N.ms = {
 "Reset order": "Set semula susunan",
 "Drag to move this card": "Seret untuk mengalihkan kad ini",
 "Move this card (arrow keys up and down)": "Alihkan kad ini (kekunci anak panah atas dan bawah)",
-"Cards are back in the default order": "Kad kembali ke susunan asal"
+"Cards are back in the default order": "Kad kembali ke susunan asal",
+"Team language for new guest messages": "Bahasa pasukan untuk mesej tetamu baharu",
+"Translate guest messages automatically": "Terjemah mesej tetamu secara automatik",
+"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "Semua orang melihat mesej tetamu dalam bahasa aplikasi yang mereka pilih dalam Tetapan. Bahasa di atas digunakan apabila mesej tiba dan apabila bahasa aplikasi seseorang belum ditetapkan."
 };

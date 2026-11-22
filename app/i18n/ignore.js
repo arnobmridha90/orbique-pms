@@ -797,5 +797,6 @@ O.I18N_IGNORE = [
   "{name} was an outstanding guest who treated our suite with care. Clear communication and no issues at all. We would gladly welcome them back.",
   "Wonderful guest! {name} was polite, tidy and followed every house rule. Thank you for choosing us, and we hope to see you again soon.",
   "{name} made hosting easy: great communication, a tidy apartment at check-out and full respect for the house rules. Recommended to every host.",
-  "It was a real pleasure to have {name} stay with us. Considerate, friendly and clean. Our doors are always open for them!"
+  "It was a real pleasure to have {name} stay with us. Considerate, friendly and clean. Our doors are always open for them!",
+  "inbox translate"
 ];

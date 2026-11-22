@@ -8622,5 +8622,8 @@ O.I18N.bn = {
 "Reset order": "ক্রম রিসেট করুন",
 "Drag to move this card": "এই কার্ডটি সরাতে টেনে আনুন",
 "Move this card (arrow keys up and down)": "এই কার্ডটি সরান (উপর ও নিচের তীর কী)",
-"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে"
+"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে",
+"Team language for new guest messages": "নতুন অতিথি বার্তার জন্য টিমের ভাষা",
+"Translate guest messages automatically": "অতিথির বার্তা স্বয়ংক্রিয়ভাবে অনুবাদ করুন",
+"Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone's app language is not set.": "সবাই অতিথির বার্তা দেখেন সেটিংসে বেছে নেওয়া অ্যাপের ভাষায়। উপরের ভাষাটি ব্যবহার হয় বার্তা আসার সময় এবং যখন কারও অ্যাপের ভাষা ঠিক করা নেই।"
 };
