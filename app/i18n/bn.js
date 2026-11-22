@@ -8622,5 +8622,12 @@ O.I18N.bn = {
 "Reset order": "ক্রম রিসেট করুন",
 "Drag to move this card": "এই কার্ডটি সরাতে টেনে আনুন",
 "Move this card (arrow keys up and down)": "এই কার্ডটি সরান (উপর ও নিচের তীর কী)",
-"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে"
+"Cards are back in the default order": "কার্ডগুলো আবার মূল ক্রমে ফিরে এসেছে",
+"Flexible": "ফ্লেক্সিবল",
+"Weekly stay (7+ nights)": "সাপ্তাহিক থাকা (৭+ রাত)",
+"Collapse every rate type group": "সব রেট টাইপ গ্রুপ গুটিয়ে নিন",
+"Expand every rate type group": "সব রেট টাইপ গ্রুপ খুলুন",
+"Show this group": "এই গ্রুপ দেখান",
+"Hide this group": "এই গ্রুপ লুকান",
+"{n} plan": "{n}টি প্ল্যান"
 };
