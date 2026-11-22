@@ -8622,5 +8622,12 @@ O.I18N.zh = {
 "Reset order": "重設順序",
 "Drag to move this card": "拖曳以移動此卡片",
 "Move this card (arrow keys up and down)": "移動此卡片（上下方向鍵）",
-"Cards are back in the default order": "卡片已恢復為預設順序"
+"Cards are back in the default order": "卡片已恢復為預設順序",
+"Flexible": "彈性",
+"Weekly stay (7+ nights)": "週租（7 晚以上）",
+"Collapse every rate type group": "收合所有房價類型群組",
+"Expand every rate type group": "展開所有房價類型群組",
+"Show this group": "顯示此群組",
+"Hide this group": "隱藏此群組",
+"{n} plan": "{n} 個方案"
 };

@@ -24,7 +24,7 @@
 
   /* from + span: the days on the page; pos: scroll position in days from `from` (survives a resize) + px down;
      start: the day to put at the left edge the next time the timeline is laid out afresh */
-  var st = { start: null, from: null, span: 0, pos: null, prop: '', flash: null, view: null, tray: [], anchor: null };
+  var st = { start: null, from: null, span: 0, pos: null, prop: '', flash: null, view: null, tray: [], anchor: null, shut: null };
 
   O.css('calendar', `
 .pg-calendar{--pc:210px;}
@@ -169,6 +169,20 @@
 .pg-calendar .rr-c.sel{border-color:var(--brand-strong); box-shadow:inset 0 0 0 1px var(--brand-strong);}
 .pg-calendar .rr-c.pend{outline:2px dashed var(--accent, #F59E0B); outline-offset:-2px;}
 .pg-calendar .cal-row.rr-row .cal-prop .pl{font-size:10.5px;}
+.pg-calendar .cal-row.rr-row.in .cal-prop.sub{padding-left:34px;}
+.pg-calendar .cal-row.rr-gh, .pg-calendar .cal-row.rr-gh .cal-prop{background:var(--surface-2);}
+.pg-calendar .cal-row.rr-gh .cal-prop{cursor:pointer;}
+.pg-calendar .cal-row.rr-gh .cal-prop .pn{display:flex; align-items:center; gap:4px; font-size:12px;}
+.pg-calendar .cal-row.rr-gh .cal-prop .pn > span{overflow:hidden; text-overflow:ellipsis;}
+.pg-calendar .cal-row.rr-gh .cal-prop .pn svg, .pg-calendar .rr-lg svg{width:14px; height:14px; flex:none; transition:transform .15s ease;}
+.pg-calendar .cal-row.rr-gh.shut .cal-prop .pn svg, .pg-calendar .rr-lg.shut svg{transform:rotate(-90deg);}
+.pg-calendar .cal-row.rr-gh .cal-prop .pl{font-size:10.5px; padding-left:18px;}
+.pg-calendar .cal-corner .rr-allb{align-self:flex-start; margin:0 0 4px -6px; padding:3px 6px; font-size:11px; min-height:0;}
+.pg-calendar .cal-corner .rr-allb svg{width:13px; height:13px;}
+.pg-calendar .rr-all{display:flex; justify-content:flex-end; padding:6px 8px; border-bottom:1px solid var(--border);}
+.pg-calendar .rr-lg{display:flex; align-items:center; gap:6px; width:100%; min-height:44px; padding:8px 12px; border:none; border-top:1px solid var(--border-strong); background:var(--surface-2); font:inherit; font-size:13px; font-weight:800; text-align:left; color:var(--text);}
+.pg-calendar .rr-lg span:first-of-type{flex:1; min-width:0;}
+.pg-calendar .rr-lg .n{font-size:11.5px; font-weight:700; color:var(--muted);}
 .pg-calendar .rr-tray{margin-bottom:12px;}
 .pg-calendar .rr-tray .card-head{padding:10px 14px;}
 .pg-calendar .rr-tray ul{list-style:none; margin:0; padding:0;}
@@ -180,6 +194,7 @@
 .pg-calendar .rr-list{display:flex; flex-direction:column;}
 .pg-calendar .rr-lh{padding:10px 12px 6px; font-size:12px; font-weight:800; color:var(--muted); background:var(--surface-2); border-top:1px solid var(--border);}
 .pg-calendar .rr-lh:first-child{border-top:none;}
+.pg-calendar .rr-lh.in{padding-left:30px; background:none;}
 .pg-calendar .rr-li{display:grid; grid-template-columns:96px 1fr auto; gap:8px; align-items:center; width:100%; background:none; border:none; border-top:1px solid var(--border); padding:9px 12px; text-align:left; font:inherit; font-size:13px; min-height:44px; color:var(--text);}
 .pg-calendar .rr-li .bd{display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; font-size:10.5px; font-weight:800; color:var(--muted);}
 .pg-calendar .rr-li .bd i{font-style:normal; background:var(--surface-2); border-radius:4px; padding:1px 4px;}
@@ -517,6 +532,46 @@
       return CH().plansOf(t.id).length > 0;
     });
   }
+  /* Rates & restrictions groups the plans of a unit type by rate type (Flexible, Non-refundable, Weekly stay, ...), each
+     booking site's version listed after your own: "Weekly stay (7+ nights)", "Trip.com Weekly (7+ nights)", "Agoda Weekly
+     (7+ nights)". The site is read from the start of the plan's name; the rate type from the rest (non-refundable, weekly or
+     a 7+ night minimum stay, else flexible; any other name is a group of its own). Display only: nothing about a plan changes. */
+  var RR_SITES = ['Booking.com', 'Trip.com', 'Agoda', 'Expedia', 'Airbnb', 'Vrbo', 'Hotels.com', 'Google', 'Traveloka', 'Tiket.com', 'Hostelworld', 'Ctrip'];
+  var RR_KINDS = { flex: 'Flexible', nref: 'Non-refundable', week: 'Weekly stay (7+ nights)' };
+  function rrSite(name) {
+    var n = String(name || '').toLowerCase();
+    for (var i = 0; i < RR_SITES.length; i++) if (n.indexOf(RR_SITES[i].toLowerCase()) === 0) return RR_SITES[i];
+    return '';
+  }
+  function rrKind(p) {
+    var site = rrSite(p.name), rest = String(p.name || '').slice(site.length).replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (/non[\s-]?refund|\bnref\b/.test(rest)) return 'nref';
+    if (/week|7\s*\+/.test(rest) || (+p.minStay || 0) >= 7) return 'week';
+    if (!rest || p.primary || /flex|best available|standard|room only/.test(rest)) return 'flex';
+    return 'x:' + rest;
+  }
+  /* [{ key, name, plans }] in the order Flexible, Non-refundable, Weekly, then the others as they first appear */
+  function planGroups(typeId) {
+    var by = {}, order = [];
+    CH().plansOf(typeId).forEach(function (p) {
+      var k = rrKind(p);
+      if (!by[k]) { by[k] = { key: k, name: '', plans: [] }; order.push(k); }
+      by[k].plans.push(p);
+    });
+    var rank = { flex: 0, nref: 1, week: 2 };
+    order.sort(function (a, b) { return (a in rank ? rank[a] : 3) - (b in rank ? rank[b] : 3) || 0; });
+    return order.map(function (k) {
+      var g = by[k];
+      /* your own plan first (the main one before the rest), then each site's in the order they were made */
+      g.plans = g.plans.map(function (p, i) { return { p: p, i: i }; }).sort(function (a, b) {
+        return (rrSite(a.p.name) ? 1 : 0) - (rrSite(b.p.name) ? 1 : 0) || (b.p.primary ? 1 : 0) - (a.p.primary ? 1 : 0) || a.i - b.i;
+      }).map(function (x) { return x.p; });
+      var own = g.plans.filter(function (p) { return !rrSite(p.name); })[0];
+      g.name = own ? own.name : RR_KINDS[k] || g.plans[0].name.slice(rrSite(g.plans[0].name).length).trim() || g.plans[0].name;
+      return g;
+    });
+  }
+  function rrShut() { if (!st.shut) st.shut = O.store.get('calendar.rrShut', {}) || {}; return st.shut; }
   function allPlans() { var out = []; liveTypes().forEach(function (t) { CH().plansOf(t.id).forEach(function (p) { out.push({ t: t, p: p }); }); }); return out; }
   function setText(s, cur) {
     var out = [];
@@ -877,22 +932,33 @@
           return t.name + ' · ' + p.name + ', ' + d.dowName(iso) + ' ' + d.fmtY(iso) + ': ' + (x.stop ? 'stop sell, ' : '') + C.currency(t.buildingId) + ' ' + r2(x.rate) + (x.manual ? ' (set by hand)' : '') +
             x.badges.map(function (z) { return ', ' + z[2]; }).join('') + (x.pend ? '. A change is waiting in the tray.' : '') + (canEditR ? '' : '.');
         }
+        /* plans grouped by rate type; when no type has two plans of one kind the list stays flat, as before */
+        var groups = {}, shut = rrShut(), grouped = false, anyOpen = false;
+        types.forEach(function (t) { groups[t.id] = planGroups(t.id); groups[t.id].forEach(function (g) { if (g.plans.length > 1) grouped = true; }); });
+        if (grouped) types.forEach(function (t) { groups[t.id].forEach(function (g) { if (!shut[t.id + '|' + g.key]) anyOpen = true; }); });
+        var allBtn = '<button type="button" class="btn btn-ghost btn-sm rr-allb" data-rr-all="' + (anyOpen ? 'shut' : 'open') + '" title="' + esc(anyOpen ? 'Collapse every rate type group' : 'Expand every rate type group') + '">' + O.icon(anyOpen ? 'up' : 'down') + esc(anyOpen ? 'Collapse all' : 'Expand all') + '</button>';
         function badges(x) { return x.badges.map(function (z) { return '<i' + (z[0] ? ' class="' + z[0] + '"' : '') + '>' + esc(z[1]) + '</i>'; }).join(''); }
         if (phone) { /* a list of the days in view (no sideways scrolling: the arrows and Today page through it) */
-          var html = '<div class="rr-list">';
+          var html = '<div class="rr-list">' + (grouped ? '<div class="rr-all">' + allBtn + '</div>' : '');
           types.forEach(function (t) {
-            C.plansOf(t.id).forEach(function (p) {
-              html += '<div class="rr-lh">' + esc(t.name + ' · ' + p.name) + '</div>';
+            var gs = groups[t.id];
+            gs.forEach(function (g) {
+              var gk = t.id + '|' + g.key, closed = grouped && !!shut[gk];
+              if (grouped) html += '<button type="button" class="rr-lg' + (closed ? ' shut' : '') + '" data-rr-grp="' + esc(gk) + '" aria-expanded="' + !closed + '">' + O.icon('chevron') + '<span>' + esc(t.name + ' · ' + g.name) + '</span><span class="n">' + esc(fmt.plural(g.plans.length, 'plan')) + '</span></button>';
+              if (closed) return;
+              g.plans.forEach(function (p) {
+              html += '<div class="rr-lh' + (grouped ? ' in' : '') + '">' + esc(grouped ? p.name : t.name + ' · ' + p.name) + '</div>';
               d.range(leftDay(), d.add(leftDay(), G.vis - 1)).forEach(function (iso) {
                 var x = info(p, iso);
                 html += '<button type="button" class="rr-li' + (x.stop ? ' stop' : '') + (x.pend ? ' pend' : '') + '" data-rr="' + esc(p.id) + '" data-date="' + iso + '"' + (canEditR && iso >= T ? '' : ' disabled') + ' aria-label="' + esc(tip(t, p, iso, x)) + '"><span>' + esc(d.dowName(iso) + ' ' + d.fmt(iso)) + '</span><span class="v">' + (x.stop ? 'Stop sell · ' : '') + esc(C.currency(t.buildingId) + ' ' + r2(x.rate)) + '</span><span class="bd">' + badges(x) + '</span></button>';
+              });
               });
             });
           });
           scroll.innerHTML = html + '</div>';
           return;
         }
-        var dw = Math.max(58, Math.floor((cw - pc) / G.vis * 100) / 100), lw = dw * days, rh = 44, gh = 32;
+        var dw = Math.max(58, Math.floor((cw - pc) / G.vis * 100) / 100), lw = dw * days, rh = 44, gh = 32, ghh = 34;
         G.dw = dw; G.pc = pc;
         var months = '', dayCells = '', seg = null, cols = '';
         for (var i = 0; i < days; i++) {
@@ -914,7 +980,12 @@
               var over = n.raw < 0;
               return '<span class="cal-av' + (over ? ' over' : n.availability === 0 ? ' full' : '') + '" style="left:' + (j * dw).toFixed(2) + 'px;width:' + dw.toFixed(2) + 'px" title="' + esc(O.tpl('{date}: {n} of {total} free', { date: d.fmt(n.date), n: n.availability, total: n.units })) + '">' + esc(over ? O.tr('Oversold') : O.tpl('{n} of {total}', { n: n.availability, total: n.units })) + '</span>';
             }).join('') + '</div></div>';
-          C.plansOf(t.id).forEach(function (p) {
+          groups[t.id].forEach(function (g) {
+            var gk = t.id + '|' + g.key, closed = grouped && !!shut[gk];
+            if (grouped) rows += '<div class="cal-row rr-gh' + (closed ? ' shut' : '') + '" style="height:' + ghh + 'px"><button type="button" class="cal-prop sub" data-rr-grp="' + esc(gk) + '" aria-expanded="' + !closed + '" title="' + esc(closed ? 'Show this group' : 'Hide this group') + '"><span class="pn">' + O.icon('chevron') + '<span>' + esc(g.name) + '</span></span><span class="pl">' + esc(fmt.plural(g.plans.length, 'plan')) + '</span></button>' +
+              '<div class="rr-lane" style="width:' + lw.toFixed(2) + 'px"></div></div>';
+            if (closed) return;
+            g.plans.forEach(function (p) {
             var cells = '';
             for (var k = 0; k < days; k++) {
               var iso2 = d.add(from, k), x = info(p, iso2), past = iso2 < T;
@@ -922,12 +993,13 @@
               cells += '<button type="button" class="rr-c' + (x.stop ? ' stop' : '') + (x.manual ? ' man' : '') + (x.pend ? ' pend' : '') + (sel ? ' sel' : '') + '" data-rr="' + esc(p.id) + '" data-date="' + iso2 + '" style="left:' + (k * dw + 2).toFixed(2) + 'px;width:' + (dw - 4).toFixed(2) + 'px"' + (canEditR && !past ? '' : ' disabled') + ' title="' + esc(tip(t, p, iso2, x)) + '">' +
                 '<span class="v">' + esc(r2(x.rate)) + '</span><span class="bd">' + (x.stop ? '<i class="w">Stop</i>' : '') + badges(x) + '</span></button>';
             }
-            rows += '<div class="cal-row rr-row" style="height:' + rh + 'px"><div class="cal-prop sub" title="' + esc(p.name + (p.primary ? ': main plan, follows Pricing' : '')) + '"><span class="pn">' + esc(p.name) + '</span><span class="pl">' + esc((p.primary ? 'Main · ' : '') + C.currency(t.buildingId)) + '</span></div>' +
+            rows += '<div class="cal-row rr-row' + (grouped ? ' in' : '') + '" style="height:' + rh + 'px"><div class="cal-prop sub" title="' + esc(p.name + (p.primary ? ': main plan, follows Pricing' : '')) + '"><span class="pn">' + esc(p.name) + '</span><span class="pl">' + esc((p.primary ? 'Main · ' : '') + C.currency(t.buildingId)) + '</span></div>' +
               '<div class="rr-lane" style="width:' + lw.toFixed(2) + 'px">' + cells + '</div></div>';
+            });
           });
         });
         scroll.innerHTML = '<div class="cal-track" style="width:' + (pc + lw).toFixed(2) + 'px">' +
-          '<div class="cal-hd"><div class="cal-corner"><span class="cnt">' + fmt.plural(types.length, 'unit type') + '</span></div><div class="cal-days" style="width:' + lw.toFixed(2) + 'px">' + months + dayCells + '</div></div>' +
+          '<div class="cal-hd"><div class="cal-corner">' + (grouped ? allBtn : '') + '<span class="cnt">' + fmt.plural(types.length, 'unit type') + '</span></div><div class="cal-days" style="width:' + lw.toFixed(2) + 'px">' + months + dayCells + '</div></div>' +
           '<div class="cal-body"><div class="cal-cols" style="left:' + pc + 'px;width:' + lw.toFixed(2) + 'px">' + cols + '</div>' + rows + '</div></div>';
         scroll.scrollLeft = st.pos.day * dw; scroll.scrollTop = st.pos.t;
       }
@@ -996,6 +1068,15 @@
         var t = e.target.closest('button');
         if (t && wrap.contains(t)) {
           if (t.dataset.view) { st.view = t.dataset.view; O.store.set('calendar.view', st.view); st.anchor = null; ctx.rerender(); return; }
+          if (t.dataset.rrGrp) {
+            var sh = rrShut(); if (sh[t.dataset.rrGrp]) delete sh[t.dataset.rrGrp]; else sh[t.dataset.rrGrp] = 1;
+            O.store.set('calendar.rrShut', sh); st.pos.t = scroll.scrollTop; ctx.rerender(); return;
+          }
+          if (t.dataset.rrAll) {
+            var sa = rrShut(), close = t.dataset.rrAll === 'shut';
+            rateTypes().forEach(function (ty) { planGroups(ty.id).forEach(function (g) { var k = ty.id + '|' + g.key; if (close) sa[k] = 1; else delete sa[k]; }); });
+            O.store.set('calendar.rrShut', sa); st.pos.t = scroll.scrollTop; ctx.rerender(); return;
+          }
           if (t.dataset.rr) {
             var rp = t.dataset.rr, rd = t.dataset.date;
             if (e.shiftKey && st.anchor && st.anchor.planId === rp && st.anchor.date !== rd) {

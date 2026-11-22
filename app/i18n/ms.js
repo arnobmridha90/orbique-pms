@@ -8622,5 +8622,12 @@ O.I18N.ms = {
 "Reset order": "Set semula susunan",
 "Drag to move this card": "Seret untuk mengalihkan kad ini",
 "Move this card (arrow keys up and down)": "Alihkan kad ini (kekunci anak panah atas dan bawah)",
-"Cards are back in the default order": "Kad kembali ke susunan asal"
+"Cards are back in the default order": "Kad kembali ke susunan asal",
+"Flexible": "Fleksibel",
+"Weekly stay (7+ nights)": "Penginapan mingguan (7+ malam)",
+"Collapse every rate type group": "Lipat semua kumpulan jenis kadar",
+"Expand every rate type group": "Kembangkan semua kumpulan jenis kadar",
+"Show this group": "Tunjukkan kumpulan ini",
+"Hide this group": "Sembunyikan kumpulan ini",
+"{n} plan": "{n} pelan"
 };
