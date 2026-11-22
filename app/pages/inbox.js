@@ -16,7 +16,7 @@
    masked otherwise), guestapp.doorCodes (door codes in quick replies and the lock button), invoices.send. Times use D.NOW.
    Live (server mode, api/messages.js): guest messages from WhatsApp arrive in the booking's chat (booking-site chat through
    Channex is built but switched off: CHANNEX_MESSAGES); replies go back the way the guest wrote, WhatsApp only within 24 hours
-   of the guest's last WhatsApp message. Guest messages show in the team's language (inboxSettings.lang) with the original a tap
+   of the guest's last WhatsApp message. Guest messages show in the reader's app language (O.state.lang; else inboxSettings.lang) with the original a tap
    away; "Translate" on a reply shows it in the guest's language to check before it goes. Chats from numbers or booking-site
    threads that match no booking wait at the top of the list to be linked. Photos, files and voice notes still go out only as
    internal notes; guests' WhatsApp files open through the server. Agoda's guest emails show only what the guest wrote
@@ -536,7 +536,7 @@
   var VIA = { whatsapp: 'WhatsApp', booking: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', channex: 'the booking site', guestapp: 'Guest app', email: 'Email', agoda: 'Agoda', tripcom: 'Trip.com' };
   var FEED_PLAT = { airbnb: 'airbnb', booking: 'booking', agoda: 'agoda', tripcom: 'ctrip', expedia: 'expedia' };
   var DAY_MS = 24 * 3600 * 1000;
-  var live = { org: null, cfg: null, loading: false, busy: {}, media: {}, failed: {}, via: {}, xl: {}, origOpen: {} };
+  var live = { org: null, cfg: null, loading: false, busy: {}, media: {}, failed: {}, via: {}, xl: {}, origOpen: {}, xlTried: {} };
   function server() { return !!(O.auth && O.auth.enabled && O.auth.enabled() && O.sync.adapter && O.sync.adapter.name === 'server' && O.auth.orgId && O.auth.orgId() && O.auth.inbox); }
   function liveCfg() { return server() && live.org === O.auth.orgId() ? live.cfg : null; }
   /* live sending is on when the workspace has WhatsApp connected or booking-site messages switched on (and is not a demo) */
@@ -581,7 +581,18 @@
     for (var i = c.messages.length - 1; i >= 0; i--) if (c.messages[i].from === 'guest' && c.messages[i].lang) return c.messages[i].lang;
     return '';
   }
-  function myLang() { var c = liveCfg(); return (c && c.lang) || 'en'; }
+  /* the reader's language: their own app language (Settings), else the team's inbox language */
+  function myLang() { var l = String((O.state && O.state.lang) || '').toLowerCase(); if (/^[a-z]{2}$/.test(l)) return l; var c = liveCfg(); return (c && c.lang) || 'en'; }
+  /* a guest message in the reader's language: the text, '' when it is already in that language, null when not translated yet */
+  function trText(m) {
+    var L = myLang();
+    if (m.tr && m.tr.text && m.tr.to === L) return m.tr.text;
+    if (m.trx && typeof m.trx[L] === 'string') return m.trx[L];
+    if (m.lang && m.lang === L) return '';
+    return null;
+  }
+  function shownText(m, orig) { if (m.from !== 'guest') return orig; var t = trText(m); return t ? t : orig; }
+  function needsXl(m) { return m.from === 'guest' && !!m.xid && m.type !== 'voice' && !m.reaction && !!String(m.caption || m.text || '').trim() && trText(m) === null; }
   /* apply a conversation the server returned (as if it came over realtime, so it is not saved back) */
   function applyConv(conv) {
     if (!conv || !conv.data) return;
@@ -1052,7 +1063,7 @@
         : '<span class="asg"><span>Handled by</span><span class="who-plain">' + esc((staff(c.assigneeId) || { name: 'Nobody yet' }).name) + '</span></span>') + '</div>';
   }
   function xlHTML(m, key) {
-    if (m.from === 'guest' && m.tr && m.tr.text) {
+    if (m.from === 'guest' && trText(m)) {
       var open = live.origOpen[key];
       return '<span class="xl">Translated from ' + esc(langName(m.lang) || 'the guest\'s language') + ' · <button type="button" data-orig="' + key + '">' + (open ? 'Hide original' : 'Show original') + '</button>' + (open ? '<span class="orig">' + esc(m.caption || m.text) + '</span>' : '') + '</span>';
     }
@@ -1061,14 +1072,14 @@
       return '<span class="xl">Sent in ' + esc(langName(m.lang) || 'the guest\'s language') + ' · <button type="button" data-orig="' + key + '">' + (o2 ? 'Hide what you wrote' : 'Show what you wrote') + '</button>' + (o2 ? '<span class="orig">' + esc(m.orig) + '</span>' : '') + '</span>';
     }
     var cfg = liveCfg();
-    if (m.from === 'guest' && m.xid && cfg && cfg.translate && !m.tr && String(m.caption || m.text || '').trim() && m.type !== 'voice' && !(m.lang && m.lang === myLang())) {
+    if (cfg && cfg.translate && needsXl(m)) {
       return '<span class="xl"><button type="button" data-xl="' + key + '">' + (live.busy['xl' + key] ? 'Translating…' : 'Translate') + '</button></span>';
     }
     return '';
   }
   /* a photo or video whose address is known (sent from this device, or opened from the server) */
   function shownMedia(m, key, url) {
-    var cap = m.caption ? '<div class="cap">' + esc(m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.caption) + (m.from === 'guest' ? xlHTML(m, key) : '') + '</div>' : '';
+    var cap = m.caption ? '<div class="cap">' + esc(shownText(m, m.caption)) + (m.from === 'guest' ? xlHTML(m, key) : '') + '</div>' : '';
     if (m.type === 'video') return { media: true, cap: m.caption, html: '<video class="vid" controls preload="metadata" playsinline src="' + esc(url) + '" aria-label="' + esc(m.name || 'Video') + '"></video>' + cap };
     return { media: true, cap: m.caption, html: '<button type="button" class="img-btn" data-img="' + key + '" aria-label="Open photo"><img src="' + esc(url) + '" alt="' + esc(m.name || 'Photo') + '"></button>' + cap };
   }
@@ -1085,7 +1096,7 @@
       var seen = live.media[key];
       if (seen && seen.url && (m.type === 'video' || m.type === 'image')) return shownMedia(m, key, seen.url);
       var kind = m.type === 'image' ? 'Photo' : m.type === 'voice' ? 'Voice message' : m.type === 'video' ? 'Video' : m.name || m.text || 'File';
-      return { media: true, file: true, cap: m.caption, html: '<div class="fileb"><span class="fi ' + (m.type === 'image' || m.type === 'video' ? 'img' : 'gen') + '">' + O.icon(m.type === 'image' ? 'image' : m.type === 'voice' ? 'mic' : m.type === 'video' ? 'video' : 'file') + '</span><span class="fn"><b>' + esc(kind) + '</b><span>On WhatsApp</span></span><button type="button" class="dl" data-wamedia="' + key + '" aria-label="Open ' + esc(kind) + '">' + (live.busy['m' + key] ? '…' : O.icon('download')) + '</button></div>' + (m.caption ? '<div class="cap">' + esc(m.tr && m.tr.text ? m.tr.text : m.caption) + xlHTML(m, key) + '</div>' : '') };
+      return { media: true, file: true, cap: m.caption, html: '<div class="fileb"><span class="fi ' + (m.type === 'image' || m.type === 'video' ? 'img' : 'gen') + '">' + O.icon(m.type === 'image' ? 'image' : m.type === 'voice' ? 'mic' : m.type === 'video' ? 'video' : 'file') + '</span><span class="fn"><b>' + esc(kind) + '</b><span>On WhatsApp</span></span><button type="button" class="dl" data-wamedia="' + key + '" aria-label="Open ' + esc(kind) + '">' + (live.busy['m' + key] ? '…' : O.icon('download')) + '</button></div>' + (m.caption ? '<div class="cap">' + esc(shownText(m, m.caption)) + xlHTML(m, key) + '</div>' : '') };
     }
     if (m.type === 'image') {
       var img = m.url ? '<img src="' + esc(m.url) + '" alt="' + esc(m.name || 'Photo') + '">' : m.art === 'sink' ? sinkArt() : '<span class="fileb">' + O.icon('image') + esc(m.text) + '</span>';
@@ -1110,7 +1121,7 @@
         (m.from !== 'guest' ? '<span class="vav">' + U.avatar(who) + O.icon('mic') + '</span>' : '') + '</div>' +
         (m.transcript ? '<button type="button" class="trans-t" data-trans="' + key + '">' + (st['tr' + key] ? 'Hide transcript' : 'Show transcript') + '</button>' + (st['tr' + key] ? '<div class="trans">' + esc(m.transcript) + '</div>' : '') : '') };
     }
-    var txt = esc(codeSafe(c, m.from === 'guest' && m.tr && m.tr.text ? m.tr.text : m.text));
+    var txt = esc(codeSafe(c, shownText(m, m.text)));
     if (m.from === 'note') txt = txt.replace(mentionRe(), '<b class="mention">@$1</b>');
     return { html: '<span class="txt" data-no-i18n>' + txt + '</span>' + xlHTML(m, key) + actsHTML(c, m, i) };
   }
@@ -1474,6 +1485,7 @@
         var c = conv(st.sel), th = O.$('.ib-thread', chat); if (!c || !th) return;
         var atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 60;
         th.innerHTML = threadHTML(c);
+        autoXl(c);
         O.$$('[data-loadfile]', th).forEach(function (el) { loadFile(el.dataset.loadfile, false); });
         if (player.key && player.key.indexOf(c.id + ':') === 0) paintVoice(player.key, 0, null);
         if (toBottom || atBottom) th.scrollTop = th.scrollHeight;
@@ -1666,10 +1678,28 @@
         ] });
         if (lang) run();
       }
+      /* the open chat's guest messages in the reader's language, as soon as it opens (once per message and language;
+         kept on the message, so the next reader in that language gets them at once) */
+      function autoXl(c) {
+        var cfg = liveCfg(); if (!cfg || !cfg.translate || cfg.autoTranslate === false || !c || !c.messages) return;
+        var L = myLang(), want = [];
+        for (var i = c.messages.length - 1; i >= 0 && want.length < 12; i--) {
+          var m = c.messages[i], k = c.id + ':' + i + ':' + L;
+          if (needsXl(m) && !live.xlTried[k]) { live.xlTried[k] = true; want.push(i); }
+        }
+        if (!want.length) return;
+        want.forEach(function (i) { live.busy['xl' + c.id + ':' + i] = true; });
+        O.auth.inbox('translate', { conversationId: c.id, indexes: want, to: L }).then(function (res) {
+          if (res.conversation) applyConv(res.conversation);
+        }, function (e) { console.warn('inbox translate', e && e.message); }).then(function () {
+          want.forEach(function (i) { delete live.busy['xl' + c.id + ':' + i]; });
+          if (st.sel === c.id) paintThread(false);
+        });
+      }
       function translateMsg(key) {
         var p = key.split(':'), c = conv(p[0]); if (!c || live.busy['xl' + key]) return;
         live.busy['xl' + key] = true; paintThread(false);
-        O.auth.inbox('translate', { conversationId: c.id, index: +p[1] }).then(function (res) {
+        O.auth.inbox('translate', { conversationId: c.id, index: +p[1], to: myLang() }).then(function (res) {
           if (res.conversation) applyConv(res.conversation);
           if (res.same) U.toast('This message is already in ' + langName(myLang()));
         }, function (e) { U.toast(e.message || 'Translation failed. Please try again.', 'bad'); }).then(function () { delete live.busy['xl' + key]; paintThread(false); });
@@ -1848,8 +1878,9 @@
               '<div class="small muted">A Facebook window opens. Choose your business, then "Connect your existing WhatsApp Business app", enter the number and confirm on your phone with the QR code the window shows (WhatsApp Business app 2.24.17 or newer). Use a computer browser for this step.</div>' +
               (wa.manual ? '<details><summary class="small">Or connect a number that is only on the Cloud API</summary><div class="stack" style="margin-top:8px">' + byId + '</div></details>' : '')
             : byId);
-        var trHTML = cfg.translate ? '<div class="field"><label for="ib-lang">Show guest messages in</label><select id="ib-lang" class="select"' + (canEdit() ? '' : ' disabled') + '>' + LANGS.map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === lang ? ' selected' : '') + '>' + esc(l[1]) + '</option>'; }).join('') + '</select></div>' +
-            '<label class="row-flex"><input type="checkbox" id="ib-auto"' + (auto ? ' checked' : '') + (canEdit() ? '' : ' disabled') + '> <span>Translate new guest messages as they arrive</span></label>'
+        var trHTML = cfg.translate ? '<div class="field"><label for="ib-lang">Team language for new guest messages</label><select id="ib-lang" class="select"' + (canEdit() ? '' : ' disabled') + '>' + LANGS.map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === lang ? ' selected' : '') + '>' + esc(l[1]) + '</option>'; }).join('') + '</select></div>' +
+            '<label class="row-flex"><input type="checkbox" id="ib-auto"' + (auto ? ' checked' : '') + (canEdit() ? '' : ' disabled') + '> <span>Translate guest messages automatically</span></label>' +
+            '<div class="small muted">Everyone sees guest messages in the app language they chose in Settings. The language above is used when a message arrives and when someone\'s app language is not set.</div>'
           : '<div class="note">Translation is not set up on the server yet (ANTHROPIC_API_KEY in Vercel).</div>';
         var notes = D.assistantNotes && typeof D.assistantNotes.text === 'string' ? D.assistantNotes.text : '';
         var aiHTML = (cfg.assistant ? '<div class="small">In a guest chat, Suggest reply drafts an answer from the booking, the house rules, the prices and free dates, and the notes below. You always check it before sending. Refunds, discounts, late check-out, complaints and damage are left for you to decide.</div>'
