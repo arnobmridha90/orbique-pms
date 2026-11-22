@@ -4,7 +4,7 @@
  *                                                              also empties Deleted of chats older than 30 days (purgeTrash)
  *   send        {conversationId, text, via ('whatsapp' | 'channex'), orig?, origLang?, lang?}
  *                                               inbox.send     -> {conversation}: the record after the reply was added
- *   translate   {conversationId, index, to?}    inbox viewer   one message into the team's language (or `to`), saved
+ *   translate   {conversationId, index|indexes, to?} inbox viewer guest messages into `to` (the reader's language; default the team's), saved
  *   preview     {text, to}                      inbox.send     a reply in the guest's language, to check before sending
  *   media       {conversationId, index}         inbox viewer   a file in the chat: one the guest sent on WhatsApp ->
  *                                                              {mime, name, data (base64)}, or for photos and videos over
@@ -265,20 +265,43 @@ export async function greetingAction(sb, body, me, opts = {}) {
   return { conversation: { id: conv.id, data } };
 }
 
+/**
+ * Guest messages into a language, kept on the message so every reader in that language shares them:
+ *   tr  {to, text}   the first translation (the team's language when it arrived)
+ *   trx {<lang>: text} more languages, one per reader language; '' = it was already in that language
+ * body {conversationId, index | indexes (up to 12), to (the reader's app language; default the team's)}
+ */
+export const TRANSLATE_MAX = 12;
+export function trPatch(m, to, r) {
+  const lang = m.lang || r.lang || (r.same ? to : undefined);
+  const trx = Object.assign({}, m.trx && typeof m.trx === 'object' ? m.trx : {});
+  if (r.same) { trx[to] = ''; return { lang, trx }; }
+  if (!m.tr || !m.tr.text || m.tr.to === to) return { lang, tr: { to, text: r.text } };
+  trx[to] = r.text;
+  return { lang, trx };
+}
 async function translateAction(sb, body, me) {
   const ws = await workspace(sb, body, me);
   const cfg = translateConfig();
   if (!cfg.configured) throw new ApiError(503, 'not-configured', 'Translation is not set up on the server yet.');
-  const conv = await conversation(sb, ws.org.id, body.conversationId);
-  const { i, m } = message(conv, body.index);
-  const source = String(m.caption || m.text || '').trim();
-  if (!source) throw bad('empty', 'There is no text to translate.');
+  let conv = await conversation(sb, ws.org.id, body.conversationId);
   const to = langCode(body.to) || (await inboxSettings(sb, ws.org.id)).lang;
-  let r;
-  try { r = await translate(cfg, source.slice(0, MAX_CHARS), to); } catch (e) { throw translateFailure(e); }
-  const patch = r.same ? { lang: r.lang || to } : { lang: r.lang || undefined, tr: { to, text: r.text } };
-  const saved = await patchMsg(sb, ws.org.id, { convId: conv.id, index: i, text: typeof m.text === 'string' ? m.text : '', patch });
-  return { conversation: saved ? { id: saved.id, data: saved.data } : null, same: r.same, lang: r.lang, text: r.text };
+  const many = Array.isArray(body.indexes);
+  const idx = (many ? body.indexes : [body.index]).slice(0, TRANSLATE_MAX);
+  const jobs = idx.map((n) => message(conv, n)).filter(({ m }) => String(m.caption || m.text || '').trim());
+  if (!jobs.length) throw bad('empty', 'There is no text to translate.');
+  const out = await Promise.all(jobs.map(async ({ i, m }) => {
+    try { return { i, m, r: await translate(cfg, String(m.caption || m.text).trim().slice(0, MAX_CHARS), to) }; } catch (e) { return { i, m, e }; }
+  }));
+  const ok = out.filter((x) => x.r);
+  if (!ok.length) throw translateFailure(out[0].e);
+  let saved = null;
+  for (const { i, m, r } of ok) {
+    const s = await patchMsg(sb, ws.org.id, { convId: conv.id, index: i, text: typeof m.text === 'string' ? m.text : '', patch: trPatch(m, to, r) });
+    if (s) saved = s;
+  }
+  const first = ok[0].r;
+  return { conversation: saved ? { id: saved.id, data: saved.data } : null, same: first.same, lang: first.lang, text: first.text, done: ok.length, failed: out.length - ok.length };
 }
 
 async function preview(sb, body, me) {
