@@ -8686,5 +8686,12 @@ O.I18N.ms = {
 "Choose a category.": "Pilih kategori.",
 "This type is built in and cannot be removed.": "Jenis ini terbina dalam dan tidak boleh dibuang.",
 "That category is not in the list.": "Kategori itu tiada dalam senarai.",
-"The \"Other\" category is where types without a category go, so it stays.": "Kategori \"Lain-lain\" ialah tempat jenis tanpa kategori diletakkan, jadi ia kekal."
+"The \"Other\" category is where types without a category go, so it stays.": "Kategori \"Lain-lain\" ialah tempat jenis tanpa kategori diletakkan, jadi ia kekal.",
+"Flexible": "Fleksibel",
+"Weekly stay (7+ nights)": "Penginapan mingguan (7+ malam)",
+"Collapse every rate type group": "Lipat semua kumpulan jenis kadar",
+"Expand every rate type group": "Kembangkan semua kumpulan jenis kadar",
+"Show this group": "Tunjukkan kumpulan ini",
+"Hide this group": "Sembunyikan kumpulan ini",
+"{n} plan": "{n} pelan"
 };

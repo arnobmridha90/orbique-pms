@@ -8686,5 +8686,12 @@ O.I18N.zh = {
 "Choose a category.": "請選擇類別。",
 "This type is built in and cannot be removed.": "這是內建類型，不能移除。",
 "That category is not in the list.": "這個類別不在清單中。",
-"The \"Other\" category is where types without a category go, so it stays.": "「其他」類別用來放沒有類別的類型，所以會保留。"
+"The \"Other\" category is where types without a category go, so it stays.": "「其他」類別用來放沒有類別的類型，所以會保留。",
+"Flexible": "彈性",
+"Weekly stay (7+ nights)": "週租（7 晚以上）",
+"Collapse every rate type group": "收合所有房價類型群組",
+"Expand every rate type group": "展開所有房價類型群組",
+"Show this group": "顯示此群組",
+"Hide this group": "隱藏此群組",
+"{n} plan": "{n} 個方案"
 };

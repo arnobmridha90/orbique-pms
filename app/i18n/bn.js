@@ -8686,5 +8686,12 @@ O.I18N.bn = {
 "Choose a category.": "একটি বিভাগ বেছে নিন।",
 "This type is built in and cannot be removed.": "এই ধরনটি অ্যাপে আগে থেকেই আছে, তাই সরানো যায় না।",
 "That category is not in the list.": "সেই বিভাগটি তালিকায় নেই।",
-"The \"Other\" category is where types without a category go, so it stays.": "\"অন্যান্য\" বিভাগে বিভাগহীন ধরনগুলো যায়, তাই এটি থাকবে।"
+"The \"Other\" category is where types without a category go, so it stays.": "\"অন্যান্য\" বিভাগে বিভাগহীন ধরনগুলো যায়, তাই এটি থাকবে।",
+"Flexible": "ফ্লেক্সিবল",
+"Weekly stay (7+ nights)": "সাপ্তাহিক থাকা (৭+ রাত)",
+"Collapse every rate type group": "সব রেট টাইপ গ্রুপ গুটিয়ে নিন",
+"Expand every rate type group": "সব রেট টাইপ গ্রুপ খুলুন",
+"Show this group": "এই গ্রুপ দেখান",
+"Hide this group": "এই গ্রুপ লুকান",
+"{n} plan": "{n}টি প্ল্যান"
 };
