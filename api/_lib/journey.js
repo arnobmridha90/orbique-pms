@@ -83,7 +83,8 @@ export async function processJourney(sb, deps = {}) {
 
 async function orgJourney(sb, orgId, cfg, deps, out) {
   const now = deps.now, at = myt(now), today = todayMY(now);
-  const bookings = (await records(sb, orgId, 'bookings')).filter((b) => b && b.checkOut >= addDays(today, -1) && b.checkIn <= addDays(today, 2) || (b && b.createdAt && b.createdAt >= myt(now - 2 * 86400000)));
+  // a stay that ended before yesterday has nothing due (every step's window closes by check-out): not downloaded
+  const bookings = (await records(sb, orgId, 'bookings', (q) => q.gte('data->>checkOut', addDays(today, -1)))).filter((b) => b && b.checkOut >= addDays(today, -1) && b.checkIn <= addDays(today, 2) || (b && b.createdAt && b.createdAt >= myt(now - 2 * 86400000)));
   if (!bookings.length) return 0;
   const ctx = { units: new Map(), types: new Map(), buildings: new Map(), fields: new Map() };
   for (const p of await records(sb, orgId, 'properties')) ctx.units.set(p.id, p);
@@ -97,7 +98,8 @@ async function orgJourney(sb, orgId, cfg, deps, out) {
   const sentRows = new Map((await records(sb, orgId, 'journeySent')).map((r) => [r.id, r]));
   const cx = deps.channexConfig || null;
   const em = deps.emailConfig || inboundConfig();
-  const brand = await blob(sb, orgId, 'workspaceBrand');
+  // the name alone: the brand blob also holds the logo
+  const brand = must(await sb.from('blobs').select('name:data->v->>name').eq('org_id', orgId).eq('key', 'workspaceBrand').maybeSingle(), 'load brand');
   const fromName = (isObj(brand) && String(brand.name || '').trim()) || 'Reservations';
   let fromAddress;
   const routeOpts = { channex: !!(cx && cx.key), email: !!(em.key && em.domain), ownDomain: em.domain };

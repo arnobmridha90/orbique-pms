@@ -3,6 +3,7 @@
  *
  *   selectAll(build, what)           every row of a query, 1000 at a time (Supabase answers at most 1000 rows per request)
  *   records(sb, orgId, coll, where)  the live (not deleted) records of one collection as plain objects, id included
+ *                                    (units without their photos: colsFor)
  *   tracked(sb, cfg, call)           one Channex call, logged in channex_calls (key never logged)
  *   addAlert(sb, row)                an alert for the Channels page, skipped when the same one is still open
  *   todayMY(), addDays(), daysBetween(), archived()
@@ -39,9 +40,13 @@ export async function selectAll(build, what) {
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** Live records of a collection: [{...data, id}]. where(q) may add filters. Records whose data is not an object are skipped. */
+/* The server never needs unit photos (base64, about 550 KB a unit): units are read without them (data_lite, 0030), which
+   keeps the every-minute worker inside the database's download allowance. Never save a unit read this way back whole. */
+export const colsFor = (coll) => (coll === 'properties' ? 'id, data:data_lite' : 'id, data');
+
 export async function records(sb, orgId, coll, where) {
   const rows = await selectAll(() => {
-    let q = sb.from('records').select('id, data').eq('org_id', orgId).eq('coll', coll).eq('deleted', false).order('id');
+    let q = sb.from('records').select(colsFor(coll)).eq('org_id', orgId).eq('coll', coll).eq('deleted', false).order('id');
     return where ? where(q) : q;
   }, 'load ' + coll);
   return rows.filter((r) => isObj(r.data)).map((r) => Object.assign({}, r.data, { id: r.id }));
@@ -49,7 +54,7 @@ export async function records(sb, orgId, coll, where) {
 
 /** One record (live), or null. */
 export async function record(sb, orgId, coll, id) {
-  const r = must(await sb.from('records').select('id, data').eq('org_id', orgId).eq('coll', coll).eq('id', id).eq('deleted', false).maybeSingle(), 'load ' + coll);
+  const r = must(await sb.from('records').select(colsFor(coll)).eq('org_id', orgId).eq('coll', coll).eq('id', id).eq('deleted', false).maybeSingle(), 'load ' + coll);
   return r && isObj(r.data) ? Object.assign({}, r.data, { id: r.id }) : null;
 }
 

@@ -40,6 +40,9 @@ import { processJourney } from './_lib/journey.js';
 import { watchHealth } from './_lib/healthcheck.js';
 
 export const TICK_BUDGET_MS = 15000;
+/* Timed guest messages are checked every JOURNEY_EVERY_MIN minutes, not every tick: each check reads the workspace's
+   bookings and units, and every minute was too much download for the database plan (2026-11-22). */
+export const JOURNEY_EVERY_MIN = 5;
 const PRUNE_DAYS = 60;
 
 /* ---------- bookings inbound (api/_lib/channex-bookings.js) ---------- */
@@ -82,7 +85,8 @@ export async function tick(sb, opts = {}) {
   out.alerts = await safely('alerts', () => bookingHooks.alerts(sb, { budgetMs: 6000 }));
   // timed guest messages (api/_lib/journey.js) and booking-site chats not linked to their booking yet, with what is left
   const left = () => 22000 - (Date.now() - start);
-  if (left() > 4000) out.journey = await safely('timed messages', () => bookingHooks.journey(sb, { channexConfig: cfg, deadline: Date.now() + Math.min(8000, left() - 2000) }));
+  const journeyDue = opts.journey === true || (opts.journey !== false && Math.floor(start / 60000) % JOURNEY_EVERY_MIN === 0);
+  if (journeyDue && left() > 4000) out.journey = await safely('timed messages', () => bookingHooks.journey(sb, { channexConfig: cfg, deadline: Date.now() + Math.min(8000, left() - 2000) }));
   if (left() > 3000) out.relink = await safely('link chats', () => bookingHooks.relink(sb, { config: cfg, deadline: Date.now() + Math.min(4000, left() - 1500) }));
   // Google Business Profile reviews (api/_lib/google-reviews.js): each connected workspace every 30 minutes
   if (left() > 6000 && bookingHooks.google) out.google = await safely('google reviews', () => bookingHooks.google(sb, { deadline: Date.now() + Math.min(5000, left() - 4000) }));

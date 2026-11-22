@@ -32,7 +32,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { ApiError, bad } from './http.js';
-import { must, records, record, blob, tracked, todayMY, addDays } from './channex-db.js';
+import { must, records, record, blob, tracked, todayMY, addDays, selectAll } from './channex-db.js';
 import { ChannexError } from './channex.js';
 import { waConfig, withToken, sendText, sendMedia, WINDOW_MS, WhatsAppError } from './whatsapp.js';
 import { translateConfig, translate, langCode } from './translate.js';
@@ -478,10 +478,13 @@ export async function relinkChats(sb, opts = {}) {
   let calls = 0;
   for (const orgId of [...new Set(props.map((p) => p.org_id))]) {
     if (Date.now() > deadline) break;
-    const convs = (await records(sb, orgId, 'conversations', (q) => q.is('data->>bookingId', null)))
+    // the chats without their messages (conv_brief, 0030: lastAt = the last message's time); messages only for the ones due
+    const convs = (await selectAll(() => sb.from('records').select('id, data:conv_brief').eq('org_id', orgId).eq('coll', 'conversations')
+      .eq('deleted', false).is('data->>bookingId', null).order('id'), 'load chats'))
+      .filter((r) => isObj(r.data)).map((r) => Object.assign({}, r.data, { id: r.id }))
       .filter((c) => isUuid(c.cx) && !c.trashedAt);
     const due = convs.filter((c) => {
-      const last = (Array.isArray(c.messages) && c.messages.length ? c.messages[c.messages.length - 1].time : c.createdAt) || '';
+      const last = c.lastAt || c.createdAt || '';
       if (last < myt(now - 120 * 86400000)) return false;
       return !c.linkTry || c.linkTry < last || c.linkTry < myt(now - 86400000);
     });
@@ -502,7 +505,8 @@ export async function relinkChats(sb, opts = {}) {
       }
       if (!b) {
         bookings = bookings || await records(sb, orgId, 'bookings', (q) => q.gte('data->>checkOut', todayMY(now - 365 * 86400000)));
-        b = bookingFromInquiry(c, bookings);
+        const full = await record(sb, orgId, 'conversations', c.id);
+        b = full ? bookingFromInquiry(full, bookings) : null;
       }
       if (b) {
         await findConv(sb, orgId, 'cx', c.cx, b.id, cxBooking ? { cxBooking } : {}, now);
