@@ -8634,5 +8634,12 @@ O.I18N.bn = {
 "Team chat: {chat}": "টিম চ্যাট: {chat}",
 "New booking: {guest}": "নতুন বুকিং: {guest}",
 "Booking cancelled: {guest}": "বুকিং বাতিল: {guest}",
-"New dates: {guest}": "নতুন তারিখ: {guest}"
+"New dates: {guest}": "নতুন তারিখ: {guest}",
+"Flexible": "ফ্লেক্সিবল",
+"Weekly stay (7+ nights)": "সাপ্তাহিক থাকা (৭+ রাত)",
+"Collapse every rate type group": "সব রেট টাইপ গ্রুপ গুটিয়ে নিন",
+"Expand every rate type group": "সব রেট টাইপ গ্রুপ খুলুন",
+"Show this group": "এই গ্রুপ দেখান",
+"Hide this group": "এই গ্রুপ লুকান",
+"{n} plan": "{n}টি প্ল্যান"
 };

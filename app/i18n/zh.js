@@ -8634,5 +8634,12 @@ O.I18N.zh = {
 "Team chat: {chat}": "團隊聊天：{chat}",
 "New booking: {guest}": "新訂單：{guest}",
 "Booking cancelled: {guest}": "訂單已取消：{guest}",
-"New dates: {guest}": "新日期：{guest}"
+"New dates: {guest}": "新日期：{guest}",
+"Flexible": "彈性",
+"Weekly stay (7+ nights)": "週租（7 晚以上）",
+"Collapse every rate type group": "收合所有房價類型群組",
+"Expand every rate type group": "展開所有房價類型群組",
+"Show this group": "顯示此群組",
+"Hide this group": "隱藏此群組",
+"{n} plan": "{n} 個方案"
 };

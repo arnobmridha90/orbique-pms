@@ -8634,5 +8634,12 @@ O.I18N.ms = {
 "Team chat: {chat}": "Sembang pasukan: {chat}",
 "New booking: {guest}": "Tempahan baharu: {guest}",
 "Booking cancelled: {guest}": "Tempahan dibatalkan: {guest}",
-"New dates: {guest}": "Tarikh baharu: {guest}"
+"New dates: {guest}": "Tarikh baharu: {guest}",
+"Flexible": "Fleksibel",
+"Weekly stay (7+ nights)": "Penginapan mingguan (7+ malam)",
+"Collapse every rate type group": "Lipat semua kumpulan jenis kadar",
+"Expand every rate type group": "Kembangkan semua kumpulan jenis kadar",
+"Show this group": "Tunjukkan kumpulan ini",
+"Hide this group": "Sembunyikan kumpulan ini",
+"{n} plan": "{n} pelan"
 };
