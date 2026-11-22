@@ -435,6 +435,11 @@
   /* expense types that count as fixed costs (the same every month whatever the occupancy); every other type is variable.
      An expense's own costKind ('fixed' | 'variable') wins, e.g. a bill paid from the unit file is always fixed. */
   var fixedExpenseTypes = ['Rent', 'Salaries & wages', 'Internet & TV', 'Software & subscriptions', 'Insurance'];
+  /* the category, suggested cost type and fixed/variable of each type (api/_lib/shared/exptypes.cjs; Settings changes it) */
+  var expenseSetup = { cats: [{ id: 'property', name: 'Property costs' }, { id: 'supplies', name: 'Cleaning & guest supplies' }, { id: 'equipment', name: 'Furniture & equipment' }, { id: 'staff', name: 'Staff & transport' }, { id: 'office', name: 'Sales & office' }, { id: 'other', name: 'Other' }], types: {} };
+  [['property', 'Rent|Utilities|Internet & TV|Repairs & maintenance|Insurance'], ['supplies', 'Cleaning supplies|Laundry|Toiletries & amenities'], ['equipment', 'Furniture & equipment'], ['staff', 'Salaries & wages|Transport'], ['office', 'Marketing|Software & subscriptions'], ['other', 'Others']].forEach(function (c) {
+    c[1].split('|').forEach(function (t) { expenseSetup.types[t] = { cat: c[0], cls: t === 'Furniture & equipment' ? 'capex' : 'opex', fixed: fixedExpenseTypes.indexOf(t) >= 0 }; });
+  });
   var payMethods = ['Company card', 'Cash (petty cash)', 'Bank transfer', 'Paid personally (claim)'];
   var expenses = [];
   var er = rng(777), eseq = 300;
@@ -914,7 +919,12 @@
       });
     },
     /* rejected claims are not company spend; cls = 'opex' | 'capex' | undefined (both) */
-    costKind: function (e) { return e.costKind === 'fixed' || e.costKind === 'variable' ? e.costKind : (O.data.fixedExpenseTypes || []).indexOf(e.type) >= 0 ? 'fixed' : 'variable'; },
+    costKind: function (e) {
+      if (e.costKind === 'fixed' || e.costKind === 'variable') return e.costKind;
+      var S = O.data.expenseSetup; /* Settings → Expense types: each type says whether it is a fixed cost */
+      if (S && S.types && Object.prototype.hasOwnProperty.call(S.types, e.type)) return S.types[e.type].fixed ? 'fixed' : 'variable';
+      return (O.data.fixedExpenseTypes || []).indexOf(e.type) >= 0 ? 'fixed' : 'variable';
+    },
     expenses: function (from, to, cls) { return O.data.expenses.filter(function (e) { return e.date >= from && e.date <= to && e.claimStatus !== 'rejected' && (!cls || (e.costClass || 'opex') === cls); }); },
     expenseTotal: function (from, to, cls) { return M.expenses(from, to, cls).reduce(function (s, e) { return s + e.amount; }, 0); },
     platformFees: function (from, to) {
@@ -938,7 +948,7 @@
     bookings: bookings, blocks: blocks, tasks: tasks, reviews: reviews, conversations: conversations, quickReplies: quickReplies, greetings: greetings,
     /* the inbox's named chat lists, shared by the team (conversations[].lists holds their ids) */
     inboxLists: [{ id: 'L-vip', name: 'VIP guests' }, { id: 'L-follow', name: 'Follow up' }],
-    expenses: expenses, expenseTypes: expenseTypes, fixedExpenseTypes: fixedExpenseTypes, payMethods: payMethods, events: events,
+    expenses: expenses, expenseTypes: expenseTypes, expenseSetup: expenseSetup, fixedExpenseTypes: fixedExpenseTypes, payMethods: payMethods, events: events,
     rateFor: rateFor, eventFor: eventFor, compSet: compSet, compPrice: compPrice, countryName: COUNTRY,
     staffById: function (id) { return staff.filter(function (s) { return s.id === id; })[0] || null; },
     booking: function (id) { return bookings.filter(function (b) { return b.id === id; })[0] || null; },

@@ -28,11 +28,27 @@
   var PRESETS = ['today', 'yesterday', 'last7', 'last30', 'mtd', 'lastMonth', 'last90', 'qtd', 'ytd', 'since'];
   var CLAIMS = [['all', 'All'], ['pending', 'Claims pending'], ['approved', 'Approved, to pay back'], ['reimbursed', 'Paid back'], ['rejected', 'Rejected'], ['none', 'Not a claim']];
   var CLAIM_PILL = { pending: ['Waiting for approval', 'warn'], approved: ['Approved · to pay back', 'info'], reimbursed: ['Paid back', 'ok'], rejected: ['Rejected', 'bad'] };
-  var st = { preset: 'last30', from: null, to: null, type: '', cls: '', person: '', prop: '', claim: 'all', q: '', limit: 50, draft: null, err: {}, lastId: null, viewer: null };
+  var st = { preset: 'last30', from: null, to: null, type: '', cls: '', person: '', prop: '', claim: 'all', q: '', limit: 50, draft: null, err: {}, lastId: null, viewer: null, by: 'type' };
   /* cost type: capital = a long-lasting purchase for a property, operating = the running costs of the month */
   var CC = { opex: ['Operating expense', 'Operating'], capex: ['Capital expense', 'Capital'] };
   var CC_HELP = 'Capital is a long-lasting purchase for a property, such as furniture, appliances, an AC unit or renovation. Operating is the running costs of the month.';
-  function suggestCls(type) { return (D.capexTypes || []).indexOf(type) >= 0 ? 'capex' : 'opex'; }
+  /* the cost type a type suggests, and its category: Settings → Expense types and categories (O.exptypes) */
+  function suggestCls(type) { return O.exptypes ? O.exptypes.info(D.expenseSetup, type).cls : (D.capexTypes || []).indexOf(type) >= 0 ? 'capex' : 'opex'; }
+  function catOf(type) { return O.exptypes ? O.exptypes.info(D.expenseSetup, type).cat : 'other'; }
+  function catName(id) { var c = ((D.expenseSetup || {}).cats || []).filter(function (x) { return x.id === id; })[0]; return c ? c.name : 'Other'; }
+  function matchType(e) { return !st.type || (st.type.indexOf('cat:') === 0 ? catOf(e.type) === st.type.slice(4) : e.type === st.type); }
+  /* <option>s grouped by category; o.cats adds an "All <category>" choice (value cat:<id>) at the top of each group */
+  function typeOptions(sel, o) {
+    o = o || {};
+    var groups = O.exptypes ? O.exptypes.grouped(D.expenseTypes, D.expenseSetup) : [{ cat: { id: 'other', name: '' }, types: D.expenseTypes }];
+    var known = {}, out = groups.filter(function (g) { return g.types.length; }).map(function (g) {
+      var opts = g.types.map(function (t) { known[t] = 1; return '<option value="' + esc(t) + '"' + (sel === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('');
+      if (o.cats) opts = '<option value="cat:' + esc(g.cat.id) + '"' + (sel === 'cat:' + g.cat.id ? ' selected' : '') + '>' + esc(O.tpl('All {x}', { x: g.cat.name })) + '</option>' + opts;
+      return groups.length > 1 ? '<optgroup label="' + esc(g.cat.name) + '">' + opts + '</optgroup>' : opts;
+    }).join('');
+    if (sel && sel.indexOf('cat:') !== 0 && !known[sel]) out += '<option value="' + esc(sel) + '" selected>' + esc(sel) + '</option>'; /* a type removed from the list */
+    return out;
+  }
   function clsOf(e) { return e.costClass === 'capex' ? 'capex' : 'opex'; } /* same rule as M.expenses: no cost type counts as operating */
 
   O.css('expenses', [
@@ -56,6 +72,7 @@
     '.pg-expenses .ex-err{font-size:11.5px;color:var(--bad);font-weight:600;}',
     '.pg-expenses .is-bad .input, .pg-expenses .is-bad .select, .pg-expenses .is-bad.money-in{border-color:var(--bad);}',
     '.pg-expenses .ex-other{background:var(--accent-soft);border-radius:9px;padding:10px;}',
+    '.pg-expenses .ex-mtypes{align-self:flex-start;margin-top:2px;}',
     '.pg-expenses .photo{display:flex;align-items:center;gap:10px;}',
     '.pg-expenses .photo-btn{display:inline-flex;align-items:center;gap:7px;border:1.5px dashed var(--border-strong);border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:700;color:var(--text-2);background:var(--surface-2);cursor:pointer;min-height:40px;}',
     '.pg-expenses .photo-btn:hover{border-color:var(--brand-strong);color:var(--brand-text);}',
@@ -211,7 +228,7 @@
   function filtered(base) {
     var q = st.q.toLowerCase();
     return base.filter(function (e) {
-      return (!st.type || e.type === st.type) && (!st.cls || clsOf(e) === st.cls) && (!st.person || e.paidBy === st.person) &&
+      return matchType(e) && (!st.cls || clsOf(e) === st.cls) && (!st.person || e.paidBy === st.person) &&
         (!st.prop || (st.prop === 'general' ? !e.propertyId : e.propertyId === st.prop)) &&
         (!q || [typeLabel(e), e.note || '', propName(e.propertyId), staff(e.paidBy).name, e.id, String(e.amount)].join(' ').toLowerCase().indexOf(q) >= 0);
     });
@@ -328,7 +345,7 @@
       '<div class="form-grid"><div class="field' + (er.date ? ' is-bad' : '') + '"><label for="ex-date">Date <span class="req">*</span></label><input class="input" type="date" id="ex-date" data-d="date" value="' + esc(f.date) + '" max="' + D.TODAY + '">' + errHTML('date') + '</div>' +
       '<div class="field"><label for="ex-amt">Amount <span class="req">*</span></label><div class="money-in' + (er.amount ? ' is-bad' : '') + '"><span class="ex-cur">' + esc(fmt.cur(f.propertyId || null)) + '</span><input class="input" id="ex-amt" data-d="amount" inputmode="decimal" placeholder="0.00" value="' + esc(f.amount) + '"></div>' + errHTML('amount') + '</div></div>' +
       '<div class="field' + (er.type ? ' is-bad' : '') + '"><label for="ex-type">Expense type <span class="req">*</span></label><select class="select" id="ex-type" data-d="type"><option value="">Choose a type…</option>' +
-      D.expenseTypes.map(function (t) { return '<option' + (f.type === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' + errHTML('type') + '</div>' +
+      typeOptions(f.type) + '</select>' + errHTML('type') + (O.can('expenses.settings') ? '<button type="button" class="btn btn-quiet btn-xs ex-mtypes" data-act="settypes">' + O.icon('settings') + 'Add or change types</button>' : '') + '</div>' +
       (f.type === 'Others' ? '<div class="field ex-other' + (er.otherType ? ' is-bad' : '') + '"><label for="ex-other">What was it for? <span class="req">*</span></label><input class="input" id="ex-other" data-d="otherType" maxlength="60" placeholder="e.g. Pest control, Key cutting, Parking fine" value="' + esc(f.otherType) + '">' + errHTML('otherType') + '</div>' : '') +
       ccField(f, er) +
       '<div class="form-grid"><div class="field"><label for="ex-prop">Property</label><select class="select" id="ex-prop" data-d="propertyId"><option value="">General / company</option>' + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (f.propertyId === p.id ? ' selected' : '') + '>' + esc(p.short) + '</option>'; }).join('') + '</select></div>' +
@@ -401,12 +418,13 @@
   }
   function breakdownCards(list, plist) {
     var total = sum(list) || 1;
-    var types = {}; list.filter(inC).forEach(function (e) { var k = e.type; types[k] = (types[k] || 0) + e.amount; });
+    var byCat = st.by === 'cat';
+    var types = {}; list.filter(inC).forEach(function (e) { var k = byCat ? 'cat:' + catOf(e.type) : e.type; types[k] = (types[k] || 0) + e.amount; });
     var tRows = Object.keys(types).sort(function (a, b) { return types[b] - types[a]; }).map(function (k) {
-      return { label: '<span class="hb-click-l">' + esc(k) + '</span>', value: types[k], display: money(types[k]) + ' <span class="hb-sub">' + fmt.pct(types[k] / total) + '</span>', k: k };
+      return { label: '<span class="hb-click-l">' + esc(byCat ? catName(k.slice(4)) : k) + '</span>', value: types[k], display: money(types[k]) + ' <span class="hb-sub">' + fmt.pct(types[k] / total) + '</span>', k: k };
     });
     var typeHTML = tRows.length ? O.chart.hbars(tRows).split('<div class="hbar">').map(function (h, i) { return i ? '<div class="hbar hb-click' + (st.type === tRows[i - 1].k ? ' on' : '') + '" data-ftype="' + esc(tRows[i - 1].k) + '" role="button" tabindex="0">' + h : h; }).join('') : U.empty('No expenses in this range.');
-    var card1 = '<div class="card"><div class="card-head"><div><h3>By type</h3><div class="sub">' + money(sum(list)) + ' · ' + splitText(list) + '</div></div></div><div class="card-body" style="padding-top:8px;padding-bottom:8px">' + typeHTML + '</div></div>';
+    var card1 = '<div class="card"><div class="card-head"><div><h3>' + (byCat ? 'By category' : 'By type') + '</h3><div class="sub">' + money(sum(list)) + ' · ' + splitText(list) + '</div></div>' + U.seg([['type', 'Type'], ['cat', 'Category']], byCat ? 'cat' : 'type', 'data-ex-by') + '</div><div class="card-body" style="padding-top:8px;padding-bottom:8px">' + typeHTML + '</div></div>';
     if (!canAll()) return card1;
     var people = D.staff.map(function (s) { var l = plist.filter(function (e) { return e.paidBy === s.id; }); return { s: s, total: sum(l), n: l.length }; }).sort(function (a, b) { return b.total - a.total; });
     var max = Math.max.apply(null, people.map(function (p) { return p.total; }).concat([1]));
@@ -428,7 +446,7 @@
     var head = '<div class="card-head"><div><h3>' + (all ? 'All expenses' : 'Your expenses') + '</h3><div class="sub">' + fmt.plural(list.length, 'expense') + ' · ' + money(sum(list.filter(counts))) + ' · ' + esc(U.rangeLabel(r.from, r.to)) + (list.length && !st.cls ? '<span class="ex-split"> · ' + splitText(list.filter(counts)) + '</span>' : '') + '</div></div>' +
       '<div class="row-flex wrap">' + (anyFilter() ? '<button type="button" class="btn btn-quiet btn-sm" data-act="clear">Clear filters</button>' : '') + '<button type="button" class="btn btn-ghost btn-sm" data-act="csv"' + (list.length ? '' : ' disabled title="Nothing to export"') + '>' + O.icon('download') + 'Export CSV</button></div></div>';
     var filters = '<div class="ex-filters"><div class="toolbar"><span data-slot="range"></span>' +
-      '<label class="sr-only" for="ex-ft">Type</label><select class="select" id="ex-ft" data-f="type"><option value="">All types</option>' + D.expenseTypes.map(function (t) { return '<option' + (st.type === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' +
+      '<label class="sr-only" for="ex-ft">Type</label><select class="select" id="ex-ft" data-f="type"><option value="">All types</option>' + typeOptions(st.type, { cats: true }) + '</select>' +
       '<label class="sr-only" for="ex-fc">Cost type</label><select class="select" id="ex-fc" data-f="cls"><option value="">All cost types</option>' + ['opex', 'capex'].map(function (k) { return '<option value="' + k + '"' + (st.cls === k ? ' selected' : '') + '>' + esc(O.tr(k === 'opex' ? 'Operating only' : 'Capital only')) + '</option>'; }).join('') + '</select>' +
       (all ? '<label class="sr-only" for="ex-fp">Person</label><select class="select" id="ex-fp" data-f="person"><option value="">Everyone</option>' + D.staff.map(function (s) { return '<option value="' + s.id + '"' + (st.person === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select>' : '') +
       '<label class="sr-only" for="ex-fpr">Property</label><select class="select" id="ex-fpr" data-f="prop"><option value="">All properties</option><option value="general"' + (st.prop === 'general' ? ' selected' : '') + '>General / company</option>' + D.properties.map(function (p) { return '<option value="' + p.id + '"' + (st.prop === p.id ? ' selected' : '') + '>' + esc(p.short) + '</option>'; }).join('') + '</select>' +
@@ -536,6 +554,7 @@
       page.addEventListener('click', function (e) {
         var t = e.target;
         var ch = t.closest('[data-claim]'); if (ch) { st.claim = ch.dataset.claim; st.limit = 50; ctx.rerender(); return; }
+        var by = t.closest('[data-ex-by]'); if (by) { st.by = by.dataset.exBy; ctx.rerender(); return; }
         var ft = t.closest('[data-ftype]'); if (ft) { st.type = st.type === ft.dataset.ftype ? '' : ft.dataset.ftype; ctx.rerender(); return; }
         var fp = t.closest('[data-fperson]'); if (fp) { st.person = st.person === fp.dataset.fperson ? '' : fp.dataset.fperson; ctx.rerender(); return; }
         var a = t.closest('[data-act]');
@@ -543,6 +562,7 @@
         if (a) {
           var act = a.dataset.act;
           if (act === 'reset') { st.draft = freshDraft(); st.err = {}; ctx.rerender(); }
+          else if (act === 'settypes') O.go('settings', { section: 'expenses' });
           else if (act === 'rmimg') { st.draft.img = null; st.draft.imgName = ''; ctx.rerender(); }
           else if (act === 'approve' && ex) setClaim(ex, 'approved');
           else if (act === 'reject' && ex) rejectClaim(ex);
