@@ -147,7 +147,7 @@ function world({ bookings, sent = {}, convMessages = [], cfg }) {
       if (t === 'blobs') {
         const key = op(ops, 'eq', 'key');
         if (key === 'guestJourney') return { data: [{ org_id: ORG, data: { v: cfg } }], error: null };
-        if (key === 'workspaceBrand') return { data: { data: { v: { name: 'Kozi' } } }, error: null };
+        if (key === 'workspaceBrand') return { data: { name: 'Kozi' }, error: null }; // select('name:data->v->>name')
         return { data: null, error: null };
       }
       if (t !== 'records') return { data: [], error: null };
