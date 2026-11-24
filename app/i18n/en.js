@@ -64,5 +64,8 @@ O.I18N_SRC = [
   "Choose the size",
   "Add it in Settings.",
   "Add them in Settings.",
-  "Choose or type the size of {x}."
+  "Choose or type the size of {x}.",
+  "This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest's details and the note.",
+  "This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest's details and the note.",
+  "The stay is open again, so check the door code still works for the guest."
 ];

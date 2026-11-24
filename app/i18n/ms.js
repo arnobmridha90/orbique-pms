@@ -8708,5 +8708,8 @@ O.I18N.ms = {
 "{n} guests staying": "{n} tetamu menginap",
 "{qty} left (reorder at {reorder})": "Tinggal {qty} (pesan semula pada {reorder})",
 "arrives {when}": "tiba {when}",
-"{n} guests": "{n} tetamu"
+"{n} guests": "{n} tetamu",
+"This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest's details and the note.": "Tempahan ini dibatalkan, jadi unit, tarikh dan harganya kekal. Anda masih boleh membetulkan butiran tetamu dan nota.",
+"This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest's details and the note.": "Penginapan ini sudah selesai, jadi unit dan tarikh daftar masuk kekal. Anda masih boleh mengubah daftar keluar (tetamu yang tinggal lebih lama atau keluar awal), harga, butiran tetamu dan nota.",
+"The stay is open again, so check the door code still works for the guest.": "Penginapan dibuka semula, jadi pastikan kod pintu masih berfungsi untuk tetamu."
 };

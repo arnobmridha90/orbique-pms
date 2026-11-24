@@ -8708,5 +8708,8 @@ O.I18N.bn = {
 "{n} guests staying": "{n} জন অতিথি আছেন",
 "{qty} left (reorder at {reorder})": "{qty} বাকি (আবার অর্ডার {reorder}-এ)",
 "arrives {when}": "{when} আসবেন",
-"{n} guests": "{n} জন অতিথি"
+"{n} guests": "{n} জন অতিথি",
+"This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest's details and the note.": "এই বুকিং বাতিল, তাই এর ইউনিট, তারিখ ও দাম আগের মতোই থাকবে। আপনি এখনও অতিথির তথ্য ও নোট ঠিক করতে পারেন।",
+"This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest's details and the note.": "এই থাকা শেষ হয়েছে, তাই ইউনিট ও চেক-ইনের তারিখ একই থাকবে। আপনি এখনও চেক-আউট (অতিথি বেশি দিন থাকলে বা আগে চলে গেলে), দাম, অতিথির তথ্য ও নোট বদলাতে পারেন।",
+"The stay is open again, so check the door code still works for the guest.": "থাকাটি আবার খোলা হয়েছে, তাই দরজার কোড অতিথির জন্য এখনও কাজ করছে কিনা দেখে নিন।"
 };
