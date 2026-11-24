@@ -58,6 +58,9 @@ psqlq "$URL1" -f tests/sql/inbox_organize.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: 
 echo "== booking alerts (0011)"
 psqlq "$URL1" -f tests/sql/alerts.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
 
+echo "== the bell's shared history (0031)"
+psqlq "$URL1" -f tests/sql/notifications.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
+
 echo "== listing types (0014)"
 psqlq "$URL1" -f tests/sql/listing_types.sql 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /'
 

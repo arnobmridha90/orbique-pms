@@ -126,6 +126,8 @@ input,select,textarea{font-family:inherit; font-size:13px; color:var(--text);}
 .notif .ns{overflow-wrap:anywhere;} .notif .na{font-size:10.5px; color:var(--muted); margin-top:3px;}
 .notif.unread{background:var(--surface-2);} .notif .nu{width:8px; height:8px; border-radius:50%; background:var(--accent); flex-shrink:0; margin-top:10px;}
 .bell-head{display:flex; align-items:center; justify-content:space-between; gap:8px; padding-right:8px; position:sticky; top:0; background:var(--surface); z-index:1;}
+.bell-sounds{padding:4px 0 8px; border-bottom:1px solid var(--border); margin-bottom:4px;}
+.bell-snd{display:flex; align-items:center; gap:8px; padding:4px 13px; font-size:13px; cursor:pointer;}
 .bell-sec{padding-top:12px; border-top:1px solid var(--border);}
 .icon-btn .dot.count{width:auto; min-width:17px; height:17px; padding:0 4px; top:1px; right:0; border-radius:9px; color:#fff; font-size:10px; font-weight:700; line-height:13px; text-align:center;}
 
