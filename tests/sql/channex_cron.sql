@@ -11,7 +11,8 @@ begin
   return 'ok';
 end $$;
 
-select t.ok((select count(*) from cron.job) = 2, 'two schedules, once each after re-runs');
+select t.ok((select count(*) from cron.job where jobname like 'channex-%') = 2, 'two channex schedules, once each after re-runs');
+select t.ok((select count(*) from cron.job where jobname = 'notif-tick') = 1, 'the bell''s 5-minute schedule (0031), once after re-runs');
 select t.ok((select schedule || ' ' || command from cron.job where jobname = 'channex-tick') = '* * * * * select public.channex_tick(''tick'')', 'tick every minute');
 select t.ok((select schedule || ' ' || command from cron.job where jobname = 'channex-nightly') = '0 19 * * * select public.channex_tick(''nightly'')', 'nightly at 19:00 UTC');
 select t.ok((select decrypted_secret from vault.decrypted_secrets where name = 'channex_worker_url') = 'http://127.0.0.1:3000/api/channex-worker', 'migrate.mjs stored the worker URL');
