@@ -5,12 +5,19 @@
  * always answered by people (no automatic replies).
  *
  *   confirm   right after the booking comes in (only bookings that came in after the switch-on, `since`)
- *   welcome   24 hours before check-in, with the unit, door code and Wi-Fi (the same moment the guest app shows them)
+ *   welcome   24 hours before check-in: arrival steps, address, check-in time (no check-in details, see below)
  *   checkout  6:00 PM the evening before check-out
+ *
+ * Check-in details never go out by themselves (Arnob, 2026-11-24: "the checkin details with door codes and wifi
+ * passwords do not need to be sent automatically anymore. It is better if I send them when I open the whatsapp group
+ * with the customer and my team ... that way I can do last minute room changes"). fill() drops every line of a timed
+ * message that holds the unit number, level, door code, Wi-Fi or a private greeting field (CHECKIN_KEYS), whatever the
+ * saved wording says. The team copies them per booking instead (booking drawer "Copy check-in details", detailsText).
  *
  * Settings: blob 'guestJourney'
  *   {since: 'YYYY-MM-DDTHH:MM' (Malaysia time; nothing due before it is sent), askPhone: bool,
- *    steps: {confirm|welcome|checkout: {on: bool, text: string, airbnb: string}}}
+ *    steps: {confirm|welcome|checkout: {on: bool, text: string, airbnb: string}},
+ *    details: string (the check-in details the team copies by hand; empty means DEFAULT_DETAILS)}
  * A workspace without the blob sends nothing. text is the message, with the greeting placeholders ({guest_first},
  * {unit_no}, {door_code}, {wifi_name} ...) plus {level} (the part of the unit number before the dash). airbnb is the
  * version for Airbnb guests (Airbnb does not allow a deposit taken outside Airbnb); empty means text.
@@ -44,7 +51,7 @@ function validTime(t) { return /^\d{2}:\d{2}$/.test(String(t || '')) ? String(t)
 function settings(v) {
   if (!v || typeof v !== 'object') return null;
   var steps = v.steps && typeof v.steps === 'object' ? v.steps : {};
-  var out = { since: isAt(v.since) ? v.since : null, askPhone: v.askPhone !== false, steps: {} };
+  var out = { since: isAt(v.since) ? v.since : null, askPhone: v.askPhone !== false, steps: {}, details: String(v.details || '').slice(0, MAX_TEXT) };
   STEPS.forEach(function (k) {
     var s = steps[k] && typeof steps[k] === 'object' ? steps[k] : {};
     out.steps[k] = { on: s.on === true, text: String(s.text || '').slice(0, MAX_TEXT), airbnb: String(s.airbnb || '').slice(0, MAX_TEXT) };
@@ -108,13 +115,36 @@ function levelOf(unitNo) {
   return nums.length >= 2 ? nums[0].replace(/[A-Za-z]$/, '') : (/^\d+$/.test(parts[parts.length - 2]) ? parts[parts.length - 2] : '');
 }
 
+/* the check-in details: what may change at the last minute (another room) and must not leak. Never in a timed message. */
+var CHECKIN_KEYS = ['unit_no', 'level', 'f_level', 'door_code', 'wifi_name', 'wifi_password'];
+var DEFAULT_DETAILS = 'Hi {guest_first},\n\nHere are your check-in details.\n\nSuite: {unit_no}, level {level}\nDoor code: {door_code}\nWi-Fi: {wifi_name}\nWi-Fi password: {wifi_password}\n\nCheck-in is from {checkin_time} and check-out is at {checkout_time}.\n\nSee you soon!';
+var DETAILS_LINE = 'Your suite number, door code and Wi-Fi details will be sent in our WhatsApp group before arrival.';
+
+/* the keys of a timed message's text that are check-in details: CHECKIN_KEYS plus every private greeting field */
+function checkinKeys(fields) {
+  var keys = CHECKIN_KEYS.slice();
+  (Array.isArray(fields) ? fields : []).forEach(function (f) { if (f && f.key && f.private) { keys.push(f.key); keys.push('f_' + f.key); } });
+  return keys;
+}
+/* the text without any line that holds a check-in detail placeholder -> {text, dropped: number of lines} */
+function stripCheckin(text, fields) {
+  var keys = checkinKeys(fields), dropped = 0;
+  var re = new RegExp('\\{(' + keys.map(function (k) { return k.replace(/[^a-z0-9_]/gi, ''); }).join('|') + ')\\}', 'i');
+  var out = String(text || '').split('\n').filter(function (line) { if (re.test(line)) { dropped++; return false; } return true; }).join('\n');
+  return { text: out, dropped: dropped };
+}
+/* the check-in details text the team copies for a booking */
+function detailsText(cfg) { return cfg && String(cfg.details || '').trim() ? cfg.details : DEFAULT_DETAILS; }
+
 var ASK_PHONE = 'Could you send us your WhatsApp number? It helps our team reach you on your arrival day.';
 
 /* Fill a step for a booking. ctx = {booking, unit, unitType, building, link, fields (the building's greeting fields)}
    The door code is the unit's own lock code when it has one (a fixed code on the door), else the booking's.
+   Lines with a check-in detail (stripCheckin) are left out, unless o.details (the team's own copy, detailsText).
    -> {text, missing: [keys]} */
 function fill(text, ctx, o) {
   o = o || {}; ctx = ctx || {};
+  if (!o.details) text = stripCheckin(text, ctx.fields).text;
   var b = ctx.booking ? Object.assign({}, ctx.booking) : null, unit = ctx.unit || null;
   if (b && unit && unit.lockCode != null && String(unit.lockCode).trim()) b.doorCode = String(unit.lockCode).trim();
   var level = levelOf(unit && unit.unitNo);
@@ -160,6 +190,8 @@ function samePhone(a, b) {
 
 var API = {
   STEPS: STEPS, NAMES: NAMES, MAX_TEXT: MAX_TEXT, RETRY_MIN: RETRY_MIN, MAX_TRIES: MAX_TRIES, ASK_PHONE: ASK_PHONE,
+  CHECKIN_KEYS: CHECKIN_KEYS, DEFAULT_DETAILS: DEFAULT_DETAILS, DETAILS_LINE: DETAILS_LINE,
+  checkinKeys: checkinKeys, stripCheckin: stripCheckin, detailsText: detailsText,
   addMinutes: addMinutes, settings: settings, dueWindow: dueWindow, isDue: isDue, textFor: textFor, levelOf: levelOf,
   fill: fill, phoneIn: phoneIn, samePhone: samePhone
 };

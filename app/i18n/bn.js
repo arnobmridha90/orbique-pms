@@ -8711,5 +8711,18 @@ O.I18N.bn = {
 "{n} guests": "{n} জন অতিথি",
 "This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest's details and the note.": "এই বুকিং বাতিল, তাই এর ইউনিট, তারিখ ও দাম আগের মতোই থাকবে। আপনি এখনও অতিথির তথ্য ও নোট ঠিক করতে পারেন।",
 "This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest's details and the note.": "এই থাকা শেষ হয়েছে, তাই ইউনিট ও চেক-ইনের তারিখ একই থাকবে। আপনি এখনও চেক-আউট (অতিথি বেশি দিন থাকলে বা আগে চলে গেলে), দাম, অতিথির তথ্য ও নোট বদলাতে পারেন।",
-"The stay is open again, so check the door code still works for the guest.": "থাকাটি আবার খোলা হয়েছে, তাই দরজার কোড অতিথির জন্য এখনও কাজ করছে কিনা দেখে নিন।"
+"The stay is open again, so check the door code still works for the guest.": "থাকাটি আবার খোলা হয়েছে, তাই দরজার কোড অতিথির জন্য এখনও কাজ করছে কিনা দেখে নিন।",
+"Copy check-in details": "চেক-ইনের তথ্য কপি করুন",
+"Door codes are not part of your access": "দরজার কোড আপনার অ্যাক্সেসের অংশ নয়",
+"Pick the unit for this booking first, so the details are for the right room": "আগে এই বুকিংয়ের ইউনিট বেছে নিন, যাতে তথ্য সঠিক রুমের হয়",
+"Not set for this unit: {list}. Check the text before sending.": "এই ইউনিটের জন্য সেট করা নেই: {list}। পাঠানোর আগে লেখাটি দেখে নিন।",
+"24 hours before check-in, with the arrival steps. Skipped when the team already sent the door code here by hand.": "চেক-ইনের ২৪ ঘণ্টা আগে, পৌঁছানোর ধাপসহ। দল এখানে নিজে দরজার কোড পাঠিয়ে থাকলে বাদ যায়।",
+"These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site's chat, for Agoda, Trip.com and direct bookings by email. Guests' questions are always answered by your team. Use {guest_first}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.": "প্রতিটি বুকিংয়ের জন্য এগুলো নিজে থেকেই যায়: Airbnb, Booking.com ও Expedia-তে সাইটের চ্যাটে, Agoda, Trip.com ও সরাসরি বুকিংয়ে ইমেইলে। অতিথিদের প্রশ্নের উত্তর সবসময় আপনার দল দেয়। লেখায় {guest_first}, {checkin_date}, {checkin_time}, {checkout_date} ও {checkout_time} ব্যবহার করুন।",
+"Timed messages never include the suite number, door code or Wi-Fi: a line with one of them is left out. Send them yourself, for example in your WhatsApp group with the guest, so you can still change the room at the last minute. Use Copy check-in details on the booking.": "সময়মতো বার্তায় কখনো স্যুট নম্বর, দরজার কোড বা Wi-Fi থাকে না: এগুলোর কোনোটি থাকা লাইন বাদ যায়। নিজে পাঠান, যেমন অতিথির সঙ্গে আপনার WhatsApp গ্রুপে, যাতে শেষ মুহূর্তেও রুম বদলাতে পারেন। বুকিংয়ে চেক-ইনের তথ্য কপি করুন ব্যবহার করুন।",
+"Check-in details (you send these yourself)": "চেক-ইনের তথ্য (আপনি নিজে পাঠান)",
+"What Copy check-in details on a booking copies, ready to paste into WhatsApp. Never sent by itself. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_time} and {checkout_time}.": "বুকিংয়ে চেক-ইনের তথ্য কপি করুন যা কপি করে, WhatsApp-এ পেস্ট করার জন্য তৈরি। কখনো নিজে থেকে পাঠানো হয় না। {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_time} ও {checkout_time} ব্যবহার করুন।",
+"Check-in details": "চেক-ইনের তথ্য",
+"Check-in details sent: {guest}": "চেক-ইনের তথ্য পাঠানো হয়েছে: {guest}",
+"Arriving soon, check-in details not sent: {guest}": "শীঘ্রই আসছেন, চেক-ইনের তথ্য পাঠানো হয়নি: {guest}",
+"Check-in details copied": "চেক-ইনের তথ্য কপি হয়েছে"
 };

@@ -17,7 +17,7 @@ const ON = (extra = {}) => J.settings(Object.assign({
   since: '2026-11-14T12:00', askPhone: true,
   steps: {
     confirm: { on: true, text: 'Thanks {guest_first}! {phone_ask}' },
-    welcome: { on: true, text: 'Unit {unit_no} on level {level}. Door {door_code}. Wi-Fi {wifi_name} / {wifi_password}. Deposit RM300.', airbnb: 'Unit {unit_no}. Door {door_code}.' },
+    welcome: { on: true, text: 'Hi {guest_first}!\nUnit {unit_no} on level {level}. Door {door_code}.\nWi-Fi {wifi_name} / {wifi_password}.\nDeposit RM300.', airbnb: 'Hi {guest_first}, Airbnb!\nUnit {unit_no}. Door {door_code}.' },
     checkout: { on: true, text: 'Check-out tomorrow, {guest_first}.' }
   }
 }, extra));
@@ -72,7 +72,7 @@ test('one message per moment: a last-minute booking gets the welcome alone, a on
 
 test('textFor: Airbnb guests get the Airbnb version when there is one', () => {
   const cfg = ON();
-  assert.match(J.textFor(cfg, 'welcome', 'airbnb'), /^Unit \{unit_no\}\. Door/);
+  assert.match(J.textFor(cfg, 'welcome', 'airbnb'), /^Hi \{guest_first\}, Airbnb/);
   assert.match(J.textFor(cfg, 'welcome', 'booking'), /Deposit/);
   assert.match(J.textFor(cfg, 'checkout', 'airbnb'), /Check-out tomorrow/);
 });
@@ -86,12 +86,30 @@ test('levelOf', () => {
 
 test('fill: the unit lock code wins, the level and Wi-Fi come from the unit, {phone_ask} only when asked', () => {
   const unit = { id: 'u1', unitNo: '12-3', lockCode: '9988', wifi: ['Test-WiFi', 'test-pw'] };
-  const r = J.fill(ON().steps.welcome.text, { booking: BK({ doorCode: '1111' }), unit }, { now: '2026-11-15T15:00' });
-  assert.equal(r.text, 'Unit 12-3 on level 12. Door 9988. Wi-Fi Test-WiFi / test-pw. Deposit RM300.');
+  const r = J.fill(ON().steps.welcome.text, { booking: BK({ doorCode: '1111' }), unit }, { now: '2026-11-15T15:00', details: true });
+  assert.equal(r.text, 'Hi Ana!\nUnit 12-3 on level 12. Door 9988.\nWi-Fi Test-WiFi / test-pw.\nDeposit RM300.');
   assert.deepEqual(r.missing, []);
   assert.equal(J.fill('Thanks {guest_first}!\n\n{phone_ask}', { booking: BK() }, { askPhone: true }).text, 'Thanks Ana!\n\n' + J.ASK_PHONE);
   assert.equal(J.fill('Thanks {guest_first}!\n\n{phone_ask}\n\nBye', { booking: BK() }, { askPhone: false }).text, 'Thanks Ana!\n\nBye');
-  assert.deepEqual(J.fill('Level {level}', { booking: BK(), unit: { id: 'u2', unitNo: 'PH' } }, {}).missing, ['level']);
+  assert.deepEqual(J.fill('Level {level}', { booking: BK(), unit: { id: 'u2', unitNo: 'PH' } }, { details: true }).missing, ['level']);
+});
+
+test('timed messages never carry check-in details: lines with the suite, level, door code, Wi-Fi or a private field are left out', () => {
+  const unit = { id: 'u1', unitNo: '12-3', lockCode: '9988', wifi: ['Test-WiFi', 'test-pw'] };
+  const fields = [{ key: 'lobby', label: 'Lobby code', private: true, values: { u1: '5544' } }, { key: 'floorplan', label: 'Floor plan', private: false, values: { u1: 'Corner' } }];
+  const text = 'Hi {guest_first}!\nSuite: {unit_no}, level {level}\nDoor code: {door_code}\nWi-Fi: {wifi_name}\nWi-Fi password: {wifi_password}\nLobby {f_lobby}\nLayout {f_floorplan}\nCheck-in from {checkin_time}.';
+  const r = J.fill(text, { booking: BK({ doorCode: '1111' }), unit, fields }, { now: '2026-11-15T15:00' });
+  assert.ok(!/9988|1111|5544|Test-WiFi|test-pw|12-3/.test(r.text), r.text);
+  assert.match(r.text, /^Hi Ana!/);
+  assert.match(r.text, /Layout Corner/);
+  assert.match(r.text, /Check-in from/);
+  /* the team's own copy (Copy check-in details) has them all */
+  const d = J.fill(J.detailsText(J.settings({})), { booking: BK(), unit }, { now: '2026-11-15T15:00', details: true });
+  assert.match(d.text, /Suite: 12-3, level 12/);
+  assert.match(d.text, /Door code: 9988/);
+  assert.match(d.text, /Wi-Fi password: test-pw/);
+  assert.equal(J.detailsText(J.settings({ details: 'Mine {door_code}' })), 'Mine {door_code}');
+  assert.equal(J.settings({ details: 'x' }).details, 'x');
 });
 
 test('phoneIn: one number the message is about; dates, references and prices are not phones', () => {
@@ -194,7 +212,7 @@ test('processJourney sends a due welcome once, through the booking-site chat', a
   assert.equal(sent.length, 1);
   assert.equal(sent[0].via, 'channex');
   assert.equal(sent[0].journey, 'welcome');
-  assert.equal(sent[0].text, 'Unit 12-3. Door 9988.', 'Airbnb version, no deposit');
+  assert.equal(sent[0].text, 'Hi Ana, Airbnb!', 'Airbnb version, no deposit, and never the suite, door code or Wi-Fi');
   assert.equal(w.rows.journeySent['B-1:welcome'].state, 'sent');
   /* the next run sends nothing more */
   const again = [];

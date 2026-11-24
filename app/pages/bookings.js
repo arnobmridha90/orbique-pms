@@ -549,6 +549,7 @@
   /* Edit, Copy guest link and Cancel appear in the booking drawer on every page (core's O.booking.actions) */
   if (O.booking && O.booking.actions && !O.booking.actions.some(function (x) { return x.from === 'bookings'; })) {
     O.booking.actions.push(
+      { from: 'bookings', label: 'Copy check-in details', icon: 'key', show: function (b) { return b.status !== 'cancelled' && b.status !== 'checked_out' && O.can('guestapp.doorCodes') && !!O.journey; }, run: function (b) { copyDetails(b); } },
       { from: 'bookings', label: 'Copy guest link', icon: 'copy', show: function (b) { return b.status !== 'cancelled' && canLink(); }, run: function (b) { copyLink(b); } },
       { from: 'bookings', label: 'Edit', icon: 'edit', show: function (b) { return canEditB(b) && O.can('bookings.edit'); }, run: function (b) { editBooking(b); } },
       { from: 'bookings', label: 'Cancel booking', kind: 'danger-ghost', show: function (b) { return canCancelB(b) && O.can('bookings.cancel'); }, disabled: function (b) { return otaLocked(b) ? otaWhy(b, 'Cancel') : ''; }, run: function (b) { cancelBooking(b, function () {}); } }
@@ -696,6 +697,26 @@
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(function () { U.toast('Guest app link for ' + b.guest.name + ' copied'); }, fallback);
       else fallback();
     } catch (e) { fallback(); }
+  }
+
+  /* Copy the check-in details (suite, door code, Wi-Fi) for the team to paste into the guest's WhatsApp group. They are
+     never sent by themselves (api/_lib/shared/journey.cjs, Arnob 2026-11-24), so the room can still change at the last
+     minute. Copying marks the details as sent (codeStatus 'sent'), which stops the "details not sent" alert. */
+  function copyDetails(b) {
+    if (!O.can('guestapp.doorCodes')) { U.toast('Door codes are not part of your access', 'bad'); return; }
+    var J = O.journey, p = D.propById[b.propertyId] || null, t = O.unitType(b.unitTypeId) || (p && O.typeOf(p)) || null;
+    var bd = (p && O.buildingOf(p)) || (t && O.building(t.buildingId)) || null;
+    if (!p) { U.toast('Pick the unit for this booking first, so the details are for the right room', 'bad'); return; }
+    var fields = [];
+    if (bd && O.greeting && O.greeting.forBuilding) O.greeting.forBuilding(D.greetings || [], bd.id).forEach(function (g) { (g.fields || []).forEach(function (f) { if (f && f.key && !fields.some(function (x) { return x.key === f.key; })) fields.push(f); }); });
+    var r = J.fill(J.detailsText(J.settings(D.guestJourney) || J.settings({})), { booking: b, unit: p, unitType: t, building: bd, fields: fields }, { now: D.NOW, details: true });
+    var done = U.copy(r.text, 'check-in details');
+    if (r.missing && r.missing.length) U.toast(O.tpl('Not set for this unit: {list}. Check the text before sending.', { list: r.missing.join(', ') }), 'bad');
+    if (b.codeStatus !== 'sent') {
+      b.codeStatus = 'sent'; b.codeSentAt = D.NOW; b.codeSentBy = O.state.viewer;
+      O.emit('data', { type: 'booking', bookingId: b.id });
+    }
+    return done;
   }
 
   /* cancel a booking: frees the dates on every platform */

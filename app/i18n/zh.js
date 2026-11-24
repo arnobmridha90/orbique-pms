@@ -8711,5 +8711,18 @@ O.I18N.zh = {
 "{n} guests": "{n} 位房客",
 "This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest's details and the note.": "此訂房已取消，房源、日期與價格維持不變。您仍可更正房客資料與備註。",
 "This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest's details and the note.": "此住宿已完成，房源與入住日期維持不變。您仍可更改退房日期（房客續住或提早離開）、價格、房客資料與備註。",
-"The stay is open again, so check the door code still works for the guest.": "住宿已重新開啟，請確認門鎖密碼對房客仍然有效。"
+"The stay is open again, so check the door code still works for the guest.": "住宿已重新開啟，請確認門鎖密碼對房客仍然有效。",
+"Copy check-in details": "複製入住資料",
+"Door codes are not part of your access": "您的權限不包括門鎖密碼",
+"Pick the unit for this booking first, so the details are for the right room": "請先為此預訂選擇單位，確保資料對應正確的房間",
+"Not set for this unit: {list}. Check the text before sending.": "此單位尚未設定：{list}。傳送前請檢查內容。",
+"24 hours before check-in, with the arrival steps. Skipped when the team already sent the door code here by hand.": "入住前 24 小時，附上抵達步驟。若團隊已在此手動傳送門鎖密碼則略過。",
+"These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site's chat, for Agoda, Trip.com and direct bookings by email. Guests' questions are always answered by your team. Use {guest_first}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.": "這些訊息會為每筆預訂自動傳送：Airbnb、Booking.com 和 Expedia 透過網站聊天，Agoda、Trip.com 和直接預訂透過電子郵件。房客的問題一律由您的團隊回覆。內容中可使用 {guest_first}、{checkin_date}、{checkin_time}、{checkout_date} 和 {checkout_time}。",
+"Timed messages never include the suite number, door code or Wi-Fi: a line with one of them is left out. Send them yourself, for example in your WhatsApp group with the guest, so you can still change the room at the last minute. Use Copy check-in details on the booking.": "定時訊息絕不包含套房號碼、門鎖密碼或 Wi-Fi：含有這些資料的行會被省略。請自行傳送，例如在與房客的 WhatsApp 群組中，這樣您仍可在最後一刻更換房間。請在預訂中使用「複製入住資料」。",
+"Check-in details (you send these yourself)": "入住資料（由您自行傳送）",
+"What Copy check-in details on a booking copies, ready to paste into WhatsApp. Never sent by itself. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_time} and {checkout_time}.": "預訂中「複製入住資料」所複製的內容，可直接貼到 WhatsApp。絕不會自動傳送。可使用 {guest_first}、{unit_no}、{level}、{door_code}、{wifi_name}、{wifi_password}、{checkin_time} 和 {checkout_time}。",
+"Check-in details": "入住資料",
+"Check-in details sent: {guest}": "已傳送入住資料：{guest}",
+"Arriving soon, check-in details not sent: {guest}": "即將抵達，尚未傳送入住資料：{guest}",
+"Check-in details copied": "已複製入住資料"
 };

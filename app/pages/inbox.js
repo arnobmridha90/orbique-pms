@@ -1944,10 +1944,11 @@
         });
       }
       /* the three timed messages (api/_lib/shared/journey.cjs; the worker sends them): a switch and the wording each */
-      var JR_HINT = { confirm: 'Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.', welcome: '24 hours before check-in, with the unit, door code and Wi-Fi. Skipped when the team already sent the door code by hand.', checkout: 'At 6 PM the evening before check-out.' };
+      var JR_HINT = { confirm: 'Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.', welcome: '24 hours before check-in, with the arrival steps. Skipped when the team already sent the door code here by hand.', checkout: 'At 6 PM the evening before check-out.' };
       function journeyHTML() {
         var J = O.journey, cfg = J.settings(D.guestJourney) || J.settings({}), ro = canEdit() ? '' : ' disabled';
-        return '<div class="small">These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site\'s chat, for Agoda, Trip.com and direct bookings by email. Guests\' questions are always answered by your team. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.</div>' +
+        return '<div class="small">These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site\'s chat, for Agoda, Trip.com and direct bookings by email. Guests\' questions are always answered by your team. Use {guest_first}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.</div>' +
+          '<div class="note">' + O.icon('lock') + ' ' + esc('Timed messages never include the suite number, door code or Wi-Fi: a line with one of them is left out. Send them yourself, for example in your WhatsApp group with the guest, so you can still change the room at the last minute. Use Copy check-in details on the booking.') + '</div>' +
           J.STEPS.map(function (k) {
             var st0 = cfg.steps[k];
             return '<div class="ib-jr" data-jr="' + k + '"><label class="row-flex"><input type="checkbox" data-jf="on"' + (st0.on ? ' checked' : '') + ro + '> <b>' + esc(J.NAMES[k]) + '</b></label>' +
@@ -1955,7 +1956,9 @@
               '<textarea class="input" rows="7" maxlength="' + J.MAX_TEXT + '" data-jf="text" aria-label="' + esc(J.NAMES[k]) + '"' + ro + '>' + esc(st0.text) + '</textarea>' +
               '<details' + (st0.airbnb ? ' open' : '') + '><summary class="small">Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)</summary><textarea class="input" rows="7" maxlength="' + J.MAX_TEXT + '" data-jf="airbnb" aria-label="' + esc(J.NAMES[k] + ', Airbnb') + '" placeholder="Leave empty to send the text above to Airbnb guests too."' + ro + '>' + esc(st0.airbnb) + '</textarea></details></div>';
           }).join('') +
-          '<label class="row-flex" data-jr="ask"><input type="checkbox" data-jf="ask"' + (cfg.askPhone ? ' checked' : '') + ro + '> <span>Ask for the guest\'s WhatsApp number when the booking has none, and save it when the guest sends it</span></label>';
+          '<label class="row-flex" data-jr="ask"><input type="checkbox" data-jf="ask"' + (cfg.askPhone ? ' checked' : '') + ro + '> <span>Ask for the guest\'s WhatsApp number when the booking has none, and save it when the guest sends it</span></label>' +
+          (canCodes() ? '<div class="ib-jr" data-jr="details"><b>' + esc('Check-in details (you send these yourself)') + '</b><div class="small muted">' + esc('What Copy check-in details on a booking copies, ready to paste into WhatsApp. Never sent by itself. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_time} and {checkout_time}.') + '</div>' +
+            '<textarea class="input" rows="9" maxlength="' + J.MAX_TEXT + '" data-jf="details" aria-label="' + esc('Check-in details') + '"' + ro + '>' + esc(J.detailsText(cfg)) + '</textarea></div>' : '');
       }
       function saveJourney(body) {
         var J = O.journey, before = J.settings(D.guestJourney), next = { since: before && before.since ? before.since : D.NOW, askPhone: true, steps: {} };
@@ -1964,6 +1967,8 @@
           next.steps[k] = { on: O.$('[data-jf="on"]', box).checked, text: O.$('[data-jf="text"]', box).value.slice(0, J.MAX_TEXT), airbnb: O.$('[data-jf="airbnb"]', box).value.slice(0, J.MAX_TEXT) };
         });
         next.askPhone = O.$('[data-jf="ask"]', body).checked;
+        var det = O.$('[data-jf="details"]', body); /* only shown with door-code access; otherwise kept as it was */
+        next.details = det ? (det.value.trim() === J.DEFAULT_DETAILS.trim() ? '' : det.value.slice(0, J.MAX_TEXT)) : (before ? before.details : '');
         D.guestJourney = next;
         O.emit('data', { type: 'guest-journey' });
         U.toast('Saved the timed messages');
