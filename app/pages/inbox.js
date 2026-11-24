@@ -546,7 +546,7 @@
     if (!server() || live.loading) return;
     if (live.org === O.auth.orgId() && live.cfg) { if (after) after(); return; }
     live.loading = true;
-    O.auth.inbox('config').then(function (r) { live.org = O.auth.orgId(); live.cfg = r; }, function () { live.org = O.auth.orgId(); live.cfg = null; })
+    O.auth.inbox('config', { lang: myLang() }).then(function (r) { live.org = O.auth.orgId(); live.cfg = r; }, function () { live.org = O.auth.orgId(); live.cfg = null; })
       .then(function () { live.loading = false; if (after) after(); });
   }
   /* how a chat can be answered: [{via, label, open, why}] (WhatsApp first when the guest wrote there last) */
@@ -936,7 +936,7 @@
     var m = lastMsg(c), unread = c.unread > 0, feed = c.kind === 'feed';
     var av = feed ? '<span class="cv-feed">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c));
     var sub = feed ? 'Notifications' : 'Email' + (c.ota ? ' via ' + c.ota : '');
-    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + '<span data-no-i18n>' + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text) + '</span>') : '';
+    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + '<span data-no-i18n>' + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + shownText(m, m.text) : shownText(m, m.text)) + '</span>') : '';
     return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(unread ? O.tpl('{name}, {n} unread', { name: updName(c), n: c.unread }) : updName(c)) + '">' +
       '<span class="cv-av">' + av + '</span>' +
       '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
@@ -1685,7 +1685,7 @@
         var L = myLang(), want = [];
         for (var i = c.messages.length - 1; i >= 0 && want.length < 12; i--) {
           var m = c.messages[i], k = c.id + ':' + i + ':' + L;
-          if (needsXl(m) && !live.xlTried[k]) { live.xlTried[k] = true; want.push(i); }
+          if (needsXl(m) && !(live.xlTried[k] > Date.now() - 120000)) { live.xlTried[k] = Date.now(); want.push(i); }
         }
         if (!want.length) return;
         want.forEach(function (i) { live.busy['xl' + c.id + ':' + i] = true; });

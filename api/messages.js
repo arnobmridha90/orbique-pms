@@ -87,7 +87,7 @@ import { waConfig, withToken, fetchMedia, phoneNumberInfo, WhatsAppError } from 
 import { connectWithSignup } from './_lib/whatsapp-connect.js';
 import { appUrl } from './_lib/alerts.js';
 import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from './_lib/translate.js';
-import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt, routes, VIA_NAME, MEDIA_BUCKET, checkMedia, mediaKind, mediaPath, ownsPath, signedUrl, sendMediaReply, markConv, purgeTrash, forgetConv, noteUpload, uploadSent, postNotice } from './_lib/inbox.js';
+import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt, routes, VIA_NAME, MEDIA_BUCKET, checkMedia, mediaKind, mediaPath, ownsPath, signedUrl, sendMediaReply, markConv, purgeTrash, forgetConv, noteUpload, uploadSent, postNotice, noteReader } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
 import { assistantConfig, facts as assistantFacts, transcript, secretsOf, suggest, lookUp, AssistantError } from './_lib/assistant.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
@@ -147,6 +147,7 @@ function translateFailure(e) {
 
 async function config(sb, body, me) {
   const ws = await workspace(sb, body, me);
+  if (body.lang) await noteReader(sb, ws.org.id, me.id, body.lang).catch(() => false); // guest messages are translated into it as they arrive
   const wa = waConfig();
   const num = await numberOf(sb, ws.org.id);
   const cx = channexConfig();

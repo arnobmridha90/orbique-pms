@@ -106,23 +106,62 @@ async function stored(sb, orgId, xid) {
   return !r.error && !!(r.data && r.data.length);
 }
 
-/** The workspace's inbox settings: {lang: the team's language, autoTranslate}. */
-export async function inboxSettings(sb, orgId) {
-  const v = await blob(sb, orgId, 'inboxSettings').catch(() => null);
-  return { lang: langCode(v && v.lang) || 'en', autoTranslate: !(v && v.autoTranslate === false) };
+/** The languages the team reads the inbox in (blob 'inboxReaders' {<userId>: {lang, at}}; the app reports it). */
+export const READER_DAYS = 60;
+export const MAX_TARGETS = 4;
+export async function readerLangs(sb, orgId, now = Date.now()) {
+  const v = await blob(sb, orgId, 'inboxReaders').catch(() => null);
+  const out = [];
+  if (v && typeof v === 'object') Object.values(v).forEach((r) => {
+    const l = r && langCode(r.lang);
+    if (l && !out.includes(l) && (!r.at || now - Date.parse(r.at) < READER_DAYS * 86400000)) out.push(l);
+  });
+  return out;
+}
+/** Remember the language this person reads the inbox in (when it changed or is older than a day). */
+export async function noteReader(sb, orgId, userId, lang, now = Date.now()) {
+  const l = langCode(lang);
+  if (!l || !userId) return false;
+  const v = (await blob(sb, orgId, 'inboxReaders').catch(() => null)) || {};
+  const cur = v[userId];
+  if (cur && cur.lang === l && cur.at && now - Date.parse(cur.at) < 86400000) return false;
+  const next = Object.assign({}, v, { [userId]: { lang: l, at: new Date(now).toISOString() } });
+  const r = await sb.from('blobs').upsert({ org_id: orgId, key: 'inboxReaders', data: { v: next } }, { onConflict: 'org_id,key' });
+  if (r.error) { console.error('[inbox] reader language:', r.error.message); return false; }
+  return true;
 }
 
-/** {lang, tr} for a guest's message in the team's language, or {} (no key, same language, or it failed / took too long). */
+/** The workspace's inbox settings: {lang: the team's language, autoTranslate, readers: the team's reading languages}. */
+export async function inboxSettings(sb, orgId) {
+  const v = await blob(sb, orgId, 'inboxSettings').catch(() => null);
+  const readers = await readerLangs(sb, orgId).catch(() => []);
+  return { lang: langCode(v && v.lang) || 'en', autoTranslate: !(v && v.autoTranslate === false), readers };
+}
+
+/**
+ * {lang, tr, trx} for a guest's message, made as it arrives: in the team's language (tr) and in every language the team
+ * reads the inbox in (trx, '' = already in that language), all at once. {} when there is no key or nothing came back in time.
+ */
 export async function translated(text, settings, opts = {}) {
   const cfg = opts.translateConfig || translateConfig();
-  if (!cfg.configured || !settings.autoTranslate || !String(text || '').trim()) return {};
-  try {
-    const r = await translate(cfg, text, settings.lang, { timeoutMs: opts.timeoutMs || 6000, fetch: opts.fetch });
-    if (r.same) return r.lang ? { lang: r.lang } : {};
-    return { lang: r.lang || undefined, tr: { to: settings.lang, text: clip(r.text, MAX_TEXT) } };
-  } catch (e) {
-    return {};
-  }
+  const src = String(text || '').trim();
+  if (!cfg.configured || !settings.autoTranslate || !src) return {};
+  const targets = [settings.lang];
+  (settings.readers || []).forEach((l) => { if (!targets.includes(l) && targets.length < MAX_TARGETS) targets.push(l); });
+  const timeoutMs = opts.timeoutMs || Math.min(14000, 6000 + src.length * 2);
+  const res = await Promise.all(targets.map((to) => translate(cfg, src, to, { timeoutMs, fetch: opts.fetch }).then((r) => ({ to, r }), () => null)));
+  const ok = res.filter(Boolean);
+  if (!ok.length) return {};
+  const out = {};
+  const lang = (ok.find((x) => x.r.lang) || {}).r;
+  if (lang && lang.lang) out.lang = lang.lang;
+  const trx = {};
+  ok.forEach(({ to, r }) => {
+    if (to === settings.lang) { if (!r.same) out.tr = { to, text: clip(r.text, MAX_TEXT) }; else trx[to] = ''; }
+    else trx[to] = r.same ? '' : clip(r.text, MAX_TEXT);
+  });
+  if (Object.keys(trx).length) out.trx = trx;
+  return out;
 }
 
 /* ---------- WhatsApp in ---------- */
