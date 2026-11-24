@@ -79,16 +79,37 @@
      message from the guest that this device did not have yet. Not on first load (that is not a live change), not for
      the team's own saves (r.by) or messages, and not in this test copy, which has no live changes. Runs while Orbique is
      open, on any page. play() does nothing when muted and skips repeats within 3 seconds. */
+  /* -> the new guest messages, [{c: the chat's new data, m: the message}] (empty: none) */
   function newGuestMessages(rows) {
-    var have = {}; (D.conversations || []).forEach(function (c) { have[String(c.id)] = c; });
-    return (rows || []).some(function (r) {
-      if (r.coll !== 'conversations' || r.deleted || r.by || !r.data || !Array.isArray(r.data.messages)) return false;
+    var have = {}, out = []; (D.conversations || []).forEach(function (c) { have[String(c.id)] = c; });
+    (rows || []).forEach(function (r) {
+      if (r.coll !== 'conversations' || r.deleted || r.by || !r.data || !Array.isArray(r.data.messages)) return;
       var old = have[String(r.id)], om = old && Array.isArray(old.messages) ? old.messages : [], xids = {};
       om.forEach(function (m) { if (m && m.xid) xids[m.xid] = 1; });
-      return r.data.messages.some(function (m, i) { return m && m.from === 'guest' && (m.xid ? !xids[m.xid] : i >= om.length); });
+      r.data.messages.forEach(function (m, i) { if (m && m.from === 'guest' && (m.xid ? !xids[m.xid] : i >= om.length)) out.push({ id: r.id, c: r.data, m: m, i: i }); });
+    });
+    return out;
+  }
+  /* the bell's history (O.alertLog, app/core.js): who wrote and what, one line per chat per batch */
+  function logGuestMessages(news) {
+    if (!O.alertLog) return;
+    var last = {}; news.forEach(function (x) { last[String(x.id)] = x; });
+    Object.keys(last).forEach(function (id) {
+      var x = last[id], c = x.c, b = c.bookingId ? D.booking(c.bookingId) : null, n = news.filter(function (y) { return String(y.id) === id; }).length;
+      var name = (b && b.guest && b.guest.name) || (c.contact && c.contact.name) || c.wa || c.em || 'Guest';
+      var m = x.m, txt = String(m.text || m.transcript || '').replace(/\s+/g, ' ').trim();
+      if (!txt) txt = m.type === 'voice' ? O.tr('Voice message') : m.type === 'image' ? O.tr('Photo') : m.type === 'file' ? O.tr('File') : '';
+      if (txt.length > 140) txt = txt.slice(0, 139) + '…';
+      var unit = b && D.propById[b.propertyId] ? D.propById[b.propertyId].short : '';
+      O.alertLog.add({ key: 'msg:' + id + ':' + (m.xid || m.id || x.i), type: 'message', k: n > 1 ? '{n} new messages from {guest}' : 'New message from {guest}', v: { guest: name, n: n },
+        s: (unit ? unit + ' · ' : '') + txt, go: c.bookingId ? ['inbox', { bookingId: c.bookingId }] : ['inbox'], toast: true });
     });
   }
-  O.on('remote-rows', function (rows) { if (O.alertSound && newGuestMessages(rows)) O.alertSound.play('message'); });
+  O.on('remote-rows', function (rows) {
+    var news = newGuestMessages(rows); if (!news.length) return;
+    logGuestMessages(news);
+    if (O.alertSound) O.alertSound.play('message');
+  });
   O.inboxNewGuest = newGuestMessages; /* for checks in the browser console and tests */
 
   var st = { sel: null, view: 'list', tab: 'guests', box: 'main', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };

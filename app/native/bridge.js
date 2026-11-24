@@ -339,9 +339,19 @@
       var k = n && n.data && n.data.kind;
       if (O.alertSound) O.alertSound.play(k === 'cancelled' || k === 'changed' ? 'change' : 'booking');
       if (n && n.title) U.toast(n.title + (n.body ? ': ' + String(n.body).split('\n')[0] : ''));
+      logPush(n);
     });
+    /* the bell's history (O.alertLog, app/core.js): a booking alert that reached this phone. The key matches the one the
+       live update writes (app/server/booking-alerts.js), so the same booking shows once. */
+    function logPush(n) {
+      if (!n || !O.alertLog || !n.title) return;
+      var nd = n.data || {}, k = nd.kind;
+      O.alertLog.add({ key: nd.bookingId ? 'bk:' + nd.bookingId + ':' + k : '', type: k === 'cancelled' || k === 'changed' ? 'change' : 'booking', k: String(n.title),
+        s: String(n.body || '').split('\n').slice(0, 2).join(' · '), go: nd.bookingId ? { booking: nd.bookingId } : null });
+    }
     Push.addListener('pushNotificationActionPerformed', function (a) {
       var nd = a && a.notification && a.notification.data;
+      if (a && a.notification && (!nd || nd.kind !== 'team')) logPush(a.notification);
       if (nd && nd.kind === 'team' && nd.chatId) {
         (function openChat(tries) {
           if (O._started && O.pages.team) { O.go('team', { chatId: nd.chatId }); return; }
