@@ -8711,5 +8711,18 @@ O.I18N.ms = {
 "{n} guests": "{n} tetamu",
 "This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest's details and the note.": "Tempahan ini dibatalkan, jadi unit, tarikh dan harganya kekal. Anda masih boleh membetulkan butiran tetamu dan nota.",
 "This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest's details and the note.": "Penginapan ini sudah selesai, jadi unit dan tarikh daftar masuk kekal. Anda masih boleh mengubah daftar keluar (tetamu yang tinggal lebih lama atau keluar awal), harga, butiran tetamu dan nota.",
-"The stay is open again, so check the door code still works for the guest.": "Penginapan dibuka semula, jadi pastikan kod pintu masih berfungsi untuk tetamu."
+"The stay is open again, so check the door code still works for the guest.": "Penginapan dibuka semula, jadi pastikan kod pintu masih berfungsi untuk tetamu.",
+"Copy check-in details": "Salin butiran daftar masuk",
+"Door codes are not part of your access": "Kod pintu bukan sebahagian daripada akses anda",
+"Pick the unit for this booking first, so the details are for the right room": "Pilih unit untuk tempahan ini dahulu, supaya butiran adalah untuk bilik yang betul",
+"Not set for this unit: {list}. Check the text before sending.": "Belum ditetapkan untuk unit ini: {list}. Semak teks sebelum menghantar.",
+"24 hours before check-in, with the arrival steps. Skipped when the team already sent the door code here by hand.": "24 jam sebelum daftar masuk, dengan langkah ketibaan. Dilangkau jika pasukan sudah menghantar kod pintu di sini secara manual.",
+"These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site's chat, for Agoda, Trip.com and direct bookings by email. Guests' questions are always answered by your team. Use {guest_first}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.": "Mesej ini dihantar sendiri untuk setiap tempahan: di Airbnb, Booking.com dan Expedia melalui sembang laman, untuk Agoda, Trip.com dan tempahan terus melalui e-mel. Soalan tetamu sentiasa dijawab oleh pasukan anda. Gunakan {guest_first}, {checkin_date}, {checkin_time}, {checkout_date} dan {checkout_time} dalam teks.",
+"Timed messages never include the suite number, door code or Wi-Fi: a line with one of them is left out. Send them yourself, for example in your WhatsApp group with the guest, so you can still change the room at the last minute. Use Copy check-in details on the booking.": "Mesej bermasa tidak pernah mengandungi nombor suite, kod pintu atau Wi-Fi: baris yang mengandunginya dikeluarkan. Hantar sendiri, contohnya dalam kumpulan WhatsApp bersama tetamu, supaya anda masih boleh menukar bilik pada saat akhir. Gunakan Salin butiran daftar masuk pada tempahan.",
+"Check-in details (you send these yourself)": "Butiran daftar masuk (anda hantar sendiri)",
+"What Copy check-in details on a booking copies, ready to paste into WhatsApp. Never sent by itself. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_time} and {checkout_time}.": "Teks yang disalin oleh Salin butiran daftar masuk pada tempahan, sedia untuk ditampal ke WhatsApp. Tidak pernah dihantar sendiri. Gunakan {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_time} dan {checkout_time}.",
+"Check-in details": "Butiran daftar masuk",
+"Check-in details sent: {guest}": "Butiran daftar masuk dihantar: {guest}",
+"Arriving soon, check-in details not sent: {guest}": "Tiba tidak lama lagi, butiran daftar masuk belum dihantar: {guest}",
+"Check-in details copied": "Butiran daftar masuk disalin"
 };
