@@ -524,7 +524,10 @@
      Booking drawer with actions. The drawer itself is core's O.booking.open; this adds a footer with
      Edit, Copy guest link and Cancel booking (per permission). Used by Bookings and Calendar.
      =================================================================== */
-  function canEditB(b) { return b.status !== 'cancelled' && b.status !== 'checked_out'; }
+  /* every booking can be edited (Arnob, 2026-11-24: "Make sure I can change direct booking details"). How much depends on
+     its status: an upcoming or in-house stay, everything the form offers; a completed stay, the guest, the price, the
+     check-out (a guest who stays on or left early) and notes; a cancelled booking, the guest's details and notes. */
+  function canEditB(b) { return !!b; }
   function canCancelB(b) { return b.status === 'confirmed' || b.status === 'pending'; }
   /* a platform booking that came through the channel manager: its dates, price and cancellation belong to the platform,
      and changes made there arrive here automatically. A platform booking typed in by hand never syncs back, so it stays editable here. */
@@ -605,7 +608,7 @@
     var how = !p ? O.tpl('No single {type} unit is free for the whole stay. Pick one by hand, or free a unit and let Orbique pick again.', { type: t.name })
       : a.how === 'manual' ? 'Picked by ' + (whoName(a.by) || 'the team') + (a.at ? ' on ' + d.fmt(String(a.at).slice(0, 10)) : '') + '.'
         : 'Picked by Orbique: the unit that leaves the smallest gaps between stays.';
-    var canMove = O.can('bookings.edit') && canEditB(b);
+    var canMove = O.can('bookings.edit') && b.status !== 'cancelled' && b.status !== 'checked_out';
     var html = '<div class="bk-unit"><div class="section-title" style="margin-top:0">Unit</div>' +
       '<div class="bu-top">' + (p ? '<b class="bu-no">' + esc(p.unitNo ? 'Unit ' + p.unitNo : propName(p)) + '</b>' : '<span class="pill bad">Needs a unit</span>') +
       '<span class="small muted">' + esc(t.name + (bd ? ' · ' + bd.name : '')) + (p && p.unitTypeId && p.unitTypeId !== t.id ? ' · ' + esc('in a ' + ((O.unitType(p.unitTypeId) || {}).name || 'other') + ' unit') : '') + '</span></div>' +
@@ -780,13 +783,14 @@
   /* ---------------- edit booking ---------------- */
   function editBooking(b) {
     if (!O.can('bookings.edit')) { U.toast(NO.edit, 'bad'); return; }
-    if (!canEditB(b)) { U.toast('Completed and cancelled bookings cannot be changed', 'bad'); return; }
-    var T = D.TODAY, inHouse = b.status === 'checked_in' || b.checkIn < T, contacts = canContacts(), money = canValue(), ota = otaLocked(b);
+    if (!canEditB(b)) return;
+    var T = D.TODAY, done = b.status === 'checked_out', gone = b.status === 'cancelled';
+    var inHouse = b.status === 'checked_in' || b.checkIn < T || done || gone, contacts = canContacts(), money = canValue(), ota = otaLocked(b);
     /* direct (and website) bookings: the nightly price can be changed; a booking-site booking typed in by hand: what the guest
        paid and the commission. A booking from a connected site keeps the price the site sent. */
-    var direct = b.channel === 'direct', hand = !ota && !direct, cur = esc(fmt.cur(b));
+    var direct = b.channel === 'direct', hand = !ota && !direct, cur = esc(fmt.cur(b)), fixedOut = ota || gone;
     function f(label, input, cls, hint) { return '<div class="field ' + (cls || '') + '"><label>' + label + '</label>' + input + (hint || '') + '</div>'; }
-    var priceSec = direct ? '<div class="nb-sec">Price</div><div class="form-grid">' +
+    var priceSec = gone ? '' : direct ? '<div class="nb-sec">Price</div><div class="form-grid">' +
         f('Booked on', '<select class="select" name="src">' + ['direct', 'website'].map(function (c) { return '<option value="' + c + '"' + (c === srcOf(b) ? ' selected' : '') + '>' + esc(srcLabel(c)) + '</option>'; }).join('') + '</select>', money ? '' : 'full') +
         (money ? f('Nightly price (<span class="nb-cur">' + cur + '</span>)', '<input type="number" class="input" name="price" min="1" step="1" inputmode="decimal" value="' + esc(String(b.nightly || '')) + '">', '', '<div class="hint">The room rate for each night. The total follows it.</div>') : '') + '</div>'
       : hand && money ? '<div class="nb-sec">Price</div><div class="form-grid">' +
@@ -796,9 +800,9 @@
     var props = D.properties.filter(function (p) { return !isArchived(p) || p.id === b.propertyId; });
     var body = O.html('<div class="nb-wrap"><div class="stack">' +
       '<div class="nb-sec">Stay</div><div class="form-grid">' +
-      f('Property', '<select class="select" name="pid"' + (inHouse ? ' disabled' : '') + '>' + unitOptions(props, b.unitTypeId && O.unitType(b.unitTypeId) && !inHouse && !(b.assignment && b.assignment.locked) && !(b.propertyId && lockOf(b)) ? 'type:' + b.unitTypeId : b.propertyId) + '</select>', 'full', inHouse ? '<div class="hint">The guest is already in-house, so the unit and check-in date stay as they are.</div>' : '') +
+      f('Property', '<select class="select" name="pid"' + (inHouse ? ' disabled' : '') + '>' + unitOptions(props, b.unitTypeId && O.unitType(b.unitTypeId) && !inHouse && !(b.assignment && b.assignment.locked) && !(b.propertyId && lockOf(b)) ? 'type:' + b.unitTypeId : b.propertyId) + '</select>', 'full', inHouse ? '<div class="hint">' + esc(gone ? 'This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest\'s details and the note.' : done ? 'This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest\'s details and the note.' : 'The guest is already in-house, so the unit and check-in date stay as they are.') + '</div>' : '') +
       f('Check-in', '<input type="date" class="input" name="ci" value="' + b.checkIn + '"' + (inHouse || ota ? ' disabled' : ' min="' + T + '"') + '>') +
-      f('Check-out', '<input type="date" class="input" name="co" value="' + b.checkOut + '"' + (ota ? ' disabled' : '') + ' min="' + d.add(inHouse ? T : b.checkIn, 1) + '">', '', ota ? '<div class="hint">' + esc(otaWhy(b)) + '</div>' : '') +
+      f('Check-out', '<input type="date" class="input" name="co" value="' + b.checkOut + '"' + (fixedOut ? ' disabled' : '') + ' min="' + d.add(inHouse && !done ? T : b.checkIn, 1) + '">', '', ota ? '<div class="hint">' + esc(otaWhy(b)) + '</div>' : '') +
       f('Arrival time', '<input type="time" class="input" name="tin" value="' + esc(b.checkInTime || '15:00') + '">') +
       f('Departure time', '<input type="time" class="input" name="tout" value="' + esc(b.checkOutTime || '11:00') + '">') +
       f('Guests', '<input type="number" class="input" name="guests" min="1" value="' + b.guests + '">', '', '<div class="hint nb-maxg"></div>') +
@@ -817,11 +821,13 @@
         price: $('[name=price]') ? num($('[name=price]').value) : b.nightly || 0,
         total: $('[name=total]') ? num($('[name=total]').value) : b.total, fee: $('[name=fee]') ? num($('[name=fee]').value) : b.platformFee };
     }
+    /* a completed or cancelled booking that keeps its dates and unit is not checked against the calendar again */
+    function keeps(v) { return (done || gone) && v.ci === b.checkIn && v.co === b.checkOut && v.pid === b.propertyId; }
     function update() {
       var v = vals(), ok = v.ci && v.co && v.co > v.ci, r = resolveUnit(v.pid, v.ci, v.co, b), p = r.p || D.propById[b.propertyId];
       $('.nb-maxg').textContent = 'Up to ' + maxGuests(p) + ' guests';
       var nights = ok ? d.diff(v.ci, v.co) : 0;
-      var cf = ok && !r.auto ? conflictsFor(v.pid, v.ci, v.co, b) : [];
+      var cf = ok && !r.auto && !keeps(v) ? conflictsFor(v.pid, v.ci, v.co, b) : [];
       var changed = v.ci !== b.checkIn || v.co !== b.checkOut || (r.auto ? r.unitId !== (b.propertyId || null) : v.pid !== b.propertyId);
       var av = $('.nb-avail');
       if (ok && r.auto && !r.unitId) {
@@ -833,14 +839,15 @@
           : r.auto ? (r.unitId === b.propertyId ? O.tpl('{available} The guest keeps {unit}.', { available: { raw: bold('Available.') }, unit: { raw: esc(unitWord(p)) } }) : O.tpl('{available} Orbique puts the guest in {unit}, the best fit.', { available: { raw: bold('Available.') }, unit: { raw: esc(unitWord(p)) } }))
             : changed ? O.tpl('{available} for all {count} at {unit}.', { available: { raw: bold('Available') }, count: fmt.plural(nights, 'night'), unit: { raw: esc(p.short || p.name) } }) : esc(O.tr('Same dates and unit as now.'));
       }
-      var mc = { cur: p }, nightly = direct ? Math.round(v.price) : b.nightly || 0;
+      var mc = { cur: p }, nightly = direct && !gone ? Math.round(v.price) : b.nightly || 0;
       var acc = Math.round(nightly * nights), clean = v.pid === b.propertyId ? b.cleaningFee : cleaningFor(p), tax = b.guest.foreign && O.tourismTaxApplies(p) ? 10 * nights : 0, extra = direct ? b.extraBed || 0 : 0, tot = acc + clean + tax + extra;
       if (hand) tot = Math.round(v.total * 100) / 100;
+      if (gone) tot = b.total; /* a cancelled booking keeps its amounts */
       var payout = Math.max(0, Math.round((v.total - v.fee) * 100) / 100);
       if (hand && money) $('.nb-payout').textContent = v.total > 0 ? 'Your payout: ' + fmt.money(payout, mc) + '.' : '';
       var lines = hand ? '<dt>Guest paid on ' + esc(U.platName(b.channel)) + '</dt><dd>' + fmt.money(tot, mc) + '</dd><dt>Commission and fees</dt><dd>−' + fmt.money(v.fee, mc) + '</dd><dt class="tot">Your payout</dt><dd class="tot">' + fmt.money(payout, mc) + '</dd>'
         : '<dt>' + nights + ' × ' + fmt.money(nightly, mc) + '</dt><dd>' + fmt.money(acc, mc) + '</dd><dt>Cleaning fee</dt><dd>' + fmt.money(clean, mc) + '</dd>' + (tax ? '<dt>Tourism tax</dt><dd>' + fmt.money(tax, mc) + '</dd>' : '') + (extra ? '<dt>Extra bed</dt><dd>' + fmt.money(extra, mc) + '</dd>' : '') + '<dt class="tot">New total</dt><dd class="tot">' + fmt.money(tot, mc) + '</dd>';
-      var shown = ota ? b.total : tot; /* a connected site's booking keeps its amounts */
+      var shown = ota || gone ? b.total : tot; /* a connected site's booking keeps its amounts */
       $('.nb-sum').innerHTML = '<h4>' + esc(propName(p)) + '</h4><div class="muted small">' + esc(place(p)) + '</div><div class="muted small">' + (ok ? d.fmtY(v.ci) + ' → ' + d.fmtY(v.co) + ' · ' + fmt.plural(nights, 'night') : 'Choose dates') + '</div>' +
         (money ? (ota ? '<dl class="kv"><dt class="tot">Guest paid</dt><dd class="tot">' + fmt.money(b.total, { cur: b }) + '</dd></dl>' : '<dl class="kv">' + lines + '</dl>') +
           (ok && !ota && Math.abs(shown - b.total) >= 0.01 ? '<div class="nb-docs" style="margin-top:8px">Was ' + fmt.money(b.total, { cur: b }) + '.' + (b.paidAt && direct ? ' The guest has paid, so settle the difference of ' + fmt.money(Math.abs(tot - b.total), mc) + (tot > b.total ? ' with them.' : ' back to them.') : '') + (b.invoiceSent ? ' The invoice shows the new amounts: send it again so the guest has the right one.' : '') + '</div>' : '') : '');
@@ -860,23 +867,24 @@
           if (!v.ci || !v.co || v.co <= v.ci) err.push('Check-out must be after check-in.');
           else if (p) {
             if (!inHouse && v.ci < D.TODAY && v.ci !== b.checkIn) err.push('Check-in cannot be in the past.');
-            if (inHouse && v.co < D.TODAY) err.push('Check-out cannot be in the past.');
+            if (inHouse && !done && v.co !== b.checkOut && v.co < D.TODAY) err.push('Check-out cannot be in the past.');
             if (d.diff(v.ci, v.co) > 90) err.push('A booking can be at most 90 nights.');
-            var cf = r.auto ? [] : conflictsFor(v.pid, v.ci, v.co, b); if (cf.length) err.push((p.short || p.name) + ' is not available: ' + cf[0] + '.');
+            var cf = r.auto || keeps(v) ? [] : conflictsFor(v.pid, v.ci, v.co, b); if (cf.length) err.push((p.short || p.name) + ' is not available: ' + cf[0] + '.');
           }
           if (ota && (v.ci !== b.checkIn || v.co !== b.checkOut)) err.push(otaWhy(b));
           if (ota && b.unitTypeId && r.typeId !== b.unitTypeId && !(p && p.unitTypeId === b.unitTypeId)) err.push('This ' + U.platName(b.channel) + ' booking was sold as ' + ((O.unitType(b.unitTypeId) || {}).name || 'its unit type') + ', so it stays with that unit type.');
           if (!v.name) err.push('Enter the guest\'s name.');
           if (contacts && v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) err.push('The email address does not look right.');
-          if (p && (v.guests < 1 || v.guests > maxGuests(p))) err.push('Guests must be between 1 and ' + maxGuests(p) + ' for this unit.');
-          if (direct && money && !(v.price > 0)) err.push('Enter the nightly price.');
-          if (hand && money && !(v.total > 0)) err.push('Enter what the guest paid on ' + U.platName(b.channel) + '.');
-          if (hand && money && (v.fee < 0 || v.fee > v.total)) err.push('The commission and fees should be between 0 and what the guest paid.');
+          if (p && (v.guests < 1 || (v.guests > maxGuests(p) && v.guests !== b.guests))) err.push('Guests must be between 1 and ' + maxGuests(p) + ' for this unit.');
+          if (direct && money && !gone && !(v.price > 0)) err.push('Enter the nightly price.');
+          if (hand && money && !gone && !(v.total > 0)) err.push('Enter what the guest paid on ' + U.platName(b.channel) + '.');
+          if (hand && money && !gone && (v.fee < 0 || v.fee > v.total)) err.push('The commission and fees should be between 0 and what the guest paid.');
           if (err.length) { $('.nb-err').innerHTML = '<b>Please check ' + (err.length === 1 ? 'this' : 'these') + ':</b><br>' + err.map(esc).join('<br>'); try { $('.nb-err').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (x) { /* ignore */ } return false; }
           var from = b.propertyId || null;
           var moved = v.ci !== b.checkIn || v.co !== b.checkOut || (r.auto ? r.unitId !== from : v.pid !== from);
           b.nights = d.diff(v.ci, v.co);
-          if (direct) {
+          if (gone) { /* a cancelled booking keeps its unit, dates and amounts */ }
+          else if (direct) {
             if (money) b.nightly = Math.round(v.price);
             if (v.src === 'website') b.otaName = 'Website'; else if (b.otaName === 'Website') delete b.otaName;
             reprice(b, p);
@@ -886,6 +894,8 @@
             b.total = tot; b.revenue = tot; b.platformFee = fee; b.payout = Math.round((tot - fee) * 100) / 100;
           } /* a booking from a connected site keeps the price the site sent */
           b.checkIn = v.ci; b.checkOut = v.co; b.guests = v.guests; b.checkInTime = v.tin; b.checkOutTime = v.tout;
+          var reopened = false; /* a completed stay moved to a later check-out: the guest is in-house again */
+          if (done && D.NOW < b.checkOut + 'T' + (b.checkOutTime || '11:00')) { b.status = b.checkIn <= D.TODAY ? 'checked_in' : 'confirmed'; if (b.codeStatus === 'expired') b.codeStatus = 'sent'; reopened = true; }
           if (r.auto) { b.unitTypeId = r.typeId; O.assignBooking(b, { ignoreLock: true }); } /* keeps the unit while it is still free */
           else if (r.typeId || b.unitTypeId) { if (v.pid !== from) O.pickUnit(b, v.pid); }
           else b.propertyId = v.pid;
@@ -897,7 +907,7 @@
           if (moved && O.automation && O.automation.run) O.automation.run('booking');
           reveal(b);
           O.emit('data', { type: 'booking', bookingId: b.id });
-          U.toast('Booking ' + b.id + ' updated' + (moved ? ': ' + O.bookingPlace(b) + ', ' + d.fmtRange(b.checkIn, b.checkOut) : '') + '.' + (b.unitTypeId && !b.propertyId ? ' No unit is free for the whole stay yet, so pick one by hand.' : ''), b.unitTypeId && !b.propertyId ? 'bad' : undefined);
+          U.toast('Booking ' + b.id + ' updated' + (moved ? ': ' + O.bookingPlace(b) + ', ' + d.fmtRange(b.checkIn, b.checkOut) : '') + '.' + (reopened ? ' The stay is open again, so check the door code still works for the guest.' : '') + (b.unitTypeId && !b.propertyId ? ' No unit is free for the whole stay yet, so pick one by hand.' : ''), b.unitTypeId && !b.propertyId ? 'bad' : undefined);
         }
       }]
     });

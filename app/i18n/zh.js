@@ -8708,5 +8708,8 @@ O.I18N.zh = {
 "{n} guests staying": "{n} 位房客入住中",
 "{qty} left (reorder at {reorder})": "剩餘 {qty}（{reorder} 時補貨）",
 "arrives {when}": "{when} 抵達",
-"{n} guests": "{n} 位房客"
+"{n} guests": "{n} 位房客",
+"This booking is cancelled, so its unit, dates and price stay as they were. You can still correct the guest's details and the note.": "此訂房已取消，房源、日期與價格維持不變。您仍可更正房客資料與備註。",
+"This stay is completed, so the unit and check-in date stay as they are. You can still change the check-out (a guest who stays on or left early), the price, the guest's details and the note.": "此住宿已完成，房源與入住日期維持不變。您仍可更改退房日期（房客續住或提早離開）、價格、房客資料與備註。",
+"The stay is open again, so check the door code still works for the guest.": "住宿已重新開啟，請確認門鎖密碼對房客仍然有效。"
 };
