@@ -1223,7 +1223,7 @@
       '<div class="note lk-info"></div>' +
       '<div class="field"><label>Which code?</label><div class="seg lk-scope"><button type="button" data-v="guest" class="on">Guest code (one stay)</button><button type="button" data-v="master">Master code (staff &amp; cleaners)</button></div></div>' +
       '<div class="field lk-guest-row"><label for="lk-bid">Booking</label><select class="select" name="bid" id="lk-bid"></select></div>' +
-      '<div class="field"><label for="lk-code">New code</label><div class="row-flex"><input class="input code-in" name="code" id="lk-code" inputmode="numeric" maxlength="8" style="font-size:20px;font-weight:800;letter-spacing:0.25em;max-width:180px"><button type="button" class="btn btn-ghost btn-sm lk-gen">' + O.icon('refresh') + 'Generate</button></div><div class="hint">4 to 8 digits. Avoid repeating or sequential numbers.</div></div>' +
+      '<div class="field"><label for="lk-code">New code</label><div class="row-flex"><input class="input code-in" name="code" id="lk-code" inputmode="numeric" style="font-size:20px;font-weight:800;letter-spacing:0.25em;max-width:320px"><button type="button" class="btn btn-ghost btn-sm lk-gen">' + O.icon('refresh') + 'Generate</button></div><div class="hint">Digits, any length. Spaces are fine. Avoid repeating or sequential numbers.</div></div>' +
       '<div class="form-grid lk-valid"><div class="field"><label for="lk-from">Works from</label><input type="datetime-local" class="input" name="from" id="lk-from"></div><div class="field"><label for="lk-to">Until</label><input type="datetime-local" class="input" name="to" id="lk-to"></div></div>' +
       '<label class="check lk-notify"><input type="checkbox" name="notify" checked><span>Send the new code to the guest on WhatsApp (and in their guest app) from 24 hours before check-in</span></label>' +
       '<div class="lk-err small" style="color:var(--bad)"></div></div>');
@@ -1252,8 +1252,8 @@
       title: 'Change door code', sub: 'Updates the smart lock remotely. Works from every page.', body: body,
       actions: [{ label: 'Cancel' }, {
         label: 'Update lock', kind: 'primary', onClick: function () {
-          var code = O.$('[name=code]', body).value.trim(), p = D.propById[O.$('[name=pid]', body).value];
-          if (!/^\d{4,8}$/.test(code)) { O.$('.lk-err', body).textContent = 'Enter 4 to 8 digits.'; return false; }
+          var code = O.$('[name=code]', body).value.replace(/\s+/g, ' ').trim(), p = D.propById[O.$('[name=pid]', body).value];
+          if (!/^\d[\d ]*$/.test(code)) { O.$('.lk-err', body).textContent = 'Enter the code in digits. Spaces are fine.'; return false; }
           if (scope === 'master') {
             p.lockCode = code;
             D.lockLog.unshift({ at: D.NOW, propertyId: p.id, bookingId: null, by: O.state.viewer, what: 'Master code changed', code: code });

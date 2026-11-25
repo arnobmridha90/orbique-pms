@@ -18,7 +18,7 @@ O.I18N_SRC = [
   'done', 'not started', 'unassigned', 'previous', 'before that', 'no change', 'level', 'day', 'week', 'month', 'this unit',
   'house rules', 'ID check', 'nobody yet', 'a team member', 'the owner', 'other', 'A unit',
   /* attribute values inside a code-like literal ('data-act="x" title="…"'), which the scan reads as code */
-  'Download the stock list', '4 to 8 digits', 'No limit', 'For example: Arrival', 'or drop it here. The colours update straight away.',
+  'Download the stock list', 'Digits, any length', 'No limit', 'For example: Arrival', 'or drop it here. The colours update straight away.',
   '"Direct" booking badge',
   /* examples in fields that hold a number or a code */
   'e.g. 21-1', 'e.g. 1', 'e.g. 2', 'e.g. 4', 'e.g. stay@example.com',

@@ -1003,7 +1003,7 @@
       '<div class="pp-sec"><h4>Access</h4><div class="sd">The lock, Wi-Fi and parking guests and cleaners need.</div>' +
       (access ? '<div class="form-grid">' +
         fld('lockBrand', 'Smart lock', inp('lockBrand', f.lockBrand, ' maxlength="30" list="pp-locks" placeholder="e.g. Yale"') + datalist('pp-locks', lockList), { opt: true }) +
-        fld('lockCode', 'Master code', inp('lockCode', f.lockCode, ' maxlength="8" inputmode="numeric" placeholder="4 to 8 digits"'), { opt: true, hint: isNew ? 'For staff and cleaners. Guests get their own code per stay.' : 'Changing it here updates the lock remotely.' }) +
+        fld('lockCode', 'Master code', inp('lockCode', f.lockCode, ' inputmode="numeric" placeholder="Digits, any length"'), { opt: true, hint: isNew ? 'For staff and cleaners. Guests get their own code per stay.' : 'Changing it here updates the lock remotely.' }) +
         fld('wifiName', 'Wi-Fi name', inp('wifiName', f.wifiName, ' maxlength="40"'), { opt: true }) +
         fld('wifiPw', 'Wi-Fi password', inp('wifiPw', f.wifiPw, ' maxlength="63"'), { opt: true }) +
         fld('parking', 'Parking', inp('parking', f.parking, ' maxlength="80" placeholder="e.g. Bay B2-14, or No parking"'), { full: true, opt: true }) +
@@ -1127,7 +1127,7 @@
       name: val('name') || '', short: val('short') || '', kind: val('kind') || 'Apartment', beds: val('beds'), base: val('base'), maxGuests: val('maxGuests'),
       checkInTime: val('checkInTime') || '', checkOutTime: val('checkOutTime') || '', notes: val('notes') || '',
       hood: (val('hood') || '').replace(/,\s*$/, ''), city: pl.city, state: pl.state, address: val('address') || '', mapUrl: val('mapUrl') || '',
-      lockBrand: val('lockBrand'), lockCode: val('lockCode'), wifiName: val('wifiName'), wifiPw: val('wifiPw'), parking: val('parking'),
+      lockBrand: val('lockBrand'), lockCode: val('lockCode').replace(/\s+/g, ' ').trim(), wifiName: val('wifiName'), wifiPw: val('wifiPw'), parking: val('parking'),
       ownerName: sel === NEW_OWNER ? (val('ownerName') || '') : (sel || ''), ownerNew: sel === NEW_OWNER, ownerPhone: val('ownerPhone') || '', ownerEmail: val('ownerEmail') || '',
       housekeeper: val('housekeeper') || '',
       buildingId: val('buildingId'), unitTypeId: val('unitTypeId') || '', unitNo: val('unitNo') || '', assignPriority: val('assignPriority') || '',
@@ -1154,8 +1154,10 @@
     if (!/^\d{2}:\d{2}$/.test(v.checkOutTime)) E.checkOutTime = 'Choose a check-out time.';
     else if (!E.checkInTime && v.checkOutTime >= v.checkInTime) E.checkOutTime = 'Check-out should be earlier than check-in so there is time to clean between guests.';
     if (v.maxGuests) { var g = Number(v.maxGuests); if (!(g >= 1 && g <= 50 && Math.floor(g) === g)) E.maxGuests = 'Enter how many guests can stay, from 1 to 50.'; }
-    if (v.lockCode && !/^\d{4,8}$/.test(v.lockCode)) E.lockCode = 'Master codes are 4 to 8 digits.';
-    else if (v.lockCode && (/^(\d)\1+$/.test(v.lockCode) || '01234567890'.indexOf(v.lockCode) >= 0 || '9876543210'.indexOf(v.lockCode) >= 0)) E.lockCode = 'That code is easy to guess. Avoid repeated or running digits.';
+    /* any number of digits; spaces are kept as typed (e.g. "3232 000 3232") and ignored by the easy-to-guess check */
+    var lockDigits = (v.lockCode || '').replace(/ /g, '');
+    if (v.lockCode && !/^\d[\d ]*$/.test(v.lockCode)) E.lockCode = 'Use digits only. Spaces are fine.';
+    else if (lockDigits.length > 1 && (/^(\d)\1+$/.test(lockDigits) || '01234567890'.indexOf(lockDigits) >= 0 || '9876543210'.indexOf(lockDigits) >= 0)) E.lockCode = 'That code is easy to guess. Avoid repeated or running digits.';
     if (!v.ownerName) E[v.ownerNew ? 'ownerName' : 'owner'] = v.ownerNew ? 'Type the new owner\'s name.' : 'Choose who owns this property, or add a new owner.';
     if (v.ownerPhone && !/^\+?[\d\s()-]{7,20}$/.test(v.ownerPhone)) E.ownerPhone = 'Check the phone number. Use digits, spaces and +.';
     if (v.ownerEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.ownerEmail)) E.ownerEmail = 'Check the email address.';

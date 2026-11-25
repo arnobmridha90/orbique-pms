@@ -1115,7 +1115,7 @@
   function propShort(pid) { var p = D.propById[pid]; return p ? (p.short || p.name) : 'Unknown unit'; }
   function staffName(id) { var s = id && D.staffById(id); return s ? s.name : 'someone'; }
   function to24(s) { var m = String(s || '').match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if (!m) return null; return pad(+m[1] % 12 + (/pm/i.test(m[3]) ? 12 : 0)) + ':' + m[2]; }
-  function maskCode(s) { return canCode() ? String(s || '') : String(s || '').replace(/\b\d{4,8}\b/g, '••••'); }
+  function maskCode(s) { return canCode() ? String(s || '') : String(s || '').replace(/\b\d(?: ?\d){3,}\b/g, '••••'); }
   function taskById(id) { return id ? D.tasks.filter(function (t) { return t.id === id; })[0] || null : null; }
   function guestName(b) { return (b && b.guest && b.guest.name) || 'Guest'; }
   function lc(s) { s = String(s || ''); return s.charAt(0).toLowerCase() + s.slice(1); }
