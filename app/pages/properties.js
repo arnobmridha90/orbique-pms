@@ -1181,7 +1181,12 @@
   function setOpt(p, k, v) { if (v === '' || v == null) delete p[k]; else p[k] = v; }
   function save() {
     if (DR.busy) { U.toast('Wait a moment, a photo is still being prepared.', 'bad'); return; }
-    var p = DR.id ? D.propById[DR.id] : null, isNew = !p, v = readForm(), E = validate(v, p);
+    var p = DR.id ? D.propById[DR.id] : null, isNew = !p, v = readForm();
+    /* a new unit number in the name goes into the unit number and short name too, which the calendar shows
+       (api/_lib/shared/unitname.cjs); fields the person changed in this edit stay as typed */
+    var renamed = p ? O.unitname.followRename(p.name, v.name, { unitNo: p.unitNo || '', short: p.short || '' }, { unitNo: v.unitNo || '', short: v.short || '' }) : null;
+    if (renamed && renamed.change) { if (v.buildingId !== null) v.unitNo = renamed.unitNo; v.short = renamed.short; }
+    var E = validate(v, p);
     if (Object.keys(E).length) { showErrors(E); return; }
     var access = canAccess();
     if (isNew) p = { id: O.uid('P') };
@@ -1220,7 +1225,7 @@
     if (isNew) { st.show = 'active'; st.q = ''; st.city = ''; }
     O.emit('data');
     if (DR) O.$('.modal-body', DR.dr.el).scrollTop = 0;
-    U.toast(isNew ? p.name + ' added. It is ready for bookings and cleaning tasks.' : 'Saved ' + p.name + (access && p.lockCode !== oldCode && !isNew && p.lockCode ? '. The lock has the new master code.' : ''));
+    U.toast(isNew ? p.name + ' added. It is ready for bookings and cleaning tasks.' : 'Saved ' + p.name + (renamed && renamed.change && (p.unitNo === renamed.change.to || p.short === renamed.short) ? '. ' + O.tpl('The calendar now shows {unit}.', { unit: p.unitNo === renamed.change.to ? p.unitNo : p.short }) : '') + (access && p.lockCode !== oldCode && !isNew && p.lockCode ? '. The lock has the new master code.' : ''));
   }
 
   function onDrawerClick(e) {

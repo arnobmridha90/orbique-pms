@@ -8733,5 +8733,6 @@ O.I18N.zh = {
 "Send a test notification": "傳送測試通知",
 "Phone notifications are on": "手機通知已開啟",
 "Phone notifications could not be turned on": "無法開啟手機通知",
-"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "測試通知將在 6 秒後送達。現在關閉 Orbique，即可在通知欄看到。"
+"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "測試通知將在 6 秒後送達。現在關閉 Orbique，即可在通知欄看到。",
+"The calendar now shows {unit}.": "日曆現在顯示 {unit}。"
 };
