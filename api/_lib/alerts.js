@@ -326,12 +326,12 @@ export async function sendTeamPush(sb, cfg, orgId, userIds, text, data, opts = {
   return Object.assign(r, { phones: devices.length });
 }
 
-function dataStrings(data) {
+export function dataStrings(data) {
   return Object.fromEntries(Object.entries(data || {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, String(v)]));
 }
 
 /* one FCM message per phone (build(token) -> the message); a phone whose token is gone is forgotten. -> {sent, failed} */
-async function fcmSend(sb, cfg, devices, build, opts = {}) {
+export async function fcmSend(sb, cfg, devices, build, opts = {}) {
   const token = await googleAccessToken(cfg, opts);
   const url = cfg.fcmUrl + '/v1/projects/' + encodeURIComponent(cfg.projectId) + '/messages:send';
   let sent = 0;

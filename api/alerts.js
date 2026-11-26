@@ -4,7 +4,10 @@
  *   test               owner or ops manager of orgId   send a test alert on every channel now -> {done: {email, whatsapp, push}}
  *   register-device    any active member of orgId      {token, platform}: this phone gets Team chat alerts, and booking
  *                                                      alerts too when the member is the owner or an ops manager
+ *                                                      {notify}: also the bell's notifications on this phone (0033):
+ *                                                      {kinds, quiet, allTasks} (api/_lib/notify-push.js)
  *   unregister-device  the member who registered it    {token}: this phone stops getting them
+ *   notify-test        any active member of orgId      a test notification to the caller's phones -> {phones, sent, why}
  *   team-message       the sender of the message       {messageId}: phone alerts for a Team chat message just sent, once,
  *                                                      to the others in the chat who did not mute it -> {phones, sent}
  *   team-translate-fix any active member of orgId      {id, to, text}: the right translation of one message (replaces the shared one; the
@@ -22,6 +25,7 @@
 import { ok, fail, send, cors, readJson, bearer, bad, forbidden, uuid as uuidField } from './_lib/http.js';
 import { requireAdminClient, check, caller, membership } from './_lib/supabase.js';
 import { channelStatus, queueTest, pushConfig, sendTeamPush } from './_lib/alerts.js';
+import { sendNotifyTest, KINDS as NOTIFY_KINDS } from './_lib/notify-push.js';
 import TC from './_lib/shared/teamchat.cjs';
 import TONES from './_lib/shared/tones.cjs';
 import { teamTranslate } from './_lib/team-translate.js';
@@ -46,6 +50,13 @@ function deviceToken(v) {
 }
 
 const OWNER_ONLY = ['owner'];
+const GROUPS = ['bookings', 'changes', 'stays', 'money', 'messages', 'team', 'tasks', 'problems'];
+
+/* {kinds, quiet, allTasks} from the phone: only known kinds and groups; the staff id comes from the membership */
+export function notifyPrefs(v, staffId) {
+  const list = (a, ok) => [...new Set((Array.isArray(a) ? a : []).filter((x) => typeof x === 'string' && ok(x)))];
+  return { kinds: list(v.kinds, (k) => Object.prototype.hasOwnProperty.call(NOTIFY_KINDS, k)), quiet: list(v.quiet, (g) => GROUPS.includes(g)), allTasks: v.allTasks === true, staff: staffId || null };
+}
 
 const ACTIONS = {
   health: async (sb, body, me) => {
@@ -78,9 +89,13 @@ const ACTIONS = {
     const row = { token, org_id: orgId, user_id: me.id, platform, booking_alerts: bookingAlerts, updated_at: new Date().toISOString() };
     // the tune per alert type picked on this phone (only sent by app builds that have every tune's sound file)
     if (body.tones && typeof body.tones === 'object') row.tones = TONES.changes(body.tones);
+    // what this person may see in the bell, and the groups muted on this phone (0033)
+    if (body.notify && typeof body.notify === 'object') row.notify = notifyPrefs(body.notify, m.staff_id);
     let saved = await sb.from('push_devices').upsert(row, { onConflict: 'token' });
     // before 0026 (push_devices.tones) the phone is saved without its tunes
     if (saved.error && row.tones && /tones/.test(String(saved.error.message || ''))) { delete row.tones; saved = await sb.from('push_devices').upsert(row, { onConflict: 'token' }); }
+    // before 0033 (push_devices.notify) the phone is saved without it
+    if (saved.error && row.notify && /notify/.test(String(saved.error.message || ''))) { delete row.notify; saved = await sb.from('push_devices').upsert(row, { onConflict: 'token' }); }
     check(saved, 'save phone');
     return { registered: true, bookingAlerts };
   },
@@ -88,6 +103,10 @@ const ACTIONS = {
     const token = deviceToken(body.token);
     check(await sb.from('push_devices').delete().eq('token', token).eq('user_id', me.id), 'remove phone');
     return { registered: false };
+  },
+  'notify-test': async (sb, body, me) => {
+    const { orgId } = await member(sb, body, me);
+    return sendNotifyTest(sb, orgId, me.id, { delayMs: 6000 });
   },
   'team-message': async (sb, body, me) => {
     const { orgId } = await member(sb, body, me);

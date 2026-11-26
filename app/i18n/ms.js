@@ -8724,5 +8724,14 @@ O.I18N.ms = {
 "Check-in details": "Butiran daftar masuk",
 "Check-in details sent: {guest}": "Butiran daftar masuk dihantar: {guest}",
 "Arriving soon, check-in details not sent: {guest}": "Tiba tidak lama lagi, butiran daftar masuk belum dihantar: {guest}",
-"Check-in details copied": "Butiran daftar masuk disalin"
+"Check-in details copied": "Butiran daftar masuk disalin",
+"Phone notifications are off.": "Pemberitahuan telefon dimatikan.",
+"Nothing shows on this phone while Orbique is closed. Turn them on in the phone's Settings: Apps, Orbique, Notifications, then come back.": "Tiada apa-apa dipaparkan pada telefon ini semasa Orbique ditutup. Hidupkannya dalam Tetapan telefon: Apl, Orbique, Pemberitahuan, kemudian kembali ke sini.",
+"Nothing shows on this phone while Orbique is closed.": "Tiada apa-apa dipaparkan pada telefon ini semasa Orbique ditutup.",
+"Turn on phone notifications": "Hidupkan pemberitahuan telefon",
+"Phone notifications are on: they show in the notification bar even when Orbique is closed. Muted groups show without a sound.": "Pemberitahuan telefon dihidupkan: ia dipaparkan di bar pemberitahuan walaupun Orbique ditutup. Kumpulan yang disenyapkan dipaparkan tanpa bunyi.",
+"Send a test notification": "Hantar pemberitahuan ujian",
+"Phone notifications are on": "Pemberitahuan telefon dihidupkan",
+"Phone notifications could not be turned on": "Pemberitahuan telefon tidak dapat dihidupkan",
+"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "Pemberitahuan ujian akan tiba dalam 6 saat. Tutup Orbique sekarang untuk melihatnya di bar pemberitahuan."
 };

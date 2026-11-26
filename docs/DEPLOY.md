@@ -323,6 +323,17 @@ template**: category **Utility**, name `booking_alert`, language English, body
 (WhatsApp does not accept a template that starts or ends with a value.) Use samples such as `New booking · Airbnb` and `Ana, 2 guests · 2 Nov to 5 Nov (3 nights) · Vortex KLCC 43-6`. Alerts go
 out by WhatsApp once Meta approves it.
 
+### Every bell notification on the phone
+
+Everything the bell shows (bookings and every change to one, guest messages, reviews, tasks, payments, problems, the
+9 AM summary...) also goes to the team's phones as a real notification, shown in the notification bar with its tone even
+while Orbique is closed (migration 0033, api/_lib/notify-push.js). It uses the same `FIREBASE_SERVICE_ACCOUNT` and the
+worker address and secret the Channex worker already keeps in Vault; nothing new to set up. Each phone gets only what
+that person may see, never their own changes; Team chat and booking-site bookings keep their own alerts. A group muted
+in the bell (**Sounds**) arrives silently. If a phone has notifications switched off, the bell says so at the top with
+**Turn on phone notifications**; with them on, **Sounds**, **Send a test notification** sends one after 6 seconds.
+
+
 ## Booking-site messages, reviews and booking email
 
 **Booking-site messages and reviews (Channex Messaging & Reviews).** Two-way chat with Booking.com, Airbnb and Expedia guests, their inquiries and requests, and their reviews (read and reply). Channex bills the app to the Channex account (about USD 0.50 per unit a month).
