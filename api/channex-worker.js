@@ -1,4 +1,4 @@
-/* POST /api/channex-worker  {task: 'tick' | 'nightly'}   the Channex sending job (plan section 4)
+/* POST /api/channex-worker  {task: 'tick' | 'nightly' | 'push'}   the Channex sending job (plan section 4)
  *
  * Called by pg_cron through pg_net (migration 0007) every minute ('tick') and at 03:00 Malaysia time ('nightly'),
  * or locally by scripts/dev.mjs --worker. Authorization: "Bearer <CHANNEX_WORKER_SECRET>" (compared in constant time).
@@ -12,6 +12,8 @@
  *   6. booking alerts that are due (email, WhatsApp, phone app; api/_lib/alerts.js)
  *   7. timed guest messages that are due (api/_lib/journey.js), then booking-site chats not linked to their booking
  *      yet (api/_lib/inbox.js relinkChats), each only with the time that is left
+ * push (migration 0033: the database pokes it after each new bell notification):
+ *   the bell's new notifications as phone notifications (api/_lib/notify-push.js); the tick sends any left over
  * nightly:
  *   mark the day that just came into the 500-day window (a delta, never a full sync), the nights inside a last-minute
  *   deal's window (blob lastMinuteDeal), today's exchange rates for plans sold in another currency (blob fxRates),
@@ -38,6 +40,7 @@ import { googleConfig } from './_lib/google.js';
 import { syncDue } from './_lib/google-reviews.js';
 import { processJourney } from './_lib/journey.js';
 import { watchHealth } from './_lib/healthcheck.js';
+import { processNotifyPush } from './_lib/notify-push.js';
 
 export const TICK_BUDGET_MS = 15000;
 /* Timed guest messages are checked every JOURNEY_EVERY_MIN minutes, not every tick: each check reads the workspace's
@@ -59,6 +62,7 @@ export const bookingHooks = {
   journey: (sb, opts) => processJourney(sb, opts),
   relink: (sb, opts) => relinkChats(sb, opts),
   health: (sb, opts) => watchHealth(sb, opts),
+  notifyPush: (sb, opts) => processNotifyPush(sb, opts),
   google: (sb, opts) => syncDue(sb, googleConfig(), Object.assign({ notice: postNotice }, opts))
 };
 
@@ -83,6 +87,8 @@ export async function tick(sb, opts = {}) {
   out.ari = summary(await runWorker(sb, { config: cfg, budgetMs: budget, request: opts.request, quietMs: opts.quietMs }));
   // the bookings above may have queued alerts: send them in the same tick
   out.alerts = await safely('alerts', () => bookingHooks.alerts(sb, { budgetMs: 6000 }));
+  // bell notifications the straight-away poke (task 'push', migration 0033) did not send
+  out.notifyPush = await safely('phone notifications', () => bookingHooks.notifyPush(sb, { budgetMs: 4000 }));
   // timed guest messages (api/_lib/journey.js) and booking-site chats not linked to their booking yet, with what is left
   const left = () => 22000 - (Date.now() - start);
   const journeyDue = opts.journey === true || (opts.journey !== false && Math.floor(start / 60000) % JOURNEY_EVERY_MIN === 0);
@@ -174,8 +180,10 @@ export default async function handler(req, res) {
     // no secret configured -> nobody gets in (safeEqual refuses empty strings)
     if (!safeEqual(bearer(req), cfg.workerSecret)) return send(res, 401, { ok: false, error: 'not-signed-in', message: 'Not allowed.' });
     const body = await readJson(req);
-    const task = body.task === 'nightly' ? 'nightly' : body.task === 'tick' || body.task === undefined ? 'tick' : null;
+    const task = body.task === 'nightly' ? 'nightly' : body.task === 'push' ? 'push' : body.task === 'tick' || body.task === undefined ? 'tick' : null;
     if (!task) return send(res, 400, { ok: false, error: 'bad-task', message: 'Unknown task.' });
+    // a new bell notification (migration 0033): its phone notifications now, without the Channex work
+    if (task === 'push') return send(res, 200, Object.assign({ ok: true, task }, await bookingHooks.notifyPush(requireAdminClient(), { budgetMs: 12000 })));
     if (!cfg.key) return send(res, 200, { ok: true, task, skipped: 'not-configured' });
     const sb = requireAdminClient();
     const result = task === 'nightly' ? await nightly(sb, { config: cfg }) : await tick(sb, { config: cfg });

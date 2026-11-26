@@ -8,7 +8,7 @@
    defaults and drops anything unknown.
 
    Android channels keep their sound for good, so each (type, tune) pair has its own channel: the default tune keeps the
-   type's first channel (alerts_loud, alerts_change, team_tone); any other tune uses channelId(type, tune). */
+   type's first channel (alerts_loud, alerts_change, team_tone, alerts_message, alerts_task); any other tune uses channelId(type, tune). */
 'use strict';
 
 var BELL = [[1, 1, 0.42], [2, 0.38, 0.2], [3, 0.16, 0.1]];
@@ -37,13 +37,14 @@ var TUNES = {
 };
 var ORDER = Object.keys(TUNES);
 
-/* type -> {name, tune: the default, channel: the type's first Android channel (null: no phone notification yet)} */
+/* type -> {name, tune: the default, channel: the type's first Android channel (message and task: from the bell's phone
+   notifications, api/_lib/notify-push.js)} */
 var TYPES = {
   booking: { name: 'New booking', tune: 'chime', channel: 'alerts_loud' },
   change: { name: 'Cancellation or new dates', tune: 'falling', channel: 'alerts_change' },
-  message: { name: 'Guest message', tune: 'dingding', channel: null },
+  message: { name: 'Guest message', tune: 'dingding', channel: 'alerts_message' },
   team: { name: 'Team chat', tune: 'bloop', channel: 'team_tone' },
-  task: { name: 'New task for you', tune: 'marimba', channel: null }
+  task: { name: 'New task for you', tune: 'marimba', channel: 'alerts_task' }
 };
 var TYPE_ORDER = Object.keys(TYPES);
 

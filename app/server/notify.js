@@ -234,7 +234,15 @@
     /* clears the list on this device only (everyone else keeps theirs) */
     clear: function () { var c = O.store.get(CLEARED, {}) || {}; c[S.org] = S.rows.length ? S.rows[0].id : 0; O.store.set(CLEARED, c); O.notify.markRead(); O.emit('alert-log'); },
     groups: function () { var m = O.store.get(MUTE, {}) || {}; return Object.keys(G).map(function (id) { return { id: id, label: G[id].label, muted: !!m[id] }; }); },
-    setMuted: function (id, on) { var m = O.store.get(MUTE, {}) || {}; if (on) m[id] = true; else delete m[id]; O.store.set(MUTE, m); },
+    setMuted: function (id, on) { var m = O.store.get(MUTE, {}) || {}; if (on) m[id] = true; else delete m[id]; O.store.set(MUTE, m); O.emit('notify-prefs'); },
+    /* what this phone asks the server to send as phone notifications (app/native/bridge.js -> api/alerts.js
+       register-device, migration 0033): the kinds this person may see, the groups muted here (they arrive silently)
+       and whether they see everyone's tasks */
+    prefs: function () {
+      var m = O.store.get(MUTE, {}) || {};
+      return { kinds: Object.keys(K).filter(function (k) { try { return O.allowed(K[k][3]); } catch (e) { return false; } }),
+        quiet: Object.keys(G).filter(function (g) { return !!m[g]; }), allTasks: !!(O.can && O.can('tasks.others')) };
+    },
     /* the app adds the few it works out itself (low stock), once a day per item */
     add: function (key, k, vars, ref) {
       var org = O.auth.orgId(), u = O.auth.user();

@@ -283,6 +283,11 @@
     /* Team chat (pages/team.js; api/_lib/alerts.js TEAM_CHANNEL): its own channel and tone, res/raw/orbique_team.wav.
        It replaces the first "team_chat" channel, which had the phone's usual sound (a channel's sound cannot change). */
     var TEAM = { id: 'team_tone', name: 'Team chat', description: 'Messages from your team in Orbique, with their own tone', importance: 4, visibility: 0, sound: 'orbique_team', vibration: true, lights: true, lightColor: '#14B8A6' };
+    /* The bell's other notifications (api/_lib/notify-push.js, migration 0033): guest messages and reviews, and tasks,
+       each with its own tone; a group muted in the bell ("Sounds") arrives on the quiet channel, shown without a sound. */
+    var MESSAGE = { id: 'alerts_message', name: 'Guest messages and reviews', description: 'Guest messages, reviews and requests, with their own tone', importance: 5, visibility: 1, sound: 'orbique_message', vibration: true, lights: true, lightColor: '#14B8A6' };
+    var TASK = { id: 'alerts_task', name: 'Tasks and cleaning', description: 'Tasks, cleaning, low stock and the day summary, with their own tone', importance: 5, visibility: 1, sound: 'orbique_task', vibration: true, lights: true, lightColor: '#14B8A6' };
+    var QUIET = { id: 'alerts_quiet', name: 'Quiet notifications', description: 'Notifications for the groups you muted in the bell: shown without a sound', importance: 2, visibility: 1, vibration: false, lights: false };
     var TEAM_OLD = { id: 'team_chat', name: 'Team chat', description: 'Messages from your team in Orbique', importance: 4, visibility: 0, vibration: true, lights: true, lightColor: '#14B8A6' };
     /* The tones other than the booking chime are inside app builds from TONES_BUILD on (CI's build number). A channel
        made with a sound file the installed app does not have would keep the wrong sound for good, so older builds keep
@@ -327,14 +332,25 @@
       return hasTunes().then(function (tunes) {
         var body = { action: 'register-device', orgId: O.auth.orgId(), token: token, platform: platform };
         if (tunes) body.tones = O.alertSound.choice(); /* this phone's tune per alert type */
+        /* the bell's notifications on this phone too (0033); builds without the message and task tones get them on the
+           phone's default channel until they update */
+        if (O.notify && O.notify.prefs) body.notify = O.notify.prefs();
         return O.auth.call('/api/alerts', body);
-      }).then(function () { return { ok: true }; }, function (e) { return { ok: false, message: (e && e.message) || 'This phone could not be signed up for alerts.' }; });
+      }).then(function () { state.registered = true; O.emit('push-state'); return { ok: true }; }, function (e) { return { ok: false, message: (e && e.message) || 'This phone could not be signed up for alerts.' }; });
     };
     /* a tune picked on the Booking alerts card: make its channel, then tell the server */
     O.on('alert-tones', function () { if (pushToken) tuneChannels().then(function () { return sendToken(pushToken); }); });
+    /* a bell group muted or unmuted, another person or workspace: tell the server what this phone should get now */
+    var prefsTimer = null;
+    var resend = function () { if (!pushToken) return; clearTimeout(prefsTimer); prefsTimer = setTimeout(function () { sendToken(pushToken); }, 800); };
+    O.on('notify-prefs', resend); O.on('viewer', resend);
     Push.addListener('registration', function (t) { pushToken = t && t.value; sendToken(pushToken).then(settle); });
     Push.addListener('registrationError', function (e) { settle({ ok: false, message: 'The phone could not sign up for notifications' + (e && e.error ? ': ' + e.error : '.') }); });
     Push.addListener('pushNotificationReceived', function (n) { /* the app is open: the tone and a toast instead of a system notification */
+      if (n && n.data && n.data.kind === 'bell') { /* the bell (app/server/notify.js) already rang and showed it live */
+        if (/^t/.test(String(n.data.nid || ''))) { if (O.alertSound) O.alertSound.play('booking'); U.toast('The test notification arrived. With Orbique closed it shows in the notification bar.', 'ok'); }
+        return;
+      }
       if (n && n.data && n.data.kind === 'team') { if (O.teamChat && O.teamChat.onPush) O.teamChat.onPush(n); return; } /* Team chat rings and shows it itself */
       var k = n && n.data && n.data.kind;
       if (O.alertSound) O.alertSound.play(k === 'cancelled' || k === 'changed' ? 'change' : 'booking');
@@ -351,6 +367,7 @@
     }
     Push.addListener('pushNotificationActionPerformed', function (a) {
       var nd = a && a.notification && a.notification.data;
+      if (nd && nd.kind === 'bell') { openBell(nd); return; }
       if (a && a.notification && (!nd || nd.kind !== 'team')) logPush(a.notification);
       if (nd && nd.kind === 'team' && nd.chatId) {
         (function openChat(tries) {
@@ -367,17 +384,39 @@
         else if (O._started) O.go('bookings');
       })(20);
     });
+    /* a tapped bell notification: the booking, task, chat or page it is about */
+    function openBell(nd) {
+      (function open(tries) {
+        if (!O._started) { if (tries > 0) setTimeout(function () { open(tries - 1); }, 500); return; }
+        if (nd.nkind === 'gst_msg') { O.go('inbox', nd.bookingId ? { bookingId: nd.bookingId } : undefined); return; }
+        if (nd.chatId && O.pages.team) { O.go('team', { chatId: nd.chatId }); return; }
+        if (nd.taskId || /^task_|^damage_|^gst_request|^ready_late|^bk_noclean/.test(nd.nkind || '')) { O.go('tasks', nd.taskId ? { taskId: nd.taskId } : {}); return; }
+        if (nd.bookingId) {
+          if (O.booking && O.data.bookings && O.data.bookings.some(function (b) { return String(b.id) === String(nd.bookingId); })) O.booking.open(nd.bookingId);
+          else if (tries > 0) setTimeout(function () { open(tries - 1); }, 500);
+          else O.go('bookings');
+          return;
+        }
+        if (nd.page && O.pages[nd.page] && O.allowed(nd.page)) { O.go(nd.page); return; }
+        var bell = O.$('#bell-btn'); if (bell) bell.click();
+      })(20);
+    }
+    /* for the bell: is this phone set up for notifications? {perm: 'granted' | 'denied' | 'prompt' | ..., registered} */
+    var state = { perm: null, registered: false };
     var enable = function (ask) {
       if (!canAlert()) return Promise.resolve({ ok: false, message: 'Open a workspace first.' });
       return Push.checkPermissions().then(function (p) {
+        state.perm = p.receive; O.emit('push-state');
         if (p.receive === 'granted') return p;
         if (!ask || p.receive === 'denied') return p;
         return Push.requestPermissions();
       }).then(function (p) {
+        if (state.perm !== p.receive) { state.perm = p.receive; O.emit('push-state'); }
         if (p.receive !== 'granted') return { ok: false, message: 'Notifications are off for Orbique. Turn them on in the phone\'s settings (Apps, Orbique, Notifications).' };
         var channel = platform === 'android' && Push.createChannel ? Push.createChannel(LOUD).catch(function () {}).then(hasTones).then(function (tones) {
           if (!tones) return Push.createChannel(TEAM_OLD).catch(function () {});
           return Push.createChannel(CHANGE).catch(function () {}).then(function () { return Push.createChannel(TEAM).catch(function () {}); })
+            .then(function () { return Promise.all([MESSAGE, TASK, QUIET].map(function (c) { return Push.createChannel(c).catch(function () {}); })); })
             .then(function () { return Push.deleteChannel ? Push.deleteChannel({ id: TEAM_OLD.id }).catch(function () {}) : null; });
         }).then(tuneChannels).then(function () {
           /* the first test apps made a quiet "bookings" channel; channels cannot change, so it goes and LOUD replaces it */
@@ -392,7 +431,23 @@
         });
       }, function (e) { return { ok: false, message: (e && e.message) || 'Notifications are not available on this phone.' }; });
     };
-    O.native.push = { enable: enable };
+    O.native.push = {
+      enable: enable,
+      state: function () { return state; },
+      /* a test notification to this person's phones, sent by the server like a real one (api/alerts.js notify-test) */
+      test: function () {
+        return O.auth.call('/api/alerts', { action: 'notify-test', orgId: O.auth.orgId() }).then(function (r) {
+          return r && r.sent ? { ok: true } : { ok: false, message: (r && r.why) || 'No notification went out.' };
+        }, function (e) { return { ok: false, message: (e && e.message) || 'The test could not be sent.' }; });
+      }
+    };
+    /* back from the phone's settings: notice that notifications were turned on (or off) there */
+    if (App) App.addListener('appStateChange', function (s) {
+      if (s && s.isActive && canAlert() && O._started) Push.checkPermissions().then(function (p) {
+        if (p.receive === state.perm) return;
+        if (p.receive === 'granted') enable(false); else { state.perm = p.receive; O.emit('push-state'); }
+      }).catch(function () {});
+    });
     /* once the workspace is open: refresh the token quietly, or ask the first time */
     (function whenStarted(tries) {
       if (!O._started) { if (tries > 0) setTimeout(function () { whenStarted(tries - 1); }, 1000); return; }

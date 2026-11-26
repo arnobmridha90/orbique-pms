@@ -8724,5 +8724,14 @@ O.I18N.bn = {
 "Check-in details": "চেক-ইনের তথ্য",
 "Check-in details sent: {guest}": "চেক-ইনের তথ্য পাঠানো হয়েছে: {guest}",
 "Arriving soon, check-in details not sent: {guest}": "শীঘ্রই আসছেন, চেক-ইনের তথ্য পাঠানো হয়নি: {guest}",
-"Check-in details copied": "চেক-ইনের তথ্য কপি হয়েছে"
+"Check-in details copied": "চেক-ইনের তথ্য কপি হয়েছে",
+"Phone notifications are off.": "ফোনের নোটিফিকেশন বন্ধ আছে।",
+"Nothing shows on this phone while Orbique is closed. Turn them on in the phone's Settings: Apps, Orbique, Notifications, then come back.": "Orbique বন্ধ থাকলে এই ফোনে কিছুই দেখাবে না। ফোনের Settings: Apps, Orbique, Notifications থেকে চালু করুন, তারপর ফিরে আসুন।",
+"Nothing shows on this phone while Orbique is closed.": "Orbique বন্ধ থাকলে এই ফোনে কিছুই দেখাবে না।",
+"Turn on phone notifications": "ফোনের নোটিফিকেশন চালু করুন",
+"Phone notifications are on: they show in the notification bar even when Orbique is closed. Muted groups show without a sound.": "ফোনের নোটিফিকেশন চালু আছে: Orbique বন্ধ থাকলেও নোটিফিকেশন বারে দেখাবে। মিউট করা গ্রুপগুলো শব্দ ছাড়া দেখাবে।",
+"Send a test notification": "একটি টেস্ট নোটিফিকেশন পাঠান",
+"Phone notifications are on": "ফোনের নোটিফিকেশন চালু হয়েছে",
+"Phone notifications could not be turned on": "ফোনের নোটিফিকেশন চালু করা যায়নি",
+"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "৬ সেকেন্ডের মধ্যে একটি টেস্ট নোটিফিকেশন আসবে। নোটিফিকেশন বারে দেখতে এখনই Orbique বন্ধ করুন।"
 };

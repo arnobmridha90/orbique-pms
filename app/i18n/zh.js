@@ -8724,5 +8724,14 @@ O.I18N.zh = {
 "Check-in details": "入住資料",
 "Check-in details sent: {guest}": "已傳送入住資料：{guest}",
 "Arriving soon, check-in details not sent: {guest}": "即將抵達，尚未傳送入住資料：{guest}",
-"Check-in details copied": "已複製入住資料"
+"Check-in details copied": "已複製入住資料",
+"Phone notifications are off.": "手機通知已關閉。",
+"Nothing shows on this phone while Orbique is closed. Turn them on in the phone's Settings: Apps, Orbique, Notifications, then come back.": "Orbique 關閉時，這部手機不會顯示任何通知。請在手機的「設定」>「應用程式」> Orbique >「通知」中開啟，然後回到這裡。",
+"Nothing shows on this phone while Orbique is closed.": "Orbique 關閉時，這部手機不會顯示任何通知。",
+"Turn on phone notifications": "開啟手機通知",
+"Phone notifications are on: they show in the notification bar even when Orbique is closed. Muted groups show without a sound.": "手機通知已開啟：即使 Orbique 已關閉，通知也會顯示在通知欄。已靜音的類別會顯示但不發出聲音。",
+"Send a test notification": "傳送測試通知",
+"Phone notifications are on": "手機通知已開啟",
+"Phone notifications could not be turned on": "無法開啟手機通知",
+"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "測試通知將在 6 秒後送達。現在關閉 Orbique，即可在通知欄看到。"
 };

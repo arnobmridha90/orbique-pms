@@ -2675,7 +2675,13 @@
     }
     var shared = bellSrc() !== O.alertLog;
     var h = '<div class="bell-head"><span class="menu-label">Notifications</span><span class="row-flex" style="gap:4px">' + (shared ? '<button type="button" class="btn btn-ghost btn-sm" data-bell="sounds" aria-expanded="' + bellSounds + '">Sounds</button>' : '') + (al.length ? '<button type="button" class="btn btn-ghost btn-sm" data-bell="clear">Clear alerts</button>' : '') + '</span></div>';
-    if (shared && bellSounds) h += '<div class="bell-sounds"><div class="xs muted" style="padding:0 13px 6px">Play a sound on this device for:</div>' + O.notify.groups().map(function (g) { return '<label class="bell-snd"><input type="checkbox" data-bell-mute="' + g.id + '"' + (g.muted ? '' : ' checked') + '> <span>' + O.esc(O.t(g.label)) + '</span></label>'; }).join('') + '</div>';
+    /* the phone app: are real phone notifications on (app/native/bridge.js, migration 0033)? Off: say so at the top. */
+    var ph = O.native && O.native.push && O.native.push.state ? O.native.push.state() : null, phOn = ph && ph.perm === 'granted' && ph.registered;
+    if (ph && ph.perm && !phOn) h += '<div class="bell-phone" style="margin:0 10px 8px;padding:10px 12px;border-radius:10px;background:var(--warn-soft)"><div class="small"><b>Phone notifications are off.</b> ' +
+      (ph.perm === 'denied' ? 'Nothing shows on this phone while Orbique is closed. Turn them on in the phone\'s Settings: Apps, Orbique, Notifications, then come back.' : 'Nothing shows on this phone while Orbique is closed.') +
+      '</div><button type="button" class="btn btn-primary btn-sm" data-bell="phone-on" style="margin-top:8px">Turn on phone notifications</button></div>';
+    if (shared && bellSounds) h += '<div class="bell-sounds"><div class="xs muted" style="padding:0 13px 6px">Play a sound on this device for:</div>' + O.notify.groups().map(function (g) { return '<label class="bell-snd"><input type="checkbox" data-bell-mute="' + g.id + '"' + (g.muted ? '' : ' checked') + '> <span>' + O.esc(O.t(g.label)) + '</span></label>'; }).join('') +
+      (phOn ? '<div class="xs muted" style="padding:6px 13px 4px">Phone notifications are on: they show in the notification bar even when Orbique is closed. Muted groups show without a sound.</div><div style="padding:0 13px 8px"><button type="button" class="btn btn-ghost btn-sm" data-bell="phone-test">Send a test notification</button></div>' : '') + '</div>';
     h += '<div class="bell-list">';
     h += '<div class="menu-label bell-sec">Alerts</div>';
     h += al.length ? al.slice(0, BELL_SHOW).map(function (e) {
@@ -2740,6 +2746,8 @@
       var m = O.$('#bell-menu');
       if (e.target.closest('[data-bell="clear"]')) { bellSrc().clear(); paintShell(); return; }
       if (e.target.closest('[data-bell="sounds"]')) { bellSounds = !bellSounds; paintShell(); return; }
+      if (e.target.closest('[data-bell="phone-on"]') && O.native && O.native.push) { O.native.push.enable(true).then(function (r) { U.toast(r && r.ok ? 'Phone notifications are on' : (r && r.message) || 'Phone notifications could not be turned on', r && r.ok ? 'ok' : 'bad'); paintShell(); }); return; }
+      if (e.target.closest('[data-bell="phone-test"]') && O.native && O.native.push) { U.toast('A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.'); O.native.push.test().then(function (r) { if (!r.ok) U.toast(r.message, 'bad'); }); return; }
       var mu = e.target.closest('[data-bell-mute]');
       if (mu) { if (O.notify) O.notify.setMuted(mu.dataset.bellMute, !mu.checked); return; }
       var a = e.target.closest('[data-a]');
@@ -2748,6 +2756,7 @@
     });
     /* a new alert repaints the bell (its count); the list is marked read once it has been opened and closed */
     O.on('alert-log', function () { if (O._started && !O.$('#bell-menu').classList.contains('open')) paintShell(); });
+    O.on('push-state', function () { if (O._started) paintShell(); });
     O.$('#lock-btn').onclick = function () { O.lock.change({ propertyId: O.state.lockProp || null }); };
     O.$('#menu-btn').onclick = function () { O.$('.side').classList.add('open'); O.$('.scrim').classList.add('open'); };
     O.$('.scrim').onclick = closeSide;
