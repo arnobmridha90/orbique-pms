@@ -8733,5 +8733,6 @@ O.I18N.bn = {
 "Send a test notification": "একটি টেস্ট নোটিফিকেশন পাঠান",
 "Phone notifications are on": "ফোনের নোটিফিকেশন চালু হয়েছে",
 "Phone notifications could not be turned on": "ফোনের নোটিফিকেশন চালু করা যায়নি",
-"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "৬ সেকেন্ডের মধ্যে একটি টেস্ট নোটিফিকেশন আসবে। নোটিফিকেশন বারে দেখতে এখনই Orbique বন্ধ করুন।"
+"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "৬ সেকেন্ডের মধ্যে একটি টেস্ট নোটিফিকেশন আসবে। নোটিফিকেশন বারে দেখতে এখনই Orbique বন্ধ করুন।",
+"The calendar now shows {unit}.": "ক্যালেন্ডারে এখন {unit} দেখাচ্ছে।"
 };

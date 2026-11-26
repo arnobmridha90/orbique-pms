@@ -8733,5 +8733,6 @@ O.I18N.ms = {
 "Send a test notification": "Hantar pemberitahuan ujian",
 "Phone notifications are on": "Pemberitahuan telefon dihidupkan",
 "Phone notifications could not be turned on": "Pemberitahuan telefon tidak dapat dihidupkan",
-"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "Pemberitahuan ujian akan tiba dalam 6 saat. Tutup Orbique sekarang untuk melihatnya di bar pemberitahuan."
+"A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.": "Pemberitahuan ujian akan tiba dalam 6 saat. Tutup Orbique sekarang untuk melihatnya di bar pemberitahuan.",
+"The calendar now shows {unit}.": "Kalendar kini menunjukkan {unit}."
 };
