@@ -939,7 +939,8 @@
   function srcLabel(c) { return c === 'direct' ? 'Direct booking' : c === 'website' ? 'Website' : D.channels[c].name; }
   function srcOf(b) { return b.channel === 'direct' ? (U.isWebsite(b) ? 'website' : 'direct') : b.channel; }
 
-  O.bookingTools = { open: openBooking, edit: editBooking, cancel: cancelBooking, copyLink: copyLink, propLabel: propLabel, place: place, propName: propName };
+  /* reprice and placeSorted: the in-app assistant (app/server/assistant.js) changes dates the same way the Edit form does */
+  O.bookingTools = { open: openBooking, edit: editBooking, cancel: cancelBooking, copyLink: copyLink, propLabel: propLabel, place: place, propName: propName, reprice: reprice, placeSorted: placeSorted, otaLocked: otaLocked };
 
   /* ===================================================================
      New booking (direct), shared form: O.newBooking({propertyId, checkIn, checkOut, onCreated(b)})

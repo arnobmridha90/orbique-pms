@@ -2695,6 +2695,7 @@
   function openAlert(e) {
     var g = e && e.go;
     if (!g) return;
+    if (g.assistant) { if (O.assistant && O.isOwner()) O.assistant.open(); else O.go('bookings'); return; }
     if (g.booking) {
       if (O.booking && O.data.bookings && O.data.bookings.some(function (b) { return String(b.id) === String(g.booking); })) O.booking.open(g.booking);
       else O.go('bookings');

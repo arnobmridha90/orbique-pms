@@ -147,3 +147,29 @@ html.orb-platform #sync-pill, html.orb-platform .tabbar, html.orb-platform #lock
 
 /* Booking alerts card (booking-alerts.js) */
 .al-ic{width:18px; height:18px; flex-shrink:0; margin-top:2px; color:var(--muted);}
+
+/* ---------------- the assistant (app/server/command.js) ---------------- */
+.modal.as-modal{max-width:620px;}
+.as-wrap{display:flex; flex-direction:column; gap:10px; min-height:0;}
+.as-log{display:flex; flex-direction:column; gap:10px; max-height:52vh; overflow-y:auto; padding:2px;}
+.as-me{align-self:flex-end; max-width:85%; background:var(--brand-soft); color:var(--text); padding:8px 12px; border-radius:12px 12px 4px 12px; font-size:14px; white-space:pre-wrap; overflow-wrap:anywhere;}
+.as-bot{align-self:flex-start; max-width:100%; background:var(--surface-2); border:1px solid var(--border); padding:10px 12px; border-radius:12px 12px 12px 4px; font-size:14px; line-height:1.5; overflow-wrap:anywhere;}
+.as-reply{white-space:pre-wrap;}
+.as-steps{margin:8px 0 0; padding-left:20px;}
+.as-steps li{margin:4px 0;}
+.as-steps li.ok::marker{color:var(--ok);} .as-steps li.bad::marker{color:var(--bad);}
+.as-prob{color:var(--bad); font-size:13px;}
+.as-warn{color:var(--warn); font-size:13px;}
+.as-cannot{margin-top:8px; font-size:13px; color:var(--text-2);}
+.as-cannot ul{margin:4px 0 0; padding-left:18px;}
+.as-state{margin-top:8px; font-weight:700; font-size:13px;}
+.as-state.ok{color:var(--ok);} .as-state.bad{color:var(--bad);} .as-state.warn{color:var(--warn);}
+.as-state + .btn{margin-top:6px;}
+.as-hint ul{margin:6px 0 10px; padding-left:18px;}
+.as-ex{background:none; border:0; padding:2px 0; color:var(--brand-text); text-align:left; cursor:pointer; font:inherit;}
+.as-ex:hover{text-decoration:underline;}
+.as-form{display:flex; gap:8px; align-items:flex-end;}
+.as-form textarea{flex:1; resize:vertical; min-height:44px;}
+.as-hist{font-size:13px;}
+.as-hist summary{cursor:pointer; color:var(--text-2);}
+.as-run{border-top:1px solid var(--border); padding:6px 0; display:flex; flex-direction:column; gap:2px; align-items:flex-start;}

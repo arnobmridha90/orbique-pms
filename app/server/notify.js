@@ -46,6 +46,8 @@
     avail_block: ['changes', '⛔', 'Dates blocked', 'calendar'],
     avail_open: ['changes', '🔓', 'Blocked dates opened again', 'calendar'],
     rates_changed: ['changes', '🏷️', 'Prices changed by {who}', 'pricing'],
+    assistant: ['changes', '✨', 'Changed with the assistant', 'bookings'],
+    assistant_undo: ['changes', '↩️', 'Assistant change undone', 'bookings'],
     bk_checkin: ['stays', '🔑', 'Checked in: {guest}', 'bookings'],
     bk_checkout: ['stays', '👋', 'Checked out: {guest}', 'bookings'],
     gst_id: ['stays', '🪪', 'ID verified: {guest}', 'bookings'],
@@ -119,6 +121,7 @@
     if (k === 'owner_msg' || k === 'msg_failed' || /^sys_/.test(k)) return [unit(v.unit), v.step, v.text || v.error].filter(Boolean).join(' · ');
     if (k === 'avail_block' || k === 'avail_open') return [unit(v.unit), range(v.from, v.to), v.text].filter(Boolean).join(' · ');
     if (k === 'rates_changed') return '';
+    if (k === 'assistant' || k === 'assistant_undo') return v.text || '';
     if (k === 'staff_joined') return v.role || '';
     /* bookings */
     bits.push(k === 'bk_moved' && v.oldUnit ? unit(v.oldUnit) + ' → ' + unit(v.unit) : unit(v.unit));
@@ -148,6 +151,7 @@
     if (k === 'gst_msg') return f.booking ? ['inbox', { bookingId: f.booking }] : ['inbox'];
     if (k === 'team_msg') return ['team', { chatId: f.chat }];
     if (f.task || /^task_|^damage_|^gst_request|^ready_late|^bk_noclean/.test(k)) return ['tasks', f.task ? { taskId: f.task } : {}];
+    if (f.assistant) return { assistant: f.assistant };
     if (f.booking) return { booking: f.booking };
     if (f.page) return [f.page];
     return [kind(r)[3]];
