@@ -44,6 +44,8 @@ export const KINDS = {
   avail_block: ['changes', '⛔', 'Dates blocked'],
   avail_open: ['changes', '🔓', 'Blocked dates opened again'],
   rates_changed: ['changes', '🏷️', 'Prices changed by {who}'],
+  assistant: ['changes', '✨', 'Changed with the assistant'],
+  assistant_undo: ['changes', '↩️', 'Assistant change undone'],
   bk_checkin: ['stays', '🔑', 'Checked in: {guest}'],
   bk_checkout: ['stays', '👋', 'Checked out: {guest}'],
   gst_id: ['stays', '🪪', 'ID verified: {guest}'],
@@ -131,6 +133,7 @@ export function pushText(row, ctx = {}) {
   else if (kind === 'owner_msg' || kind === 'msg_failed' || /^sys_/.test(kind)) bits.push(unit(v.unit), v.step, v.text || v.error);
   else if (kind === 'avail_block' || kind === 'avail_open') bits.push(unit(v.unit), range(v.from, v.to), v.text);
   else if (kind === 'staff_joined') bits.push(v.role);
+  else if (kind === 'assistant' || kind === 'assistant_undo') bits.push(v.text);
   else if (kind !== 'rates_changed') {
     if (kind === 'bk_new' && v.urgent) bits.push('Arriving today');
     bits.push(kind === 'bk_moved' && v.oldUnit ? unit(v.oldUnit) + ' → ' + unit(v.unit) : unit(v.unit));

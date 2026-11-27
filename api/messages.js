@@ -64,6 +64,9 @@
  *   suggest     {conversationId}               inbox.send     the reply assistant's draft answer to the guest's latest
  *                                                              message -> {reply, needsHuman, reason, lang}; nothing is
  *                                                              sent (api/_lib/assistant.js)
+ *   command     {text, context, history}       owner          the in-app assistant: what the owner typed -> {reply, steps,
+ *                                                              cannot}; nothing changes here, the page checks and applies
+ *                                                              the steps (api/_lib/command.js, app/server/assistant.js)
  *   greeting-preview {conversationId, greetingId}
  *                                               inbox viewer   the text as it would go now ->
  *                                                              {id, name, text, parts, checkInAt, early, missing, masked};
@@ -90,6 +93,7 @@ import { translateConfig, translate, langCode, TranslateError, MAX_CHARS } from 
 import { canInbox, sendReply, patchMsg, numberOf, tokenOf, inboxSettings, receiveChannex, myt, routes, VIA_NAME, MEDIA_BUCKET, checkMedia, mediaKind, mediaPath, ownsPath, signedUrl, sendMediaReply, markConv, purgeTrash, forgetConv, noteUpload, uploadSent, postNotice, noteReader } from './_lib/inbox.js';
 import { allowedOrg } from './channex.js';
 import { assistantConfig, facts as assistantFacts, transcript, secretsOf, suggest, lookUp, AssistantError } from './_lib/assistant.js';
+import { commandConfig, plan as commandPlan, CommandError } from './_lib/command.js';
 import { inboundConfig, addressFor } from './_lib/email-in.js';
 import { pullReviews, replyReview, reviewGuest } from './_lib/reviews.js';
 import { googleConfig, authUrl, signState } from './_lib/google.js';
@@ -345,6 +349,24 @@ export async function suggestAction(sb, body, me, opts = {}) {
   let reply = r.reply;
   for (const s of secrets) reply = reply.split(s).join('[hidden]');
   return { reply, needsHuman: r.needsHuman, reason: r.reason, lang: r.lang };
+}
+
+/* ---------- the in-app assistant (api/_lib/command.js) ---------- */
+
+/** The owner's typed request -> a plan of steps. Account owner only. Nothing changes here: the page checks the plan
+ *  against its own data, shows it and applies it (app/server/assistant.js). */
+export async function commandAction(sb, body, me, opts = {}) {
+  await workspace(sb, body, me, 'owner');
+  const cfg = opts.config || commandConfig();
+  if (!cfg.configured) throw new ApiError(503, 'not-configured', 'The assistant is not set up on the server yet.');
+  const text = typeof body.text === 'string' ? body.text : '';
+  if (!text.trim()) throw bad('no-text', 'Type what you want done.');
+  try {
+    return await commandPlan(cfg, { text, context: typeof body.context === 'string' ? body.context : '', history: Array.isArray(body.history) ? body.history : [] }, { fetch: opts.fetch, deadline: Date.now() + 17000 });
+  } catch (e) {
+    if (e instanceof CommandError) throw new ApiError(e.retryable ? 502 : 400, 'assistant', e.message);
+    throw e;
+  }
 }
 
 /* only photos and videos the inbox-media bucket takes (0022) go through Storage; other large files (PDFs, voice notes,
@@ -707,7 +729,7 @@ const ACTIONS = {
   'media-upload': mediaUpload, 'send-media': sendMediaAction, organize, purge, lists: listsAction,
   'whatsapp-connect': connectNumber, 'whatsapp-signup': signupNumberAction, 'whatsapp-disconnect': disconnectNumber,
   'sites-on': sitesOn, 'review-reply': reviewReplyAction, 'review-guest': reviewGuestAction,
-  greeting: greetingAction, 'greeting-preview': greetingPreview, suggest: suggestAction,
+  greeting: greetingAction, 'greeting-preview': greetingPreview, suggest: suggestAction, command: commandAction,
   'google-status': googleStatus, 'google-start': googleStart, 'google-locations': googleLocations, 'google-pick': googlePick,
   'google-sync': googleSync, 'google-disconnect': googleDisconnect
 };
