@@ -485,6 +485,7 @@
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>'
   };
   IC.reviews = IC.star; IC.inbox = IC.chat;
+  IC.settings = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>';
   IC.team = '<path d="M17 9.5a6.5 6.5 0 0 1-9.6 5.7L3 16.5l1.2-3.8A6.5 6.5 0 1 1 17 9.5z"/><path d="M19.6 10.6A5.5 5.5 0 0 1 18.8 19l1.7 2.3-4-.9a5.5 5.5 0 0 1-5-1"/>';
   IC.greetings = IC.chat.replace('/>', '/><path d="M8.5 12.5a4.2 4.2 0 0 0 7 0"/><path d="M9 8.8h.01M15 8.8h.01"/>');
   O.icon = function (name, cls) {
@@ -1602,7 +1603,7 @@
     ['team', 'Team chat', []],
     ['tasks', 'Tasks & cleaning', [['create', 'Create tasks', '', 'do'], ['assign', 'Assign tasks to others', 'Create tasks for others and reassign them', 'do'], ['others', 'See other people\'s tasks', 'When off, people see only their own tasks', 'see'], ['delete', 'Delete tasks', '', 'do'], ['checklists', 'Edit checklist templates', 'Check-in, check-out and daily housekeeping lists', 'do']]],
     ['invoices', 'Invoices & receipts', [['send', 'Send invoices and receipts', 'To guests by WhatsApp or email', 'do'], ['payments', 'Record payments', 'Mark invoices paid', 'do'], ['settings', 'Change invoice settings', 'Numbering, tax and automatic sending', 'do']]],
-    ['expenses', 'Expenses', [['record', 'Record their own expenses', 'Log what they spend and claim it back', 'do'], ['viewAll', 'See everyone\'s expenses', 'When off, people see only their own', 'see'], ['approve', 'Approve expense claims', 'Pay back staff who paid personally', 'do', true]]],
+    ['expenses', 'Expenses', [['record', 'Record their own expenses', 'Log what they spend and claim it back', 'do'], ['viewAll', 'See everyone\'s expenses', 'When off, people see only their own', 'see'], ['approve', 'Approve expense claims', 'Pay back staff who paid personally', 'do', true], ['settings', 'Change expense types and categories', 'In Settings: add, rename, group and remove the types people choose from', 'do']]],
     ['financials', 'Financials', [], true],
     ['reports', 'Reports', [['money', 'Open financial reports', 'Revenue, profit and owner statements', 'see'], ['export', 'Download reports', 'CSV and PDF', 'see']]],
     ['website', 'Website builder', [['edit', 'Edit the website', 'Template, text, photos, and the units on the live website', 'do'], ['publish', 'Publish changes', 'Also publishes the live website', 'do']]],
@@ -1630,7 +1631,7 @@
   function all(keys) { var o = {}; keys.split(' ').forEach(function (k) { o[k] = true; }); return o; }
   O.DEFAULT_ROLE_PERMS = {
     ops: roleDefaults({ team: 'edit', dashboard: 'edit', statistics: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', invoices: 'edit', expenses: 'edit', reports: 'view', website: 'edit', guestapp: 'edit', properties: 'edit', channels: 'edit', inventory: 'edit', pricing: 'edit', automations: 'edit', owner: 'view', staff: 'view', brand: 'view' },
-      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value bookings.export calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies inbox.greetings tasks.create tasks.assign tasks.others tasks.delete tasks.checklists invoices.send invoices.payments expenses.record expenses.viewAll reports.money reports.export website.edit website.publish guestapp.edit guestapp.doorCodes guestapp.requests properties.create properties.edit properties.access channels.connect channels.rates channels.sync inventory.in inventory.out inventory.adjust inventory.items inventory.money pricing.change pricing.rules automations.toggle automations.edit owner.statements staff.invite')),
+      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.create bookings.edit bookings.cancel bookings.contacts bookings.value bookings.export calendar.block reviews.reply inbox.send inbox.notes inbox.quickReplies inbox.greetings tasks.create tasks.assign tasks.others tasks.delete tasks.checklists invoices.send invoices.payments expenses.record expenses.viewAll expenses.settings reports.money reports.export website.edit website.publish guestapp.edit guestapp.doorCodes guestapp.requests properties.create properties.edit properties.access channels.connect channels.rates channels.sync inventory.in inventory.out inventory.adjust inventory.items inventory.money pricing.change pricing.rules automations.toggle automations.edit owner.statements staff.invite')),
     housekeeping: roleDefaults({ team: 'edit', dashboard: 'view', bookings: 'view', calendar: 'view', inbox: 'edit', tasks: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud inbox.send inbox.notes tasks.create expenses.record guestapp.requests properties.access inventory.out')),
     frontdesk: roleDefaults({ team: 'edit', dashboard: 'view', bookings: 'edit', calendar: 'edit', reviews: 'edit', inbox: 'edit', tasks: 'edit', pricing: 'view', channels: 'view', automations: 'view', invoices: 'edit', expenses: 'edit', guestapp: 'edit', properties: 'view', inventory: 'view' },
@@ -1638,7 +1639,7 @@
     maintenance: roleDefaults({ team: 'edit', dashboard: 'view', calendar: 'view', inbox: 'view', tasks: 'edit', expenses: 'edit', properties: 'view', inventory: 'edit' },
       all('dashboard.readAloud tasks.create expenses.record properties.access inventory.out')),
     accountant: roleDefaults({ team: 'edit', dashboard: 'view', statistics: 'view', bookings: 'view', invoices: 'edit', expenses: 'edit', reports: 'view', owner: 'view', inventory: 'view' },
-      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.contacts bookings.value bookings.export invoices.send invoices.payments invoices.settings expenses.record expenses.viewAll reports.money reports.export owner.statements inventory.money'))
+      all('dashboard.money dashboard.readAloud statistics.money statistics.export bookings.contacts bookings.value bookings.export invoices.send invoices.payments invoices.settings expenses.record expenses.viewAll expenses.settings reports.money reports.export owner.statements inventory.money'))
   };
   D.rolePerms = D.rolePerms || JSON.parse(JSON.stringify(O.DEFAULT_ROLE_PERMS));
   function SM(id) { return (D.staffMeta || {})[id]; }
@@ -1770,7 +1771,7 @@
   REG.channelLog = { type: 'blob', kind: 'demo', cap: 500 };
   REG.channelSim = { type: 'blob', kind: 'demo' };
   /* lastMinuteDeal: the workspace's last-minute deal, which the channel manager applies (the Profit planner reads it) */
-  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings', 'ratePlanner', 'lastMinuteDeal', 'assistantNotes', 'guestJourney'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
+  ['rolePerms', 'automations', 'invoiceSettings', 'guestApp', 'website', 'expenseTypes', 'expenseSetup', 'workspaceBrand', 'workspaceMeta', 'invCats', 'inboxSettings', 'alertSettings', 'ratePlanner', 'lastMinuteDeal', 'assistantNotes', 'guestJourney'].forEach(function (k) { REG[k] = { type: 'blob', kind: 'config' }; });
   /* inboxLists: the workspace's named chat lists [{id, name}] (pages/inbox.js; live, the server writes it: api/messages.js 'lists') */
   REG.inboxLists = { type: 'blob', kind: 'demo' };
 
@@ -2185,7 +2186,7 @@
   O.LANGS = [['en', 'English', 'EN'], ['bn', 'বাংলা', 'Bangla'], ['ms', 'Bahasa Malaysia', 'MS'], ['zh', '中文（福建話）', 'Hokkien']];
   O.LOCALES = { en: 'en-MY', bn: 'bn-BD-u-nu-latn', ms: 'ms-MY', zh: 'zh-TW' };
   O.I18N = O.I18N || {};
-  var NAV_EN = { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', team: 'Team chat', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', netrates: 'Net Rates', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', health: 'System health', more: 'More', home: 'Home', platform: 'Platform admin' };
+  var NAV_EN = { overview: 'Overview', operate: 'Operate', insights: 'Insights', finance: 'Finance', grow: 'Grow', manage: 'Manage', dashboard: 'Dashboard', bookings: 'Bookings', calendar: 'Calendar', reviews: 'Reviews', inbox: 'Inbox', team: 'Team chat', greetings: 'Greeting Messages', tasks: 'Tasks & Cleaning', statistics: 'Statistics', reports: 'Reports', invoices: 'Invoices & Receipts', expenses: 'Expenses', financials: 'Financials', website: 'Website Builder', livesite: 'Live Website', guestapp: 'Guest App', properties: 'Properties', channels: 'Channels', inventory: 'Inventory', pricing: 'Pricing', netrates: 'Net Rates', planner: 'Profit Planner', automations: 'Automations', owner: 'Owner Portal', staff: 'Staff Access', brand: 'Brand & Setup', settings: 'Settings', health: 'System health', more: 'More', home: 'Home', platform: 'Platform admin' };
   O.NAV_EN = NAV_EN;
   var I = (function () {
     var own = Object.prototype.hasOwnProperty, caches = {}, pats = {}, frags = {};
@@ -2515,7 +2516,7 @@
     ['insights', ['statistics', 'reports']],
     ['finance', ['invoices', 'expenses', 'financials']],
     ['grow', ['website', 'livesite', 'guestapp']],
-    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'netrates', 'planner', 'automations', 'owner', 'staff', 'brand', 'health']]
+    ['manage', ['properties', 'channels', 'inventory', 'pricing', 'netrates', 'planner', 'automations', 'owner', 'staff', 'brand', 'settings', 'health']]
   ];
   O.OWNER_ONLY = { financials: true, planner: true, health: true };
   /* pages in the menu whose access is not their own Staff Access section: {id: fn -> may open} */
@@ -2523,7 +2524,9 @@
     /* Greeting Messages (pages/greetings.js): anyone who can open the inbox reads them; inbox.greetings changes them */
     greetings: function () { return O.can('inbox', 'view'); },
     /* Net rates (pages/netrates.js): anyone who sees Pricing; pricing.rules changes what each site takes */
-    netrates: function () { return O.can('pricing', 'view'); } };
+    netrates: function () { return O.can('pricing', 'view'); },
+    /* Settings (pages/settings.js): everyone opens it for their own settings; each card shows only what their access allows */
+    settings: function () { return true; } };
   O.allowed = function (id) { if (O.EXTRA_PAGES && O.EXTRA_PAGES[id]) return O.EXTRA_PAGES[id].allowed ? O.EXTRA_PAGES[id].allowed() : true; if (O.PAGE_ACCESS[id]) return O.PAGE_ACCESS[id](); return O.OWNER_ONLY[id] ? O.isOwner() : O.can(id, 'view'); };
   /* pages outside the menu groups (e.g. the platform admin area added by auth.js): {id: {allowed: fn}} */
   O.EXTRA_PAGES = O.EXTRA_PAGES || {};
