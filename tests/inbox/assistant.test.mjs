@@ -110,7 +110,9 @@ test('suggest: the last round must answer, and needs_human comes through', async
   const answers = [[look], [look], [{ type: 'tool_use', id: 'r', name: 'reply', input: { reply: 'Let me check with the team.', needs_human: true, reason: 'Refund request' } }]];
   const r = await suggest({ key: 'k', model: 'm', configured: true }, { facts, lines: ['Guest: I want a refund'], lookUp: async () => ({}) }, { fetch: fakeFetch(answers, seen) });
   assert.equal(r.needsHuman, true);
-  assert.deepEqual(seen[2].tool_choice, { type: 'tool', name: 'reply' });
+  // Sonnet 5.5 refuses a forced tool_choice: the last round offers only the reply tool instead
+  assert.deepEqual(seen[2].tool_choice, { type: 'auto' });
+  assert.deepEqual(seen[2].tools.map((t) => t.name), ['reply']);
 });
 
 test('suggest: no key, no chat, and a refused key are plain errors', async () => {

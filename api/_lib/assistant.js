@@ -306,8 +306,9 @@ export async function suggest(cfg, input, opts = {}) {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
     const j = await callModel(cfg, {
-      model: cfg.model, max_tokens: 1200, system: SYSTEM(f), tools,
-      tool_choice: last ? { type: 'tool', name: 'reply' } : { type: 'any' },
+      // Sonnet 5.5 / Opus 5.5 refuse a forced tool_choice (any / tool), so the last round offers only the reply tool
+      model: cfg.model, max_tokens: 1200, system: SYSTEM(f), tools: last ? tools.filter((t) => t.name === 'reply') : tools,
+      tool_choice: { type: 'auto' },
       messages
     }, opts);
     const content = Array.isArray(j.content) ? j.content : [];

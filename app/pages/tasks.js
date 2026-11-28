@@ -1288,13 +1288,19 @@
     if (!O.alertSound || !O.auth || !O.auth.user) return;
     var meStaff = O.state.viewer, meUser = (O.auth.user() || {}).id;
     if (!meStaff || (O.auth.isPreviewing && O.auth.isPreviewing())) return;
-    var ring = (rows || []).some(function (r) {
+    var mineNew = (rows || []).filter(function (r) {
       if (r.coll !== 'tasks' || r.deleted || !r.data || (r.by && r.by === meUser)) return false;
       if (r.data.status === 'done' || r.data.done) return false;
       var old = taskById(r.id);
       return W.ids(r.data).indexOf(meStaff) >= 0 && !(old && W.ids(old).indexOf(meStaff) >= 0);
     });
-    if (ring) O.alertSound.play('task');
+    /* the bell's history (O.alertLog, app/core.js): which task, where and when it is due */
+    if (O.alertLog) mineNew.forEach(function (r) {
+      var t = r.data, p = t.propertyId && D.propById[t.propertyId];
+      O.alertLog.add({ key: 'task:' + r.id + ':' + meStaff, type: 'task', k: 'New task for you: {task}', v: { task: t.title || O.tr('Task') },
+        s: [p ? p.short : '', t.due ? O.tpl('due {when}', { when: O.fmt.dateTime(t.due) }) : ''].filter(Boolean).join(' · '), go: ['tasks'], toast: true });
+    });
+    if (mineNew.length) O.alertSound.play('task');
   });
 
   O.page('tasks', {

@@ -79,16 +79,37 @@
      message from the guest that this device did not have yet. Not on first load (that is not a live change), not for
      the team's own saves (r.by) or messages, and not in this test copy, which has no live changes. Runs while Orbique is
      open, on any page. play() does nothing when muted and skips repeats within 3 seconds. */
+  /* -> the new guest messages, [{c: the chat's new data, m: the message}] (empty: none) */
   function newGuestMessages(rows) {
-    var have = {}; (D.conversations || []).forEach(function (c) { have[String(c.id)] = c; });
-    return (rows || []).some(function (r) {
-      if (r.coll !== 'conversations' || r.deleted || r.by || !r.data || !Array.isArray(r.data.messages)) return false;
+    var have = {}, out = []; (D.conversations || []).forEach(function (c) { have[String(c.id)] = c; });
+    (rows || []).forEach(function (r) {
+      if (r.coll !== 'conversations' || r.deleted || r.by || !r.data || !Array.isArray(r.data.messages)) return;
       var old = have[String(r.id)], om = old && Array.isArray(old.messages) ? old.messages : [], xids = {};
       om.forEach(function (m) { if (m && m.xid) xids[m.xid] = 1; });
-      return r.data.messages.some(function (m, i) { return m && m.from === 'guest' && (m.xid ? !xids[m.xid] : i >= om.length); });
+      r.data.messages.forEach(function (m, i) { if (m && m.from === 'guest' && (m.xid ? !xids[m.xid] : i >= om.length)) out.push({ id: r.id, c: r.data, m: m, i: i }); });
+    });
+    return out;
+  }
+  /* the bell's history (O.alertLog, app/core.js): who wrote and what, one line per chat per batch */
+  function logGuestMessages(news) {
+    if (!O.alertLog) return;
+    var last = {}; news.forEach(function (x) { last[String(x.id)] = x; });
+    Object.keys(last).forEach(function (id) {
+      var x = last[id], c = x.c, b = c.bookingId ? D.booking(c.bookingId) : null, n = news.filter(function (y) { return String(y.id) === id; }).length;
+      var name = (b && b.guest && b.guest.name) || (c.contact && c.contact.name) || c.wa || c.em || 'Guest';
+      var m = x.m, txt = String(m.text || m.transcript || '').replace(/\s+/g, ' ').trim();
+      if (!txt) txt = m.type === 'voice' ? O.tr('Voice message') : m.type === 'image' ? O.tr('Photo') : m.type === 'file' ? O.tr('File') : '';
+      if (txt.length > 140) txt = txt.slice(0, 139) + '…';
+      var unit = b && D.propById[b.propertyId] ? D.propById[b.propertyId].short : '';
+      O.alertLog.add({ key: 'msg:' + id + ':' + (m.xid || m.id || x.i), type: 'message', k: n > 1 ? '{n} new messages from {guest}' : 'New message from {guest}', v: { guest: name, n: n },
+        s: (unit ? unit + ' · ' : '') + txt, go: c.bookingId ? ['inbox', { bookingId: c.bookingId }] : ['inbox'], toast: true });
     });
   }
-  O.on('remote-rows', function (rows) { if (O.alertSound && newGuestMessages(rows)) O.alertSound.play('message'); });
+  O.on('remote-rows', function (rows) {
+    var news = newGuestMessages(rows); if (!news.length) return;
+    logGuestMessages(news);
+    if (O.alertSound) O.alertSound.play('message');
+  });
   O.inboxNewGuest = newGuestMessages; /* for checks in the browser console and tests */
 
   var st = { sel: null, view: 'list', tab: 'guests', box: 'main', filter: 'all', q: '', prop: null, mode: 'reply', drafts: {}, pending: {}, unreadMark: {}, rec: null, told: false, qrSel: 0 };
@@ -525,7 +546,7 @@
     if (!server() || live.loading) return;
     if (live.org === O.auth.orgId() && live.cfg) { if (after) after(); return; }
     live.loading = true;
-    O.auth.inbox('config').then(function (r) { live.org = O.auth.orgId(); live.cfg = r; }, function () { live.org = O.auth.orgId(); live.cfg = null; })
+    O.auth.inbox('config', { lang: myLang() }).then(function (r) { live.org = O.auth.orgId(); live.cfg = r; }, function () { live.org = O.auth.orgId(); live.cfg = null; })
       .then(function () { live.loading = false; if (after) after(); });
   }
   /* how a chat can be answered: [{via, label, open, why}] (WhatsApp first when the guest wrote there last) */
@@ -915,7 +936,7 @@
     var m = lastMsg(c), unread = c.unread > 0, feed = c.kind === 'feed';
     var av = feed ? '<span class="cv-feed">' + (FEED_PLAT[c.feed] ? U.platIcon(FEED_PLAT[c.feed]) : O.icon(c.feed === 'email' ? 'chat' : 'alert')) + '</span>' : U.avatar(updName(c));
     var sub = feed ? 'Notifications' : 'Email' + (c.ota ? ' via ' + c.ota : '');
-    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + '<span data-no-i18n>' + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + m.text : m.text) + '</span>') : '';
+    var prev = m ? (m.from === 'system' ? esc(m.text) : (m.from === 'staff' ? '<span class="who">You: </span>' : '') + '<span data-no-i18n>' + esc(m.subject && m.from === 'guest' ? m.subject + ' · ' + shownText(m, m.text) : shownText(m, m.text)) + '</span>') : '';
     return '<div class="cv-row" data-row="' + c.id + '"><button type="button" class="cv' + (c.id === st.sel ? ' on' : '') + (unread ? ' unread' : '') + '" data-conv="' + c.id + '" aria-label="' + esc(unread ? O.tpl('{name}, {n} unread', { name: updName(c), n: c.unread }) : updName(c)) + '">' +
       '<span class="cv-av">' + av + '</span>' +
       '<span class="cv-main"><span class="cv-l1"><span class="cv-name">' + esc(updName(c)) + '</span><span class="cv-time" title="' + esc(m ? fullWhen(m.time) : '') + '">' + esc(m ? listTime(m.time) : '') + '</span></span>' +
@@ -1664,7 +1685,7 @@
         var L = myLang(), want = [];
         for (var i = c.messages.length - 1; i >= 0 && want.length < 12; i--) {
           var m = c.messages[i], k = c.id + ':' + i + ':' + L;
-          if (needsXl(m) && !live.xlTried[k]) { live.xlTried[k] = true; want.push(i); }
+          if (needsXl(m) && !(live.xlTried[k] > Date.now() - 120000)) { live.xlTried[k] = Date.now(); want.push(i); }
         }
         if (!want.length) return;
         want.forEach(function (i) { live.busy['xl' + c.id + ':' + i] = true; });
@@ -1923,10 +1944,11 @@
         });
       }
       /* the three timed messages (api/_lib/shared/journey.cjs; the worker sends them): a switch and the wording each */
-      var JR_HINT = { confirm: 'Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.', welcome: '24 hours before check-in, with the unit, door code and Wi-Fi. Skipped when the team already sent the door code by hand.', checkout: 'At 6 PM the evening before check-out.' };
+      var JR_HINT = { confirm: 'Right after the booking comes in. If the booking has no phone number, {phone_ask} asks for it.', welcome: '24 hours before check-in, with the arrival steps. Skipped when the team already sent the door code here by hand.', checkout: 'At 6 PM the evening before check-out.' };
       function journeyHTML() {
         var J = O.journey, cfg = J.settings(D.guestJourney) || J.settings({}), ro = canEdit() ? '' : ' disabled';
-        return '<div class="small">These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site\'s chat, for Agoda, Trip.com and direct bookings by email. Guests\' questions are always answered by your team. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.</div>' +
+        return '<div class="small">These go out by themselves for every booking: on Airbnb, Booking.com and Expedia through the site\'s chat, for Agoda, Trip.com and direct bookings by email. Guests\' questions are always answered by your team. Use {guest_first}, {checkin_date}, {checkin_time}, {checkout_date} and {checkout_time} in the text.</div>' +
+          '<div class="note">' + O.icon('lock') + ' ' + esc('Timed messages never include the suite number, door code or Wi-Fi: a line with one of them is left out. Send them yourself, for example in your WhatsApp group with the guest, so you can still change the room at the last minute. Use Copy check-in details on the booking.') + '</div>' +
           J.STEPS.map(function (k) {
             var st0 = cfg.steps[k];
             return '<div class="ib-jr" data-jr="' + k + '"><label class="row-flex"><input type="checkbox" data-jf="on"' + (st0.on ? ' checked' : '') + ro + '> <b>' + esc(J.NAMES[k]) + '</b></label>' +
@@ -1934,7 +1956,9 @@
               '<textarea class="input" rows="7" maxlength="' + J.MAX_TEXT + '" data-jf="text" aria-label="' + esc(J.NAMES[k]) + '"' + ro + '>' + esc(st0.text) + '</textarea>' +
               '<details' + (st0.airbnb ? ' open' : '') + '><summary class="small">Airbnb version (Airbnb does not allow a deposit taken outside Airbnb)</summary><textarea class="input" rows="7" maxlength="' + J.MAX_TEXT + '" data-jf="airbnb" aria-label="' + esc(J.NAMES[k] + ', Airbnb') + '" placeholder="Leave empty to send the text above to Airbnb guests too."' + ro + '>' + esc(st0.airbnb) + '</textarea></details></div>';
           }).join('') +
-          '<label class="row-flex" data-jr="ask"><input type="checkbox" data-jf="ask"' + (cfg.askPhone ? ' checked' : '') + ro + '> <span>Ask for the guest\'s WhatsApp number when the booking has none, and save it when the guest sends it</span></label>';
+          '<label class="row-flex" data-jr="ask"><input type="checkbox" data-jf="ask"' + (cfg.askPhone ? ' checked' : '') + ro + '> <span>Ask for the guest\'s WhatsApp number when the booking has none, and save it when the guest sends it</span></label>' +
+          (canCodes() ? '<div class="ib-jr" data-jr="details"><b>' + esc('Check-in details (you send these yourself)') + '</b><div class="small muted">' + esc('What Copy check-in details on a booking copies, ready to paste into WhatsApp. Never sent by itself. Use {guest_first}, {unit_no}, {level}, {door_code}, {wifi_name}, {wifi_password}, {checkin_time} and {checkout_time}.') + '</div>' +
+            '<textarea class="input" rows="9" maxlength="' + J.MAX_TEXT + '" data-jf="details" aria-label="' + esc('Check-in details') + '"' + ro + '>' + esc(J.detailsText(cfg)) + '</textarea></div>' : '');
       }
       function saveJourney(body) {
         var J = O.journey, before = J.settings(D.guestJourney), next = { since: before && before.since ? before.since : D.NOW, askPhone: true, steps: {} };
@@ -1943,6 +1967,8 @@
           next.steps[k] = { on: O.$('[data-jf="on"]', box).checked, text: O.$('[data-jf="text"]', box).value.slice(0, J.MAX_TEXT), airbnb: O.$('[data-jf="airbnb"]', box).value.slice(0, J.MAX_TEXT) };
         });
         next.askPhone = O.$('[data-jf="ask"]', body).checked;
+        var det = O.$('[data-jf="details"]', body); /* only shown with door-code access; otherwise kept as it was */
+        next.details = det ? (det.value.trim() === J.DEFAULT_DETAILS.trim() ? '' : det.value.slice(0, J.MAX_TEXT)) : (before ? before.details : '');
         D.guestJourney = next;
         O.emit('data', { type: 'guest-journey' });
         U.toast('Saved the timed messages');

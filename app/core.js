@@ -2078,6 +2078,45 @@
   })();
 
   /* ===================================================================
+     ALERT HISTORY: O.alertLog.add(entry) / .list() / .unread() / .markRead() / .clear()
+     Every alert that rings O.alertSound while Orbique is open (new booking, cancellation, new dates, guest message,
+     Team chat, new task, a phone alert received with the app open) is also written here, so the bell shows what each
+     sound was about. It is written even when the sound is muted or skipped. Kept on this device per workspace
+     (O.store 'alertLog:<workspace>'): the newest 100, for 30 days.
+     entry: {key (the same key within 10 minutes is written once, so a phone alert and the live update for the same
+     booking show once), type ('booking' | 'change' | 'message' | 'team' | 'task'), k (English title template), v
+     (its values), s (second line), go: [page, params] or {booking: id}, toast: show a toast too}
+     Fires 'alert-log' so the bell repaints.
+     =================================================================== */
+  O.alertLog = (function () {
+    var MAX = 100, DAYS = 30, DUP = 10 * 6e4;
+    function key() { return 'alertLog:' + ((O.state && O.state.workspace) || ''); }
+    function now() { return (O.data && O.data.NOW) || new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 16); }
+    function ms(at) { return Date.parse(String(at || '') + ':00Z') || 0; }
+    function list() {
+      var all = O.store.get(key(), []), cut = ms(now()) - DAYS * 864e5;
+      return Array.isArray(all) ? all.filter(function (e) { return e && e.k && ms(e.at) >= cut; }) : [];
+    }
+    function save(all) { O.store.set(key(), all.slice(0, MAX)); O.emit('alert-log'); }
+    return {
+      add: function (e) {
+        if (!e || !e.k) return null;
+        var all = list(), at = now();
+        if (e.key && all.some(function (x) { return x.key === e.key && Math.abs(ms(at) - ms(x.at)) < DUP; })) return null;
+        var row = { id: 'A' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), key: e.key || '', type: e.type || '', k: e.k, v: e.v || {}, s: e.s || '', go: e.go || null, at: at, read: false };
+        all.unshift(row); save(all);
+        if (e.toast && O.ui && O.ui.toast) O.ui.toast(O.tpl(row.k, row.v) + (row.s ? ': ' + row.s : ''));
+        return row;
+      },
+      list: list,
+      unread: function () { return list().filter(function (e) { return !e.read; }).length; },
+      markRead: function () { var all = list(); if (!all.some(function (e) { return !e.read; })) return; all.forEach(function (e) { e.read = true; }); save(all); },
+      clear: function () { save([]); },
+      ICONS: { booking: '🛎️', change: '📅', message: '💬', team: '👥', task: '🧹' }
+    };
+  })();
+
+  /* ===================================================================
      READ ALOUD (Jarvis-style brief). O.voice.speak(text, {onend, onboundary}) / O.voice.stop() / O.voice.available()
      Uses the browser's built-in speech; prefers a calm British or Malaysian English voice.
      =================================================================== */
@@ -2621,12 +2660,51 @@
     O.$('#viewer-btn').innerHTML = U.avatar(v.name) + '<span class="grow"><span class="nm" style="display:block">' + O.esc(v.name) + '</span><span class="rl" style="display:block">' + (O.viewerNote ? O.esc(O.viewerNote()) : 'Viewing as ' + O.esc(String(v.roleLabel || '').toLowerCase())) + '</span>' + (ws.plan ? '<span class="plan-pill">' + O.esc(ws.plan) + '</span>' : '') + '</span><span class="ws-caret">▴</span>';
     O.$('#viewer-menu').innerHTML = O.viewerMenu ? O.viewerMenu() : '<div class="menu-label">View the app as</div>' + viewerChoices().map(function (s) { return '<button class="pop-opt' + (s.id === O.state.viewer ? ' sel' : '') + '" data-viewer="' + s.id + '"><span class="row-flex">' + U.avatar(s.name, 'sm') + '<span>' + O.esc(s.name) + '<br><span class="xs muted">' + O.esc(s.roleLabel) + '</span></span></span>' + (s.role === 'owner' ? '<span class="pill accent">Owner</span>' : '') + '</button>'; }).join('');
     O.$('#lang-menu').innerHTML = O.LANGS.map(function (l) { return '<button class="pop-opt' + (l[0] === O.state.lang ? ' sel' : '') + '" data-lang="' + l[0] + '">' + O.esc(l[1]) + ' <span class="xs muted">' + O.esc(l[2]) + '</span></button>'; }).join('');
-    var ns = O._started ? O.notifications() : [];
-    O.$('#bell-menu').innerHTML = '<div class="menu-label">Notifications</div>' + (ns.length ? ns.map(function (n, i) { return '<button class="notif" data-n="' + i + '"><span class="ni" style="background:' + (n.tone === 'bad' ? 'var(--bad-soft)' : n.tone === 'warn' ? 'var(--warn-soft)' : 'var(--surface-2)') + '">' + n.icon + '</span><span><span class="nt" style="display:block">' + O.esc(n.t) + '</span><span class="ns" style="display:block">' + O.esc(n.s) + '</span></span></button>'; }).join('') : '<div class="small muted" style="padding:10px 12px">Nothing needs you right now.</div>');
-    if (window.innerWidth >= 640) O.$('#bell-menu').style.minWidth = '320px';
-    O.$('#bell-btn .dot').hidden = !ns.length;
+    var ns = O._started ? O.notifications() : [], al = O._started ? bellSrc().list() : [], unread = al.filter(function (e) { return !e.read; }).length;
+    O.$('#bell-menu').innerHTML = bellHTML(ns, al);
+    if (window.innerWidth >= 640) O.$('#bell-menu').style.minWidth = '340px';
+    var dot = O.$('#bell-btn .dot'); dot.hidden = !ns.length && !unread; dot.textContent = unread ? (unread > 9 ? '9+' : String(unread)) : ''; dot.classList.toggle('count', !!unread);
     O.$('#lock-btn').hidden = !O.can('guestapp.doorCodes');
     paintCountry(); paintTabs(); paintSync();
+  }
+  /* the bell's list: the alerts that rang on this device (O.alertLog, newest first, unread ones marked) and what needs
+     the viewer now (O.notifications) */
+  var BELL_SHOW = 40, bellSounds = false;
+  /* the shared history from the server (app/server/notify.js) once it has loaded, else this device's own list */
+  function bellSrc() { return O.notify && O.notify.active() ? O.notify : O.alertLog; }
+  function bellHTML(ns, al) {
+    function item(attr, icon, bg, t, s, extra, unread) {
+      return '<button class="notif' + (unread ? ' unread' : '') + '" ' + attr + '><span class="ni" style="background:' + bg + '">' + icon + '</span><span class="grow" style="min-width:0"><span class="nt" style="display:block">' + O.esc(t) + '</span>' + (s ? '<span class="ns" style="display:block" data-no-i18n>' + O.esc(s) + '</span>' : '') + (extra ? '<span class="na" style="display:block">' + O.esc(extra) + '</span>' : '') + '</span>' + (unread ? '<span class="nu" aria-label="New"></span>' : '') + '</button>';
+    }
+    var shared = bellSrc() !== O.alertLog;
+    var h = '<div class="bell-head"><span class="menu-label">Notifications</span><span class="row-flex" style="gap:4px">' + (shared ? '<button type="button" class="btn btn-ghost btn-sm" data-bell="sounds" aria-expanded="' + bellSounds + '">Sounds</button>' : '') + (al.length ? '<button type="button" class="btn btn-ghost btn-sm" data-bell="clear">Clear alerts</button>' : '') + '</span></div>';
+    /* the phone app: are real phone notifications on (app/native/bridge.js, migration 0033)? Off: say so at the top. */
+    var ph = O.native && O.native.push && O.native.push.state ? O.native.push.state() : null, phOn = ph && ph.perm === 'granted' && ph.registered;
+    if (ph && ph.perm && !phOn) h += '<div class="bell-phone" style="margin:0 10px 8px;padding:10px 12px;border-radius:10px;background:var(--warn-soft)"><div class="small"><b>Phone notifications are off.</b> ' +
+      (ph.perm === 'denied' ? 'Nothing shows on this phone while Orbique is closed. Turn them on in the phone\'s Settings: Apps, Orbique, Notifications, then come back.' : 'Nothing shows on this phone while Orbique is closed.') +
+      '</div><button type="button" class="btn btn-primary btn-sm" data-bell="phone-on" style="margin-top:8px">Turn on phone notifications</button></div>';
+    if (shared && bellSounds) h += '<div class="bell-sounds"><div class="xs muted" style="padding:0 13px 6px">Play a sound on this device for:</div>' + O.notify.groups().map(function (g) { return '<label class="bell-snd"><input type="checkbox" data-bell-mute="' + g.id + '"' + (g.muted ? '' : ' checked') + '> <span>' + O.esc(O.t(g.label)) + '</span></label>'; }).join('') +
+      (phOn ? '<div class="xs muted" style="padding:6px 13px 4px">Phone notifications are on: they show in the notification bar even when Orbique is closed. Muted groups show without a sound.</div><div style="padding:0 13px 8px"><button type="button" class="btn btn-ghost btn-sm" data-bell="phone-test">Send a test notification</button></div>' : '') + '</div>';
+    h += '<div class="bell-list">';
+    h += '<div class="menu-label bell-sec">Alerts</div>';
+    h += al.length ? al.slice(0, BELL_SHOW).map(function (e) {
+      return item('data-a="' + O.esc(e.id) + '"', e.icon || O.alertLog.ICONS[e.type] || '🔔', e.read ? 'var(--surface-2)' : 'var(--accent-soft, var(--warn-soft))', e.t || O.tpl(e.k, e.v || {}), e.s, O.fmt.ago(e.at) + ' · ' + O.fmt.dateTime(e.at), !e.read);
+    }).join('') + (al.length > BELL_SHOW ? '<div class="xs muted" style="padding:6px 13px 10px">' + O.esc(O.tpl('{n} older alerts not shown', { n: al.length - BELL_SHOW })) + '</div>' : '')
+      : '<div class="small muted" style="padding:4px 13px 10px">' + (shared ? 'Nothing has happened yet. Every booking, change, message and task shows here.' : 'No alerts yet. New bookings, cancellations, guest messages, Team chat and new tasks show here when they ring.') + '</div>';
+    h += '<div class="menu-label bell-sec">Needs you</div>';
+    h += ns.length ? ns.map(function (n, i) { return item('data-n="' + i + '"', n.icon, n.tone === 'bad' ? 'var(--bad-soft)' : n.tone === 'warn' ? 'var(--warn-soft)' : 'var(--surface-2)', n.t, n.s, '', false); }).join('') : '<div class="small muted" style="padding:4px 13px 10px">Nothing needs you right now.</div>';
+    return h + '</div>';
+  }
+  function openAlert(e) {
+    var g = e && e.go;
+    if (!g) return;
+    if (g.assistant) { if (O.assistant && O.isOwner()) O.assistant.open(); else O.go('bookings'); return; }
+    if (g.booking) {
+      if (O.booking && O.data.bookings && O.data.bookings.some(function (b) { return String(b.id) === String(g.booking); })) O.booking.open(g.booking);
+      else O.go('bookings');
+      return;
+    }
+    if (Array.isArray(g) && O.pages[g[0]] && O.allowed(g[0])) O.go(g[0], g[1]);
   }
   function paintCountry() {
     var cs = O.$('#country-slot'); if (!cs) return;
@@ -2663,10 +2741,26 @@
       var m = O.$('#bell-menu');
       /* on a phone the bell is not at the screen's right edge, so a right-aligned 320px list runs off the left: pin it to the screen */
       if (window.innerWidth < 640) { var r = O.$('#bell-btn').getBoundingClientRect(); m.style.position = 'fixed'; m.style.left = '12px'; m.style.right = '12px'; m.style.top = Math.round(r.bottom + 6) + 'px'; m.style.minWidth = '0'; m.style.maxHeight = 'calc(100vh - ' + Math.round(r.bottom + 24) + 'px)'; m.style.overflowY = 'auto'; }
-      else { m.style.position = m.style.left = m.style.right = m.style.top = m.style.maxHeight = m.style.overflowY = ''; m.style.minWidth = '320px'; }
-      /* closeOnOutside has already toggled the list, so a second tap on the bell closes it */
+      else { m.style.position = m.style.left = m.style.right = m.style.top = ''; m.style.minWidth = '340px'; m.style.maxHeight = 'min(70vh, 560px)'; m.style.overflowY = 'auto'; }
+      /* closeOnOutside has already toggled the list, so a second tap on the bell closes it. Opening it marks the alerts
+         read: they stay highlighted while it is open, and the count on the bell goes. */
+      if (m.classList.contains('open')) { bellSrc().markRead(); var dot = O.$('#bell-btn .dot'); dot.textContent = ''; dot.classList.remove('count'); dot.hidden = !O.notifications().length; }
     });
-    O.$('#bell-menu').addEventListener('click', function (e) { var b = e.target.closest('[data-n]'); if (!b) return; O.$('#bell-menu').classList.remove('open'); var n = O.notifications()[+b.dataset.n]; if (n) O.go(n.go[0], n.go[1]); });
+    O.$('#bell-menu').addEventListener('click', function (e) {
+      var m = O.$('#bell-menu');
+      if (e.target.closest('[data-bell="clear"]')) { bellSrc().clear(); paintShell(); return; }
+      if (e.target.closest('[data-bell="sounds"]')) { bellSounds = !bellSounds; paintShell(); return; }
+      if (e.target.closest('[data-bell="phone-on"]') && O.native && O.native.push) { O.native.push.enable(true).then(function (r) { U.toast(r && r.ok ? 'Phone notifications are on' : (r && r.message) || 'Phone notifications could not be turned on', r && r.ok ? 'ok' : 'bad'); paintShell(); }); return; }
+      if (e.target.closest('[data-bell="phone-test"]') && O.native && O.native.push) { U.toast('A test notification comes in 6 seconds. Close Orbique now to see it in the notification bar.'); O.native.push.test().then(function (r) { if (!r.ok) U.toast(r.message, 'bad'); }); return; }
+      var mu = e.target.closest('[data-bell-mute]');
+      if (mu) { if (O.notify) O.notify.setMuted(mu.dataset.bellMute, !mu.checked); return; }
+      var a = e.target.closest('[data-a]');
+      if (a) { m.classList.remove('open'); openAlert(bellSrc().list().filter(function (x) { return x.id === a.dataset.a; })[0]); return; }
+      var b = e.target.closest('[data-n]'); if (!b) return; m.classList.remove('open'); var n = O.notifications()[+b.dataset.n]; if (n) O.go(n.go[0], n.go[1]);
+    });
+    /* a new alert repaints the bell (its count); the list is marked read once it has been opened and closed */
+    O.on('alert-log', function () { if (O._started && !O.$('#bell-menu').classList.contains('open')) paintShell(); });
+    O.on('push-state', function () { if (O._started) paintShell(); });
     O.$('#lock-btn').onclick = function () { O.lock.change({ propertyId: O.state.lockProp || null }); };
     O.$('#menu-btn').onclick = function () { O.$('.side').classList.add('open'); O.$('.scrim').classList.add('open'); };
     O.$('.scrim').onclick = closeSide;

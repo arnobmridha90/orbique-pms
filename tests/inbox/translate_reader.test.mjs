@@ -20,3 +20,19 @@ test('a reader language is kept beside the first translation, not over it', () =
   assert.deepEqual(trPatch(m, 'en', { same: false, lang: 'id', text: 'Okay, thank you' }), { lang: 'id', tr: { to: 'en', text: 'Okay, thank you' } });
   assert.deepEqual(trPatch({ text: 'Hi' }, 'en', { same: true, lang: 'en' }), { lang: 'en', trx: { en: '' } });
 });
+
+test('a guest message is translated on arrival into the team language and every reader language at once', async () => {
+  const { translated } = await import('../../api/_lib/inbox.js');
+  const seen = [];
+  const fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const to = /\((\w\w)\)\./.exec(body.messages[0].content)[1];
+    seen.push(to);
+    const text = to === 'en' ? 'Okay, thank you' : to === 'ms' ? 'Okay, terima kasih' : to === 'id' ? 'Oke terimakasih' : '好的，谢谢';
+    return { ok: true, status: 200, text: async () => JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ lang: 'id', text }) }] }) };
+  };
+  const cfg = { key: 'sk-test', model: 'claude-haiku-5-5', configured: true };
+  const out = await translated('Oke terimakasih', { lang: 'en', autoTranslate: true, readers: ['ms', 'zh', 'en', 'id'] }, { translateConfig: cfg, fetch });
+  assert.deepEqual(seen.sort(), ['en', 'id', 'ms', 'zh']);
+  assert.deepEqual(out, { lang: 'id', tr: { to: 'en', text: 'Okay, thank you' }, trx: { ms: 'Okay, terima kasih', zh: '好的，谢谢', id: '' } });
+});
